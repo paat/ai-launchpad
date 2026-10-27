@@ -12,11 +12,18 @@ Research date 25 Oct 2026. Five Codex legs (`codex --search exec`, gpt-6-astra, 
 | [G-muse-app-for-estonian-smes.md](G-muse-app-for-estonian-smes.md) | Can Meta's Muse app be an Estonian SME's assistant (26 Oct 2026): availability, connectors, language, GDPR; Claude/ChatGPT/Gemini comparison | — |
 | [H-mcp-discovery-and-publication.md](H-mcp-discovery-and-publication.md) | MCP connection storage and publication (27 Oct 2026): AI Catalog and Server Card drafts, registry distribution, assistant directories, OAuth and agent discovery | — |
 | [I-hackathon-live-event.md](I-hackathon-live-event.md) | Kickoff recording (reviewed 27 Oct 2026): event requirements from slides, judging-weight discrepancy, bonus prizes, product implications | — |
+| [J-estonian-agent-services.md](J-estonian-agent-services.md) | Expanded provider catalog, evidence limits and reusable service shortlist (27 Oct 2026) | — |
+| [Assistant progress design](../design/assistant-progress-reporting.md) | MCP reporting, completeness, trustworthy evidence and simple companion UX (proposal) | — |
+| [K-browser-mcp-services.md](K-browser-mcp-services.md) | Seven browser-to-MCP providers: sessions, privacy, hosting and approval limits | — |
+| [L-courier-agent-services.md](L-courier-agent-services.md) | Courier MCP/API coverage, Estonia origins and operation boundaries | — |
+| [M-email-calendar-agent-services.md](M-email-calendar-agent-services.md) | Email, calendars, scheduling and reusable IMAP/SMTP/CalDAV connection routes | — |
 | **Total** | | **354** |
 
-## Bottom line
+## Earlier synthesis
 
-1. **"Estonian accounting through your AI assistant" is already taken.** Werkzeug (hosted MCP for e-arveldaja, Merit Aktiva, Erply Books) and Trivis (Estonian AI bookkeeping with its own MCP and approve-before-posting) are live; community MCPs exist for e-arveldaja, Merit and SmartAccounts; LHV, Directo, X7 and Creditinfo ship their own. AI Launchpad should **curate** these, not rebuild them.
+The dated findings below are retained for context. The expanded [catalog and corrections](J-estonian-agent-services.md) supersede conflicting interface and approval claims; no catalog connection has been runtime-tested.
+
+1. **"Estonian accounting through your AI assistant" is already taken.** Werkzeug (hosted MCP for e-arveldaja, Merit Aktiva, Erply Books) and Trivis (Estonian AI bookkeeping with its own MCP; approval coverage depends on the operation) are live; community MCPs exist for e-arveldaja, Merit and SmartAccounts; LHV, Directo, X7 and Creditinfo ship their own. AI Launchpad should **curate** these, not rebuild them.
 2. **The research found no product offering the layer above them:** onboarding that turns a company into its obligations and jobs, a per-authority permission inventory, approval bound to the exact action, filing receipts, and a friction loop that turns blocked tasks into public demand. That is the defensible part.
 3. **Every use case falls into one of four handling modes:**
    - **Reuse** — an official or vetted MCP already exists (Google Workspace, Microsoft 365, HubSpot, Zoho, Calendly, Wix, Shopify, MailerLite, Stripe, PayPal, LHV read-only, Creditinfo, accounting MCPs, Ärikratt).
@@ -32,12 +39,14 @@ Research date 25 Oct 2026. Five Codex legs (`codex --search exec`, gpt-6-astra, 
 | TSD annexes 1–2 moved to the data-based solution on 1 Oct 2026; XML upload ended, XBRL GL replaces it; CSV accepted until end of 2027 | Verified | [EMTA](https://www.emta.ee/ariklient/amet-uudised-ja-kontakt/arendustegevus/andmepohine-aruandlus) |
 | New KMD from 1 Apr 2027; KMD and VD can be filed together from the April 2027 period | Verified | same |
 | Werkzeug: hosted MCP for e-arveldaja (core), Merit Aktiva and Erply Books (Pro+), EU-hosted, open source; approval-before-write not stated | Verified | [werkzeug.ee](https://werkzeug.ee/) |
-| Trivis: Estonian AI accounting (VAT returns, payroll, e-invoicing), approval before any book change, ships an MCP server, live sign-up | Verified | [trivis.ee](https://trivis.ee/en) |
+| Trivis: MCP page documents selected outgoing/irreversible actions awaiting approval; universal approval-before-posting is not established | Corrected 27 Oct; documentation only | [Trivis MCP](https://trivis.ee/mcp) |
 | LHV.ai: MCP at `mcp.lhv.ai/mcp`, read-only ("cannot take any action"), free public beta; business-account support not stated | Verified | [lhv.ai](https://lhv.ai/et-EE/) |
 | Creditinfo Estonia MCP is live (free tier with limits); in-portal assistant is "coming soon" | Verified | [creditinfo.ee](https://creditinfo.ee/en/ai-eng/) |
 | Smithery shuts down its proxy, managed identity, API and CLI on 31 Oct 2026; the directory continues under Arcade | Verified | [smithery.ai/future](https://smithery.ai/future) |
 
-## Coverage map
+## Earlier coverage hypotheses
+
+“Adapter” and browser routes below identify possibilities, not commitments to build them or evidence of working workflows. Use the [expanded catalog](catalog/README.md) and [current proposal](../design/assistant-progress-reporting.md) for decisions.
 
 How AI Launchpad handles each area. IDs refer to rows in the leg reports.
 
@@ -93,7 +102,9 @@ How AI Launchpad handles each area. IDs refer to rows in the leg reports.
 | Continuity, succession, sale, closure | D68–D72 | Drafting and checklists |
 | Sector duties (food, accommodation, construction, electrical, beauty, e-commerce, transport, taxi, agriculture, forestry, healthcare, alcohol, tobacco, waste, AML-obliged, training, music licensing, procurement, cybersecurity) | D73–D106 | Onboarding derives them from the company's activities |
 
-## What this means for the build
+## Earlier build ideas — superseded by the current proposal
+
+This section and the following demo slice preserve the initial research suggestions. They are not the current implementation queue. The [current design](../design/assistant-progress-reporting.md) prioritises existing services and reporting; adapters, portal execution and broader scheduling require demonstrated gaps and separate acceptance checks.
 
 - **Onboarding is the product.** Registry code → activities, employees, VAT status, sector → obligations calendar (leg A has a ready one-person-OÜ calendar), applicable sector duties (D73–D106), and a job list showing which connector, adapter, browser step or human handles each.
 - **Don't build:** email, calendar, CRM, accounting MCPs. Curate and rank them.

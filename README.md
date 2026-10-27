@@ -89,6 +89,10 @@ Meta's own consumer agent app (Muse) is available only in the US and Canada as o
 - **Demo story:** an owner who has never used AI goes from a Google search to a working business assistant on their phone in about five minutes, the assistant does a real job with an approval card, and a request it can't serve appears as open demand.
 - **Out:** payments, unattended filing or signing, payroll submission, a marketplace UI beyond the demand list, FIE/e-resident/employer variants.
 
+## Accepted product requirements
+
+- [R-001: recommend the action that removes the most owner work](docs/requirements/R-001-next-best-action.md). The owner’s agent makes the assessment using Launchpad’s framework, with evidence, assumptions and one clear next action.
+
 ## Validation
 
 Test with 3–5 real owners of the first persona during the build week (with consent). Measure time to first useful task (target under five minutes) and whether they come back the following week.
