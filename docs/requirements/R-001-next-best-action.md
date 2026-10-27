@@ -22,6 +22,16 @@ The objective is less work and fewer interruptions for the owner, not more conne
 - The main view makes the action obvious; supporting evidence and alternatives are available on demand.
 - The same framework works for unrelated businesses. No company-name branches, pilot-specific logic or silent exclusion of unsupported responsibilities.
 
+## Success measures
+
+The agreed measures for the free service are **time saved, reliable outcomes and remaining manual work**. Connected-tool counts and AI usage are diagnostic information, not evidence of value.
+
+- Time saved: label estimates and their assumptions; measured savings need a baseline, period and source. Unknown savings stay unknown.
+- Reliable outcomes: state what was expected, whether it happened and the evidence. An assistant report alone is not independently confirmed success, and no success rate is meaningful without the relevant expected work and time period.
+- Remaining manual work: show unresolved tasks, exceptions and required owner decisions or approvals. Reducing visible scope does not count as saving work.
+
+The hackathon may display these as qualitative assessments when measurement evidence is absent. It must not invent hours, reliability percentages or a claim of complete automation. Future enterprise measurement is outside this build.
+
 ## Validation
 
 Use unrelated synthetic business scenarios with different existing services and workloads. For each, the owner should be able to explain the recommended action, the work it removes, why it is first, and what still needs them. Include an urgent obligation, incomplete context, a missing permission and a case where keeping an existing arrangement is better than adding a tool.

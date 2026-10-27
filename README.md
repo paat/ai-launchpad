@@ -4,7 +4,7 @@ Put your AI assistant to work for your business / Pane oma AI-assistent ettevõt
 
 Turn the AI assistant an Estonian small-business owner already has — or is about to get — into their business assistant.
 
-> **Status (27 Oct 2026):** a **local end-to-end demo** now exists (event-window code): a Node/TypeScript companion web app + MCP gateway on `http://localhost:3000`, SQLite state, synthetic demo companies, and integration tests. It is **not deployed, not production-ready, and calls no live model** (deterministic mock provider; Baseten/Meta adapter code exists but is off and untested live). Consumer-assistant OAuth connector auth is **not built** — the demo uses scoped bearer tokens, which Claude/ChatGPT consumer apps may not accept. Run and limits: [docs/local-demo.md](docs/local-demo.md). Research: [docs/research/](docs/research/README.md). See [docs/hackathon.md](docs/hackathon.md).
+> **Status (28 Oct 2026):** a **local end-to-end demo** now exists (event-window code): a Node/TypeScript companion web app + MCP gateway on `http://localhost:3000`, SQLite state, synthetic demo companies, and integration tests. It is **not deployed, not production-ready, and calls no live model** (deterministic mock provider; Baseten/Meta adapter code exists but is off and untested live). Standard MCP OAuth is implemented and tested with a local SDK client. Public-hosted Claude/ChatGPT connections remain **unverified**; manual bearer tokens are an advanced development option. Run and limits: [docs/local-demo.md](docs/local-demo.md). Research: [docs/research/](docs/research/README.md). See [docs/hackathon.md](docs/hackathon.md).
 
 ## The problem
 
@@ -92,7 +92,7 @@ Meta's own consumer agent app (Muse) is available only in the US and Canada as o
 
 ## Accepted product requirements
 
-- [R-001: recommend the action that removes the most owner work](docs/requirements/R-001-next-best-action.md) ([issue #1](https://github.com/paat/ai-launchpad/issues/1)). The owner’s agent makes the final assessment using Launchpad’s framework, with evidence, assumptions and one clear next action. Agent-assessed coverage is separate from source-verified outcomes (currently zero); no manual ratification is required.
+- [R-001: recommend the action that removes the most owner work](docs/requirements/R-001-next-best-action.md) ([issue #1](https://github.com/paat/ai-launchpad/issues/1)). The owner’s agent makes the final assessment using Launchpad’s framework, with evidence, assumptions and one clear next action. Success means time saved, reliable outcomes and less remaining manual work; estimates and unconfirmed reports remain labelled. Agent-assessed coverage is separate from source-verified outcomes (currently zero); no manual ratification is required.
 - [R-002: identity-only sign-in and bounded runtime model use](docs/requirements/R-002-identity-and-runtime-cost.md) ([issue #3](https://github.com/paat/ai-launchpad/issues/3)). Google is identity only; live inference is hard-disabled until provider spending controls are verified.
 
 ## Validation

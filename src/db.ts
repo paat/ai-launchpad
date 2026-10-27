@@ -13,6 +13,11 @@ export function openDb(path: string) {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(`
+  CREATE TABLE IF NOT EXISTS oauth_clients(id TEXT PRIMARY KEY, metadata TEXT NOT NULL, expires INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS oauth_pending(id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE, params TEXT NOT NULL, owner_id TEXT, epoch INTEGER, expires INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS oauth_grants(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, epoch INTEGER NOT NULL, client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE, scopes TEXT NOT NULL, resource TEXT NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL, redirect TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS oauth_codes(hash TEXT PRIMARY KEY, grant_id TEXT NOT NULL REFERENCES oauth_grants(id) ON DELETE CASCADE, challenge TEXT NOT NULL, redirect TEXT NOT NULL, expires INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS oauth_credentials(hash TEXT PRIMARY KEY, grant_id TEXT NOT NULL REFERENCES oauth_grants(id) ON DELETE CASCADE, kind TEXT NOT NULL, used INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS owners(id TEXT PRIMARY KEY, subject TEXT UNIQUE NOT NULL, email TEXT, kind TEXT NOT NULL, epoch INTEGER NOT NULL DEFAULT 1, reporting_enabled INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS workspaces(owner_id TEXT PRIMARY KEY REFERENCES owners(id), company_ref TEXT NOT NULL, label TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0);
   CREATE TABLE IF NOT EXISTS sessions(id_hash TEXT PRIMARY KEY, owner_id TEXT NOT NULL, csrf TEXT NOT NULL, expires_at TEXT NOT NULL);

@@ -1,3 +1,4 @@
+import { LaunchpadOAuth, connectCookie } from "./oauth.js";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -43,10 +44,12 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const hostHeader = req.headers.host ?? "";
     let canonical: URL;
     try { canonical = new URL(cfg.baseUrl); } catch { return res.status(503).send("Server origin is not configured."); }
-    if (!["http:", "https:"].includes(canonical.protocol) || canonical.username || canonical.password) return res.status(503).send("Server origin is not configured.");
+    if (!["http:", "https:"].includes(canonical.protocol) || canonical.username || canonical.password || canonical.pathname !== "/" || canonical.search || canonical.hash || (cfg.production && canonical.protocol !== "https:") || (!cfg.production && canonical.protocol === "http:" && !["localhost", "127.0.0.1"].includes(canonical.hostname))) return res.status(503).send("Server origin is not configured.");
     if (hostHeader !== canonical.host || !cfg.allowedHosts.includes(canonical.hostname)) return res.status(421).send("Unexpected Host.");
     const origin = req.headers.origin;
-    if (origin !== undefined) {
+    const protocolPath = req.path.replace(/\/+$/, "").toLowerCase();
+    const protocolRequest = ["/token", "/register", "/revoke", "/mcp"].includes(protocolPath) || protocolPath.startsWith("/.well-known/oauth-");
+    if (origin !== undefined && !protocolRequest) {
       // Exact-origin check (scheme + host + port). "null" (e.g. sandboxed or
       // no-referrer form posts) is always rejected.
       if (origin !== canonical.origin) return res.status(403).send("Unexpected Origin.");
@@ -121,6 +124,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     badge: (req as Authed).ownerKind === "demo" ? "Synthetic demo · mock data" : "Local companion · not verified",
   });
 
+  const oauth = new LaunchpadOAuth(db, cfg, session);
+  oauth.install(app, requireOwner, csrfOk);
+
   // --- pre-auth CSRF for the demo login (bounded, one-time, browser-bound) ---
   const preauth = new Map<string, number>();
   function issuePreauth(res: Response): string {
@@ -165,7 +171,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     res.setHeader("set-cookie", "lp_preauth=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
     startSession(req, res, ownerId);
     logActivity(db, ownerId, "owner", "demo_login", "ok", "Synthetic demo login.");
-    res.redirect("/");
+    res.redirect(oauth.resume(req));
   });
   app.post("/auth/logout", requireOwner, csrfOk, (req, res) => {
     const raw = cookieVal(req, "lp_session");
@@ -175,13 +181,13 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   });
 
   // --- Google OIDC: identity only, browser-bound, one-time, bounded ---
-  const oidcFlows = new Map<string, { codeVerifier: string; nonce: string; expires: number; bindHash: string }>();
+  const oidcFlows = new Map<string, { codeVerifier: string; nonce: string; expires: number; bindHash: string; continuation: string }>();
   function pruneFlows() {
     const now = Date.now();
     for (const [k, v] of oidcFlows) if (v.expires < now) oidcFlows.delete(k);
     while (oidcFlows.size >= 100) oidcFlows.delete(oidcFlows.keys().next().value as string);
   }
-  app.get("/auth/login/google", async (_req, res) => {
+  app.get("/auth/login/google", async (req, res) => {
     if (!cfg.googleClientId || !cfg.googleClientSecret) return res.status(503).send("Google sign-in is not configured on this server. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET; the redirect URI is http://localhost:3000/auth/callback/google.");
     try {
       const oidc = await import("openid-client");
@@ -190,7 +196,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       const state = oidc.randomState(); const nonce = oidc.randomNonce();
       const bind = randomBytes(24).toString("base64url");
       pruneFlows();
-      oidcFlows.set(state, { codeVerifier, nonce, expires: Date.now() + 600_000, bindHash: sha256(bind) });
+      oidcFlows.set(state, { codeVerifier, nonce, expires: Date.now() + 600_000, bindHash: sha256(bind), continuation: connectCookie(req) });
       res.setHeader("set-cookie", `lp_oidc=${encodeURIComponent(bind)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${cfg.production ? "; Secure" : ""}`);
       const url = oidc.buildAuthorizationUrl(config, { redirect_uri: `${cfg.baseUrl}/auth/callback/google`, scope: "openid email", code_challenge: codeChallenge, code_challenge_method: "S256", state, nonce });
       res.redirect(url.href);
@@ -218,7 +224,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       const ownerId = ensureOwner(`google:${claims.sub}`, typeof claims.email === "string" ? claims.email : null, "google", "My company (name it via your assistant)");
       // Real workspaces are never seeded with synthetic fixtures.
       startSession(req, res, ownerId);
-      res.redirect("/");
+      res.redirect(flow.continuation === connectCookie(req) ? oauth.resume(req) : "/");
     } catch {
       res.status(401).send("Google sign-in could not be verified.");
     }
@@ -227,7 +233,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   app.get("/", requireOwner, (req, res) => {
     const st = getState(db, oid(req));
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
-    res.type("html").send(page(req, "Is my admin handled?", "status", statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1 })));
+    res.type("html").send(page(req, "Is my admin handled?", "status", statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1, latestProgress: (st.progress[0] as unknown as { task_id: string; milestone: string; observed_at: string } | undefined) ?? null })));
   });
 
   app.get("/activity", requireOwner, (req, res) => {
@@ -260,7 +266,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
     const tokens = db.prepare("SELECT id,scopes,revoked,created_at,last_used_at FROM mcp_tokens WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, unknown>[];
     const candidates = db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, string>[];
-    res.type("html").send(page(req, "Connection & data", "connection", connectionBody({ csrf: (req as Authed).csrf, baseUrl: cfg.baseUrl, reportingEnabled: owner.reporting_enabled === 1, tokens, candidates })));
+    res.type("html").send(page(req, "Connection & data", "connection", connectionBody({ csrf: (req as Authed).csrf, baseUrl: cfg.baseUrl, reportingEnabled: owner.reporting_enabled === 1, tokens, candidates, grants: db.prepare("SELECT g.id,g.scopes,g.revoked,g.expires,g.redirect,c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? ORDER BY g.rowid DESC").all(oid(req)) as Record<string, string>[] })));
   });
   app.post("/tokens", requireOwner, csrfOk, (req, res) => {
     const owner = db.prepare("SELECT epoch FROM owners WHERE id=?").get(oid(req)) as { epoch: number };
@@ -328,6 +334,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   });
   app.post("/delete", requireOwner, csrfOk, (req, res) => {
     db.transaction(() => {
+      oauth.revokeOwner(oid(req));
+      db.prepare("DELETE FROM oauth_pending WHERE id=?").run(sha256(connectCookie(req)));
+      db.prepare("UPDATE owners SET reporting_enabled=0 WHERE id=?").run(oid(req));
       for (const t of ["assessments", "reports", "progress", "activity", "approvals", "candidates"]) db.prepare(`DELETE FROM ${t} WHERE owner_id=?`).run(oid(req));
       db.prepare("UPDATE mcp_tokens SET revoked=1 WHERE owner_id=?").run(oid(req));
       db.prepare("UPDATE owners SET epoch=epoch+1 WHERE id=?").run(oid(req));
@@ -340,12 +349,26 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     res.redirect("/");
   });
 
+  // MCP is bearer-only, never cookie-authenticated. Web clients may use CORS;
+  // canonical Host protection still runs before these protocol endpoints.
+  app.use("/mcp", (req, res, next) => {
+    res.set({ "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "WWW-Authenticate, MCP-Protocol-Version", "Access-Control-Allow-Headers": "Authorization, Content-Type, MCP-Protocol-Version, MCP-Session-Id", "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS" });
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    next();
+  });
   // MCP over Streamable HTTP (stateless), opaque scoped token auth.
   app.post("/mcp", async (req: Request, res: Response) => {
     try {
       const auth = req.headers.authorization ?? "";
       const raw = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-      const token = raw ? db.prepare("SELECT * FROM mcp_tokens WHERE token_hash=?").get(sha256(raw)) as { id: string; owner_id: string; scopes: string; epoch: number; revoked: number } | undefined : undefined;
+      let token = raw ? db.prepare("SELECT * FROM mcp_tokens WHERE token_hash=?").get(sha256(raw)) as { id: string; owner_id: string; scopes: string; epoch: number; revoked: number } | undefined : undefined;
+      if (!token && raw) {
+        try {
+          const info = await oauth.verifyAccessToken(raw);
+          token = { id: String(info.extra!.grantId), owner_id: String(info.extra!.ownerId), epoch: Number(info.extra!.epoch), scopes: info.scopes.join(","), revoked: 0 };
+        } catch { /* Same controlled 401 for expired/revoked OAuth credentials. */ }
+      }
+      res.set("WWW-Authenticate", `Bearer resource_metadata="${cfg.baseUrl}/.well-known/oauth-protected-resource/mcp", scope="progress:read progress:report"`);
       if (!token || token.revoked) return res.status(401).json({ jsonrpc: "2.0", error: { code: -32001, message: "Unauthenticated: a valid Launchpad MCP token is required. Google tokens are never accepted here." }, id: null });
       const owner = db.prepare("SELECT epoch,reporting_enabled FROM owners WHERE id=?").get(token.owner_id) as { epoch: number; reporting_enabled: number } | undefined;
       if (!owner || owner.epoch !== token.epoch) return res.status(401).json({ jsonrpc: "2.0", error: { code: -32001, message: "Token no longer valid (data deleted or token rotated)." }, id: null });
@@ -367,7 +390,10 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       if (!res.headersSent) res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error. Nothing was saved." }, id: null });
     }
   });
-  app.all("/mcp", (_req, res) => res.status(405).json({ error: "POST only (stateless Streamable HTTP)." }));
+  app.all("/mcp", (req, res) => {
+    if (!req.headers.authorization) return res.set("WWW-Authenticate", `Bearer resource_metadata="${cfg.baseUrl}/.well-known/oauth-protected-resource/mcp"`).status(401).json({ error: "Bearer authorization required." });
+    return res.status(405).json({ error: "POST only (stateless Streamable HTTP)." });
+  });
 
   app.use((_req: Request, res: Response) => res.status(404).send("Not found."));
   app.use((err: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) => {

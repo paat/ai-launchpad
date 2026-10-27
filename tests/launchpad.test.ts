@@ -335,9 +335,9 @@ describe("Google OIDC through mock transport (no external network)", () => {
     };
   });
   afterAll(async () => { globalThis.fetch = nativeFetch; await new Promise<void>(ok => gServer.close(() => ok())); g.db.close(); });
-  async function begin() {
+  async function begin(connectionCookie = "") {
     fault = "";
-    const r = await fetch(`${gBase}/auth/login/google`, { redirect: "manual" });
+    const r = await fetch(`${gBase}/auth/login/google`, { redirect: "manual", headers: { cookie: connectionCookie } });
     expect(r.status).toBe(302);
     const auth = new URL(r.headers.get("location")!);
     expect(auth.searchParams.get("scope")).toBe("openid email");
@@ -373,6 +373,21 @@ describe("Google OIDC through mock transport (no external network)", () => {
     expect(r.headers.get("set-cookie") ?? "").not.toContain("lp_session=");
     expect(await r.text()).toBe("Google sign-in could not be verified.");
     expect((await callback(cb, cookie)).status).toBe(400);
+  });
+  test("MCP authorization resumes after mocked Google identity login with browser-bound continuation", async () => {
+    const registration = await fetch(`${gBase}/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token_endpoint_auth_method: "none", redirect_uris: ["https://assistant.example/callback"] }) });
+    const client = await registration.json();
+    const params = new URLSearchParams({ client_id: client.client_id, redirect_uri: client.redirect_uris[0], response_type: "code", resource: `${gBase}/mcp`, code_challenge_method: "S256", code_challenge: "a".repeat(43), scope: "progress:read" });
+    const start = await fetch(`${gBase}/authorize?${params}`, { redirect: "manual" });
+    const connection = start.headers.getSetCookie()[0].split(";")[0];
+    const { cookie, cb } = await begin(connection);
+    const signed = await callback(cb, `${cookie}; ${connection}`);
+    expect(signed.headers.get("location")).toBe("/oauth/consent");
+    const browserSession = signed.headers.getSetCookie().find(c => c.startsWith("lp_session="))!.split(";")[0];
+    const consent = await fetch(`${gBase}/oauth/consent`, { headers: { cookie: `${browserSession}; ${connection}` }, redirect: "manual" });
+    expect(consent.status).toBe(200); expect(await consent.text()).toContain("https://assistant.example");
+    const missing = await fetch(`${gBase}/oauth/consent`, { headers: { cookie: browserSession }, redirect: "manual" });
+    expect(missing.status).toBe(400);
   });
   test("wrong, missing and duplicate state fail before token exchange; original flow still works", async () => {
     const { cookie, cb } = await begin(); const before = tokenCalls;

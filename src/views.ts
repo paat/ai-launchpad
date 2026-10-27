@@ -22,9 +22,13 @@ button,.btn{display:inline-flex;align-items:center;justify-content:center;min-he
 button.secondary,.btn.secondary{background:#fff;color:#14532d;border:1px solid #14532d}
 button.danger{background:#fff;color:#8f1d1d;border:1px solid #8f1d1d}
 input,select{font:inherit;min-height:48px;padding:10px 12px;border:1px solid #aab3bd;border-radius:10px;width:100%;margin:4px 0 12px;background:#fff}
+textarea{font:inherit;min-height:96px;padding:10px 12px;border:1px solid #aab3bd;border-radius:10px;width:100%;margin:4px 0 12px;background:#fff}
+[hidden]{display:none!important}
 label{font-weight:600;display:block}
 details{border:1px solid #dfe3da;border-radius:12px;padding:12px 14px;margin:10px 0;background:#fff}
-summary{cursor:pointer;font-weight:600;min-height:40px}
+h1{font-size:1.35rem;line-height:1.25;margin:0 0 8px}h2{font-size:1.05rem;margin:18px 0 6px}
+summary{cursor:pointer;font-weight:600;min-height:44px}
+progress{width:100%;height:12px;accent-color:#14532d}
 pre{white-space:pre-wrap;word-break:break-word;background:#f2f4ee;border-radius:10px;padding:12px;font-size:.82rem}
 code{word-break:break-all}.row{padding:12px 0;border-bottom:1px solid #eef0ea}.row:last-child{border-bottom:0}
 .pill{display:inline-block;font-size:.78rem;padding:2px 9px;border-radius:999px;background:#eef2e4;margin:2px 4px 2px 0}
@@ -39,7 +43,7 @@ export function shell(o: ShellOpts): string {
 <header class="top"><span class="brand">AI Launchpad</span><span class="badge" role="status">${esc(o.badge)}</span></header>
 <nav class="main" aria-label="Main">${nav.map(([href, label, key]) => `<a href="${href}"${o.active === key ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>
 <main>${o.body}</main>
-<footer><nav class="guides" aria-label="Guides"><a href="/playbooks">Playbooks</a><a href="/services">Service catalog</a><a href="/setup">Setup helper</a>${o.demo ? `<a href="/demo/approvals">Synthetic approval demo</a>` : ""}</nav>
+<footer><details><summary>Help and resources</summary><nav class="guides" aria-label="Guides"><a href="/playbooks">Playbooks</a><a href="/services">Service catalog</a><a href="/setup">Setup helper</a>${o.demo ? `<a href="/demo/approvals">Synthetic approval demo</a>` : ""}</nav></details>
 <form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(o.csrf)}"><button type="submit" class="secondary">Log out</button></form></footer>
 </div></body></html>`;
 }
@@ -55,7 +59,39 @@ ${opts.demo ? `<section class="card"><h2>Try a synthetic business</h2><p class="
 </div></body></html>`;
 }
 
-export function statusBody(opts: { label: string; demo: boolean; assessment: Assessment | null; coverage: Coverage; assessedAt: string | null; exclusions: Exclusion[]; historyCount: number; reportingEnabled: boolean }): string {
+export interface LatestProgress { task_id: string; milestone: string; observed_at: string; }
+
+const MILESTONE_LABELS: Record<string, string> = {
+  started: "Work started",
+  draft_prepared: "Draft prepared",
+  waiting_for_owner: "Waiting for you",
+  blocked: "Blocked — needs attention",
+  external_completion_reported: "Assistant reports outside work done",
+};
+
+/** Human-readable UTC timestamp, so owners never see a raw ISO string. */
+const fmtWhen = (iso: string | null | undefined): string | null => {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  const d = new Date(t);
+  return `${d.toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "long", year: "numeric" })}, ${d.toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" })} UTC`;
+};
+
+/** Workspace labels and assistant-supplied company labels share a base name;
+ * the main view prints the company once and qualifies the rest in details. */
+const baseName = (s: string) => s.replace(/\s*\(.*\)\s*$/, "").trim().toLowerCase();
+
+/** Observed savings are an assistant-supplied assertion, never a Launchpad
+ * measurement. Unknown stays unknown — never rendered as a main-view claim. */
+function savingsLine(a: Assessment): string {
+  const raw = (a.next_action.estimated_effort_saved ?? "").trim();
+  if (!raw || a.next_action.savings_basis === "unknown" || /unknown|unmeasured/i.test(raw)) return "Savings not measured yet.";
+  const prefix = a.next_action.savings_basis === "observed" ? "Assistant-reported saving" : "Estimated saving";
+  return `${prefix}: ${raw}`;
+}
+
+export function statusBody(opts: { label: string; demo: boolean; assessment: Assessment | null; coverage: Coverage; assessedAt: string | null; exclusions: Exclusion[]; historyCount: number; reportingEnabled: boolean; latestProgress?: LatestProgress | null }): string {
   const { assessment: a, coverage: c } = opts;
   if (!a) {
     return `<section class="card hero" aria-label="Status"><h1>Let's get your first assessment</h1>
@@ -63,8 +99,8 @@ export function statusBody(opts: { label: string; demo: boolean; assessment: Ass
 <p>Nothing has been assessed yet${opts.demo ? "" : " for your workspace"}, and Launchpad does no background monitoring.</p>
 <h2>Your first step</h2>
 <p class="next">Ask your assistant to assess your business responsibilities</p>
-<ol><li>On the <a href="/connection">Connection page</a>, allow progress sharing and issue an assistant token.</li>
-<li>Add the Launchpad MCP endpoint to a header-capable MCP client. <strong>Honest limit:</strong> consumer Claude/ChatGPT connector OAuth is not built yet, so there is no one-tap consumer connection today.</li>
+<ol><li>Open the <a href="/connection">Connection page</a> for the MCP address, then connect from your assistant and review its requested permissions.</li>
+<li>Standard OAuth supports local SDK clients. Claude/ChatGPT remote connection remains unverified until public hosting is tested.</li>
 <li>Ask your assistant: “Assess my responsibilities and tell me the one action that removes the most of my work.”</li></ol>
 <p class="muted">No assistant yet? The temporary <a href="/setup">setup helper</a> gives fixture guidance. Signing in here never proves a company mandate.</p></section>`;
   }
@@ -76,19 +112,46 @@ export function statusBody(opts: { label: string; demo: boolean; assessment: Ass
   const handledRows = a.responsibilities.map((r) => `<div class="row"><strong>${esc(r.label)}</strong>
 <span class="pill">${esc(r.domain)}</span><span class="pill">${r.is_core ? "core work (yours)" : esc(r.applicability)}</span><span class="pill">${isHandled(r) ? "assessed as handled (agent judgment)" : esc(r.arrangement)}</span>
 <p class="small muted">${esc(r.reason)}<br>Evidence refs: ${esc(r.evidence_refs.join(", ") || "none")}${r.executor ? `<br>Executor: ${esc(r.executor)} · Access: ${esc(r.access ?? "")}<br>Success looks like: ${esc(r.success_criterion ?? "")} · Next checkpoint: ${esc(r.next_checkpoint ?? "")}` : ""}</p></div>`).join("");
-  return `<section class="card hero" aria-label="Status"><p><strong>${esc(opts.label)}</strong>${a.company_label ? `<br><span class="small muted">Assistant-supplied company label: ${esc(a.company_label)}${a.company_registry_ref ? ` · registry ref ${esc(a.company_registry_ref)}` : ""} — not verified against a public register, and not a mandate.</span>` : ""}</p>
-<h1>${c.needs_owner ? "One thing needs you" : "Nothing needs you right now"}</h1>
+  const when = fmtWhen(opts.assessedAt);
+  const distinctCompanyLabel = a.company_label && baseName(a.company_label) !== baseName(opts.label);
+  // Short plain prompt for the owner's own assistant, built from the assessed
+  // title + rationale. Rendered escaped into a data attribute (never into
+  // inline JavaScript); the static script below only moves it through the DOM
+  // via getAttribute/value, so hidden copies never disturb text queries.
+  const copyPrompt = `Next step from my AI Launchpad assessment: "${a.next_action.title}". Why this matters: ${a.next_action.rationale} Please help me do this, or tell me what you need from me.`;
+  const lp = opts.latestProgress;
+  const progressLine = lp
+    ? `<h2>Latest accepted report</h2><p><strong>${esc(MILESTONE_LABELS[lp.milestone] ?? lp.milestone)}</strong> · ${esc(lp.task_id)}<br><span class="small muted">${esc(fmtWhen(lp.observed_at) ?? lp.observed_at)} · assistant report, not independently checked</span></p>`
+    : "";
+  return `<section class="card hero" aria-label="Status"><p><strong>${esc(opts.label)}</strong></p>
+<h1>Your next step</h1>
 <p class="next">${esc(c.next_action)}</p>
 <p>${esc(a.next_action.rationale)}</p>
-${a.next_action.estimated_effort_saved ? `<p class="small">${a.next_action.savings_basis === "observed" ? "Observed saving" : "Estimated saving"}: ${esc(a.next_action.estimated_effort_saved)}<br>Uncertainty: ${esc(a.next_action.uncertainty)}</p>` : `<p class="small">Uncertainty: ${esc(a.next_action.uncertainty)}</p>`}
-<p>${esc(c.label)}${c.percent != null ? ` (${c.percent}%)` : ""}<br><span class="small muted">Agent-assessed: ${c.agent_assessed_covered} of ${c.denominator}. Independently verified outcomes: ${c.independently_verified_outcomes} (no verifier exists yet — reported is not verified).</span></p>
-${unknowns.length ? `<h2>Still unknown</h2><ul class="tight">${unknowns.map((u) => `<li>${esc(u)}</li>`).join("")}</ul>` : ""}
-<p class="small muted"><em>Your assistant's assessment</em>${opts.demo ? " (synthetic fixture, reported not verified)" : ""} · ${esc(opts.assessedAt)}<br>${esc(a.conclusion)}</p>
-${a.assumptions?.length ? `<p class="small muted">Assumptions: ${a.assumptions.map(esc).join("; ")}</p>` : ""}
+${a.next_action.needs_owner ? `<p><span class="pill">Needs you</span></p>` : ""}
+<button type="button" id="copy-next" data-prompt="${esc(copyPrompt)}">Copy next step</button>
+<p class="small muted">Paste into your assistant.</p>
+<p class="small" id="copy-next-ok" role="status" hidden>Copied — paste it into your assistant.</p>
+<div id="copy-next-fallback" hidden><p class="small">Copy failed — select the text below and copy it yourself.</p>
+<label class="small" for="copy-next-text">Copy manually<textarea id="copy-next-text" rows="4" readonly></textarea></label></div>
+<script>(function(){var b=document.getElementById("copy-next");if(!b)return;b.addEventListener("click",function(){var t=b.getAttribute("data-prompt")||"";var ok=function(){var m=document.getElementById("copy-next-ok");var f=document.getElementById("copy-next-fallback");if(m)m.hidden=false;if(f)f.hidden=true;};var fail=function(){var m=document.getElementById("copy-next-ok");var f=document.getElementById("copy-next-fallback");var a=document.getElementById("copy-next-text");if(m)m.hidden=true;if(a)a.value=t;if(f)f.hidden=false;};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok,fail);}else{fail();}});})();</script>
 </section>
-<details><summary>Responsibilities &amp; evidence (${a.responsibilities.length})</summary>${handledRows}<p class="small muted">${esc(c.note)}</p></details>
+<section class="card" aria-label="Coverage"><h2>Coverage</h2>
+<p>${esc(c.label)}${c.percent != null ? ` (${c.percent}%)` : ""}</p>
+${c.percent != null ? `<progress value="${c.percent}" max="100" aria-label="${esc(c.label)}">${c.percent}%</progress>` : ""}
+${unknowns.length ? `<h2>Needs attention</h2><ul class="tight">${unknowns.map((u) => `<li>${esc(u)}</li>`).join("")}</ul>` : `<p class="muted">No open questions reported.</p>`}
+${progressLine}
+<p class="small muted">Your assistant's assessment · not independently checked · Independently verified: ${c.independently_verified_outcomes}.</p>
+${when ? `<p class="small muted">Assessed ${esc(when)}</p>` : ""}
+</section>
+<details><summary>Assessment details</summary>
+${distinctCompanyLabel ? `<p class="small muted">Assistant-supplied company label: ${esc(a.company_label!)}${a.company_registry_ref ? ` · registry ref ${esc(a.company_registry_ref)}` : ""} — not verified against a public register, and not a mandate.</p>` : `<p class="small muted">Company labels here are assistant-supplied: not verified against a public register, and not a mandate.</p>`}
+<h2>Conclusion &amp; assumptions</h2><p>${esc(a.conclusion)}</p>${a.assumptions?.length ? `<p class="small muted">Assumptions: ${a.assumptions.map(esc).join("; ")}</p>` : `<p class="small muted">No assumptions recorded.</p>`}
+<h2>About this recommendation</h2><p class="small">${esc(savingsLine(a))}<br>Uncertainty: ${esc(a.next_action.uncertainty)}</p>
+<h2>Responsibilities &amp; evidence (${a.responsibilities.length})</h2>${handledRows}<p class="small muted">${esc(c.note)}</p>
+${when ? `<p class="small muted">Assessed ${esc(when)} · Independently verified outcomes: ${c.independently_verified_outcomes}.</p>` : `<p class="small muted">Independently verified outcomes: ${c.independently_verified_outcomes}.</p>`}
+</details>
 ${opts.exclusions.length ? `<details><summary>Removed since earlier assessments (${opts.exclusions.length})</summary>${opts.exclusions.map((x) => `<div class="row"><strong>${esc(x.label)}</strong> <span class="small muted">last seen in assessment v${x.last_seen_version} · was ${esc(x.last_applicability)} / ${esc(x.last_arrangement)}. It stays listed here so unfinished work never disappears silently.</span></div>`).join("")}</details>` : ""}
-<p class="small muted">Assessment revisions so far: ${opts.historyCount}. Detail is on the Activity page.</p>`;
+<p class="small muted">Assessment revisions so far: ${opts.historyCount}. <a href="/activity">Activity &amp; evidence</a> has the full history.</p>`;
 }
 
 export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[] }): string {
@@ -99,7 +162,7 @@ ${opts.receipts.map((r) => `<details><summary>${esc(r.kind)} ${esc(r.report_id)}
 ${opts.exclusions.length ? `<h2>Exclusions from earlier revisions</h2>${opts.exclusions.map((x) => `<div class="row"><strong>${esc(x.label)}</strong> <span class="small muted">last seen v${x.last_seen_version} · ${esc(x.last_applicability)} / ${esc(x.last_arrangement)}</span></div>`).join("")}` : ""}`;
 }
 
-export function connectionBody(opts: { csrf: string; baseUrl: string; reportingEnabled: boolean; tokens: Record<string, unknown>[]; candidates: Record<string, string>[] }): string {
+export function connectionBody(opts: { csrf: string; baseUrl: string; reportingEnabled: boolean; tokens: Record<string, unknown>[]; grants: Record<string, string>[]; candidates: Record<string, string>[] }): string {
   const csrf = esc(opts.csrf);
   const example = JSON.stringify({ report_id: "oct-assessment", expected_version: 3, assessment: { assessed_domains: ["money", "customers"], responsibilities: [{ id: "invoicing", domain: "money", label: "Sales invoicing", applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: "…", access: "…", success_criterion: "…", next_checkpoint: "…", reason: "short reason", evidence_refs: ["provider-object:123"] }], gaps: [], conclusion: "short conclusion", next_action: { title: "…", rationale: "…", uncertainty: "…", needs_owner: true } } }, null, 1);
   return `<h1>Connection &amp; data</h1>
@@ -110,8 +173,11 @@ export function connectionBody(opts: { csrf: string; baseUrl: string; reportingE
 <form method="post" action="/reporting"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="enabled" value="${opts.reportingEnabled ? "0" : "1"}"><button type="submit">${opts.reportingEnabled ? "Stop progress sharing" : "Allow progress sharing"}</button></form>
 <p class="small muted">Stopping does not stop a provider's own scheduled jobs, and disconnecting Launchpad does not revoke direct assistant/provider connections.</p></section>
 <section class="card"><h2>Connect your assistant</h2>
-<p>MCP endpoint: <code>${esc(opts.baseUrl)}/mcp</code><br>Authentication: a scoped Launchpad token (below) as a Bearer [REDACTED]</p>
-<p class="small muted"><strong>Limitation, honestly:</strong> consumer assistants (Claude/ChatGPT apps) usually expect OAuth connector flows, not pasted Bearer [REDACTED] That client OAuth is <strong>not built</strong>, so this is not one-tap ready and we won't pretend otherwise. The token works with MCP clients that support custom headers, as our tests use. A Google access token is never accepted here.</p>
+<p>MCP endpoint: <code>${esc(opts.baseUrl)}/mcp</code>. Add this address in your assistant, sign in to Launchpad, and review the connection permission.</p>
+<p class="small muted">Standard OAuth with PKCE. Local SDK validated; Claude/ChatGPT remote connection not verified. Public hosting is still required for remote consumers. Google tokens are never accepted as MCP credentials.</p>
+<h3>Connected assistants</h3>
+${opts.grants.map(g => `<div class="row"><strong>${esc(JSON.parse(g.metadata).client_name)}</strong><p>Return address: ${esc(new URL(g.redirect).origin)}<br>Permissions: ${esc(g.scopes)} · ${g.revoked ? "disconnected" : Number(g.expires) <= Date.now() ? "expired" : "connected"}</p>${g.revoked || Number(g.expires) <= Date.now() ? "" : `<form method="post" action="/oauth/disconnect"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="grant_id" value="${esc(g.id)}"><button class="secondary">Disconnect assistant</button></form>`}</div>`).join("") || "<p>No assistant connections yet.</p>"}
+<h3>Advanced: manual token</h3><p>For development clients that send a custom authorization header. Tokens are shown once at issue time and never on this page.</p>
 <form method="post" action="/tokens"><input type="hidden" name="csrf" value="${csrf}"><button type="submit">Issue assistant token (read + report)</button></form>
 ${opts.tokens.map((t) => `<div class="row"><code>${esc(t.id)}</code><br><span class="small muted">Scopes: ${esc(t.scopes)} · ${t.revoked ? "revoked" : "active"} · created ${esc(t.created_at)}${t.last_used_at ? ` · last used ${esc(t.last_used_at)}` : ""}</span>${t.revoked ? "" : `<form method="post" action="/tokens/revoke"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="token_id" value="${esc(t.id)}"><button type="submit" class="secondary">Revoke this token</button></form>`}</div>`).join("") || "<p class=\"muted\">No tokens yet.</p>"}
 </section>
