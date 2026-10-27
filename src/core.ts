@@ -9,7 +9,7 @@ export const responsibilitySchema = z.object({
   applicability: z.enum(["applicable", "not_applicable", "unresolved"]),
   is_core: z.boolean(),
   arrangement: z.enum(["assistant_assessed", "proposed", "none"]),
-  reason: s(400), evidence_refs: evidenceRefs,
+  reason: s(400).refine((v) => v.trim().length > 0, "A substantive reason is required."), evidence_refs: evidenceRefs,
   // Required in practice to count as "handled" (see isHandled). Optional in the
   // schema so partial drafts can be saved, but a claim without these never counts.
   executor: s(200).optional(),
@@ -92,4 +92,18 @@ export function computeCoverage(a: Assessment | null): Coverage {
     needs_owner: a.next_action.needs_owner || Uall.length > 0 || a.gaps.length > 0 || !assessedAll || denom === 0,
     next_action: a.next_action.title, note: NOTE,
   };
+}
+
+/** Revisions keep their inventory. Scope changes are agent judgments with a
+ * new explanation; omission is never a shortcut to a higher coverage score. */
+export function assessmentRevisionError(prior: Assessment | null, next: Assessment): string | null {
+  const rows = new Map(next.responsibilities.map((r) => [r.id, r]));
+  for (const before of prior?.responsibilities ?? []) {
+    const after = rows.get(before.id);
+    if (!after) return `Responsibility '${before.id}' is omitted. Retain the row; if it no longer applies, explicitly classify it not_applicable with a reason. Nothing was saved.`;
+    if ((before.applicability !== after.applicability || before.is_core !== after.is_core) && before.reason.trim() === after.reason.trim()) {
+      return `Responsibility '${before.id}' changes scope without a new reason. Explain the reclassification. Nothing was saved.`;
+    }
+  }
+  return null;
 }

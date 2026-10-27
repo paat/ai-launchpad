@@ -189,16 +189,16 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     const c = await mcpClient(raw);
     const before = parse(await c.callTool({ name: "get_progress", arguments: {} }));
     const v = before.version as number;
-    expect(((await c.callTool({ name: "report_progress", arguments: { report_id: "off1", task_id: "t", expected_version: v, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBe(true);
+    expect(((await c.callTool({ name: "report_progress", arguments: { report_id: "off1", task_id: "supplier-orders", expected_version: v, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBe(true);
     await grantSharing(cookie);
     const granted = await mcpClient(await issueToken(cookie));
-    expect(((await granted.callTool({ name: "report_progress", arguments: { report_id: "on1", task_id: "t", expected_version: v, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBeUndefined();
+    expect(((await granted.callTool({ name: "report_progress", arguments: { report_id: "on1", task_id: "supplier-orders", expected_version: v, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBeUndefined();
     await fetch(`${base}/reporting`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: `csrf=${await csrf(cookie)}&enabled=0` });
     const stopped = await mcpClient(await issueToken(cookie));
     const sv = (parse(await stopped.callTool({ name: "get_progress", arguments: {} })).version) as number;
     const writes = [
       await stopped.callTool({ name: "report_assessment", arguments: { report_id: "off2", expected_version: sv, assessment: fullAssessment } }),
-      await stopped.callTool({ name: "report_progress", arguments: { report_id: "off3", task_id: "t", expected_version: sv, observed_at: new Date().toISOString(), milestone: "started" } }),
+      await stopped.callTool({ name: "report_progress", arguments: { report_id: "off3", task_id: "supplier-orders", expected_version: sv, observed_at: new Date().toISOString(), milestone: "started" } }),
       await stopped.callTool({ name: "submit_service_candidate", arguments: { name: "Stopped Service", connection: "https://example.invalid/mcp", jobs: "job" } }),
     ] as { isError?: boolean }[];
     expect(writes.map((w) => !!w.isError)).toEqual([true, true, true]);
@@ -219,7 +219,8 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     expect(a0.assessment).not.toBeNull(); expect(b0.assessment).not.toBeNull();
     expect(a0.coverage.next_action).not.toBe(b0.coverage.next_action);
     expect(b0.workspace.label).toContain("Bakery");
-    const args = { report_id: "r1", expected_version: a0.version, assessment: fullAssessment };
+    const revised = { ...fullAssessment, responsibilities: [...fullAssessment.responsibilities, ...DEMO_FIXTURES.alpha.responsibilities.filter(r => !fullAssessment.responsibilities.some(x => x.id === r.id)).map(r => ({ ...r, applicability: "not_applicable", reason: "Synthetic revised scope: this business has no VAT registration or employees." }))] };
+    const args = { report_id: "r1", expected_version: a0.version, assessment: revised };
     const r1 = parse(await cA.callTool({ name: "report_assessment", arguments: args }));
     expect(r1.kind).toBe("assessment_saved");
     expect(r1.coverage.agent_assessed_covered).toBe(1);
@@ -227,22 +228,25 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     expect(r1.diff).toBeDefined();
     expect(parse(await cA.callTool({ name: "report_assessment", arguments: args })).receipt_id).toBe(r1.receipt_id);
     expect(((await cA.callTool({ name: "report_assessment", arguments: { ...args, assessment: { ...fullAssessment, conclusion: "changed" } } })) as { isError?: boolean }).isError).toBe(true);
-    expect(((await cA.callTool({ name: "report_progress", arguments: { report_id: "p0", task_id: "t", expected_version: 999, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBe(true);
+    expect(((await cA.callTool({ name: "report_progress", arguments: { report_id: "p0", task_id: "invoicing", expected_version: 999, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBe(true);
     const observed = "2026-01-03T04:05:06.000Z";
-    const prog = parse(await cA.callTool({ name: "report_progress", arguments: { report_id: "p1", task_id: "invoice-oct", expected_version: r1.version, observed_at: observed, milestone: "external_completion_reported", evidence_refs: ["synthetic-object:unique-xyz"] } }));
+    const prog = parse(await cA.callTool({ name: "report_progress", arguments: { report_id: "p1", task_id: "invoicing", expected_version: r1.version, observed_at: observed, milestone: "external_completion_reported", evidence_refs: ["synthetic-object:unique-xyz"] } }));
     expect(prog.evidence_label).toBe("assistant_reported");
     expect(prog.observed_at).toBe(observed);
     expect(prog.evidence_refs).toEqual(["synthetic-object:unique-xyz"]);
     // Unexpected top-level claims are rejected, not silently dropped.
-    const forged = await cA.callTool({ name: "report_progress", arguments: { report_id: "forged", task_id: "t", expected_version: prog.version, observed_at: new Date().toISOString(), milestone: "started", verified: true, paid: true, owner_approved: true } }) as { isError?: boolean };
+    const forged = await cA.callTool({ name: "report_progress", arguments: { report_id: "forged", task_id: "invoicing", expected_version: prog.version, observed_at: new Date().toISOString(), milestone: "started", verified: true, paid: true, owner_approved: true } }) as { isError?: boolean };
     expect(forged.isError).toBe(true);
-    // Dropping an obligation in the next revision leaves a visible exclusion + diff.
+    // Omission rejects the whole revision; a reasoned reclassification is visible.
     const cur = parse(await cA.callTool({ name: "get_progress", arguments: {} }));
-    const trimmed = { ...fullAssessment, responsibilities: [fullAssessment.responsibilities[1]] };
-    const r2 = parse(await cA.callTool({ name: "report_assessment", arguments: { report_id: "r2", expected_version: cur.version, assessment: trimmed } }));
-    expect(r2.diff.removed.map((x: { id: string }) => x.id)).toContain("invoicing");
+    const trimmed = { ...revised, responsibilities: revised.responsibilities.filter(r => r.id !== "invoicing") };
+    expect((await cA.callTool({ name: "report_assessment", arguments: { report_id: "omitted", expected_version: cur.version, assessment: trimmed } })).isError).toBe(true);
+    const reclassified = { ...revised, responsibilities: revised.responsibilities.map(r => r.id === "invoicing" ? { ...r, applicability: "not_applicable", reason: "Synthetic business stopped selling services and has no invoices to issue." } : r) };
+    const r2 = parse(await cA.callTool({ name: "report_assessment", arguments: { report_id: "r2", expected_version: cur.version, assessment: reclassified } }));
+    expect(r2.diff.scope_changes[0].before.applicability).toBe("applicable");
+    expect(r2.diff.scope_changes[0].after.reason).toContain("stopped selling");
     const after = parse(await cA.callTool({ name: "get_progress", arguments: {} }));
-    expect(after.exclusions.map((x: { id: string }) => x.id)).toContain("invoicing");
+    expect(after.assessment.responsibilities.find((r: { id: string }) => r.id === "invoicing").applicability).toBe("not_applicable");
     const search = parse(await cA.callTool({ name: "search_services", arguments: { query: "accounting", limit: 3 } }));
     expect(search.catalog_size).toBe(178);
     expect(search.results.some((x: { sources: string[] }) => x.sources.length > 0)).toBe(true);

@@ -43,13 +43,13 @@ export const PLAYBOOKS = [
 ];
 export const DOMAINS = ["money", "customers", "people", "legal_sector", "operations"] as const;
 export const FRAMEWORK = {
-  version: "assessment-framework/2",
+  version: "assessment-framework/3",
   domains: DOMAINS,
   questions: [
     "What responsibilities matter here (applicable / not applicable / unresolved, core or non-core, with short reason and evidence references)? Use each responsibility id once; missing domains stay visibly unassessed.",
     "Who handles each one? To claim arrangement 'assistant_assessed' (agent judgment: handled), name the actual arrangement via executor, their access/connection, the success criterion and the next checkpoint. Without all four it does not count as handled. It is still not independent verification.",
     "Where is the leverage: which single next action removes the most owner work, and why first (R-001)?",
-    "What remains uncertain, unsupported, or owner-only? Never silently drop unfinished work: omissions between revisions are shown to the owner as exclusions.",
+    "What remains uncertain, unsupported, or owner-only? Never silently drop unfinished work: retain every previously mapped row; omissions are rejected. Explicitly mark a responsibility not_applicable with a new reason when it no longer applies. Explain every change of applicability or core status. report_progress task_id must match a mapped responsibility in this workspace.",
     "Final assessment (yours, as the agent): short conclusion, scope, assumptions, gaps, estimated effort saved with honest uncertainty (mark whether it is an estimate or observed; leave it out rather than invent hours).",
   ],
   evidence_labels: ["assistant_reported", "owner_confirmed", "source_confirmed", "launchpad_produced"],

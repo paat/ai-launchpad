@@ -43,7 +43,7 @@ test("report bounds reject new writes but preserve exact replays and owner versi
     await post("/reporting", { enabled: "1" });
     const token = /<pre>(lp_[^<]+)<\/pre>/.exec(await (await post("/tokens", {})).text())![1];
     await client.connect(new StreamableHTTPClientTransport(new URL(`${cfg.baseUrl}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } }));
-    const args = { report_id: "first", task_id: "invoice", expected_version: 1, observed_at: new Date().toISOString(), milestone: "started" };
+    const args = { report_id: "first", task_id: "invoicing", expected_version: 1, observed_at: new Date().toISOString(), milestone: "started" };
     const first = await client.callTool({ name: "report_progress", arguments: args });
     expect(first.isError).not.toBe(true);
     for (let i = 1; i < 60; i++) expect((await client.callTool({ name: "report_progress", arguments: { ...args, report_id: `report-${i}`, expected_version: i + 1 } })).isError).not.toBe(true);

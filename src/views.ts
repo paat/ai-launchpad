@@ -78,10 +78,6 @@ const fmtWhen = (iso: string | null | undefined): string | null => {
   return `${d.toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "long", year: "numeric" })}, ${d.toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" })} UTC`;
 };
 
-/** Workspace labels and assistant-supplied company labels share a base name;
- * the main view prints the company once and qualifies the rest in details. */
-const baseName = (s: string) => s.replace(/\s*\(.*\)\s*$/, "").trim().toLowerCase();
-
 /** Observed savings are an assistant-supplied assertion, never a Launchpad
  * measurement. Unknown stays unknown — never rendered as a main-view claim. */
 function savingsLine(a: Assessment): string {
@@ -113,7 +109,6 @@ export function statusBody(opts: { label: string; demo: boolean; assessment: Ass
 <span class="pill">${esc(r.domain)}</span><span class="pill">${r.is_core ? "core work (yours)" : esc(r.applicability)}</span><span class="pill">${isHandled(r) ? "assessed as handled (agent judgment)" : esc(r.arrangement)}</span>
 <p class="small muted">${esc(r.reason)}<br>Evidence refs: ${esc(r.evidence_refs.join(", ") || "none")}${r.executor ? `<br>Executor: ${esc(r.executor)} · Access: ${esc(r.access ?? "")}<br>Success looks like: ${esc(r.success_criterion ?? "")} · Next checkpoint: ${esc(r.next_checkpoint ?? "")}` : ""}</p></div>`).join("");
   const when = fmtWhen(opts.assessedAt);
-  const distinctCompanyLabel = a.company_label && baseName(a.company_label) !== baseName(opts.label);
   // Short plain prompt for the owner's own assistant, built from the assessed
   // title + rationale. Rendered escaped into a data attribute (never into
   // inline JavaScript); the static script below only moves it through the DOM
@@ -123,7 +118,7 @@ export function statusBody(opts: { label: string; demo: boolean; assessment: Ass
   const progressLine = lp
     ? `<h2>Latest accepted report</h2><p><strong>${esc(MILESTONE_LABELS[lp.milestone] ?? lp.milestone)}</strong> · ${esc(lp.task_id)}<br><span class="small muted">${esc(fmtWhen(lp.observed_at) ?? lp.observed_at)} · assistant report, not independently checked</span></p>`
     : "";
-  return `<section class="card hero" aria-label="Status"><p><strong>${esc(opts.label)}</strong></p>
+  return `<section class="card hero" aria-label="Status"><p><strong>${esc(a.company_label ?? opts.label)}</strong></p>
 <h1>Your next step</h1>
 <p class="next">${esc(c.next_action)}</p>
 <p>${esc(a.next_action.rationale)}</p>
@@ -144,7 +139,7 @@ ${progressLine}
 ${when ? `<p class="small muted">Assessed ${esc(when)}</p>` : ""}
 </section>
 <details><summary>Assessment details</summary>
-${distinctCompanyLabel ? `<p class="small muted">Assistant-supplied company label: ${esc(a.company_label!)}${a.company_registry_ref ? ` · registry ref ${esc(a.company_registry_ref)}` : ""} — not verified against a public register, and not a mandate.</p>` : `<p class="small muted">Company labels here are assistant-supplied: not verified against a public register, and not a mandate.</p>`}
+<p class="small muted">${a.company_label ? "Company label supplied by your assistant" : "Workspace label"}${a.company_registry_ref ? ` · registry ref ${esc(a.company_registry_ref)}` : ""} — not verified against a public register, and not a mandate.</p>
 <h2>Conclusion &amp; assumptions</h2><p>${esc(a.conclusion)}</p>${a.assumptions?.length ? `<p class="small muted">Assumptions: ${a.assumptions.map(esc).join("; ")}</p>` : `<p class="small muted">No assumptions recorded.</p>`}
 <h2>About this recommendation</h2><p class="small">${esc(savingsLine(a))}<br>Uncertainty: ${esc(a.next_action.uncertainty)}</p>
 <h2>Responsibilities &amp; evidence (${a.responsibilities.length})</h2>${handledRows}<p class="small muted">${esc(c.note)}</p>

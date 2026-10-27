@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Db } from "./db.js";
 import { newId, nowIso, sha256 } from "./db.js";
 import { FRAMEWORK, PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
-import { assessmentSchema, computeCoverage, evidenceRefs, s, type Assessment } from "./core.js";
+import { assessmentSchema, assessmentRevisionError, computeCoverage, evidenceRefs, s, type Assessment } from "./core.js";
 
 export interface Ctx { ownerId: string; scopes: string[]; companyRef: string; label: string; reportingEnabled: boolean; }
 const json = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }], structuredContent: data as Record<string, unknown> });
@@ -38,6 +38,7 @@ export function diffAssessments(prior: Assessment | null, next: Assessment) {
   return {
     added: [...n.keys()].filter((id) => !p.has(id)),
     removed: [...p.entries()].filter(([id]) => !n.has(id)).map(([id, r]) => ({ id, label: r.label, applicability: r.applicability, arrangement: r.arrangement })),
+    scope_changes: [...n.entries()].filter(([id, r]) => p.has(id) && (p.get(id)!.applicability !== r.applicability || p.get(id)!.is_core !== r.is_core)).map(([id, after]) => ({ id, before: p.get(id)!, after })),
     changed: [...n.entries()].filter(([id, r]) => p.has(id) && JSON.stringify(p.get(id)) !== JSON.stringify(r)).map(([id]) => id),
   };
 }
@@ -78,7 +79,7 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
     return json({ framework: FRAMEWORK, workspace: { company_ref: ctx.companyRef, label: ctx.label, agent_supplied_company_label: st.assessment?.company_label ?? null, agent_supplied_company_registry_ref: st.assessment?.company_registry_ref ?? null, company_label_note: "Agent-supplied labels are never a public-register verification or a mandate." }, version: st.ws.version, assessment_version: st.assessment_version, assessed_at: st.assessed_at, assessment: st.assessment, coverage: st.coverage, exclusions: st.exclusions, history: st.history, recent_progress: st.progress, freshness: st.assessed_at ? `Last assessment ${st.assessed_at}` : "No assessment yet. No background monitoring." });
   });
 
-  server.registerTool("report_assessment", { description: "Save a versioned business assessment — the agent's final judgment, not a verified outcome. No owner ratification is required. Idempotent by report_id; expected_version guards staleness. The receipt includes the revision diff; dropped responsibilities remain visible as exclusions.", inputSchema: { report_id: s(80), expected_version: z.number().int().min(0).max(1_000_000), assessment: assessmentSchema } }, async (args) => {
+  server.registerTool("report_assessment", { description: "Save a versioned business assessment — the agent's final judgment, not a verified outcome. No owner ratification is required. Idempotent by report_id; expected_version guards staleness. Retain all previously mapped responsibility rows; omissions are rejected. To change scope, explicitly reclassify with a new reason. The receipt records scope changes and reasons.", inputSchema: { report_id: s(80), expected_version: z.number().int().min(0).max(1_000_000), assessment: assessmentSchema } }, async (args) => {
     if (!need("progress:report")) return err("Missing scope progress:report.");
     if (!ctx.reportingEnabled) return err("Progress sharing is stopped by the owner (it is off by default). Nothing was saved.");
     const prior = idempotent(db, ctx.ownerId, "assessment", args.report_id, args);
@@ -88,6 +89,8 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
     if (capacityError) return err(capacityError);
     const st = getState(db, ctx.ownerId);
     if (args.expected_version !== st.ws.version) return err(`Stale version: expected_version ${args.expected_version} does not match current ${st.ws.version}. Re-read get_progress first.`);
+    const revisionError = assessmentRevisionError(st.assessment, args.assessment);
+    if (revisionError) return err(revisionError);
     const newVersion = st.ws.version + 1;
     const receipt = { receipt_id: newId("rcpt"), kind: "assessment_saved", version: newVersion, saved_at: nowIso(), meaning: "Launchpad saved this assistant assessment (agent judgment). It did not verify external outcomes; independently verified outcomes are counted separately and remain 0 until a verifier exists.", coverage: computeCoverage(args.assessment), diff: diffAssessments(st.assessment, args.assessment) };
     db.transaction(() => {
@@ -99,7 +102,7 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
     return json(receipt);
   });
 
-  server.registerTool("report_progress", { description: "Record a narrow milestone claim against a task. This never marks an external outcome verified, accepted or paid. Unexpected fields are rejected.", inputSchema: { report_id: s(80), task_id: s(80), expected_version: z.number().int().min(0).max(1_000_000), observed_at: s(40), milestone: z.enum(["started", "draft_prepared", "waiting_for_owner", "blocked", "external_completion_reported"]), evidence_refs: evidenceRefs.optional() } }, async (args) => {
+  server.registerTool("report_progress", { description: "Record a narrow milestone claim against an existing responsibility id in this owner workspace. Unknown or foreign task ids are rejected. This never marks an external outcome verified, accepted or paid. Unexpected fields are rejected.", inputSchema: { report_id: s(80), task_id: s(80), expected_version: z.number().int().min(0).max(1_000_000), observed_at: s(40), milestone: z.enum(["started", "draft_prepared", "waiting_for_owner", "blocked", "external_completion_reported"]), evidence_refs: evidenceRefs.optional() } }, async (args) => {
     if (!need("progress:report")) return err("Missing scope progress:report.");
     if (!ctx.reportingEnabled) return err("Progress sharing is stopped by the owner (it is off by default). Nothing was saved.");
     if (Number.isNaN(Date.parse(args.observed_at)) || Date.parse(args.observed_at) > Date.now() + 5 * 60_000) return err("observed_at is not a plausible timestamp.");
@@ -110,6 +113,7 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
     if (capacityError) return err(capacityError);
     const st = getState(db, ctx.ownerId);
     if (args.expected_version !== st.ws.version) return err(`Stale version: expected ${args.expected_version}, current ${st.ws.version}.`);
+    if (!st.assessment?.responsibilities.some((r) => r.id === args.task_id)) return err("Unknown task_id in this workspace. Report an assessment mapping this responsibility first. Nothing was saved.");
     const newVersion = st.ws.version + 1;
     const receipt = { receipt_id: newId("rcpt"), kind: "progress_saved", task_id: args.task_id, milestone: args.milestone, observed_at: args.observed_at, evidence_refs: args.evidence_refs ?? [], evidence_label: "assistant_reported", business_outcome: "unchecked — progress is distinct from an actual business outcome (submitted/accepted/paid are never set by reports)", version: newVersion, saved_at: nowIso() };
     db.transaction(() => {
