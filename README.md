@@ -4,7 +4,7 @@ Put your AI assistant to work for your business / Pane oma AI-assistent ettevõt
 
 Turn the AI assistant an Estonian small-business owner already has — or is about to get — into their business assistant.
 
-> **Status (27 Oct 2026):** research and product brief only. Pre-event research dated 25–26 Oct 2026 exists (see [docs/research/](docs/research/README.md)); event-window research notes (H, I) are dated 27 Oct 2026. **No product code, no Meta model runtime integration, no live product, and no demo exist yet.** Product code will be written only during the event (starting 27 Oct 2026) in the public repository `paat/ai-launchpad`. See [docs/hackathon.md](docs/hackathon.md).
+> **Status (27 Oct 2026):** a **local end-to-end demo** now exists (event-window code): a Node/TypeScript companion web app + MCP gateway on `http://localhost:3000`, SQLite state, synthetic demo companies, and integration tests. It is **not deployed, not production-ready, and calls no live model** (deterministic mock provider; Baseten/Meta adapter code exists but is off and untested live). Consumer-assistant OAuth connector auth is **not built** — the demo uses scoped bearer tokens, which Claude/ChatGPT consumer apps may not accept. Run and limits: [docs/local-demo.md](docs/local-demo.md). Research: [docs/research/](docs/research/README.md). See [docs/hackathon.md](docs/hackathon.md).
 
 ## The problem
 
@@ -29,10 +29,10 @@ First persona: a one-person Estonian service OÜ, books in e-arveldaja or Merit.
 2. **No forms.** What public registers or the assistant's own context already know is never asked. The owner answers only what nobody else can.
 3. **Nothing is filed, paid, signed or sent without an approval** bound to the exact recipient, amount, period and document. Every action leaves a receipt.
 4. **Rules compute, models read.** Deadlines, tax amounts and obligations come from deterministic rules code with official sources; models read documents, plan steps and draft text.
-5. **Store almost nothing.** The registry code and the derived obligations; everything else is re-derivable from public data.
+5. **Store minimal private operational state.** Identity/workspace references, bounded assessments and task reports, grants, receipts and activity support the companion. These are not re-derivable from public registers. Do not request conversations or source documents; let owners inspect, export and delete their progress. [Current limits](docs/local-demo.md#identity-storage-and-limits).
 6. **Reuse before building.** Existing MCP servers (accounting, bank, credit data, the assistant's built-in e-mail and calendar) are curated, not rebuilt. New adapters are built where demand shows.
 
-## How it works
+## Planned product flow (beyond the local demo)
 
 ### Path A — the owner already has an assistant
 
@@ -57,7 +57,7 @@ First persona: a one-person Estonian service OÜ, books in e-arveldaja or Merit.
 |---|---|
 | Company profile & obligations calendar | Rules engine + Ärikratt public data |
 | Job playbooks (~10 to start) | For each job: steps, tools, approval points, official source |
-| Catalogue | Vetted MCP servers per job; how to connect each |
+| Catalogue | Researched MCP services per job; how to connect each; runtime verification remains future work |
 | Permissions | Per-authority inventory (EMTA, Business Register, …) with expiry and revocation — filing rights are separate per authority |
 | Approvals & receipts | Server-enforced approval bound to the exact action; submitted / accepted / rejected / paid states |
 | Portal prefill | Where no API exists, a browser agent fills the government portal and stops before Submit |
@@ -83,15 +83,17 @@ Not: a chatbot competing with the owner's assistant. Estonian-language quality o
 
 Meta's own consumer agent app (Muse) is available only in the US and Canada as of 26 Oct 2026 and documents no custom MCP setting; see [docs/research/G-muse-app-for-estonian-smes.md](docs/research/G-muse-app-for-estonian-smes.md). AI Launchpad stays MCP-first and can add a plain API if Muse arrives in the EU.
 
-## Hackathon scope
+## Hackathon scope and target demo
 
-- **In:** Path A and Path B for the first persona; `get_started`, obligations calendar and 3–4 playbooks; approval cards; the friction loop made visible; the setup helper.
-- **Demo story:** an owner who has never used AI goes from a Google search to a working business assistant on their phone in about five minutes, the assistant does a real job with an approval card, and a request it can't serve appears as open demand.
+- **Scope:** the free micro-entrepreneur service only. [Enterprise measurement](docs/design/future-enterprise-measurement.md) is future design; billing and enterprise features are excluded.
+- **Target, not current completion:** Path A and Path B for the first persona; `get_started`, obligations calendar and 3–4 playbooks; approval cards; the friction loop made visible; the setup helper.
+- **Target demo story (not yet achieved):** an owner who has never used AI goes from a Google search to a working business assistant on their phone in about five minutes, the assistant does a real job with an approval card, and a request it can't serve appears as open demand.
 - **Out:** payments, unattended filing or signing, payroll submission, a marketplace UI beyond the demand list, FIE/e-resident/employer variants.
 
 ## Accepted product requirements
 
-- [R-001: recommend the action that removes the most owner work](docs/requirements/R-001-next-best-action.md). The owner’s agent makes the assessment using Launchpad’s framework, with evidence, assumptions and one clear next action.
+- [R-001: recommend the action that removes the most owner work](docs/requirements/R-001-next-best-action.md) ([issue #1](https://github.com/paat/ai-launchpad/issues/1)). The owner’s agent makes the final assessment using Launchpad’s framework, with evidence, assumptions and one clear next action. Agent-assessed coverage is separate from source-verified outcomes (currently zero); no manual ratification is required.
+- [R-002: identity-only sign-in and bounded runtime model use](docs/requirements/R-002-identity-and-runtime-cost.md) ([issue #3](https://github.com/paat/ai-launchpad/issues/3)). Google is identity only; live inference is hard-disabled until provider spending controls are verified.
 
 ## Validation
 
@@ -107,4 +109,4 @@ Test with 3–5 real owners of the first persona during the build week (with con
 
 ## Relationship to Ärikratt
 
-This is a separate project. It calls the public [Ärikratt MCP](https://arikratt.ee/mcp) (Estonian public-register data) as an external dependency, like any other API.
+This is a separate project. The planned integration calls the public [Ärikratt MCP](https://arikratt.ee/mcp) (Estonian public-register data) as an external dependency, like any other API.

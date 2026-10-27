@@ -1,6 +1,7 @@
 # R-001 — Recommend the action that removes the most owner work
 
-Status: accepted product requirement, 27 October 2026. Implementation pending.
+Tracking: [issue #1](https://github.com/paat/ai-launchpad/issues/1).
+Status: accepted product requirement, 27 October 2026. Local assessment/next-action slice implemented; live integrations and owner validation remain pending.
 
 ## Requirement
 
