@@ -1,0 +1,25 @@
+# Private agent handoffs — never commit
+HANDOFF.md
+*handoff*.md
+*handoff*.local.md
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Credentials and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# Local recordings and development artifacts
+*.mp4
+*.mov
+*.log
+tmp/
+scratch/
+.DS_Store
