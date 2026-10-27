@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 
 const SHOTS = process.env.SHOT_DIR ?? "test-results/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -118,32 +120,61 @@ test("Copy next step copies the prompt, with a manual fallback on failure", asyn
 
 test("OAuth consent approve and reject through real browser form POSTs", async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  // Local SDK-style public client; the synthetic loopback callback is
-  // intercepted in the browser so no external request ever happens.
-  const reg = await request.post("/register", { data: { redirect_uris: ["http://127.0.0.1:45678/callback"], client_name: "Browser consent test", token_endpoint_auth_method: "none" } });
-  expect(reg.ok()).toBeTruthy();
-  const client = await reg.json();
-  const authUrl = (state: string) => "/authorize?" + new URLSearchParams({ response_type: "code", client_id: client.client_id, redirect_uri: client.redirect_uris[0], resource: "http://127.0.0.1:3210/mcp", code_challenge: "a".repeat(43), code_challenge_method: "S256", state, scope: "progress:read" });
-  await page.route("http://127.0.0.1:45678/callback**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "text/html", body: `<html><body><p>synthetic callback received</p><p>${route.request().url()}</p></body></html>` });
+  // Local SDK-style public client; the synthetic loopback callback is served
+  // by a genuine temporary node:http server on 127.0.0.1, so the consent
+  // 302 redirect performs real loopback transport and no external request
+  // ever happens. (A page.route interception for the redirect target is
+  // unreliable: the handler only fires for the first URL when the response
+  // is a redirect, and bundled Chromium never renders the fulfilled body.)
+  const seen: string[] = [];
+  const callback: Server = createServer((req, res) => {
+    const url = req.url ?? "/";
+    // Ignore non-callback hits (e.g. /favicon.ico); record only the
+    // consent redirects this test asserts on.
+    if (!url.startsWith("/callback")) {
+      res.writeHead(204).end();
+      return;
+    }
+    seen.push(url);
+    res.writeHead(200, { "content-type": "text/html" }).end("<html><body><p>synthetic callback received</p></body></html>");
   });
+  await new Promise<void>((resolve) => callback.listen(0, "127.0.0.1", resolve));
+  const redirectUri = `http://127.0.0.1:${(callback.address() as AddressInfo).port}/callback`;
+  try {
+    const reg = await request.post("/register", { data: { redirect_uris: [redirectUri], client_name: "Browser consent test", token_endpoint_auth_method: "none" } });
+    expect(reg.ok()).toBeTruthy();
+    const client = await reg.json();
+    const authUrl = (state: string) => "/authorize?" + new URLSearchParams({ response_type: "code", client_id: client.client_id, redirect_uri: client.redirect_uris[0], resource: "http://127.0.0.1:3210/mcp", code_challenge: "a".repeat(43), code_challenge_method: "S256", state, scope: "progress:read" });
 
-  // Start from /authorize, then sign in through the real demo form.
-  await page.goto(authUrl("browser-state-approve"));
-  await page.getByRole("button", { name: /Demo Plumbing/ }).click();
-  await expect(page).toHaveURL(/\/oauth\/consent/);
-  await expect(page.getByRole("heading", { name: /Connect Browser consent test/ })).toBeVisible();
-  // Genuine same-origin form POST: must carry a real Origin (not null).
-  await page.getByRole("button", { name: "Connect assistant" }).click();
-  await expect(page.getByText("synthetic callback received")).toBeVisible();
-  expect(page.url()).toContain("code=");
-  expect(page.url()).toContain("state=browser-state-approve");
+    // Start from /authorize, then sign in through the real demo form.
+    await page.goto(authUrl("browser-state-approve"));
+    await page.getByRole("button", { name: /Demo Plumbing/ }).click();
+    await expect(page).toHaveURL(/\/oauth\/consent/);
+    await expect(page.getByRole("heading", { name: /Connect Browser consent test/ })).toBeVisible();
+    // Genuine same-origin form POST: must carry a real Origin (not null).
+    await page.getByRole("button", { name: "Connect assistant" }).click();
+    await expect(page.getByText("synthetic callback received")).toBeVisible();
+    expect(page.url()).toContain("code=");
+    expect(page.url()).toContain("state=browser-state-approve");
+    // The real callback server observed approve: state round-trips and a
+    // code is present (booleans only; no credential values leave the page).
+    const approve = new URL(seen[seen.length - 1]!, "http://127.0.0.1");
+    expect(approve.searchParams.get("state")).toBe("browser-state-approve");
+    expect(approve.searchParams.has("code")).toBe(true);
 
-  // A second flow from the same browser rejects cleanly.
-  await page.goto(authUrl("browser-state-reject"));
-  await expect(page).toHaveURL(/\/oauth\/consent/);
-  await page.getByRole("button", { name: "Reject connection" }).click();
-  await expect(page.getByText("synthetic callback received")).toBeVisible();
-  expect(page.url()).toContain("error=access_denied");
-  expect(page.url()).not.toContain("code=");
+    // A second flow from the same browser rejects cleanly.
+    await page.goto(authUrl("browser-state-reject"));
+    await expect(page).toHaveURL(/\/oauth\/consent/);
+    await page.getByRole("button", { name: "Reject connection" }).click();
+    await expect(page.getByText("synthetic callback received")).toBeVisible();
+    expect(page.url()).toContain("error=access_denied");
+    expect(page.url()).not.toContain("code=");
+    // The real callback server observed reject: access_denied, no code.
+    const reject = new URL(seen[seen.length - 1]!, "http://127.0.0.1");
+    expect(reject.searchParams.get("error")).toBe("access_denied");
+    expect(reject.searchParams.has("code")).toBe(false);
+    expect(seen.length).toBe(2);
+  } finally {
+    await new Promise<void>((resolve, reject) => callback.close((err) => (err ? reject(err) : resolve())));
+  }
 });
