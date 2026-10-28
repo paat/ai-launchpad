@@ -24,6 +24,14 @@ if (!/^[0-9a-f]{40}$/.test(sha ?? "") || !out) {
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 if (head !== sha) { console.error(`HEAD ${head} != requested SHA ${sha}`); process.exit(1); }
+// Release policy comes ONLY from the requested commit's git object —
+// never argv, env, or the (possibly dirty) worktree. Missing/invalid
+// committed policy fails closed; there is no default fallback.
+let policy;
+try { policy = execFileSync("git", ["show", `${sha}:deploy/release-mode`], { cwd: root }).toString("utf8"); }
+catch { console.error(`missing committed deploy/release-mode at ${sha}`); process.exit(1); }
+if (policy !== "disabled\n" && policy !== "public_cards\n") { console.error("invalid committed deploy/release-mode (exact 'disabled\\n' or 'public_cards\\n' required)"); process.exit(1); }
+const releaseMode = policy.trim();
 if (!process.versions.node.startsWith("22.")) { console.error(`Node 22 required, got ${process.version}`); process.exit(1); }
 for (const p of ["dist/server.js", "docs/research/catalog/estonian-business-services.json", "package.json", "package-lock.json"]) {
   if (!existsSync(join(root, p))) { console.error(`missing ${p}; run npm ci && npm run build first`); process.exit(1); }
@@ -56,8 +64,9 @@ execFileSync("npm", ["ci", "--omit=dev", "--no-audit", "--no-fund"], { cwd: stag
 // host-side extractor can reject *all* symlinks without exceptions.
 rmSync(join(stage, "node_modules/.bin"), { recursive: true, force: true });
 // Manifest-bound release identity: written BEFORE the manifest inventory
-// so it is hash-covered like every other release file. Exact content only.
-writeFileSync(join(stage, "release.env"), `LAUNCHPAD_RELEASE_SHA=${sha}\n`);
+// so it is hash-covered like every other release file. Exact content only:
+// SHA line then the committed policy as MODEL_MODE (nonsecret, no paths).
+writeFileSync(join(stage, "release.env"), `LAUNCHPAD_RELEASE_SHA=${sha}\nMODEL_MODE=${releaseMode}\n`);
 
 const files = [];
 (function walk(dir) {
