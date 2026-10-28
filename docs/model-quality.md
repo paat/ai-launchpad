@@ -175,7 +175,7 @@ two attempts, never refunded and never labelled actual spend. The existing
 operator-authorized pilot cap is $10 with at most 5 distinct attempts on
 the same ledger.
 
-## Public guidance cards (explicit opt-in product slice, not activated)
+## Public guidance cards (explicit opt-in product slice; policy selected, not deployed)
 
 [src/model-public-cards.ts](../src/model-public-cards.ts) wraps this same
 harness for shared **public** guidance cards. It is off unless
@@ -228,16 +228,21 @@ remaining budget) and never the key, path or ledger contents.
   batch exists, and no continuous autonomous work is claimed.
 - Tests ([tests/model-public-cards.test.ts](../tests/model-public-cards.test.ts))
   are fake-only with synthetic keys/owners/ledgers and a network guard.
-  This slice was **not activated** by the change that added it;
-  production activation remains a separately reviewed per-release
-  mode/health contract, and the global private `MODEL_MODE` stays
-  disabled for legacy rollback — it is not edited to enable
-  `public_cards`. The honest limitation stands: generic public guidance,
-  not a bespoke business assessment.
+  The committed `deploy/release-mode` source policy selects
+  `public_cards`; that selection alone deploys and activates nothing,
+  and no live product test has occurred under it. Production activation
+  remains a separately reviewed manual exact-SHA promotion after the
+  private prerequisites and rollback gates, and the global private
+  `MODEL_MODE` stays disabled for legacy rollback — the private env
+  file is not edited to enable `public_cards`. The honest limitation
+  stands: generic public guidance, not a bespoke business assessment.
 
-## Completion gates (harness live-tested; runtime still gated)
+## Completion gates (harness live-tested; runtime still gated — policy selected, not deployed)
 
 The bounded live quality harness itself has now been live-tested as above
 (operator review, confirmed current published pricing and credits, and an
-explicit operator decision per run). Public runtime activation remains a
-separate, later decision under R-002; live inference in the runtime and UI remains disabled (UI/app itself runs).
+explicit operator decision per run). The committed source policy selects
+`public_cards`, but no manual deployment or live product test has occurred
+under it: public runtime activation remains a separate, later manual
+promotion decision under R-002, and live inference in the runtime and UI
+remains disabled until then (UI/app itself runs).
