@@ -4,7 +4,7 @@ Put your AI assistant to work for your business / Pane oma AI-assistent ettevõt
 
 Turn the AI assistant an Estonian small-business owner already has — or is about to get — into their business assistant.
 
-> **Status (28 Oct 2026):** a **local end-to-end demo** now exists (event-window code): a Node/TypeScript companion web app + MCP gateway on `http://localhost:3000`, SQLite state, synthetic demo companies, and integration tests. It is **not deployed, not production-ready, and the public runtime calls no live model** (deterministic mock provider; tests/CI stay mock, $0; public runtime and app helper live inference stay hard-disabled (mock helper runs locally; UI/app itself runs)). A separate operator-authorized bounded live quality harness ([docs/model-quality.md](docs/model-quality.md)) completed two genuine synthetic setup calls on 2026-10-28; no live public product integration, no real consumer connection, no public deployment. Standard MCP OAuth is implemented and tested with a local SDK client. Public-hosted Claude/ChatGPT connections remain **unverified**; manual bearer tokens are an advanced development option. Run and limits: [docs/local-demo.md](docs/local-demo.md). Research: [docs/research/](docs/research/README.md). See [docs/hackathon.md](docs/hackathon.md).
+> **Status:** owner-only HTTPS pilot at https://huppelaud.arikratt.ee. One owner ChatGPT plus Meta/Baseten path tested; Claude untested, so this is not broad compatibility or production ready. See [docs/live-pilot.md](docs/live-pilot.md) for dated evidence, cost, and recovery limits. Local demo and tests remain mock ($0); see [docs/local-demo.md](docs/local-demo.md).
 
 ## The problem
 
@@ -67,9 +67,9 @@ Each job is handled one of four ways: an existing MCP · an adapter on an offici
 
 Starting jobs (from the research's top-10 lists): deadlines this month · counterparty check · sales invoice · supplier invoice into the books · bank reconciliation · payment reminder · monthly payroll/VAT filing preparation · annual-report preparation · VAT-threshold warning · grants and tenders.
 
-## Discovery design (draft, not deployed)
+## Discovery design (draft, unpublished)
 
-The adopted discovery design is a draft: an AI Catalog index plus MCP Server Cards describing the gateway and curated connectors. Nothing here is deployed — there is no live catalogue, no live card, and no live endpoint yet. Details and evidence status are in [docs/research/H-mcp-discovery-and-publication.md](docs/research/H-mcp-discovery-and-publication.md).
+The adopted discovery design is a draft: an AI Catalog index plus MCP Server Cards describing the gateway and curated connectors. Those discovery artifacts are unpublished — no live catalogue or card yet. This does not deny the live owner-only MCP pilot endpoint — see [docs/live-pilot.md](docs/live-pilot.md). Details and evidence status are in [docs/research/H-mcp-discovery-and-publication.md](docs/research/H-mcp-discovery-and-publication.md).
 
 ## Where Meta's models fit (harness tested; product roles planned)
 
@@ -79,7 +79,7 @@ The adopted discovery design is a draft: an AI Catalog index plus MCP Server Car
 | Background jobs: friction classification, redaction and specs; playbook updates when laws change; mapping activities to sector duties | Planned provider-hosted open weights (Muse Spark Open / Muse Glimmer), optionally via Baseten | Keeps the model behind a small interface so the provider can change; no lock-in |
 | Turning accepted requests into new adapters | Muse Code | Development tooling |
 
-Not: a chatbot competing with the owner's assistant. Only the bounded quality harness has run live (two synthetic setup calls, 2026-10-28; generic acceptable English/Estonian, not a benchmark — see [docs/model-quality.md](docs/model-quality.md)); planned product roles are otherwise untested and there is no live public product integration. No EU self-hosting or data-residency posture exists yet; that will be decided and documented when the integration is built.
+Not: a chatbot competing with the owner's assistant. The historical bounded quality harness ran two genuine synthetic setup calls on 2026-10-28 (generic acceptable English/Estonian, not a benchmark — see [docs/model-quality.md](docs/model-quality.md)); the owner-only pilot aggregate is now 4 real calls total — see [docs/live-pilot.md](docs/live-pilot.md) for the pinned runtime and receipts. Planned product roles beyond that bounded pilot are otherwise untested. No EU self-hosting or data-residency posture exists yet; that will be decided and documented when the integration is built.
 
 Meta's own consumer agent app (Muse) is available only in the US and Canada as of 26 Oct 2026 and documents no custom MCP setting; see [docs/research/G-muse-app-for-estonian-smes.md](docs/research/G-muse-app-for-estonian-smes.md). AI Launchpad stays MCP-first and can add a plain API if Muse arrives in the EU.
 
@@ -93,7 +93,7 @@ Meta's own consumer agent app (Muse) is available only in the US and Canada as o
 ## Accepted product requirements
 
 - [R-001: recommend the action that removes the most owner work](docs/requirements/R-001-next-best-action.md) ([issue #1](https://github.com/paat/ai-launchpad/issues/1)). The owner’s agent makes the final assessment using Launchpad’s framework, with evidence, assumptions and one clear next action. Success means time saved, reliable outcomes and less remaining manual work; estimates and unconfirmed reports remain labelled. Agent-assessed coverage is separate from source-verified outcomes (currently zero); no manual ratification is required.
-- [R-002: identity-only sign-in and bounded runtime model use](docs/requirements/R-002-identity-and-runtime-cost.md) ([issue #3](https://github.com/paat/ai-launchpad/issues/3)). Google is identity only; the public runtime's live inference stays hard-disabled. A separate bounded quality harness is now live-tested ([docs/model-quality.md](docs/model-quality.md)); public runtime activation stays a later decision.
+- [R-002: identity-only sign-in and bounded runtime model use](docs/requirements/R-002-identity-and-runtime-cost.md) ([issue #3](https://github.com/paat/ai-launchpad/issues/3)). Google is identity only; the old adapter in `src/model.ts` stays hard-disabled. A separate bounded quality harness is now live-tested ([docs/model-quality.md](docs/model-quality.md)); the reviewed public-cards path is piloted live owner-only ([docs/live-pilot.md](docs/live-pilot.md)), and broader public runtime activation stays a later decision.
 
 ## Validation
 
@@ -105,7 +105,7 @@ Test with 3–5 real owners of the first persona during the build week (with con
 - Which authorities allow a multi-tenant gateway to act on an owner's mandate (EMTA X-tee machine rights, RIK Andmesild, Tervisekassa).
 - Werkzeug and Trivis (existing Estonian accounting MCPs): partners, listings or competitors?
 - Estonian quality of Muse Spark / Muse Spark Open / Voice Transcribe; SAM 3.1 availability in the Meta Model API.
-- Address — proposed subdomain `huppelaud.arikratt.ee` is **not deployed**; do not treat it as available or live.
+- Address — owner-only HTTPS pilot live at `https://huppelaud.arikratt.ee` since 28 Oct 2026 UTC / 29 Oct Tallinn (commit `2bf1d06265ae1c8173cb3491cd34f18441a36f04`); one owner/workspace pilot, not general availability.
 
 ## Relationship to Ärikratt
 

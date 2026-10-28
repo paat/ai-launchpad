@@ -123,8 +123,8 @@ export function statusBody(opts: { label: string; demo: boolean; assessment: Ass
 <p>Nothing has been assessed yet${opts.demo ? "" : " for your workspace"}. Launchpad does no background monitoring.</p>
 <p><a class="btn" href="/connection">Connect your assistant</a></p>
 <p class="small muted">Then ask it: “Assess my responsibilities and tell me the one action that removes the most of my work.” Review its requested permissions before you approve.</p>
-<details><summary>Connection limits</summary><p class="small muted">Standard OAuth supports local SDK clients. Claude/ChatGPT remote connection remains unverified until public hosting is tested. Signing in here never proves a company mandate.</p></details>
-<p class="small muted">No assistant yet? The temporary <a href="/setup">setup helper</a> gives fixture guidance.</p></section>`;
+<details><summary>Connection limits</summary><p class="small muted">Standard OAuth supports local SDK clients. ChatGPT was tested with one owner. Claude and broader plan compatibility are not yet verified. Signing in here never proves a company mandate.</p></details>
+<p class="small muted">No assistant yet? The temporary <a href="/setup">setup helper</a> gives setup guidance.</p></section>`;
   }
   const unknowns: string[] = [
     ...(c.unresolved ? [`${c.unresolved} item(s) still unresolved`] : []),
