@@ -6,10 +6,12 @@ import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
 import { buildMcpServer, getAssistantMilestones, getState, logActivity, TOOL_ARG_KEYS } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { runModelJob } from "./model.js";
+import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
+import type { FetchFn } from "./model-quality.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { esc, shell, loginPage, statusBody, activityBody, connectionBody, tokenOnceBody, approvalsBody, setupBody, servicesBody, playbooksBody } from "./views.js";
 
-export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; }
+export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; }
 // Owner-only pilot allowlist: exact opaque Google `sub` values, never emails.
 // Bounded: at most 20 entries, each 1-255 chars (OIDC `sub` max), no
 // whitespace/control characters, no comma (the env separator), no '@'
@@ -43,7 +45,13 @@ function releaseShaFromEnv(env: NodeJS.ProcessEnv): string | null {
 }
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
   const production = env.NODE_ENV === "production";
-  return { demo: env.LAUNCHPAD_DEMO === "1" && !production, production, dbPath: env.LAUNCHPAD_DB_PATH ?? "./data/launchpad.db", baseUrl: env.LAUNCHPAD_BASE_URL ?? "http://localhost:3000", googleClientId: env.GOOGLE_CLIENT_ID || undefined, googleClientSecret: env.GOOGLE_CLIENT_SECRET || undefined, modelMode: env.MODEL_MODE ?? "test", allowedHosts: (env.LAUNCHPAD_ALLOWED_HOSTS ?? "localhost,127.0.0.1").split(","), releaseSha: releaseShaFromEnv(env), trustLoopbackProxy: env.LAUNCHPAD_TRUST_LOOPBACK_PROXY === "1", googleAllowedSubjects: googleAllowedSubjectsFromEnv(env, production) };
+  const modelMode = env.MODEL_MODE ?? "test";
+  // Public-card secrets/paths are read only in the explicit enabled mode;
+  // disabled/test startup never needs or reads the operator key.
+  const publicCards = modelMode === "public_cards"
+    ? { modelLedgerPath: env.LAUNCHPAD_MODEL_LEDGER_PATH || undefined, modelPricingConfirmed: env.LAUNCHPAD_MODEL_PRICING_CONFIRMED === "1", basetenApiKey: env.BASETEN_API_KEY || undefined }
+    : {};
+  return { demo: env.LAUNCHPAD_DEMO === "1" && !production, production, dbPath: env.LAUNCHPAD_DB_PATH ?? "./data/launchpad.db", baseUrl: env.LAUNCHPAD_BASE_URL ?? "http://localhost:3000", googleClientId: env.GOOGLE_CLIENT_ID || undefined, googleClientSecret: env.GOOGLE_CLIENT_SECRET || undefined, modelMode, allowedHosts: (env.LAUNCHPAD_ALLOWED_HOSTS ?? "localhost,127.0.0.1").split(","), releaseSha: releaseShaFromEnv(env), trustLoopbackProxy: env.LAUNCHPAD_TRUST_LOOPBACK_PROXY === "1", googleAllowedSubjects: googleAllowedSubjectsFromEnv(env, production), ...publicCards };
 }
 type Authed = Request & { ownerId: string; csrf: string; ownerKind: string };
 const oid = (req: Request) => (req as Authed).ownerId;
@@ -84,6 +92,17 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (!allowedSubjects) return true;
     const o = db.prepare("SELECT kind,subject FROM owners WHERE id=?").get(ownerId) as { kind: string; subject: string } | undefined;
     return !!o && o.kind === "google" && o.subject.startsWith("google:") && allowedSubjects.has(o.subject.slice("google:".length));
+  }
+  // Public cards: explicit opt-in only. An invalid enabled configuration
+  // fails closed at startup (env and direct Config alike); it never falls
+  // back to test/disabled. Disabled/test modes construct nothing here.
+  let publicCards: PublicCards | null = null;
+  if (cfg.modelMode === "public_cards") {
+    if (!allowedSubjects) throw new Error("MODEL_MODE=public_cards requires a nonempty Google subject allowlist (LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS); refusing to start.");
+    if (cfg.modelPricingConfirmed !== true) throw new Error("MODEL_MODE=public_cards requires LAUNCHPAD_MODEL_PRICING_CONFIRMED=1 (operator confirms current published pricing/credits); refusing to start.");
+    if (!cfg.basetenApiKey) throw new Error("MODEL_MODE=public_cards requires BASETEN_API_KEY; refusing to start.");
+    if (!cfg.modelLedgerPath) throw new Error("MODEL_MODE=public_cards requires LAUNCHPAD_MODEL_LEDGER_PATH (the exact existing reviewed ledger); refusing to start.");
+    publicCards = new PublicCards({ ledger: openExistingPublicLedger(cfg.modelLedgerPath), apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
   }
   const app = express();
   app.disable("x-powered-by");
@@ -207,7 +226,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     return true;
   }
 
-  app.get("/health", (_req, res) => res.json({ ok: true, demo: cfg.demo, model_mode: cfg.modelMode === "disabled" ? "disabled" : "test", live_inference: "disabled", catalog_size: loadCatalog().length, release_sha: releaseSha }));
+  app.get("/health", (_req, res) => res.json({ ok: true, demo: cfg.demo, model_mode: publicCards ? "public_cards" : cfg.modelMode === "disabled" ? "disabled" : "test", live_inference: publicCards ? "enabled" : "disabled", catalog_size: loadCatalog().length, release_sha: releaseSha }));
   app.get("/login", (_req, res) => {
     const token = cfg.demo ? issuePreauth(res) : "";
     res.type("html").send(loginPage({ demo: cfg.demo, google: !!cfg.googleClientId, preauth: token, companies: DEMO_COMPANIES }));
@@ -302,14 +321,41 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     res.type("html").send(page(req, "Activity & evidence", "activity", activityBody({ rows, receipts, exclusions: getState(db, oid(req)).exclusions })));
   });
 
-  app.get("/playbooks", requireOwner, (req, res) => res.type("html").send(page(req, "Playbooks", "none", playbooksBody(PLAYBOOKS))));
+  app.get("/playbooks", requireOwner, (req, res) => {
+    // Saved friction cards only: this GET never starts inference.
+    const friction = publicCards ? publicCards.readFrictionCards().map((c) => ({ ...c, label: findTopic(FRICTION_TOPICS, c.topicId)!.label[c.locale] })) : undefined;
+    res.type("html").send(page(req, "Playbooks", "none", playbooksBody(PLAYBOOKS, friction)));
+  });
   app.get("/services", requireOwner, (req, res) => {
     const q = String(req.query.q ?? "").slice(0, 120);
     res.type("html").send(page(req, "Service catalog", "none", servicesBody({ q, total: loadCatalog().length, results: q ? searchServices(q, 10) : [] })));
   });
 
-  app.get("/setup", requireOwner, (req, res) => res.type("html").send(page(req, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result: null }))));
+  const setupPublicCards = (card: PublicCardView | null) => ({ topics: SETUP_TOPICS.map((t) => ({ id: t.id, label: t.label.en })), card });
+  app.get("/setup", requireOwner, (req, res) => res.type("html").send(page(req, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result: null, ...(publicCards ? { publicCards: setupPublicCards(null) } : {}) }))));
   app.post("/setup", requireOwner, csrfOk, async (req, res) => {
+    if (publicCards) {
+      // Explicit fixed-topic generation only: current allowlisted Google
+      // (never demo) owner + CSRF (above) before any reservation. The
+      // session check already enforces the allowlist; kind is re-checked
+      // here so a non-Google owner can never allocate.
+      if ((req as Authed).ownerKind !== "google" || !ownerAllowed(oid(req))) return res.status(403).send("Access is not available for this account.");
+      const body = bodyOf(req);
+      const extra = Object.keys(body).filter((k) => !["csrf", "topic", "locale"].includes(k));
+      const topic = findTopic(SETUP_TOPICS, body.topic);
+      const locale = parseLocale(body.locale);
+      if (extra.length || !topic || !locale) return res.status(400).send("Choose one of the listed topics and languages. Unexpected fields are rejected; nothing was generated.");
+      const setupOwnerId = oid(req);
+      let card: PublicCardView;
+      try { card = await publicCards.generate(topic, locale); }
+      catch { return res.status(503).send("Guidance is unavailable right now. The Connection page steps still work."); }
+      // Race: /delete during the await clears activity and invalidates this
+      // session; resuming must not recreate owner data for a dead session.
+      const still = session(req);
+      if (!still || still.owner_id !== setupOwnerId) return res.redirect("/login");
+      logActivity(db, setupOwnerId, "owner", "setup_guidance_card", card.state === "completed" ? "ok" : card.state, `Generic public setup guidance card (${topic.id}/${locale}): ${card.state}${card.replayed ? ", saved replay" : ""}. No owner data was sent to the model.`);
+      return res.type("html").send(page(req, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result: null, publicCards: setupPublicCards(card) })));
+    }
     const topic = String(bodyOf(req).topic ?? "").slice(0, 100);
     let result: string;
     try {

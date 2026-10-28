@@ -46,11 +46,17 @@ out), `docs/research/catalog/estonian-business-services.json`
 at the path `dist/catalog.js` resolves, production `node_modules/` built on
 ubuntu-24.04/Node 22 so the `better-sqlite3` native binary matches the
 host ABI, `package.json`/`package-lock.json`, and `RELEASE-MANIFEST.json`
-(git SHA + SHA-256 of every file). The packager writes `release.env`
-(exactly `LAUNCHPAD_RELEASE_SHA=<sha>\n`) into the staged release
-**before** the manifest inventory, so it is hash-covered; the host
-verifier also checks its exact bytes against the independently expected
-SHA. `node_modules/.bin` is removed during
+(git SHA + SHA-256 of every file). The packager reads the release
+policy only from the requested commit's git object `deploy/release-mode`
+(exactly `disabled\n` or `public_cards\n`; missing/invalid fails closed —
+no argv/env/dirty-worktree input, so a policy change needs a new commit
+and SHA) and writes `release.env` (v2: `LAUNCHPAD_RELEASE_SHA=<sha>\n`
+then `MODEL_MODE=<policy>\n`) into the staged release **before** the
+manifest inventory, so it is hash-covered. The host verifier accepts
+exactly that v2 shape or the legacy v1 one-line SHA shape (planned mode
+`disabled`), checks exact bytes against the independently expected SHA,
+and never shell-sources the file. No secrets, paths or ledger data are
+in the artifact. `node_modules/.bin` is removed during
 packaging so the host extractor can reject **all** symlinks.
 
 ## First-time bootstrap (operator, root, once)
@@ -190,9 +196,15 @@ packaging so the host extractor can reject **all** symlinks.
    `current`, restarts via the fixed restart command, and probes
    `GET http://127.0.0.1:4310/health` with
    `Host: huppelaud.arikratt.ee`, parsing the body as JSON and asserting
-   exactly `ok:true`, `demo:false`, `model_mode:"disabled"`,
-   `live_inference:"disabled"` and `release_sha` equal to the deployed
-   SHA. If the initial flip fails, the old pointer remains and the
+   exactly `ok:true`, `demo:false`, `model_mode`/`live_inference` equal
+   to the target release's verified planned tuple (`disabled`/`disabled`
+   or `public_cards`/`enabled` — derived from its manifest-bound
+   `release.env`, never inferred from health) and `release_sha` equal to
+   the deployed SHA. The incoming archive is always extracted and
+   verified even when `releases/<sha>` already exists; a same-SHA
+   artifact whose exact `release.env`/planned mode differs from the
+   existing release is rejected before any stop and the existing release
+   is left unchanged (same-mode reapply is idempotent). If the initial flip fails, the old pointer remains and the
    service is left stopped with an operator-needed report. A failed
    restart **or** health check stops the service (checked) **before**
    flipping back to the previous release, then restarts and verifies
@@ -227,10 +239,27 @@ proof (real client compatibility is a separate gate).
 
 - Code rollback: `deploy-host.sh rollback <previous-sha>` (operator on
   host, or the exact SSH forced command `rollback <40-hex-sha>` to an
-  already-extracted release). Same manifest + JSON health verification,
-  and a failed rollback restart/health check returns to the release
-  that was live before it. **Never touches the database** — schema/data
-  rollback is a separate, deliberate restore.
+  already-extracted release). Same manifest + JSON health verification
+  against each release's own planned tuple, and a failed rollback
+  restart/health check returns to the release that was live before it.
+  Rollback is atomic for code **and mode**: the one `current` pointer
+  restores the target's `release.env` too (legacy v1 releases inherit
+  the private `disabled`; their artifacts are never rewritten).
+  **Never touches the database** — schema/data rollback is a separate,
+  deliberate restore.
+- Release-mode activation order (no step here claims production is
+  deployed or activated): root first upgrades the root-owned host
+  controller to the v1+v2 verifier; then promote a new commit whose
+  committed `deploy/release-mode` is still `disabled` and prove
+  rollback to the legacy release; only after the separate private
+  validator and product gates pass may a later policy commit select
+  `public_cards`. The private `MODEL_MODE=disabled` is never flipped.
+- Model spending ledger (if ever provisioned): exactly one existing
+  ledger is authoritative and used exclusively; it is never created,
+  reset, refreshed or copied by a deploy, and neither release rollback
+  nor an app-database restore restores or refunds it. App DB backups
+  above are a separate concern. Its canonical path/permissions are
+  root-owned decisions, not specified here.
 - Backup: the fixed root-installed `launchpad-backup.service` runs
   `deploy-backup.mjs backup` as `launchpad`. It produces an online,
   WAL-consistent, checksummed SQLite snapshot in
@@ -309,7 +338,10 @@ proof (real client compatibility is a separate gate).
 - No synthetic demo login in production: `LAUNCHPAD_DEMO=0` *and* the app
   ignores it under `NODE_ENV=production`; the health probe fails the
   deploy if `demo:false` is not reported.
-- Zero runtime model calls: `MODEL_MODE=disabled`; health probe asserts it.
+- Private model default: `MODEL_MODE=disabled` in the private env file,
+  never flipped globally; a release may override it only through its
+  committed, manifest-bound `release.env` policy, and the health probe
+  asserts the exact planned tuple.
 - No secrets in git, artifacts, or the build job; environment file lives
   outside the repo and outside release dirs.
 - Forwarded headers: the origin accepts Cloudflare traffic only, Caddy

@@ -58,23 +58,30 @@ check_node() {
   [[ "$v" =~ ^v22\. ]] || die "Node 22 required on host, got '${v:-not found}' ($NODE)"
 }
 
-health_ok() { # <expected-release-sha>
+health_ok() { # <expected-release-sha> <planned-model-mode>
   # /health sits behind the app's canonical-Host middleware, so the probe
   # must carry the canonical Host over loopback. The body is parsed as JSON
   # and every field asserted exactly — including release_sha, so a still-
-  # running OLD process can never pass for the new release.
-  local want="$1" body i
+  # running OLD process can never pass for the new release. The expected
+  # model_mode/live_inference tuple is the PLANNED mode verified from the
+  # release's manifest-bound release.env, never inferred from health.
+  local want="$1" want_mode="$2" want_live body i
+  case "$want_mode" in
+    disabled) want_live="disabled";;
+    public_cards) want_live="enabled";;
+    *) return 1;;
+  esac
   for ((i=1; i<=HEALTH_TRIES; i++)); do
     body="$("$CURL" -fsS --max-time 3 -H "Host: $HOST_HEADER" "http://127.0.0.1:$PORT/health" 2>/dev/null || true)"
     if [[ -n "$body" ]] && printf '%s' "$body" | "$NODE" -e '
       let d=""; process.stdin.on("data",c=>d+=c).on("end",()=>{
         try {
-          const j=JSON.parse(d), want=process.argv[1];
+          const j=JSON.parse(d), want=process.argv[1], wm=process.argv[2], wl=process.argv[3];
           if (typeof j.release_sha!=="string" || !/^[0-9a-f]{40}$/.test(j.release_sha)) process.exit(1);
-          process.exit(j.ok===true && j.demo===false && j.model_mode==="disabled"
-            && j.live_inference==="disabled" && j.release_sha===want ? 0 : 1);
+          process.exit(j.ok===true && j.demo===false && j.model_mode===wm
+            && j.live_inference===wl && j.release_sha===want ? 0 : 1);
         } catch { process.exit(1); }
-      });' "$want"; then
+      });' "$want" "$want_mode" "$want_live"; then
       return 0
     fi
     sleep 1
@@ -106,8 +113,8 @@ stop_service() { "${SYSTEMCTL[@]}" stop "$SERVICE"; }
 # restart/health failure: stop (checked) before flipping back, then
 # restart+verify the old release. ACT_STATE records the honest outcome;
 # "rolled_back_verified" is set only after old health passes.
-activate_and_verify() { # <new-sha> <previous-sha-or-empty>
-  local new="$1" prev="${2:-}" lt="$ROOT/.current.tmp"
+activate_and_verify() { # <new-sha> <new-planned-mode> <previous-sha-or-empty> <previous-planned-mode-or-empty>
+  local new="$1" new_mode="$2" prev="${3:-}" prev_mode="${4:-}" lt="$ROOT/.current.tmp"
   ACT_STATE=""
   prepare_link "$new" "$lt" || { ACT_STATE="prepare_failed_current_unchanged"; echo "deploy-host: activation prepare failed for $new; current left untouched, service not stopped" >&2; return 1; }
   if ! stop_service; then
@@ -119,7 +126,7 @@ activate_and_verify() { # <new-sha> <previous-sha-or-empty>
     echo "deploy-host: current flip failed for $new; previous pointer remains, service left stopped; operator needed" >&2; return 1
   fi
   if ! "${SYSTEMCTL[@]}" restart "$SERVICE"; then echo "deploy-host: systemctl restart failed for $new" >&2
-  elif health_ok "$new"; then ACT_STATE="deployed_verified"; return 0
+  elif health_ok "$new" "$new_mode"; then ACT_STATE="deployed_verified"; return 0
   else echo "deploy-host: health check failed for $new" >&2; fi
   # Rollback path (or first-deploy cleanup): checked stop first.
   if ! stop_service; then
@@ -139,7 +146,7 @@ activate_and_verify() { # <new-sha> <previous-sha-or-empty>
     ACT_STATE="rollback_restart_failed_operator_needed"
     echo "deploy-host: previous release $prev restart failed after flip back; operator needed" >&2; return 1
   fi
-  if ! health_ok "$prev"; then
+  if ! health_ok "$prev" "$prev_mode"; then
     ACT_STATE="rollback_health_failed_operator_needed"
     echo "deploy-host: previous release $prev health check failed after flip back; operator needed" >&2; return 1
   fi
@@ -177,6 +184,8 @@ prune_releases() { # <current-sha> <previous-good-sha-or-empty>
 # including dangling, is stale state and refused. Identity now lives
 # only in releases/<sha>/release.env, checked by verify_manifest.
 STATE_PREV=""
+STATE_PREV_MODE=""
+VERIFIED_MODE=""
 validate_state() { # <apply|rollback>
   local mode="$1" has_cur=0 has_db=0 cur_sha=""
   if [[ -e "$STALE_GLOBAL_ENV" || -L "$STALE_GLOBAL_ENV" ]]; then
@@ -203,14 +212,18 @@ validate_state() { # <apply|rollback>
     fi
   fi
   STATE_PREV="$cur_sha"
+  STATE_PREV_MODE=""
   # The release current points at must itself verify against its SHA.
-  if (( has_cur )); then verify_manifest "$RELEASES/$cur_sha" "$cur_sha"; fi
+  if (( has_cur )); then verify_manifest "$RELEASES/$cur_sha" "$cur_sha"; STATE_PREV_MODE="$VERIFIED_MODE"; fi
 }
 
-verify_manifest() { # <release-dir> <expected-sha>
+verify_manifest() { # <release-dir> <expected-sha> ; sets VERIFIED_MODE
   # Fixed inline node program: it READS release files as data and hashes
-  # them; it does not require()/execute any release code.
-  "$NODE" -e '
+  # them; it does not require()/execute any release code. release.env is
+  # parsed as exact bytes (never shell-sourced) and the validated planned
+  # mode is printed only after FULL manifest verification succeeds.
+  local out
+  out="$("$NODE" -e '
     const fs=require("fs"),crypto=require("crypto"),path=require("path");
     const [dir,sha]=process.argv.slice(1);
     const m=JSON.parse(fs.readFileSync(path.join(dir,"RELEASE-MANIFEST.json"),"utf8"));
@@ -220,9 +233,16 @@ verify_manifest() { # <release-dir> <expected-sha>
       if(!(req in m.files)){console.error("manifest missing "+req);process.exit(1)}
     // Manifest-bound identity: exact bytes only, checked against the
     // independently expected SHA — re-hashing a wrong file cannot pass.
+    // v1 (legacy): SHA line only, planned mode disabled. v2: SHA line then
+    // exactly MODEL_MODE=disabled|public_cards. Nothing else is accepted.
     const rp=path.join(dir,"release.env");
     if(!fs.existsSync(rp)||fs.lstatSync(rp).isSymbolicLink()||!fs.lstatSync(rp).isFile()){console.error("release.env missing/symlink/non-file");process.exit(1)}
-    if(fs.readFileSync(rp,"utf8")!=="LAUNCHPAD_RELEASE_SHA="+sha+"\n"){console.error("release.env content mismatch");process.exit(1)}
+    const envContent=fs.readFileSync(rp,"utf8");
+    let plannedMode;
+    if(envContent==="LAUNCHPAD_RELEASE_SHA="+sha+"\n")plannedMode="disabled";
+    else if(envContent==="LAUNCHPAD_RELEASE_SHA="+sha+"\nMODEL_MODE=disabled\n")plannedMode="disabled";
+    else if(envContent==="LAUNCHPAD_RELEASE_SHA="+sha+"\nMODEL_MODE=public_cards\n")plannedMode="public_cards";
+    else{console.error("release.env content mismatch");process.exit(1)}
     for(const [f,hash] of Object.entries(m.files)){
       if(f.startsWith("/")||f.split("/").includes("..")||f.split("/").includes("")){console.error("bad manifest path "+f);process.exit(1)}
       if(!/^[0-9a-f]{64}$/.test(hash)){console.error("bad manifest hash "+f);process.exit(1)}
@@ -246,7 +266,10 @@ verify_manifest() { # <release-dir> <expected-sha>
     })(dir,"");
     const listed=new Set(Object.keys(m.files));
     for(const f of actual)if(!listed.has(f)){console.error("unlisted file in tree "+f);process.exit(1)}
-    if(actual.length!==listed.size){console.error("manifest/tree file count mismatch");process.exit(1)}' "$1" "$2" || die "release manifest verification failed"
+    if(actual.length!==listed.size){console.error("manifest/tree file count mismatch");process.exit(1)}
+    console.log(plannedMode);' "$1" "$2")" || die "release manifest verification failed"
+  [[ "$out" == "disabled" || "$out" == "public_cards" ]] || die "release manifest verification failed"
+  VERIFIED_MODE="$out"
 }
 
 safe_extract() { # <tar> <dest>
@@ -335,22 +358,33 @@ cmd_apply() {
   local got_hash; got_hash="$(sha256sum "$tar" | cut -d' ' -f1)"
   [[ "$got_hash" == "$want_hash" ]] || die "artifact sha256 mismatch"
   validate_state apply
-  local prev="$STATE_PREV"
-  backup_gate "$prev"
+  local prev="$STATE_PREV" prev_mode="$STATE_PREV_MODE"
   local dest="$RELEASES/$sha"
+  # Always validate the INCOMING archive through safe extraction +
+  # manifest verification, even when releases/<sha> already exists.
+  local tmp="$RELEASES/.tmp-$sha-$$"
+  STAGE_TMP="$tmp"
+  rm -rf "$tmp"; safe_extract "$tar" "$tmp"
+  verify_manifest "$tmp" "$sha"
+  local new_mode="$VERIFIED_MODE"
+  "$NODE" --check "$tmp/dist/server.js" >/dev/null || die "dist/server.js fails node --check"
   if [[ -d "$dest" ]]; then
     [[ ! -L "$dest" ]] || die "release $sha is a symlink; refusing"
-    verify_manifest "$dest" "$sha"   # idempotent re-deploy of same SHA
-  else
-    local tmp="$RELEASES/.tmp-$sha-$$"
-    STAGE_TMP="$tmp"
-    rm -rf "$tmp"; safe_extract "$tar" "$tmp"
-    verify_manifest "$tmp" "$sha"
-    "$NODE" --check "$tmp/dist/server.js" >/dev/null || die "dist/server.js fails node --check"
+    verify_manifest "$dest" "$sha"
+    # Same SHA must carry the identical release.env contract (exact bytes,
+    # not just planned mode: v1-vs-v2 for one SHA also conflicts). Reject
+    # before any backup/stop; the existing release stays untouched.
+    if [[ "$VERIFIED_MODE" != "$new_mode" ]] || ! cmp -s "$tmp/release.env" "$dest/release.env"; then
+      die "same-SHA release.env conflict for $sha: incoming planned mode $new_mode differs from existing release; refusing"
+    fi
+    rm -rf "$tmp"; STAGE_TMP=""  # idempotent re-deploy: keep existing dir
+  fi
+  backup_gate "$prev"
+  if [[ ! -d "$dest" ]]; then
     mv "$tmp" "$dest"
     STAGE_TMP=""
   fi
-  if activate_and_verify "$sha" "$prev"; then
+  if activate_and_verify "$sha" "$new_mode" "$prev" "$prev_mode"; then
     echo "deployed $sha (previous: ${prev:-none})"
     prune_releases "$sha" "$prev"
   elif [[ "$ACT_STATE" == "rolled_back_verified" ]]; then
@@ -367,10 +401,11 @@ cmd_rollback() {
   exec 9>"$ROOT/.deploy.lock"; flock -n 9 || die "another deployment is in progress"
   [[ -d "$RELEASES/$sha" && ! -L "$RELEASES/$sha" ]] || die "release $sha not present on host"
   verify_manifest "$RELEASES/$sha" "$sha"
+  local target_mode="$VERIFIED_MODE"
   validate_state rollback
-  local prev="$STATE_PREV"
+  local prev="$STATE_PREV" prev_mode="$STATE_PREV_MODE"
   # Rollback never touches the database; DB restore is a separate operator act.
-  if activate_and_verify "$sha" "$prev"; then
+  if activate_and_verify "$sha" "$target_mode" "$prev" "$prev_mode"; then
     echo "rolled back to $sha (database untouched)"
   elif [[ "$ACT_STATE" == "rolled_back_verified" ]]; then
     die "rollback to $sha failed; returned to $prev (verified, database untouched)"

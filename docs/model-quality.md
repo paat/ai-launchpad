@@ -175,6 +175,66 @@ two attempts, never refunded and never labelled actual spend. The existing
 operator-authorized pilot cap is $10 with at most 5 distinct attempts on
 the same ledger.
 
+## Public guidance cards (explicit opt-in product slice, not activated)
+
+[src/model-public-cards.ts](../src/model-public-cards.ts) wraps this same
+harness for shared **public** guidance cards. It is off unless
+`MODEL_MODE=public_cards`, and an enabled startup additionally requires a
+nonempty Google subject allowlist, `LAUNCHPAD_MODEL_PRICING_CONFIRMED=1`,
+`BASETEN_API_KEY` and `LAUNCHPAD_MODEL_LEDGER_PATH` (env or direct
+`createApp` config alike); anything missing fails closed with no fallback
+to test mode. `test`/`disabled` behaviour and health are unchanged; the
+old [src/model.ts](../src/model.ts) adapter is untouched and still
+unreachable. `/health` reports `public_cards`/`enabled` only in that
+explicit mode (an enabled-capability statement, not a promise of
+remaining budget) and never the key, path or ledger contents.
+
+- Fixed server-known topics only: three setup topics
+  (`setup_guidance`) and two manual-work scenarios (`classify_friction`),
+  each in `en`/`et`. The browser sends only a topic ID and locale;
+  unknown fields/selectors are rejected. No company, owner, session,
+  activity or browser-entered prose reaches the model or ledger.
+- The existing ledger above is both the saved-card store and the single
+  spending authority — no second table, cap or reset. Card IDs are
+  derived server-side from job/topic/locale/public-input fingerprint;
+  repeats, refreshes and batch/HTTP collisions replay the saved row
+  (including pending and terminal states) with no extra call, refund or
+  automatic retry. The ledger is validated on the same writable handle
+  opened with fileMustExist (regular 0600 file, recognized schema and
+  pinned provider/model/prompt/ceiling metadata) before the reviewed
+  constructor, not a separate read-only precheck: a missing, empty,
+  symlinked or unrecognized file refuses use and is never created. Prior
+  allocations — including the two quality calls above — are preserved, so
+  only the remaining attempts under the same $10/5-attempt ceiling can
+  ever be allocated.
+- Setup generation is an explicit POST behind session + current
+  allowlisted Google (never demo) + CSRF, checked before reservation;
+  result views use the same policy and page GETs never fetch. Cards are
+  deliberately shared public content: any allowlisted owner replays the
+  same card, operator-quality and arbitrary ledger rows are never shown,
+  and deleting owner data removes owner activity only — it neither
+  removes cards nor refunds allocations. Output is escaped text beside
+  the deterministic connection steps, labelled generic Meta/Baseten
+  guidance and generated vs saved/replayed; pending, failed, uncertain,
+  exhausted and breach-blocked states are shown truthfully. Cards never
+  change coverage, milestones, actions or assessments.
+- [src/model-public-cards-cli.ts](../src/model-public-cards-cli.ts) is the
+  actual one-shot operator batch main (production command
+  `node dist/model-public-cards-cli.js`); dry by default (no key, network
+  or ledger); `--live` precomputes one friction card into the same
+  ledger, and the playbook view displays that saved card without calling
+  the model. [scripts/model-public-cards.ts](../scripts/model-public-cards.ts)
+  is only the thin developer wrapper. No scheduler, queue or startup
+  batch exists, and no continuous autonomous work is claimed.
+- Tests ([tests/model-public-cards.test.ts](../tests/model-public-cards.test.ts))
+  are fake-only with synthetic keys/owners/ledgers and a network guard.
+  This slice was **not activated** by the change that added it;
+  production activation remains a separately reviewed per-release
+  mode/health contract, and the global private `MODEL_MODE` stays
+  disabled for legacy rollback — it is not edited to enable
+  `public_cards`. The honest limitation stands: generic public guidance,
+  not a bespoke business assessment.
+
 ## Completion gates (harness live-tested; runtime still gated)
 
 The bounded live quality harness itself has now been live-tested as above

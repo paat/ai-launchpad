@@ -348,7 +348,45 @@ ${opts.approvals.map((a) => `<div class="row"><code>${esc(a.id)}</code> · ${esc
 </section>`;
 }
 
-export function setupBody(opts: { csrf: string; result: string | null }): string {
+export interface PublicCardViewOpts { topicId: string; locale: string; state: string; output: string | null; replayed: boolean; }
+export interface SetupPublicCards { topics: { id: string; label: string }[]; card: PublicCardViewOpts | null; }
+
+const PUBLIC_CARD_STATE_TEXT: Record<string, string> = {
+  pending: "This guidance request is unresolved and may have been interrupted. It is not known to be generating now and may never complete. It will not be retried automatically. The steps above still work.",
+  blocked: "The requested guidance has not started because another unresolved request is blocking it. Nothing was generated for this topic, and it will not start automatically. The steps above still work.",
+  failed: "Guidance generation failed. This card will not be retried automatically. The steps above still work.",
+  uncertain: "Guidance generation did not finish cleanly and its result is uncertain; no automatic retry will be made. The steps above still work.",
+  exhausted: "The shared guidance budget is exhausted, so no new guidance can be generated. The steps above still work.",
+  breach: "Guidance generation was blocked after a provider contract problem. The steps above still work.",
+  breach_blocked: "New guidance is blocked after a provider contract problem on an earlier card. The steps above still work.",
+  conflict: "This guidance card is unavailable because its saved record does not match the current topic. The steps above still work.",
+};
+
+function publicCardBlock(card: PublicCardViewOpts): string {
+  if (card.state === "completed" && card.output) {
+    return `<section class="card" role="status" aria-label="General guidance card"><p><span class="badge">General guidance · Meta/Baseten</span> <span class="pill">${card.replayed ? "Saved guidance" : "Generated now"}</span></p><p>${esc(card.output)}</p><p class="small muted">General advice — not about your company. Nothing was filed, sent, paid or verified from it.</p></section>`;
+  }
+  return `<section class="card" role="status" aria-label="General guidance card"><p>${esc(PUBLIC_CARD_STATE_TEXT[card.state] ?? "Guidance is unavailable. The steps above still work.")}</p></section>`;
+}
+
+const DETERMINISTIC_SETUP_STEPS = `<section class="card" aria-label="Connect your assistant"><h2>Connect your assistant</h2><ol class="steps"><li>Open the <a href="/connection">Connection page</a> and copy the MCP address shown there.</li><li>Add it as a custom connector / MCP server in your assistant.</li><li>Sign in and review the requested OAuth permissions before you approve.</li><li>Ask your assistant for one read-only assessment of your responsibilities.</li></ol></section>`;
+
+export function setupBody(opts: { csrf: string; result: string | null; publicCards?: SetupPublicCards }): string {
+  if (opts.publicCards) {
+    const pc = opts.publicCards;
+    const topicOpts = pc.topics.map((t, i) => `<option value="${esc(t.id)}"${(pc.card ? t.id === pc.card.topicId : i === 0) ? " selected" : ""}>${esc(t.label)}</option>`).join("");
+    const localeOpt = (v: string, label: string) => `<option value="${esc(v)}"${(pc.card ? pc.card.locale === v : v === "en") ? " selected" : ""}>${esc(label)}</option>`;
+    return `<h1>Setup helper (temporary)</h1>
+<p class="lede">For owners with no assistant yet. Once yours is connected, talk to it — not to this page.</p>
+${DETERMINISTIC_SETUP_STEPS}
+<section class="card"><p><span class="badge">General guidance · Meta/Baseten</span></p>
+<p class="small muted">Get general setup advice. We send only your chosen topic, never your business details.</p>
+<form method="post" action="/setup"><input type="hidden" name="csrf" value="${esc(opts.csrf)}">
+<label>Topic <select name="topic">${topicOpts}</select></label>
+<label>Language <select name="locale">${localeOpt("en", "English")}${localeOpt("et", "Eesti")}</select></label>
+<button type="submit">Get guidance</button></form>
+${pc.card ? publicCardBlock(pc.card) : ""}</section>`;
+  }
   return `<h1>Setup helper (temporary)</h1>
 <p class="lede">For owners with no assistant yet. Once yours is connected, talk to it — not to this page.</p>
 <section class="card"><p><span class="badge amber">Fixture guidance</span></p>
@@ -372,6 +410,8 @@ ${r.sources.length ? `<p class="small">Primary sources: ${r.sources.map((s) => `
 <p class="small muted">${esc(r.limitations)}</p></section>`).join("")}`;
 }
 
-export function playbooksBody(items: { title: string; summary: string; source: string; source_label: string }[]): string {
-  return `<h1>Playbooks</h1><p class="lede">Short guides, each tied to its official source. Not legal or tax advice.</p>${items.map((p) => `<section class="card"><h2>${esc(p.title)}</h2><p>${esc(p.summary)}</p><p class="small">Official source: <a href="${esc(p.source)}" rel="noopener noreferrer">${esc(p.source_label)}</a>. Always check the source for current dates and rules; this page is not legal or tax advice.</p></section>`).join("")}`;
+export function playbooksBody(items: { title: string; summary: string; source: string; source_label: string }[], frictionCards?: (PublicCardViewOpts & { label: string })[]): string {
+  const shown = (frictionCards ?? []).filter((c) => c.state !== "none");
+  const friction = frictionCards === undefined ? "" : `<section class="card" aria-label="Manual-work suggestions"><h2>Manual-work suggestions</h2><p class="small muted">General Meta/Baseten suggestions for common manual work. They are not an assessment of your company; opening this page never calls a model.</p>${shown.length ? shown.map((c) => `<div class="row"><strong>${esc(c.label)}</strong> <span class="pill">${esc(c.locale)}</span>${c.state === "completed" && c.output ? `<p>${esc(c.output)}</p><p class="small muted">Saved guidance. Nothing was filed, sent, paid or verified from it.</p>` : `<p class="small muted">${esc(PUBLIC_CARD_STATE_TEXT[c.state] ?? "This suggestion is unavailable.")}</p>`}</div>`).join("") : `<p class="small muted">No manual-work suggestion has been prepared yet.</p>`}</section>`;
+  return `<h1>Playbooks</h1><p class="lede">Short guides, each tied to its official source. Not legal or tax advice.</p>${friction}${items.map((p) => `<section class="card"><h2>${esc(p.title)}</h2><p>${esc(p.summary)}</p><p class="small">Official source: <a href="${esc(p.source)}" rel="noopener noreferrer">${esc(p.source_label)}</a>. Always check the source for current dates and rules; this page is not legal or tax advice.</p></section>`).join("")}`;
 }

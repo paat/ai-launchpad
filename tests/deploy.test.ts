@@ -17,8 +17,13 @@ function sha(n: number) { return String(n).padStart(40, "a").slice(0, 40); }
 const hash = (buf: Buffer | string) => createHash("sha256").update(buf).digest("hex");
 const healthyFor = (s: string, extra: object = {}) =>
   JSON.stringify({ ok: true, demo: false, model_mode: "disabled", live_inference: "disabled", catalog_size: 3, release_sha: s, ...extra });
+type ReleaseMode = "legacy" | "disabled" | "public_cards";
+const healthyForMode = (s: string, mode: ReleaseMode, extra: object = {}) =>
+  JSON.stringify({ ok: true, demo: false, model_mode: mode === "public_cards" ? "public_cards" : "disabled", live_inference: mode === "public_cards" ? "enabled" : "disabled", catalog_size: 3, release_sha: s, ...extra });
+const releaseEnvFor = (s: string, mode: ReleaseMode) =>
+  mode === "legacy" ? `LAUNCHPAD_RELEASE_SHA=${s}\n` : `LAUNCHPAD_RELEASE_SHA=${s}\nMODEL_MODE=${mode}\n`;
 
-function makeArtifact(dir: string, gitSha: string, opts: { symlink?: boolean; traverse?: boolean; unlisted?: boolean; ghost?: boolean; releaseEnv?: string | null } = {}) {
+function makeArtifact(dir: string, gitSha: string, opts: { symlink?: boolean; traverse?: boolean; unlisted?: boolean; ghost?: boolean; releaseEnv?: string | null; releaseMode?: ReleaseMode } = {}) {
   const stage = mkdtempSync(join(dir, "stage-"));
   const files: Record<string, string> = {
     "dist/server.js": "console.log('ok');\n",
@@ -28,7 +33,7 @@ function makeArtifact(dir: string, gitSha: string, opts: { symlink?: boolean; tr
   };
   // Manifest-bound identity, included in manifest hash coverage (tests
   // can supply a wrong file whose manifest hash still matches it).
-  if (opts.releaseEnv !== null) files["release.env"] = opts.releaseEnv ?? `LAUNCHPAD_RELEASE_SHA=${gitSha}\n`;
+  if (opts.releaseEnv !== null) files["release.env"] = opts.releaseEnv ?? releaseEnvFor(gitSha, opts.releaseMode ?? "legacy");
   const manifestFiles: Record<string, string> = {};
   for (const [rel, content] of Object.entries(files)) {
     const p = join(stage, rel); mkdirSync(join(p, ".."), { recursive: true });
@@ -105,12 +110,29 @@ function prepareExistingState(dir: string, opts: { receiptAgeSec?: number } = {}
     verified_at_epoch: Math.floor(Date.now() / 1000) - (opts.receiptAgeSec ?? 0),
   }));
 }
-function applyOk(dir: string, f: ReturnType<typeof fakes>, s: string) {
-  const a = makeArtifact(dir, s);
-  setHealth(f, s);
+function applyOk(dir: string, f: ReturnType<typeof fakes>, s: string, mode: ReleaseMode = "legacy") {
+  const a = makeArtifact(dir, s, { releaseMode: mode });
+  writeFileSync(f.health, healthyForMode(s, mode));
   const r = runHost(hostEnv(dir, f), ["apply", a.tar, s, a.hash]);
   expect(r.status, r.stderr).toBe(0);
   return a;
+}
+// Fake curl that answers from the CURRENT pointer's release.env, so one
+// apply can verify the new tuple and (on failure) the previous tuple.
+// A `missing-prereq` flag makes public_cards never-ready (curl exit 7),
+// simulating absent private prerequisites.
+function installDynamicHealth(dir: string, f: ReturnType<typeof fakes>) {
+  writeFileSync(f.curl, `#!/bin/sh
+cur="$(readlink "$LAUNCHPAD_ROOT/current" 2>/dev/null)" || exit 7
+ef="$LAUNCHPAD_ROOT/$cur/release.env"
+[ -f "$ef" ] || exit 7
+s="$(sed -n 's/^LAUNCHPAD_RELEASE_SHA=//p' "$ef")"
+m="$(sed -n 's/^MODEL_MODE=//p' "$ef")"
+[ -n "$m" ] || m="disabled"
+if [ "$m" = "public_cards" ] && [ -f "${dir}/missing-prereq" ]; then exit 7; fi
+if [ "$m" = "public_cards" ]; then live="enabled"; else live="disabled"; fi
+printf '{"ok":true,"demo":false,"model_mode":"%s","live_inference":"%s","catalog_size":3,"release_sha":"%s"}' "$m" "$live" "$s"
+`, { mode: 0o755 });
 }
 const envShaOf = (dir: string) => readFileSync(join(dir, "root/current/release.env"), "utf8"); // via the single current pointer
 const stagesOf = (dir: string) => existsSync(join(dir, "root/releases")) ? readdirSync(join(dir, "root/releases")).filter((x) => x.startsWith(".tmp-")) : [];
@@ -185,6 +207,10 @@ describe("deployment scripts", () => {
     const hostSrc = readFileSync(HOST, "utf8");
     expect(hostSrc).not.toContain("prepare_pair"); expect(hostSrc).not.toContain("restore_pair");
     const envEx = readFileSync(join(ROOT, "deploy/launchpad.env.example"), "utf8");
+    expect(readFileSync(join(ROOT, "deploy/release-mode"), "utf8")).toBe("disabled\n");
+    expect(envEx).toMatch(/^MODEL_MODE=disabled$/m);
+    for (const k of ["BASETEN_API_KEY", "LAUNCHPAD_MODEL_LEDGER_PATH", "LAUNCHPAD_MODEL_PRICING_CONFIRMED"])
+      expect(envEx, k).toMatch(new RegExp(`^${k}=$`, "m"));
     expect(envEx).toMatch(/^LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS=$/m);
     expect(envEx).toContain("never email"); expect(envEx).not.toMatch(/LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS=\S/);
     expect(unit).not.toContain("/var/backups");
@@ -586,7 +612,7 @@ describe("deployment scripts", () => {
     put("package.json", "{}"); put("package-lock.json", "{}");
     const bin = join(dir, "bin"); mkdirSync(bin);
     const s = sha(1);
-    writeFileSync(join(bin, "git"), `#!/bin/sh\necho ${s}\n`, { mode: 0o755 });
+    writeFileSync(join(bin, "git"), `#!/bin/sh\nif [ "$1" = "show" ]; then printf 'disabled\\n'; exit 0; fi\necho ${s}\n`, { mode: 0o755 });
     writeFileSync(join(bin, "npm"), `#!/bin/sh\nmkdir -p node_modules/better-sqlite3\nprintf '{}' > node_modules/better-sqlite3/package.json\n`, { mode: 0o755 });
     const r = spawnSync(process.execPath, [join(repo, "scripts/deploy-package.mjs"), s, "release/test.tgz"],
       { env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }, encoding: "utf8" });
@@ -599,11 +625,187 @@ describe("deployment scripts", () => {
     // release.env is exact and manifest-hash-covered.
     const extract = join(dir, "extract"); mkdirSync(extract);
     execFileSync("tar", ["-xzf", join(repo, "release/test.tgz"), "-C", extract]);
-    expect(readFileSync(join(extract, "release.env"), "utf8")).toBe(`LAUNCHPAD_RELEASE_SHA=${s}\n`);
+    expect(readFileSync(join(extract, "release.env"), "utf8")).toBe(`LAUNCHPAD_RELEASE_SHA=${s}\nMODEL_MODE=disabled\n`);
     const manifest = JSON.parse(readFileSync(join(extract, "RELEASE-MANIFEST.json"), "utf8"));
-    expect(manifest.files["release.env"]).toBe(hash(`LAUNCHPAD_RELEASE_SHA=${s}\n`));
+    expect(manifest.files["release.env"]).toBe(hash(`LAUNCHPAD_RELEASE_SHA=${s}\nMODEL_MODE=disabled\n`));
     for (const bad of ["dist/.env", "probe.db", "private.key", "notes.txt"]) expect(names).not.toContain(bad);
   });
+
+  test("chain legacy -> new disabled -> public_cards, then direct rollback enabled -> legacy (exact tuples)", () => {
+    const dir = tmp(), f = fakes(dir), s1 = sha(1), s2 = sha(2), s3 = sha(3);
+    installDynamicHealth(dir, f);
+    applyOk(dir, f, s1, "legacy"); prepareExistingState(dir);
+    expect(envShaOf(dir)).toBe(releaseEnvFor(s1, "legacy"));
+    applyOk(dir, f, s2, "disabled");
+    expect(currentOf(dir)).toBe(s2); expect(envShaOf(dir)).toBe(releaseEnvFor(s2, "disabled"));
+    applyOk(dir, f, s3, "public_cards");
+    expect(currentOf(dir)).toBe(s3); expect(envShaOf(dir)).toBe(releaseEnvFor(s3, "public_cards"));
+    // Direct public_cards -> legacy rollback: legacy planned tuple is disabled.
+    let r = runHost(hostEnv(dir, f), ["rollback", s1]);
+    expect(r.status, r.stderr).toBe(0); expect(currentOf(dir)).toBe(s1);
+    // And back forward through explicit rollback to the enabled release.
+    r = runHost(hostEnv(dir, f), ["rollback", s3]);
+    expect(r.status, r.stderr).toBe(0); expect(currentOf(dir)).toBe(s3);
+    r = runHost(hostEnv(dir, f), ["rollback", s2]);
+    expect(r.status, r.stderr).toBe(0); expect(currentOf(dir)).toBe(s2);
+  }, 30000);
+
+  test("wrong model_mode, wrong live flag, and stale SHA health are all rejected for a public_cards target", () => {
+    const s1 = sha(1), s2 = sha(2);
+    const variants: Record<string, object> = {
+      wrongMode: { model_mode: "disabled", live_inference: "enabled" },
+      wrongLive: { model_mode: "public_cards", live_inference: "disabled" },
+      wrongBothDisabled: { model_mode: "disabled", live_inference: "disabled" },
+    };
+    for (const [name, extra] of Object.entries(variants)) {
+      const dir = tmp(), f = fakes(dir);
+      applyOk(dir, f, s1, "disabled"); prepareExistingState(dir);
+      const a = makeArtifact(dir, s2, { releaseMode: "public_cards" });
+      writeFileSync(f.health, healthyForMode(s2, "public_cards", extra));
+      const r = runHost(hostEnv(dir, f), ["apply", a.tar, s2, a.hash]);
+      expect(r.status, `${name}: ${r.stderr}`).not.toBe(0);
+      expect(currentOf(dir), name).toBe(s1); // flipped back, never claimed deployed
+      expect(r.stderr, name).toContain("health check failed");
+    }
+    // Stale process: enabled tuple but OLD release_sha.
+    const dir = tmp(), f = fakes(dir);
+    applyOk(dir, f, s1, "disabled"); prepareExistingState(dir);
+    const a = makeArtifact(dir, s2, { releaseMode: "public_cards" });
+    writeFileSync(f.health, healthyForMode(s1, "public_cards"));
+    const r = runHost(hostEnv(dir, f), ["apply", a.tar, s2, a.hash]);
+    expect(r.status, r.stderr).not.toBe(0); expect(currentOf(dir)).toBe(s1);
+  }, 30000);
+
+  test("never-ready public_cards (missing private prereq) rolls back to verified disabled previous release", () => {
+    const dir = tmp(), f = fakes(dir), s1 = sha(1), s2 = sha(2);
+    installDynamicHealth(dir, f);
+    applyOk(dir, f, s1, "disabled"); prepareExistingState(dir);
+    writeFileSync(join(dir, "missing-prereq"), "1");
+    const a = makeArtifact(dir, s2, { releaseMode: "public_cards" });
+    const r = runHost(hostEnv(dir, f), ["apply", a.tar, s2, a.hash]);
+    expect(r.status, r.stderr).not.toBe(0);
+    expect(r.stderr).toContain(`rolled back to ${s1} (verified)`);
+    expect(currentOf(dir)).toBe(s1);
+    expect(envShaOf(dir)).toBe(releaseEnvFor(s1, "disabled"));
+  });
+
+  test("same-SHA conflicting mode / v1-vs-v2 shape / invalid incoming manifest rejected before stop, existing release unchanged; identical reapply works", () => {
+    const dir = tmp(), f = fakes(dir), s1 = sha(1);
+    installDynamicHealth(dir, f);
+    applyOk(dir, f, s1, "legacy"); prepareExistingState(dir);
+    const releaseDir = join(dir, "root/releases", s1);
+    const beforeEnv = readFileSync(join(releaseDir, "release.env"), "utf8");
+    const beforeManifest = readFileSync(join(releaseDir, "RELEASE-MANIFEST.json"), "utf8");
+    const stopsBefore = stopCountLog(f);
+    // (a) Same SHA, self-consistent artifact, different mode.
+    let bad = makeArtifact(dir, s1, { releaseMode: "public_cards" });
+    let r = runHost(hostEnv(dir, f), ["apply", bad.tar, s1, bad.hash]);
+    expect(r.status, r.stderr).not.toBe(0);
+    expect(r.stderr).toContain("same-SHA release.env conflict");
+    // (b) Same SHA, same planned mode but v2-vs-v1 exact shape differs.
+    bad = makeArtifact(dir, s1, { releaseMode: "disabled" });
+    r = runHost(hostEnv(dir, f), ["apply", bad.tar, s1, bad.hash]);
+    expect(r.status, r.stderr).not.toBe(0);
+    expect(r.stderr).toContain("same-SHA release.env conflict");
+    // (c) Same SHA, self-consistent hashes but invalid manifest coverage.
+    bad = makeArtifact(dir, s1, { unlisted: true });
+    r = runHost(hostEnv(dir, f), ["apply", bad.tar, s1, bad.hash]);
+    expect(r.status, r.stderr).not.toBe(0);
+    expect(r.stderr).toContain("manifest verification failed");
+    // All rejected BEFORE any service stop, existing release byte-identical.
+    expect(stopCountLog(f)).toBe(stopsBefore);
+    expect(readFileSync(join(releaseDir, "release.env"), "utf8")).toBe(beforeEnv);
+    expect(readFileSync(join(releaseDir, "RELEASE-MANIFEST.json"), "utf8")).toBe(beforeManifest);
+    expect(currentOf(dir)).toBe(s1);
+    expect(stagesOf(dir)).toEqual([]);
+    // (d) Identical reapply is idempotent.
+    const again = makeArtifact(dir, s1, { releaseMode: "legacy" });
+    r = runHost(hostEnv(dir, f), ["apply", again.tar, s1, again.hash]);
+    expect(r.status, r.stderr).toBe(0);
+    expect(currentOf(dir)).toBe(s1);
+    expect(readFileSync(join(releaseDir, "release.env"), "utf8")).toBe(beforeEnv);
+  }, 30000);
+
+  test("exact release.env shapes: only v1 and v2 disabled/public_cards accepted, all else rejected before stop", () => {
+    const s = sha(5);
+    const badVariants: Record<string, string> = {
+      reordered: `MODEL_MODE=disabled\nLAUNCHPAD_RELEASE_SHA=${s}\n`,
+      unknownMode: `LAUNCHPAD_RELEASE_SHA=${s}\nMODEL_MODE=enabled\n`,
+      extraAfterMode: `LAUNCHPAD_RELEASE_SHA=${s}\nMODEL_MODE=disabled\nEXTRA=1\n`,
+      duplicateMode: `LAUNCHPAD_RELEASE_SHA=${s}\nMODEL_MODE=disabled\nMODEL_MODE=public_cards\n`,
+      blankLine: `LAUNCHPAD_RELEASE_SHA=${s}\n\nMODEL_MODE=disabled\n`,
+      leadingSpace: ` LAUNCHPAD_RELEASE_SHA=${s}\nMODEL_MODE=disabled\n`,
+      trailingSpace: `LAUNCHPAD_RELEASE_SHA=${s} \nMODEL_MODE=disabled\n`,
+      crlf: `LAUNCHPAD_RELEASE_SHA=${s}\r\nMODEL_MODE=disabled\r\n`,
+      modeNoNewline: `LAUNCHPAD_RELEASE_SHA=${s}\nMODEL_MODE=disabled`,
+      shellInjection: `LAUNCHPAD_RELEASE_SHA=${s}\nMODEL_MODE=$(id)\n`,
+      quotedMode: `LAUNCHPAD_RELEASE_SHA=${s}\nMODEL_MODE="disabled"\n`,
+    };
+    for (const [name, content] of Object.entries(badVariants)) {
+      const dir = tmp(), f = fakes(dir), a = makeArtifact(dir, s, { releaseEnv: content });
+      writeFileSync(f.health, healthyForMode(s, "disabled"));
+      const r = runHost(hostEnv(dir, f), ["apply", a.tar, s, a.hash]);
+      expect(r.status, `${name}: ${r.stderr}`).not.toBe(0);
+      expect(r.stderr, name).toContain("manifest verification failed");
+      expect(readFileSync(f.log, "utf8"), name).toBe("");
+      expect(existsSync(join(dir, "root/current")), name).toBe(false);
+    }
+    // The two valid v2 shapes deploy (v1 is covered across the suite).
+    for (const mode of ["disabled", "public_cards"] as const) {
+      const dir = tmp(), f = fakes(dir);
+      const a = applyOk(dir, f, s, mode);
+      expect(a).toBeTruthy(); expect(currentOf(dir)).toBe(s);
+      const names = execFileSync("tar", ["-tzf", a.tar], { encoding: "utf8" });
+      for (const secretish of ["BASETEN", "LEDGER", "dist/.env", "launchpad.env\n"]) expect(names).not.toContain(secretish);
+    }
+  }, 30000);
+
+  test("packager policy provenance: committed git object only — env/dirty file cannot change mode; new policy commit changes SHA+mode; missing/invalid rejected", () => {
+    const dir = tmp(), repo = join(dir, "repo");
+    mkdirSync(join(repo, "scripts"), { recursive: true });
+    cpSync(join(ROOT, "scripts/deploy-package.mjs"), join(repo, "scripts/deploy-package.mjs"));
+    const put = (rel: string, content: string) => { const p = join(repo, rel); mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, content); };
+    put("dist/server.js", "console.log('ok');\n");
+    put("dist/.env", "SECRET=1");
+    put("docs/research/catalog/estonian-business-services.json", "{}");
+    put("package.json", "{}"); put("package-lock.json", "{}");
+    const bin = join(dir, "bin"); mkdirSync(bin);
+    writeFileSync(join(bin, "npm"), `#!/bin/sh\nmkdir -p node_modules/better-sqlite3\nprintf '{}' > node_modules/better-sqlite3/package.json\n`, { mode: 0o755 });
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+    git("init", "-q"); git("config", "user.email", "t@example.invalid"); git("config", "user.name", "t");
+    const commitAll = (msg: string) => { git("add", "-A"); git("commit", "-qm", msg); return git("rev-parse", "HEAD"); };
+    const pkgEnv = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}`, MODEL_MODE: "public_cards" };
+    const pack = (headSha: string, out: string) =>
+      spawnSync(process.execPath, [join(repo, "scripts/deploy-package.mjs"), headSha, out], { cwd: repo, env: pkgEnv, encoding: "utf8" });
+    const packagedEnv = (out: string) => {
+      const ex = mkdtempSync(join(dir, "ex-")); execFileSync("tar", ["-xzf", join(repo, out), "-C", ex]);
+      return { env: readFileSync(join(ex, "release.env"), "utf8"), names: execFileSync("tar", ["-tzf", join(repo, out)], { encoding: "utf8" }) };
+    };
+    // Missing committed policy: fail closed (no default fallback).
+    let head = commitAll("no policy");
+    let r = pack(head, "release/a.tgz");
+    expect(r.status, r.stderr).not.toBe(0); expect(r.stderr).toContain("missing committed deploy/release-mode");
+    // Invalid committed policy (bad value, then missing newline).
+    put("deploy/release-mode", "enabled\n"); head = commitAll("bad policy");
+    r = pack(head, "release/a.tgz"); expect(r.status, r.stderr).not.toBe(0); expect(r.stderr).toContain("invalid committed");
+    put("deploy/release-mode", "disabled"); head = commitAll("no newline");
+    r = pack(head, "release/a.tgz"); expect(r.status, r.stderr).not.toBe(0); expect(r.stderr).toContain("invalid committed");
+    // Committed disabled; dirty worktree + env claim public_cards: artifact stays disabled.
+    put("deploy/release-mode", "disabled\n"); head = commitAll("disabled policy");
+    put("deploy/release-mode", "public_cards\n"); // dirty, uncommitted
+    r = pack(head, "release/a.tgz");
+    expect(r.status, r.stderr).toBe(0);
+    let got = packagedEnv("release/a.tgz");
+    expect(got.env).toBe(`LAUNCHPAD_RELEASE_SHA=${head}\nMODEL_MODE=disabled\n`);
+    expect(got.names).not.toContain("dist/.env"); expect(got.names).not.toContain("SECRET");
+    // Committing the policy change yields a NEW SHA whose artifact is public_cards.
+    const head2 = commitAll("public_cards policy");
+    expect(head2).not.toBe(head);
+    r = pack(head2, "release/b.tgz");
+    expect(r.status, r.stderr).toBe(0);
+    got = packagedEnv("release/b.tgz");
+    expect(got.env).toBe(`LAUNCHPAD_RELEASE_SHA=${head2}\nMODEL_MODE=public_cards\n`);
+  }, 30000);
 });
 describe("SSH forced-command contract (fake ssh + forced command + host helper together)", () => {
   function forcedEnv(dir: string, f: ReturnType<typeof fakes>, extra: NodeJS.ProcessEnv = {}) {

@@ -12,11 +12,15 @@ Type=simple
 User=launchpad
 Group=launchpad
 # Private config (root-installed) first, then the manifest-bound release
-# identity inside the active release. release.env holds exactly one line,
-# LAUNCHPAD_RELEASE_SHA=<sha>, written by the packager and verified by
-# deploy-host.sh against the expected SHA. Required (no optional prefix):
-# the single `current` symlink selects code and identity together. Do not
-# enable this unit before the first deploy creates `current`.
+# identity inside the active release; the later file overrides the
+# earlier one. release.env is exactly one line (v1 legacy,
+# LAUNCHPAD_RELEASE_SHA=<sha>, planned MODEL_MODE disabled from the
+# private file) or exactly two lines (v2: SHA line then
+# MODEL_MODE=disabled|public_cards), written by the packager from the
+# committed deploy/release-mode and verified by deploy-host.sh against
+# the expected SHA. Required (no optional prefix): the single `current`
+# symlink selects code, identity and mode together. Do not enable this
+# unit before the first deploy creates `current`.
 EnvironmentFile=/etc/launchpad/launchpad.env
 EnvironmentFile=/opt/launchpad/current/release.env
 WorkingDirectory=/opt/launchpad/current
