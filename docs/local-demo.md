@@ -15,8 +15,11 @@ npm run test:probes                   # original 38 review areas, current contra
 PLAYWRIGHT_CHANNEL=chrome npm run test:browser  # installed system Chrome
 # CI uses: npx playwright install --with-deps chromium; npm run test:browser
 npm run build
-NODE_ENV=production npm start        # demo login disabled
+NODE_ENV=development LAUNCHPAD_DEMO=1 MODEL_MODE=test npm start  # compiled local synthetic demo, no credentials
+# Add LAUNCHPAD_DB_PATH=:memory: for disposable in-memory sample state.
 ```
+
+Production startup needs real configuration — see the [deployment guide](deployment.md).
 
 Environment variables must be supplied by the launching environment; `.env.example` is a reference, not an automatic dotenv loader. SQLite defaults to `./data/launchpad.db`; set `LAUNCHPAD_DB_PATH=:memory:` for disposable state. This event-window patch targets the current schema: older experimental databases are not migrated. Use a fresh disposable database for the demo.
 
