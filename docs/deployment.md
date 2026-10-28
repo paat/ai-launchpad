@@ -266,10 +266,43 @@ proof (real client compatibility is a separate gate).
 - Restore drill (isolated, do regularly):
   `node deploy-backup.mjs verify /var/backups/launchpad/launchpad-<ts>.db`
   opens read-only and checks integrity without touching the live DB.
-  Full restore test: point a throwaway instance's `LAUNCHPAD_DB_PATH` at a
-  *copy* of a backup on a spare port, health-check it, then discard.
-  Real restore: stop service, move the live DB aside (never delete),
-  place the verified backup, fix ownership, start, health-check.
+  Full restore test, in an isolated throwaway directory: use an OLD
+  synthetic DB with its own matching leftover WAL/SHM (journal if
+  present); stop its writers; quarantine that OLD DB plus sidecars
+  together under original basenames; confirm target DB and sidecar paths
+  are empty; copy ONLY the verified standalone snapshot to the clean
+  target; start a throwaway instance on a spare port and check integrity
+  plus known restored state, keeping the old sidecars quarantined. See
+  actual restore steps below; never pair a snapshot with unrelated
+  sidecars.
+- Actual restore (operator procedure; requires explicit owner approval —
+  never automated). Hold or exclude deployments during recovery:
+  1. Preserve evidence: never delete originals and never restore over
+     newly written data.
+  2. Record whether the backup timer was active; stop the runtime and the
+     backup timer/service; verify all have stopped and that no
+     admin/manual SQLite connections or deployment processes can
+     write/open the DB.
+  3. Quarantine the live set together: move the DB plus whichever of
+     `-wal`, `-shm`, `-journal` exist — under their ORIGINAL basenames —
+     into one protected quarantine directory (mode 0700), only after all
+     writers stopped. Absent sidecars are not fabricated; never mismatch
+     or rename the DB independently of its sidecars. Journals must stay
+     paired with their database: SQLite documents that pairing a
+     database file with an unrelated hot journal corrupts it (see
+     [mispairing database files and hot journals](https://sqlite.org/howtocorrupt.html#_mispairing_database_files_and_hot_journals_)).
+  4. Ensure the original target DB and sidecar paths are clear, then
+     install a COPY of the checksum- plus integrity-verified snapshot at
+     the clean target path (runtime ownership, mode 0600; parent
+     directory permissions follow the existing layout). Never overwrite
+     the quarantine set or the original backup.
+  5. As the runtime user, validate the restored database before start
+     (`integrity_check` / read-only verify); start the runtime and check
+     health/`release_sha` plus meaningful restored state. Return the
+     backup timer to its prior active/inactive state only after
+     successful validation. On failure, stop writers and preserve the
+     failed restore as another set before any retry; never silently
+     overwrite new writes.
 
 ## Hard rules baked in
 
