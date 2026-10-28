@@ -207,7 +207,7 @@ describe("deployment scripts", () => {
     const hostSrc = readFileSync(HOST, "utf8");
     expect(hostSrc).not.toContain("prepare_pair"); expect(hostSrc).not.toContain("restore_pair");
     const envEx = readFileSync(join(ROOT, "deploy/launchpad.env.example"), "utf8");
-    expect(readFileSync(join(ROOT, "deploy/release-mode"), "utf8")).toBe("disabled\n");
+    expect(readFileSync(join(ROOT, "deploy/release-mode"), "utf8")).toBe("public_cards\n");
     expect(envEx).toMatch(/^MODEL_MODE=disabled$/m);
     for (const k of ["BASETEN_API_KEY", "LAUNCHPAD_MODEL_LEDGER_PATH", "LAUNCHPAD_MODEL_PRICING_CONFIRMED"])
       expect(envEx, k).toMatch(new RegExp(`^${k}=$`, "m"));
