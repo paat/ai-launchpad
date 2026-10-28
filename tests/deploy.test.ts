@@ -270,6 +270,8 @@ describe("deployment scripts", () => {
     expect(currentOf(dir)).toBe(s);
   });
 
+  // Double-negative health: new check (2 tries x 1s sleep) + rollback check
+  // (2 tries x 1s sleep) + overhead exceeds the default 5s timeout.
   test("failed health flips back to previous release; unverifiable old health is reported honestly (no false rolled-back claim)", () => {
     const dir = tmp(), f = fakes(dir), s1 = sha(1), s2 = sha(2);
     applyOk(dir, f, s1); prepareExistingState(dir);
@@ -280,7 +282,7 @@ describe("deployment scripts", () => {
     expect(currentOf(dir)).toBe(s1);
     expect(r.stderr).toContain("rollback_health_failed_operator_needed");
     expect(r.stderr).not.toContain("rolled back");
-  });
+  }, 30000);
 
   test("health release_sha mismatch (old process still healthy) rolls back", () => {
     const dir = tmp(), f = fakes(dir), s1 = sha(1), s2 = sha(2);
