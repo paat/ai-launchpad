@@ -17,7 +17,17 @@ export function loadCatalog(): ServiceRecord[] {
 /** Only well-formed https URLs without embedded credentials are ever linked. */
 export function safeHttps(v: unknown): string | null {
   if (typeof v !== "string") return null;
-  try { const u = new URL(v.trim()); return u.protocol === "https:" && !u.username && !u.password ? u.href : null; } catch { return null; }
+  if (v.length === 0) return null;
+  if (/[\s\x00-\x1F\x7F-\x9F]/.test(v)) return null;
+  if (!v.startsWith("https://")) return null;
+  if (v.includes("\\")) return null;
+  if (/https?:\/\//i.test(v.slice("https://".length))) return null;
+  const rest = v.slice("https://".length);
+  if (!rest || rest.startsWith("/") || rest.startsWith("?") || rest.startsWith("#") || rest.startsWith("@") || rest.startsWith(":")) return null;
+  let u: URL;
+  try { u = new URL(v); } catch { return null; }
+  if (u.protocol !== "https:" || u.username || u.password || !u.host) return null;
+  return u.href;
 }
 export function searchServices(query: string, limit: number) {
   const q = query.trim().toLowerCase();
