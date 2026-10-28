@@ -16,6 +16,16 @@ HANDOFF.md
 secrets/
 credentials/
 
+# Build output and local data
+node_modules/
+dist/
+release/
+.deploy-stage/
+data/
+*.db
+*.db-wal
+*.db-shm
+
 # Local recordings and development artifacts
 *.mp4
 *.mov
@@ -23,3 +33,7 @@ credentials/
 tmp/
 scratch/
 .DS_Store
+
+# Generated browser test artifacts
+test-results/
+playwright-report/

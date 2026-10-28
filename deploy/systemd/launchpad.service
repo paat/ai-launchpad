@@ -1,0 +1,60 @@
+# Install: root copies to /etc/systemd/system/launchpad.service (root-owned;
+# neither launchpad nor launchpad-deploy may edit this unit).
+# Pin NODE to the confirmed production path /usr/bin/node (Node 22.23.3;
+# `command -v node` and readlink as root — see docs/deployment.md).
+[Unit]
+Description=AI Launchpad (single-service pilot)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=launchpad
+Group=launchpad
+# Private config (root-installed) first, then the manifest-bound release
+# identity inside the active release. release.env holds exactly one line,
+# LAUNCHPAD_RELEASE_SHA=<sha>, written by the packager and verified by
+# deploy-host.sh against the expected SHA. Required (no optional prefix):
+# the single `current` symlink selects code and identity together. Do not
+# enable this unit before the first deploy creates `current`.
+EnvironmentFile=/etc/launchpad/launchpad.env
+EnvironmentFile=/opt/launchpad/current/release.env
+WorkingDirectory=/opt/launchpad/current
+ExecStart=/usr/bin/node /opt/launchpad/current/dist/server.js
+Restart=on-failure
+RestartSec=3
+# Live data stays private to the runtime user: DB/WAL/SHM and any new
+# files in /var/lib/launchpad (0710 launchpad:launchpad-deploy) are
+# created without group/other access. The deploy user has directory
+# traversal (stat) only, never business-data read.
+UMask=0077
+
+# Resource bounds (protect the colocated service on this host)
+MemoryHigh=512M
+MemoryMax=1G
+MemorySwapMax=0
+CPUQuota=50%
+TasksMax=128
+
+# Hardening: writable only where the app keeps its SQLite data. In
+# particular the runtime user cannot modify /opt/launchpad (releases,
+# current symlink, release env) or any root-owned control file.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/launchpad
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Journal bounds (stdout/stderr go to the journal; no app log files)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=launchpad
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=300
+
+[Install]
+WantedBy=multi-user.target
