@@ -61,8 +61,8 @@ const fullAssessment = {
 beforeAll(async () => { await new Promise<void>((ok) => { server = app.listen(0, "127.0.0.1", ok); }); base = `http://127.0.0.1:${(server.address() as { port: number }).port}`; cfg.baseUrl = base; });
 afterAll(() => server.close());
 
-test("catalog has 178 records; search preserves connection guidance and safe primary sources", () => {
-  expect(loadCatalog()).toHaveLength(178);
+test("catalog has 181 records; search preserves connection guidance and safe primary sources", () => {
+  expect(loadCatalog()).toHaveLength(181);
   const r = searchServices("invoice", 5);
   expect(r.length).toBeGreaterThan(0); expect(r.length).toBeLessThanOrEqual(5);
   expect(r.every((x) => x.runtime_verified === false)).toBe(true);
@@ -125,7 +125,7 @@ test("live inference is hard-disabled even with a positive budget; the isolated 
 describe("HTTP security basics", () => {
   test("unauthenticated companion redirects; production config denies demo; unconfigured Google is an honest 503 without a stack", async () => {
     expect((await fetch(`${base}/`, { redirect: "manual" })).status).toBe(302);
-    expect(configFromEnv({ NODE_ENV: "production", LAUNCHPAD_DEMO: "1" } as NodeJS.ProcessEnv).demo).toBe(false);
+    expect(configFromEnv({ NODE_ENV: "production", LAUNCHPAD_DEMO: "1", LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS: "synthetic-subject" } as NodeJS.ProcessEnv).demo).toBe(false);
     const g = await fetch(`${base}/auth/login/google`);
     expect(g.status).toBe(503); expect(await g.text()).not.toContain(" at ");
     const { request } = await import("node:http");
@@ -248,7 +248,7 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     const after = parse(await cA.callTool({ name: "get_progress", arguments: {} }));
     expect(after.assessment.responsibilities.find((r: { id: string }) => r.id === "invoicing").applicability).toBe("not_applicable");
     const search = parse(await cA.callTool({ name: "search_services", arguments: { query: "accounting", limit: 3 } }));
-    expect(search.catalog_size).toBe(178);
+    expect(search.catalog_size).toBe(181);
     expect(search.results.some((x: { sources: string[] }) => x.sources.length > 0)).toBe(true);
     // Candidates are private per owner: no shared IDs, no existence oracle.
     const cand = { name: "Demo New Service", connection: "https://example.invalid/mcp", jobs: "demo job" };

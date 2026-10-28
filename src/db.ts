@@ -29,6 +29,14 @@ export function openDb(path: string) {
   CREATE TABLE IF NOT EXISTS activity(id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT, actor TEXT NOT NULL, action TEXT NOT NULL, outcome TEXT NOT NULL, summary TEXT NOT NULL, created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS approvals(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, payload_json TEXT NOT NULL, digest TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', expires_at TEXT NOT NULL, created_at TEXT NOT NULL, consumed_at TEXT);
   `);
+  // Backward-safe: created on fresh and existing databases alike.
+  db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_oauth_pending_client ON oauth_pending(client_id);
+  CREATE INDEX IF NOT EXISTS idx_oauth_pending_owner ON oauth_pending(owner_id);
+  CREATE INDEX IF NOT EXISTS idx_oauth_pending_expires ON oauth_pending(expires);
+  CREATE INDEX IF NOT EXISTS idx_oauth_grants_client ON oauth_grants(client_id);
+  CREATE INDEX IF NOT EXISTS idx_oauth_clients_expires ON oauth_clients(expires);
+  `);
   return db;
 }
 export type Db = ReturnType<typeof openDb>;

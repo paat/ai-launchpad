@@ -1,0 +1,36 @@
+# Additive vhost ONLY. Install as /etc/caddy/launchpad.caddy and add exactly
+# one line to the main Caddyfile:  import /etc/caddy/launchpad.caddy
+# Do not edit or replace the existing Caddy configuration for other hosts.
+# Operator: validate with `caddy validate` before reload; DNS + certificate
+# issuance are operator steps documented in docs/deployment.md.
+#
+# Client-IP contract: production web ports accept Cloudflare traffic only
+# (origin firewall, operator-owned — do not broaden it here). Caddy must
+# therefore OVERWRITE X-Forwarded-For with the Cloudflare-validated client
+# header CF-Connecting-IP and never pass a client-supplied X-Forwarded-For
+# through. The app trusts the forwarded header only from this exact
+# loopback proxy and only when LAUNCHPAD_TRUST_LOOPBACK_PROXY=1 is set
+# (see deploy/launchpad.env.example).
+#
+# Proxy caching: this site configures no cache handler; OAuth/MCP responses
+# already carry the app's Cache-Control: no-store. Do not add a cache here.
+# No access log is configured for this site (no cookie/header/body logging).
+huppelaud.arikratt.ee {
+	reverse_proxy 127.0.0.1:4310 {
+		# Streaming (MCP streamable HTTP / SSE): flush immediately.
+		flush_interval -1
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 0
+		}
+		header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		header_up -CF-Connecting-IP
+	}
+	request_body {
+		max_size 1MB
+	}
+	header {
+		-Server
+	}
+	encode zstd gzip
+}

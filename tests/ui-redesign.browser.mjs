@@ -1,0 +1,255 @@
+#!/usr/bin/env node
+// Standalone browser gate for the UI redesign (no app server, no dist build).
+// Run: node --import tsx tests/ui-redesign.browser.mjs
+// Synthetic data only via page.setContent(shell+body); every request blocked.
+// Screenshots: scratch/implementation/ui-redesign-finish-01-shots/<state>-<w>.png
+import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
+import { chromium } from "playwright";
+import { shell, loginPage, statusBody, activityBody, connectionBody, setupBody } from "../src/views.ts";
+import { assessmentSchema, computeCoverage } from "../src/core.ts";
+
+const SHOTS = path.resolve("scratch/implementation/ui-redesign-finish-01-shots");
+await mkdir(SHOTS, { recursive: true });
+const CSRF = "synthetic-csrf";
+const BADGE = "Synthetic demo · mock data";
+const FIRST_REQUEST =
+  "Use AI Launchpad to review what you know about my business admin. Tell me what is still unknown and recommend one next action that would remove the most work. Do not change any business service.";
+const ENDPOINT = "https://launchpad.example.com/mcp";
+
+const assessment = assessmentSchema.parse({
+  assessed_domains: ["money"],
+  responsibilities: [
+    { id: "invoicing", domain: "money", label: "Sales invoicing", applicability: "applicable", is_core: false, arrangement: "none", reason: "Not arranged yet.", evidence_refs: [] },
+    { id: "mystery", domain: "money", label: "Mystery duty", applicability: "unresolved", is_core: false, arrangement: "none", reason: "Unknown.", evidence_refs: [] },
+  ],
+  gaps: ["An urgent filing remains unassessed."],
+  conclusion: "Partly mapped.",
+  next_action: { title: "Check the urgent filing", rationale: "It may carry a deadline.", savings_basis: "unknown", uncertainty: "High.", needs_owner: true },
+});
+const pageHtml = {
+  "connection-https": () =>
+    shell({ title: "Connection", active: "connection", badge: BADGE, csrf: CSRF, demo: true,
+      body: connectionBody({ csrf: CSRF, baseUrl: "https://launchpad.example.com", reportingEnabled: false, tokens: [], grants: [], candidates: [] }) }),
+  "connection-local": () =>
+    shell({ title: "Connection", active: "connection", badge: BADGE, csrf: CSRF, demo: true,
+      body: connectionBody({ csrf: CSRF, baseUrl: "http://localhost:3000", reportingEnabled: false, tokens: [], grants: [], candidates: [] }) }),
+  "status-assessed": () =>
+    shell({ title: "Status", active: "status", badge: BADGE, csrf: CSRF, demo: true,
+      body: statusBody({ label: "Synthetic OÜ", demo: true, assessment, coverage: computeCoverage(assessment), assessedAt: "2026-10-28T10:00:00Z", exclusions: [], historyCount: 1, reportingEnabled: false }) }),
+  "status-unassessed": () =>
+    shell({ title: "Status", active: "status", badge: BADGE, csrf: CSRF, demo: true,
+      body: statusBody({ label: "Synthetic OÜ", demo: true, assessment: null, coverage: computeCoverage(null), assessedAt: null, exclusions: [], historyCount: 0, reportingEnabled: false }) }),
+  activity: () =>
+    shell({ title: "Activity", active: "activity", badge: BADGE, csrf: CSRF, demo: true,
+      body: activityBody({ rows: [{ action: "report saved", actor: "assistant", outcome: "accepted", created_at: "2026-10-28", summary: "Synthetic" }], receipts: [], exclusions: [] }) }),
+  login: () =>
+    loginPage({ demo: true, google: true, preauth: "pre-1", companies: [{ key: "alpha", label: "Demo Plumbing OÜ (synthetic)" }] }),
+  setup: () =>
+    shell({ title: "Setup", active: "none", badge: BADGE, csrf: CSRF, demo: true,
+      body: setupBody({ csrf: CSRF, result: null }) }),
+};
+
+// Static: no network APIs in any inline script.
+for (const [name, make] of Object.entries(pageHtml)) {
+  const js = [...make().matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
+  assert.ok(!/fetch\(|XMLHttpRequest|sendBeacon|WebSocket/.test(js), `${name}: no network in inline scripts`);
+}
+
+const browser = await chromium.launch({
+  headless: true,
+  args: ["--disable-background-networking", "--disable-component-update", "--disable-sync", "--no-first-run"],
+});
+const geometry = {};
+try {
+  const context = await browser.newContext({ serviceWorkers: "block" });
+  const attempts = [];
+  await context.route("**/*", (route) => { attempts.push(route.request().url()); return route.abort(); });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e?.message ?? e)));
+
+  const overflowAndTargets = () => page.evaluate(() => {
+    const de = document.documentElement;
+    const targets = [];
+    for (const el of document.querySelectorAll("button, .btn, nav.main a, .tabs button")) {
+      const r = el.getBoundingClientRect();
+      const vis = r.width > 0 && r.height > 0 && getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden";
+      if (vis) targets.push({ tag: el.tagName, id: el.id || "", text: (el.textContent || "").trim().slice(0, 40), h: Math.round(r.height * 10) / 10 });
+    }
+    return { scrollW: de.scrollWidth, clientW: de.clientWidth, bodyScrollW: document.body.scrollWidth, targets };
+  });
+  const boxInFirstViewport = (sel) => page.evaluate((s) => {
+    const el = document.querySelector(s);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height), innerH: window.innerHeight, visible: r.top >= 0 && r.bottom <= window.innerHeight && r.height > 0 };
+  }, sel);
+
+  for (const vp of [{ width: 390, height: 844 }, { width: 320, height: 740 }]) {
+    await page.setViewportSize(vp);
+    for (const [name, make] of Object.entries(pageHtml)) {
+      await page.setContent(make());
+      const g = await overflowAndTargets();
+      assert.ok(g.scrollW <= g.clientW + 1, `${name}@${vp.width}: no h-overflow html ${g.scrollW}>${g.clientW}`);
+      assert.ok(g.bodyScrollW <= g.clientW + 1, `${name}@${vp.width}: no h-overflow body ${g.bodyScrollW}>${g.clientW}`);
+      const small = g.targets.filter((t) => t.h < 44);
+      assert.deepEqual(small, [], `${name}@${vp.width}: all main buttons/tabs/nav >=44px, small=${JSON.stringify(small)}`);
+      await page.screenshot({ path: path.join(SHOTS, `${name}-${vp.width}.png`) });
+      (geometry[name] ??= {})[vp.width] = { scrollW: g.scrollW, clientW: g.clientW, minTargetH: g.targets.length ? Math.min(...g.targets.map((t) => t.h)) : null, targetCount: g.targets.length };
+    }
+    // First-viewport primary actions (both widths).
+    await page.setContent(pageHtml["connection-https"]());
+    const copyBox = await boxInFirstViewport("#copy-endpoint");
+    assert.ok(copyBox?.visible, `connection-https@${vp.width}: Copy MCP address in first viewport ${JSON.stringify(copyBox)}`);
+    geometry[`copy-endpoint@${vp.width}`] = copyBox;
+    await page.setContent(pageHtml["status-unassessed"]());
+    const linkBox = await boxInFirstViewport('a.btn[href="/connection"]');
+    assert.ok(linkBox?.visible, `status-unassessed@${vp.width}: connection link in first viewport ${JSON.stringify(linkBox)}`);
+    geometry[`unassessed-connection-link@${vp.width}`] = linkBox;
+  }
+
+  // --- Guide tabs: one panel, click + keyboard (Arrow/Home/End, roving tabindex) ---
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setContent(pageHtml["connection-https"]());
+  const tabState = () => page.evaluate(() => ({
+    active: document.activeElement?.id ?? "",
+    claude: { sel: document.getElementById("tab-claude").getAttribute("aria-selected"), tab: document.getElementById("tab-claude").tabIndex, panelHidden: document.getElementById("guide-claude").hidden },
+    chatgpt: { sel: document.getElementById("tab-chatgpt").getAttribute("aria-selected"), tab: document.getElementById("tab-chatgpt").tabIndex, panelHidden: document.getElementById("guide-chatgpt").hidden },
+  }));
+  const expectTab = async (which, label) => {
+    const s = await tabState();
+    const on = which === "claude" ? s.claude : s.chatgpt;
+    const off = which === "claude" ? s.chatgpt : s.claude;
+    assert.equal(on.sel, "true", `${label}: ${which} aria-selected=true ${JSON.stringify(s)}`);
+    assert.equal(on.tab, 0, `${label}: ${which} tabindex=0`);
+    assert.equal(on.panelHidden, false, `${label}: ${which} panel visible`);
+    assert.equal(off.sel, "false", `${label}: other aria-selected=false`);
+    assert.equal(off.tab, -1, `${label}: other tabindex=-1`);
+    assert.equal(off.panelHidden, true, `${label}: other panel hidden`);
+    return s;
+  };
+  await expectTab("claude", "initial");
+  await page.locator("#tab-claude").focus();
+  await page.keyboard.press("ArrowRight");
+  assert.equal((await expectTab("chatgpt", "ArrowRight")).active, "tab-chatgpt", "ArrowRight moves focus");
+  await page.keyboard.press("ArrowRight"); // wraps
+  assert.equal((await expectTab("claude", "ArrowRight wrap")).active, "tab-claude", "ArrowRight wraps focus");
+  await page.keyboard.press("ArrowLeft"); // wraps back
+  assert.equal((await expectTab("chatgpt", "ArrowLeft wrap")).active, "tab-chatgpt", "ArrowLeft wraps focus");
+  await page.keyboard.press("Home");
+  assert.equal((await expectTab("claude", "Home")).active, "tab-claude", "Home focus");
+  await page.keyboard.press("End");
+  assert.equal((await expectTab("chatgpt", "End")).active, "tab-chatgpt", "End focus");
+  await page.locator("#tab-claude").click();
+  await expectTab("claude", "click still works");
+
+  // --- Copy: clipboard absent / rejection / success (endpoint + first request) ---
+  const copyState = (id) => page.evaluate((cid) => {
+    const ta = document.getElementById(`copy-${cid}-text`);
+    return { active: document.activeElement?.id ?? "", fallbackVisible: !document.getElementById(`copy-${cid}-fallback`).hidden,
+      successVisible: !document.getElementById(`copy-${cid}-ok`).hidden, value: ta.value,
+      start: ta.selectionStart, end: ta.selectionEnd, calls: window.copyCalls ?? [] };
+  }, id);
+  for (const mode of ["missing", "rejected", "success"]) {
+    await page.setContent(pageHtml["connection-https"]());
+    await page.evaluate((m) => {
+      window.copyCalls = [];
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: m === "missing" ? undefined : { writeText: (t) => { window.copyCalls.push(t); return m === "rejected" ? Promise.reject(new Error("synthetic denial")) : Promise.resolve(); } } });
+    }, mode);
+    for (const [id, expected] of [["endpoint", ENDPOINT], ["first-request", FIRST_REQUEST]]) {
+      await page.evaluate(() => { window.copyCalls = []; });
+      await page.locator(`#copy-${id}`).click();
+      const s = await copyState(id);
+      if (mode === "success") {
+        assert.deepEqual(s.calls, [expected], `${id} success copies exact text`);
+        assert.equal(s.successVisible, true, `${id} success announced`);
+        assert.equal(s.fallbackVisible, false, `${id} no fallback on success`);
+      } else {
+        assert.equal(s.fallbackVisible, true, `${id}/${mode} fallback revealed`);
+        assert.equal(s.successVisible, false, `${id}/${mode} no stale success`);
+        assert.equal(s.active, `copy-${id}-text`, `${id}/${mode} textarea focused`);
+        assert.equal(s.value, expected, `${id}/${mode} fallback exact text`);
+        assert.equal(s.start, 0); assert.equal(s.end, expected.length);
+      }
+    }
+  }
+  // Status Copy next step: success + absent fallback.
+  for (const mode of ["missing", "success"]) {
+    await page.setContent(pageHtml["status-assessed"]());
+    await page.evaluate((m) => {
+      window.copyCalls = [];
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: m === "missing" ? undefined : { writeText: (t) => { window.copyCalls.push(t); return Promise.resolve(); } } });
+    }, mode);
+    await page.locator("#copy-next").click();
+    const s = await copyState("next");
+    if (mode === "success") { assert.equal(s.calls.length, 1); assert.ok(s.calls[0].includes("Check the urgent filing")); assert.equal(s.successVisible, true); }
+    else { assert.equal(s.fallbackVisible, true); assert.ok(s.value.includes("Check the urgent filing")); assert.equal(s.active, "copy-next-text"); }
+  }
+
+  // --- Unknowns visible outside closed details; synthetic/unchecked labels ---
+  await page.setContent(pageHtml["status-assessed"]());
+  const unk = await page.evaluate(() => {
+    const box = document.querySelector(".attention");
+    return { exists: !!box, visible: !!box && box.getBoundingClientRect().height > 0, inDetails: !!box?.closest("details"),
+      text: box?.textContent ?? "", body: document.body.textContent, badge: document.querySelector(".badge")?.textContent ?? "" };
+  });
+  assert.ok(unk.exists && unk.visible && !unk.inDetails, "unknowns visible outside details");
+  assert.ok(unk.text.includes("An urgent filing remains unassessed."), "gap text visible");
+  assert.ok(unk.body.includes("not independently checked"), "unchecked label visible");
+  assert.ok(unk.badge.includes("Synthetic"), "synthetic badge visible");
+  await page.setContent(pageHtml.login());
+  assert.ok((await page.textContent("body")).includes("Local synthetic demo"), "login synthetic label");
+  await page.setContent(pageHtml.setup());
+  const setupText = await page.textContent("body");
+  assert.ok(setupText.includes("Fixture guidance") && setupText.includes("No live model is called"), "setup fixture label");
+  await page.setContent(pageHtml["connection-local"]());
+  const localText = await page.textContent("body");
+  assert.ok(localText.includes("Local setup pending."), "local pending label");
+  assert.equal(await page.locator("#copy-endpoint").count(), 0, "local: no remote copy CTA");
+
+  // --- Form actions / CSRF / field names preserved ---
+  const forms = () => page.evaluate(() => [...document.querySelectorAll("form")].map((f) => ({
+    action: f.getAttribute("action"), method: (f.getAttribute("method") || "").toLowerCase(),
+    names: [...f.querySelectorAll("input,select,textarea,button")].map((i) => i.getAttribute("name")).filter(Boolean),
+    csrf: f.querySelector('input[name="csrf"]')?.value ?? null })));
+  await page.setContent(pageHtml["connection-https"]());
+  let fs = await forms();
+  const need = (list, action, names, label) => {
+    const f = list.find((x) => x.action === action);
+    assert.ok(f, `${label}: form ${action} present`);
+    assert.equal(f.method, "post", `${label}: ${action} POST`);
+    assert.equal(f.csrf, CSRF, `${label}: ${action} CSRF value`);
+    for (const n of names) assert.ok(f.names.includes(n), `${label}: ${action} has field ${n} (${f.names})`);
+  };
+  need(fs, "/auth/logout", ["csrf"], "shell");
+  need(fs, "/reporting", ["csrf", "enabled"], "connection");
+  need(fs, "/tokens", ["csrf"], "connection");
+  need(fs, "/delete", ["csrf"], "connection");
+  await page.setContent(pageHtml.setup());
+  fs = await forms(); need(fs, "/setup", ["csrf", "topic"], "setup");
+  await page.setContent(pageHtml.login());
+  fs = await forms();
+  { const f = fs.find((x) => x.action === "/auth/demo"); assert.ok(f, "login demo form"); assert.ok(f.names.includes("actor") && f.names.includes("preauth"), "login demo fields"); }
+
+  // --- Escaping: untrusted assessment text never injects ---
+  const evil = assessmentSchema.parse({ ...assessment, gaps: ["<svg onload=alert(1)>"],
+    next_action: { ...assessment.next_action, title: '"><script>window.__pwned=1</script>', rationale: "x & y" } });
+  await page.setContent(shell({ title: "Status", active: "status", badge: BADGE, csrf: CSRF, demo: true,
+    body: statusBody({ label: "Synthetic OÜ", demo: true, assessment: evil, coverage: computeCoverage(evil), assessedAt: null, exclusions: [], historyCount: 1, reportingEnabled: false }) }));
+  const esc = await page.evaluate(() => ({ pwned: window.__pwned ?? null, svg: document.querySelectorAll("svg").length,
+    scripts: [...document.querySelectorAll("script")].map((s) => s.textContent).join("\n"), text: document.body.textContent }));
+  assert.equal(esc.pwned, null, "no script injection executed");
+  assert.equal(esc.svg, 0, "no svg element injected");
+  assert.ok(!esc.scripts.includes("__pwned"), "untrusted text not in inline script");
+  assert.ok(esc.text.includes("<svg onload=alert(1)>"), "evil gap shown as escaped text");
+
+  assert.equal(attempts.length, 0, `zero external calls, saw ${JSON.stringify(attempts)}`);
+  assert.equal(errors.length, 0, `zero page errors, saw ${JSON.stringify(errors)}`);
+  console.log(JSON.stringify({ ok: true, networkAttempts: attempts.length, pageErrors: errors.length, shotsDir: SHOTS, geometry }, null, 2));
+} finally {
+  await browser.close();
+}

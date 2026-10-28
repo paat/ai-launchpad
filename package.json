@@ -12,7 +12,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "test:browser": "playwright test",
+    "test:browser": "playwright test && node --import tsx tests/onboarding-copy.browser.mjs && node --import tsx tests/ui-redesign.browser.mjs",
     "test:probes": "npm run build && node tests/review-probes.mjs"
   },
   "dependencies": {

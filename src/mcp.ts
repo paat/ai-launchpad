@@ -32,6 +32,51 @@ export function getState(db: Db, ownerId: string) {
     .map((p) => ({ ...p, evidence_refs: JSON.parse(String(p.evidence_refs_json ?? "[]")), evidence_refs_json: undefined }));
   return { ws, assessment, assessment_version: latest?.version ?? 0, assessed_at: latest?.created_at ?? null, coverage: computeCoverage(assessment), progress, exclusions: [...seen.values()], history };
 }
+export interface AssistantMilestones {
+  synthetic: boolean;
+  lastContact: { at: string; action: string; basis: "tool_activity" | "assessment_receipt" } | null;
+  firstSavedAssessment: { at: string; reportId: string; receiptId: string; version: number } | null;
+}
+// Tool actions that count as retained assistant contact. Grant/token issuance,
+// owner actions, demo seeding, approvals and failed/denied calls are excluded.
+const ASSISTANT_CONTACT_ACTIONS = ["get_started", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate"];
+
+function validAssessmentReceipt(db: Db, ownerId: string, row: { report_id: string; receipt_json: string; created_at: string }) {
+  let receipt: unknown;
+  try { receipt = JSON.parse(row.receipt_json); } catch { return null; }
+  if (typeof receipt !== "object" || receipt === null) return null;
+  const r = receipt as Record<string, unknown>;
+  if (r.kind !== "assessment_saved") return null;
+  if (typeof r.receipt_id !== "string" || r.receipt_id.length === 0) return null;
+  if (typeof r.version !== "number" || !Number.isInteger(r.version) || r.version <= 0) return null;
+  const match = db.prepare("SELECT id FROM assessments WHERE owner_id=? AND version=?").get(ownerId, r.version) as { id: string } | undefined;
+  if (!match) return null;
+  return { at: row.created_at, reportId: row.report_id, receiptId: r.receipt_id, version: r.version };
+}
+
+// Owner-scoped read-only milestones. Demo owners return synthetic:true with no
+// real milestones; missing owners yield no evidence, never another owner's.
+export function getAssistantMilestones(db: Db, ownerId: string): AssistantMilestones {
+  const owner = db.prepare("SELECT kind FROM owners WHERE id=?").get(ownerId) as { kind: string } | undefined;
+  if (!owner) return { synthetic: false, lastContact: null, firstSavedAssessment: null };
+  if (owner.kind === "demo") return { synthetic: true, lastContact: null, firstSavedAssessment: null };
+  const inList = ASSISTANT_CONTACT_ACTIONS.map(() => "?").join(",");
+  const contact = db.prepare(`SELECT action,created_at FROM activity WHERE owner_id=? AND actor='assistant' AND outcome='ok' AND action IN (${inList}) ORDER BY id DESC LIMIT 1`).get(ownerId, ...ASSISTANT_CONTACT_ACTIONS) as { action: string; created_at: string } | undefined;
+  const reports = db.prepare("SELECT report_id,receipt_json,created_at FROM reports WHERE owner_id=? AND kind='assessment' ORDER BY created_at ASC, rowid ASC").all(ownerId) as { report_id: string; receipt_json: string; created_at: string }[];
+  let first: { at: string; reportId: string; receiptId: string; version: number } | null = null;
+  let newest: { at: string; reportId: string; receiptId: string; version: number } | null = null;
+  for (const row of reports) {
+    const valid = validAssessmentReceipt(db, ownerId, row);
+    if (!valid) continue;
+    if (!first) first = valid;
+    newest = valid;
+  }
+  let lastContact: AssistantMilestones["lastContact"] = contact ? { at: contact.created_at, action: contact.action, basis: "tool_activity" } : null;
+  if (newest && (!lastContact || newest.at > lastContact.at)) {
+    lastContact = { at: newest.at, action: "report_assessment", basis: "assessment_receipt" };
+  }
+  return { synthetic: false, lastContact, firstSavedAssessment: first };
+}
 export function diffAssessments(prior: Assessment | null, next: Assessment) {
   const p = new Map((prior?.responsibilities ?? []).map((r) => [r.id, r]));
   const n = new Map(next.responsibilities.map((r) => [r.id, r]));
@@ -128,7 +173,7 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
     return json(receipt);
   });
 
-  server.registerTool("search_services", { description: `Search the ${178}-record Estonian business services research catalog. Entries are documented leads with connection guidance and primary sources, NOT runtime-verified connections. Public catalogue data: available to any authenticated connection; never contains owner data.`, inputSchema: { query: z.string().max(120), limit: z.number().int().min(1).max(25).optional() } }, async (args) => {
+  server.registerTool("search_services", { description: `Search the ${loadCatalog().length}-record Estonian business services research catalog. Entries are documented leads with connection guidance and primary sources, NOT runtime-verified connections. Public catalogue data: available to any authenticated connection; never contains owner data.`, inputSchema: { query: z.string().max(120), limit: z.number().int().min(1).max(25).optional() } }, async (args) => {
     const results = searchServices(args.query, args.limit ?? 10);
     logActivity(db, ctx.ownerId, "assistant", "search_services", "ok", `Catalog search returned ${results.length}.`);
     return json({ catalog_size: loadCatalog().length, disclaimer: "Research snapshot (27 Oct 2026). None of these services were runtime-tested by Launchpad.", results });

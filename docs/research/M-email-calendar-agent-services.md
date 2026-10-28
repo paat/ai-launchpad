@@ -48,7 +48,7 @@ Progress reporting needs task/status/receipt references, not complete mail threa
 
 ## Provider and connection inventory
 
-This pass adds 21 integration surfaces. The [canonical JSON/CSV catalog](catalog/README.md) retains full connection, access, evidence and source details. Parent reopened load-bearing Google, Microsoft, Fastmail, Zone, Veebimajutus, Nylas and EmailEngine sources; remaining records are researcher-sourced documentation leads. None is runtime-tested.
+This pass added 21 integration surfaces; a 28 October follow-up adds 3 community email connectors (24 total). The [canonical JSON/CSV catalog](catalog/README.md) retains full connection, access, evidence and source details. Parent reopened load-bearing Google, Microsoft, Fastmail, Zone, Veebimajutus, Nylas, EmailEngine and the three community-connector primary sources below; remaining records are researcher-sourced documentation leads. None is runtime-tested.
 
 | Service | Documented route | Important limit |
 |---|---|---|
@@ -73,6 +73,19 @@ This pass adds 21 integration surfaces. The [canonical JSON/CSV catalog](catalog
 | [Cronofy](https://docs.cronofy.com/developers/mcp-server/) | Official hosted scheduling MCP backed by cross-provider calendar connectivity | Internal app grants access across its organizational unit. Free/Busy access mode hides details yet can still send event invitations/updates. No Access mode still sends invitations and relies on manual availability. Not an email inbox reader. |
 | [EmailEngine](https://emailengine.app/) | Official self-hosted operational MCP beta plus REST; public mcp.emailengine.app is documentation-only | Operational MCP beta/off by default; self-hosting maintenance required. No calendar support established. IMAP is mail access, SMTP sends; neither implies calendar availability. Self-hosting does not prevent selected model from receiving read mail content. |
 | [AgentMail](https://docs.agentmail.to/integrations/mcp) | Official hosted MCP for dedicated AgentMail inboxes/calendars; not ordinary owner-mailbox synchronization | New agent mailbox, not a substitute for reading owner's Gmail/IMAP history. Google Workspace routing doc handles unrecognized addresses; existing recognized user/alias/group addresses stay with Google. Host confirmation claims are not proof server-enforced approvals. |
+| [ProtonMail MCP by mhbxyz (community)](https://github.com/mhbxyz/protonmail-mcp) | Community local MCP through Proton Bridge; stdio and HTTP advertised | README advertises reads and opt-in writes. Older Security text contradicts this (no write tool, local-only, nothing to third parties); safeguards UNKNOWN until pinned code review and runtime qualification. Never claim a read-only guarantee. Paid Bridge plan is upstream, not a connector price; localhost needed. |
+| [Proton MCP by MrBenJ (community)](https://github.com/MrBenJ/proton-mcp) | Community local MCP over stdio; personal single-machine use, not hosting/sharing | Requires paid Bridge and separate Bridge credentials. Docs advertise read/search/send/draft/trash; capabilities not verified. No qualification, security, approval, or calendar guarantee. |
+| [Email MCP by codefuturist (community)](https://github.com/codefuturist/email-mcp) | Community generic IMAP+SMTP connector; local stdio or self-hosted Streamable HTTP, not provider-operated | Advertised read/search/send/manage/drafts; OAuth2 for Gmail/M365 experimental. Source install needs Node >= 24 (Launchpad runtime Node 22 does not install this). ICS extraction from mail is not calendar write access. Generic IMAP reuse with Zone/Veebimajutus/Telia mailboxes is UNTESTED, not a compatibility claim. No qualification, security, or approval guarantee. Owner connects their own assistant; no Launchpad mailbox access. |
+
+## Choosing a connector (plain-language guide)
+
+Use the mailbox and calendar the business already has. Pick the connector that matches it: the provider's own connection first, a community connector only where no official route exists. This changes nothing about existing principles: no forms, and the owner's own assistant stays the interface.
+
+Before connecting, check each permission separately: can it read mail, save drafts, send mail, and see or change the calendar? These are different permissions. Mail access never implies calendar access.
+
+Mailbox passwords and Bridge credentials stay with the owner and their provider. They are never pasted into reports or shared catalog records.
+
+Try a read-only check with synthetic mail first. Only enable sending after reads work and the owner understands exactly what the assistant may send, to whom, and with what approval.
 
 ## Evidence and remaining gaps
 

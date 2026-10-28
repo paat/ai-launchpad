@@ -3,16 +3,47 @@ import express, { type Request, type Response, type NextFunction } from "express
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
-import { buildMcpServer, getState, logActivity, TOOL_ARG_KEYS } from "./mcp.js";
+import { buildMcpServer, getAssistantMilestones, getState, logActivity, TOOL_ARG_KEYS } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { runModelJob } from "./model.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { esc, shell, loginPage, statusBody, activityBody, connectionBody, tokenOnceBody, approvalsBody, setupBody, servicesBody, playbooksBody } from "./views.js";
 
-export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; }
+export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; }
+// Owner-only pilot allowlist: exact opaque Google `sub` values, never emails.
+// Bounded: at most 20 entries, each 1-255 chars (OIDC `sub` max), no
+// whitespace/control characters, no comma (the env separator), no '@'
+// (email-like), no duplicates. Values are compared exactly as given; they
+// are never lowercased or otherwise normalized, and never echoed in errors.
+const MAX_ALLOWED_SUBJECTS = 20, MAX_SUBJECT_LENGTH = 255;
+function validateGoogleAllowedSubjects(list: unknown): string[] {
+  const fail = (): never => { throw new Error("LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS must be a nonempty list of at most 20 exact opaque Google subject (sub) values: each 1-255 characters, no whitespace, control characters, commas or email addresses, and no duplicates."); };
+  if (!Array.isArray(list) || list.length < 1 || list.length > MAX_ALLOWED_SUBJECTS) fail();
+  const seen = new Set<string>();
+  for (const entry of list as unknown[]) {
+    if (typeof entry !== "string" || entry.length < 1 || entry.length > MAX_SUBJECT_LENGTH || /[\s\u0000-\u001f\u007f-\u009f]/.test(entry) || entry.includes("@") || entry.includes(",") || seen.has(entry)) fail();
+    seen.add(entry as string);
+  }
+  return [...(list as string[])];
+}
+function googleAllowedSubjectsFromEnv(env: NodeJS.ProcessEnv, production: boolean): string[] | undefined {
+  const raw = env.LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS;
+  if (raw === undefined || raw === "") {
+    if (production) throw new Error("LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS is required in production (owner-only pilot: comma-separated exact opaque Google sub values, never emails); refusing to start without it.");
+    return undefined;
+  }
+  return validateGoogleAllowedSubjects(raw.split(","));
+}
+export const RELEASE_SHA_RE = /^[0-9a-f]{40}$/;
+function releaseShaFromEnv(env: NodeJS.ProcessEnv): string | null {
+  const raw = env.LAUNCHPAD_RELEASE_SHA;
+  if (raw === undefined || raw === "") return null;
+  if (!RELEASE_SHA_RE.test(raw)) throw new Error("LAUNCHPAD_RELEASE_SHA must be exactly 40 lowercase hex characters (or unset); refusing to start with an unverifiable release identity.");
+  return raw;
+}
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
   const production = env.NODE_ENV === "production";
-  return { demo: env.LAUNCHPAD_DEMO === "1" && !production, production, dbPath: env.LAUNCHPAD_DB_PATH ?? "./data/launchpad.db", baseUrl: env.LAUNCHPAD_BASE_URL ?? "http://localhost:3000", googleClientId: env.GOOGLE_CLIENT_ID || undefined, googleClientSecret: env.GOOGLE_CLIENT_SECRET || undefined, modelMode: env.MODEL_MODE ?? "test", allowedHosts: (env.LAUNCHPAD_ALLOWED_HOSTS ?? "localhost,127.0.0.1").split(",") };
+  return { demo: env.LAUNCHPAD_DEMO === "1" && !production, production, dbPath: env.LAUNCHPAD_DB_PATH ?? "./data/launchpad.db", baseUrl: env.LAUNCHPAD_BASE_URL ?? "http://localhost:3000", googleClientId: env.GOOGLE_CLIENT_ID || undefined, googleClientSecret: env.GOOGLE_CLIENT_SECRET || undefined, modelMode: env.MODEL_MODE ?? "test", allowedHosts: (env.LAUNCHPAD_ALLOWED_HOSTS ?? "localhost,127.0.0.1").split(","), releaseSha: releaseShaFromEnv(env), trustLoopbackProxy: env.LAUNCHPAD_TRUST_LOOPBACK_PROXY === "1", googleAllowedSubjects: googleAllowedSubjectsFromEnv(env, production) };
 }
 type Authed = Request & { ownerId: string; csrf: string; ownerKind: string };
 const oid = (req: Request) => (req as Authed).ownerId;
@@ -35,8 +66,32 @@ function parseAmountCents(v: unknown): number | null {
 const isLoopback = (req: Request) => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? "");
 
 export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
+  const releaseSha = cfg.releaseSha ?? null;
+  if (releaseSha !== null && !RELEASE_SHA_RE.test(releaseSha)) throw new Error("releaseSha must be exactly 40 lowercase hex characters (or null).");
+  // Direct Config is validated too, not only the env parser: production
+  // without a valid pilot allowlist fails closed at startup. Development
+  // with the list omitted keeps the existing local demo; a configured list
+  // is enforced in any environment. There is no public-mode bypass.
+  const allowedSubjects: Set<string> | null = cfg.googleAllowedSubjects !== undefined
+    ? new Set(validateGoogleAllowedSubjects(cfg.googleAllowedSubjects))
+    : cfg.production
+      ? (() => { throw new Error("googleAllowedSubjects is required in production (owner-only pilot: exact opaque Google sub values, never emails); refusing to start without it."); })()
+      : null;
+  // Central pilot policy: with a list configured, only a Google owner whose
+  // stored subject is exactly `google:<allowed sub>` is allowed. Demo and
+  // other non-Google owners get no bypass.
+  function ownerAllowed(ownerId: string): boolean {
+    if (!allowedSubjects) return true;
+    const o = db.prepare("SELECT kind,subject FROM owners WHERE id=?").get(ownerId) as { kind: string; subject: string } | undefined;
+    return !!o && o.kind === "google" && o.subject.startsWith("google:") && allowedSubjects.has(o.subject.slice("google:".length));
+  }
   const app = express();
   app.disable("x-powered-by");
+  // Forwarded addresses are trusted only when explicitly configured, and
+  // then only from an exact loopback proxy at hop 0 (e.g. local Caddy that
+  // overwrites X-Forwarded-For) — never a blanket `true`.
+  if (cfg.trustLoopbackProxy) app.set("trust proxy", (ip: string, i: number) => i === 0 && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(ip));
+  else app.set("trust proxy", false);
   app.use(express.urlencoded({ extended: false, limit: "32kb" }));
   app.use(express.json({ limit: "256kb" }));
 
@@ -89,7 +144,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const raw = cookieVal(req, "lp_session");
     if (!raw) return null;
     const row = db.prepare("SELECT owner_id,csrf,expires_at FROM sessions WHERE id_hash=?").get(sha256(raw)) as { owner_id: string; csrf: string; expires_at: string } | undefined;
-    if (!row || Date.parse(row.expires_at) < Date.now()) return null;
+    // ownerAllowed is checked on every lookup, so removing a subject and
+    // restarting immediately denies existing browser/consent sessions.
+    if (!row || Date.parse(row.expires_at) < Date.now() || !ownerAllowed(row.owner_id)) return null;
     return row;
   }
   function startSession(req: Request, res: Response, ownerId: string) {
@@ -121,10 +178,10 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   };
   const page = (req: Request, title: string, active: "status" | "activity" | "connection" | "none", body: string) => shell({
     title, active, body, csrf: (req as Authed).csrf ?? "", demo: cfg.demo,
-    badge: (req as Authed).ownerKind === "demo" ? "Synthetic demo · mock data" : "Local companion · not verified",
+    badge: (req as Authed).ownerKind === "demo" ? "Synthetic demo · mock data" : cfg.production ? "Private pilot" : "Development preview",
   });
 
-  const oauth = new LaunchpadOAuth(db, cfg, session);
+  const oauth = new LaunchpadOAuth(db, cfg, session, ownerAllowed);
   oauth.install(app, requireOwner, csrfOk);
 
   // --- pre-auth CSRF for the demo login (bounded, one-time, browser-bound) ---
@@ -140,7 +197,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   }
   const demoAttempts = new Map<string, number[]>();
   function demoLoginRateOk(req: Request): boolean {
-    const ip = req.socket.remoteAddress ?? "?";
+    const ip = req.ip || req.socket.remoteAddress || "?";
     const now = Date.now();
     const recent = (demoAttempts.get(ip) ?? []).filter((t) => now - t < 60_000);
     if (recent.length >= 20) { demoAttempts.set(ip, recent); return false; }
@@ -150,7 +207,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     return true;
   }
 
-  app.get("/health", (_req, res) => res.json({ ok: true, demo: cfg.demo, model_mode: cfg.modelMode === "disabled" ? "disabled" : "test", live_inference: "disabled", catalog_size: loadCatalog().length }));
+  app.get("/health", (_req, res) => res.json({ ok: true, demo: cfg.demo, model_mode: cfg.modelMode === "disabled" ? "disabled" : "test", live_inference: "disabled", catalog_size: loadCatalog().length, release_sha: releaseSha }));
   app.get("/login", (_req, res) => {
     const token = cfg.demo ? issuePreauth(res) : "";
     res.type("html").send(loginPage({ demo: cfg.demo, google: !!cfg.googleClientId, preauth: token, companies: DEMO_COMPANIES }));
@@ -221,6 +278,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       const tokens = await oidc.authorizationCodeGrant(config, new URL(`${cfg.baseUrl}${req.originalUrl}`), { pkceCodeVerifier: flow.codeVerifier, expectedState: state, expectedNonce: flow.nonce });
       const claims = tokens.claims(); // issuer/audience/expiry/signature verified by the library
       if (!claims?.sub) throw new Error("no subject");
+      // Pilot allowlist is checked on the verified subject BEFORE any owner,
+      // workspace or session is created. Generic 403: no subject/email echo.
+      if (allowedSubjects && !allowedSubjects.has(claims.sub)) return res.status(403).send("Access is not available for this account.");
       const ownerId = ensureOwner(`google:${claims.sub}`, typeof claims.email === "string" ? claims.email : null, "google", "My company (name it via your assistant)");
       // Real workspaces are never seeded with synthetic fixtures.
       startSession(req, res, ownerId);
@@ -266,7 +326,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
     const tokens = db.prepare("SELECT id,scopes,revoked,created_at,last_used_at FROM mcp_tokens WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, unknown>[];
     const candidates = db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, string>[];
-    res.type("html").send(page(req, "Connection & data", "connection", connectionBody({ csrf: (req as Authed).csrf, baseUrl: cfg.baseUrl, reportingEnabled: owner.reporting_enabled === 1, tokens, candidates, grants: db.prepare("SELECT g.id,g.scopes,g.revoked,g.expires,g.redirect,c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? ORDER BY g.rowid DESC").all(oid(req)) as Record<string, string>[] })));
+    res.type("html").send(page(req, "Connection & data", "connection", connectionBody({ csrf: (req as Authed).csrf, baseUrl: cfg.baseUrl, reportingEnabled: owner.reporting_enabled === 1, tokens, candidates, milestones: getAssistantMilestones(db, oid(req)), grants: db.prepare("SELECT g.id,g.scopes,g.revoked,g.expires,g.redirect,c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? ORDER BY g.rowid DESC").all(oid(req)) as Record<string, string>[] })));
   });
   app.post("/tokens", requireOwner, csrfOk, (req, res) => {
     const owner = db.prepare("SELECT epoch FROM owners WHERE id=?").get(oid(req)) as { epoch: number };
@@ -371,7 +431,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       res.set("WWW-Authenticate", `Bearer resource_metadata="${cfg.baseUrl}/.well-known/oauth-protected-resource/mcp", scope="progress:read progress:report"`);
       if (!token || token.revoked) return res.status(401).json({ jsonrpc: "2.0", error: { code: -32001, message: "Unauthenticated: a valid Launchpad MCP token is required. Google tokens are never accepted here." }, id: null });
       const owner = db.prepare("SELECT epoch,reporting_enabled FROM owners WHERE id=?").get(token.owner_id) as { epoch: number; reporting_enabled: number } | undefined;
-      if (!owner || owner.epoch !== token.epoch) return res.status(401).json({ jsonrpc: "2.0", error: { code: -32001, message: "Token no longer valid (data deleted or token rotated)." }, id: null });
+      // Manual MCP bearer tokens follow the same current pilot policy as
+      // OAuth access tokens (verifyAccessToken checks it via the grant).
+      if (!owner || owner.epoch !== token.epoch || !ownerAllowed(token.owner_id)) return res.status(401).json({ jsonrpc: "2.0", error: { code: -32001, message: "Token no longer valid (data deleted or token rotated)." }, id: null });
       // Reject unexpected top-level tool fields (the SDK would silently strip
       // forged 'verified'/'paid' claims instead of rejecting the report).
       const rpc = req.body as { id?: unknown; method?: string; params?: { name?: string; arguments?: Record<string, unknown> } } | undefined;

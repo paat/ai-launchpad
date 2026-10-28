@@ -1,0 +1,6 @@
+# Template for /etc/sudoers.d/launchpad-deploy (validate with visudo -c).
+# The ONLY sudo grants for launchpad-deploy: three fixed systemctl
+# commands, exact arguments, pinned binary path. Confirm
+# `command -v systemctl` as root before installing. deploy-host.sh is then
+# run with LAUNCHPAD_SYSTEMCTL="sudo -n /usr/bin/systemctl".
+launchpad-deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart launchpad.service, /usr/bin/systemctl stop launchpad.service, /usr/bin/systemctl start launchpad-backup.service

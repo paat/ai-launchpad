@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily AI Launchpad backup
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=600
+Persistent=true
+Unit=launchpad-backup.service
+
+[Install]
+WantedBy=timers.target

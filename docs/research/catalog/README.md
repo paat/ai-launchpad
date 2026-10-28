@@ -1,6 +1,6 @@
 # Services relevant to Estonian businesses
 
-Research snapshot: **27 October 2026 (Europe/Tallinn)**. 178 service/integration records, not that many independent vendors or tested connections.
+Research snapshot: **27 October 2026 (Europe/Tallinn)**, updated **28 October 2026** with 3 community email connectors. 181 service/integration records, not that many independent vendors or tested connections. The global snapshot date is unchanged; per-record `checked_on` dates apply (the 3 new records are `2026-10-28`, all others `2026-10-27`).
 
 Read [the findings and method](../J-estonian-agent-services.md). Full connection, access, limitation and source details: [JSON](estonian-business-services.json) · [CSV](estonian-business-services.csv).
 
@@ -171,7 +171,7 @@ Read [the findings and method](../J-estonian-agent-services.md). Full connection
 | [Fractory](https://fractory.com/fractory-mcp/) | Proposed quote/lead-time lookup, order status, history/spend, reorders | announced_or_unresolved; named service provider; upstream endorsement not established | announced; Updated Aug 19 2026; feature scope still being shaped; NOT available integration |
 | [Kodu / Susanne at comm.ee](https://home.comm.ee/docs?s=mcp) | Property listings, saved searches, account and invoice operations | announced_or_unresolved; named service provider; upstream endorsement not established | documented_maturity_unresolved; Mutation returns separate human confirmation link. Parent earlier cache had missing confirmation UI; current fetched text lacks that claim. Maturity and exact deployment unresolved. |
 
-## Email And Calendar (21)
+## Email And Calendar (24)
 
 | Service / integration | Business job | Interface / provenance | Evidence / limitation |
 |---|---|---|---|
@@ -196,6 +196,9 @@ Read [the findings and method](../J-estonian-agent-services.md). Full connection
 | [Cronofy](https://docs.cronofy.com/developers/mcp-server/) | Create scheduling link, suggest mutual availability, choose time and book meeting | hosted_mcp; First-party Cronofy MCP; intermediary calendar synchronization service | official public documentation inspected; not runtime-tested; Internal app grants access across its organizational unit. Free/Busy access mode hides details yet can still send event invitations/updates. No Access mode still sends invitations and relies on manual availability. Not an email inbox reader. |
 | [EmailEngine](https://emailengine.app/) | Connect existing IMAP/SMTP, Gmail API or Microsoft Graph accounts; read/search/organize mail, draft/send; optional instance management | self_hosted_mcp; First-party software; instance operated by customer or their chosen host | official public documentation inspected; not runtime-tested; Operational MCP beta/off by default; self-hosting maintenance required. No calendar support established. IMAP is mail access, SMTP sends; neither implies calendar availability. Self-hosting does not prevent selected model from receiving read mail content. |
 | [AgentMail](https://docs.agentmail.to/integrations/mcp) | Create agent inboxes; read/search/draft/send/reply/forward; calendar agenda/events/invitation responses; allow/block lists | hosted_mcp; First-party mailbox infrastructure MCP | official public documentation inspected; not runtime-tested; New agent mailbox, not a substitute for reading owner's Gmail/IMAP history. Google Workspace routing doc handles unrecognized addresses; existing recognized user/alias/group addresses stay with Google. Host confirmation claims are not proof server-enforced approvals. |
+| [ProtonMail MCP by mhbxyz (community)](https://github.com/mhbxyz/protonmail-mcp) | Read/search Proton mailbox; opt-in writes through local Bridge, as advertised | local_mcp; community implementation, not upstream endorsement | documented; no authenticated runtime test; README advertises reads and opt-in writes over stdio and HTTP. Older Security text contradicts this (no write tool, local-only); safeguards UNKNOWN until pinned code review and runtime qualification. Never claim a read-only guarantee. Paid Bridge plan is an upstream requirement; localhost needed. |
+| [Proton MCP by MrBenJ (community)](https://github.com/MrBenJ/proton-mcp) | Read/search/send/draft/trash Proton mail through local Bridge, as advertised; not verified | local_mcp; community implementation, not upstream endorsement | documented; no authenticated runtime test; Personal use on one single machine, not hosting/sharing. Requires paid Bridge and separate Bridge credentials. No qualification, security, approval, or calendar guarantee. |
+| [Email MCP by codefuturist (community)](https://github.com/codefuturist/email-mcp) | Read/search/send/manage/draft across multiple generic IMAP/SMTP accounts, as advertised; not verified | self_hosted_mcp; community implementation, not upstream endorsement | documented; no authenticated runtime test; Local stdio or self-hosted Streamable HTTP, not provider-operated. Source install needs Node >= 24 (Launchpad runtime Node 22 does not install this). ICS extraction from mail is not calendar write access. Generic IMAP reuse with Estonian mailboxes is UNTESTED, not a compatibility claim. |
 
 ## Browser Automation (7)
 

@@ -46,6 +46,8 @@ for (const width of [390, 320]) {
     await expect(page.getByText(/Currently:/)).toContainText("off");
     await page.getByRole("button", { name: "Allow progress sharing" }).click();
     await expect(page.getByText(/Currently:/)).toContainText("on");
+    await expect(page.getByRole("button", { name: /Issue assistant token/ })).toBeHidden();
+    await page.getByText("Advanced: manual tokens").click();
     await page.getByRole("button", { name: /Issue assistant token/ }).click();
     await expect(page.getByRole("heading", { name: "Your new assistant token" })).toBeVisible();
     expect(page.url()).not.toContain("lp_");
@@ -56,7 +58,7 @@ for (const width of [390, 320]) {
     await expect(page.getByText(/Currently:/)).toContainText("off");
 
     // Activity shows the seeded synthetic fixture honestly.
-    await page.getByRole("link", { name: "Activity" }).click();
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Activity", exact: true }).click();
     await expect(page.getByText(/Synthetic demo fixture/)).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/activity-${width}.png`, fullPage: true });
   });

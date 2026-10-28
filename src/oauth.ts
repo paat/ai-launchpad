@@ -10,6 +10,17 @@ import { esc, shell } from "./views.js";
 import type { Config } from "./app.js";
 
 const SCOPES = ["progress:read", "progress:report"];
+// Pilot admission bounds (issue 7): finite pools, not a DDoS proof.
+// CLIENT_UNUSED (100) is a NEW-REGISTRATION admission target, not a standing
+// invariant: denying/expiring a pending flow returns its client to unused, so
+// unused can transiently read 101 until the next registration reconciles it.
+// CLIENT_TOTAL (500) is the persistent hard limit. Active clients (live
+// pending flow or retained grant) are never evicted; saturation with only
+// active clients fails openly. client_id_issued_at has second resolution, so
+// eligibility adds a 1s margin: every client keeps at least the full grace
+// from its actual registration moment.
+const PENDING_TOTAL = 100, PENDING_ANON = 70, PENDING_PER_OWNER = 2;
+const CLIENT_TOTAL = 500, CLIENT_UNUSED = 100, UNUSED_TTL_MS = 15 * 60_000, UNUSED_GRACE_MS = 2 * 60_000, UNUSED_GRACE_MARGIN_MS = 1000;
 const opaque = () => randomBytes(32).toString("base64url");
 type Session = { owner_id: string; csrf: string };
 type Pending = { id: string; client_id: string; params: string; owner_id: string | null; epoch: number | null; expires: number };
@@ -20,26 +31,50 @@ export function connectCookie(req: Request): string {
   return /(?:^|;\s*)lp_connect=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1] ?? "";
 }
 export class LaunchpadOAuth implements OAuthServerProvider {
-  constructor(private db: Db, private cfg: Config, private session: (req: Request) => Session | null) {}
+  // ownerAllowed defaults to unrestricted so standalone unit use keeps its
+  // old behavior; createApp always injects its current pilot policy.
+  constructor(private db: Db, private cfg: Config, private session: (req: Request) => Session | null, private ownerAllowed: (ownerId: string) => boolean = () => true) {}
   get resource() { return `${new URL(this.cfg.baseUrl).origin}/mcp`; }
   private scopes(scopes: string[]) {
     if (!scopes.length || scopes.length > 2 || new Set(scopes).size !== scopes.length || scopes.some(s => !SCOPES.includes(s))) throw new InvalidRequestError("Choose progress:read and/or progress:report.");
     return scopes;
   }
-  private prune() {
-    this.db.prepare("DELETE FROM oauth_pending WHERE expires<=?").run(Date.now());
-    this.db.prepare("DELETE FROM oauth_codes WHERE expires<=?").run(Date.now());
-    this.db.prepare("DELETE FROM oauth_grants WHERE expires<=?").run(Date.now());
-    this.db.prepare("DELETE FROM oauth_clients WHERE expires<=?").run(Date.now());
+  private prune(now = Date.now()) {
+    this.db.prepare("DELETE FROM oauth_pending WHERE expires<=?").run(now);
+    this.db.prepare("DELETE FROM oauth_codes WHERE expires<=?").run(now);
+    // Expired grants go first (cascading their codes/credentials, so used
+    // refresh replay evidence lives exactly as long as the grant is valid).
+    this.db.prepare("DELETE FROM oauth_grants WHERE expires<=?").run(now);
+    // Grant-safe: never cascade-delete a client a live pending flow or any
+    // retained (unexpired) grant still references.
+    this.db.prepare(`DELETE FROM oauth_clients WHERE expires<=?
+      AND NOT EXISTS (SELECT 1 FROM oauth_pending p WHERE p.client_id=oauth_clients.id)
+      AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id=oauth_clients.id)`).run(now);
+  }
+  private clientBacked(id: string, now: number) {
+    return this.count("oauth_pending", "WHERE client_id=? AND expires>?", [id, now]) > 0
+      || this.count("oauth_grants", "WHERE client_id=? AND revoked=0 AND expires>?", [id, now]) > 0;
+  }
+  private unusedClients() {
+    const rows = this.db.prepare(`SELECT c.id,c.metadata FROM oauth_clients c
+      WHERE NOT EXISTS (SELECT 1 FROM oauth_pending p WHERE p.client_id=c.id)
+      AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id=c.id)`).all() as { id: string; metadata: string }[];
+    return rows.map(r => { let issued = 0; try { issued = (JSON.parse(r.metadata).client_id_issued_at ?? 0) * 1000; } catch { /* treat as oldest */ } return { id: r.id, issued }; })
+      .sort((a, b) => a.issued - b.issued);
   }
   private count(table: string, where = "", values: unknown[] = []) { return (this.db.prepare(`SELECT count(*) n FROM ${table} ${where}`).get(...values) as { n: number }).n; }
   readonly clientsStore = {
     getClient: (id: string): OAuthClientInformationFull | undefined => {
-      const row = this.db.prepare("SELECT metadata FROM oauth_clients WHERE id=? AND expires>?").get(id, Date.now()) as { metadata: string } | undefined;
-      return row ? JSON.parse(row.metadata) : undefined;
+      const now = Date.now();
+      const row = this.db.prepare("SELECT metadata,expires FROM oauth_clients WHERE id=?").get(id) as { metadata: string; expires: number } | undefined;
+      // An expired registration stays resolvable while a live pending flow or
+      // a valid unrevoked grant needs it (token exchange/refresh/revoke).
+      if (!row || (row.expires <= now && !this.clientBacked(id, now))) return undefined;
+      return JSON.parse(row.metadata);
     },
-    registerClient: (input: Omit<OAuthClientInformationFull, "client_id" | "client_id_issued_at">): OAuthClientInformationFull => {
-      this.prune();
+    registerClient: (input: Omit<OAuthClientInformationFull, "client_id" | "client_id_issued_at">): OAuthClientInformationFull => this.db.transaction(() => {
+      const now = Date.now();
+      this.prune(now);
       if (input.token_endpoint_auth_method !== "none" || input.client_secret || !input.redirect_uris.length || input.redirect_uris.length > 5 || (input.client_name?.length ?? 0) > 100 || JSON.stringify(input).length > 8192) throw new InvalidClientMetadataError("Public clients only; at most 5 redirects and a 100-character name.");
       for (const uri of input.redirect_uris) {
         let u: URL; try { u = new URL(uri); } catch { throw new InvalidClientMetadataError("Invalid redirect."); }
@@ -47,24 +82,58 @@ export class LaunchpadOAuth implements OAuthServerProvider {
       }
       if (input.grant_types?.some(g => !["authorization_code", "refresh_token"].includes(g)) || input.response_types?.some(r => r !== "code")) throw new InvalidClientMetadataError("Only authorization code and refresh grants are supported.");
       if (input.scope) this.scopes(input.scope.split(" "));
-      if (this.count("oauth_clients") >= 500) throw new InvalidClientMetadataError("Registration capacity reached.");
+      // Bounded unused pool + hard total: reclaim only the oldest unused
+      // registrations past the conservative grace boundary (grace + 1s
+      // margin for second-resolution issuance); never a client with a live
+      // pending flow or retained grant. Active-only saturation fails openly.
+      // 100 unused is the admission target reconciled here, not an
+      // invariant: deny/expiry may leave 101 unused until this runs.
+      const unused = this.unusedClients();
+      const need = Math.max(this.count("oauth_clients") - (CLIENT_TOTAL - 1), unused.length - (CLIENT_UNUSED - 1), 0);
+      if (need > 0) {
+        const eligible = unused.filter(u => now - u.issued >= UNUSED_GRACE_MS + UNUSED_GRACE_MARGIN_MS);
+        if (eligible.length < need) throw new InvalidClientMetadataError("Registration capacity reached; retry shortly.");
+        for (const victim of eligible.slice(0, need)) this.db.prepare("DELETE FROM oauth_clients WHERE id=?").run(victim.id);
+      }
       // Persist only the fields used here. No client metadata URLs are fetched.
-      const client: OAuthClientInformationFull = { client_id: newId("client"), client_id_issued_at: Math.floor(Date.now()/1000), client_name: input.client_name || "Unnamed assistant", redirect_uris: input.redirect_uris, token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], scope: input.scope ?? SCOPES.join(" ") };
-      this.db.prepare("INSERT INTO oauth_clients VALUES(?,?,?)").run(client.client_id, JSON.stringify(client), Date.now()+30*86400_000);
+      const client: OAuthClientInformationFull = { client_id: newId("client"), client_id_issued_at: Math.floor(now/1000), client_name: input.client_name || "Unnamed assistant", redirect_uris: input.redirect_uris, token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], scope: input.scope ?? SCOPES.join(" ") };
+      // Never-used registrations expire quickly; authorize/consent extend a
+      // client only to its pending/grant lifetime (see clientBacked).
+      this.db.prepare("INSERT INTO oauth_clients VALUES(?,?,?)").run(client.client_id, JSON.stringify(client), now + UNUSED_TTL_MS);
       return client;
-    }
+    })()
   };
   async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: Response) {
-    this.prune();
     if (!client.redirect_uris.includes(params.redirectUri)) { res.status(400).send("Exact registered redirect required."); return; }
     const scopes = this.scopes(params.scopes?.length ? params.scopes : ["progress:read"]);
     if (scopes.some(s => !client.scope?.split(" ").includes(s)) || params.resource?.href !== this.resource || !/^[A-Za-z0-9_-]{43}$/.test(params.codeChallenge) || (params.state?.length ?? 0) > 512) throw new InvalidRequestError("Invalid scopes, resource, state or S256 challenge.");
-    if (this.count("oauth_pending") >= 100) throw new InvalidRequestError("Too many pending connections.");
-    const raw = opaque(), s = this.session(res.req);
+    const raw = opaque(), sessionRow = this.session(res.req), s = sessionRow && this.ownerAllowed(sessionRow.owner_id) ? sessionRow : null;
     const epoch = s ? (this.db.prepare("SELECT epoch FROM owners WHERE id=?").get(s.owner_id) as { epoch: number }).epoch : null;
     const previous = connectCookie(res.req);
-    if (previous) this.db.prepare("DELETE FROM oauth_pending WHERE id=?").run(sha256(previous));
-    this.db.prepare("INSERT INTO oauth_pending VALUES(?,?,?,?,?,?)").run(sha256(raw), client.client_id, JSON.stringify({ ...params, scopes }), s?.owner_id ?? null, epoch, Date.now()+600_000);
+    // Transactional replacement: this browser's own live flow frees its slot
+    // for its replacement, and a failed admission rolls back with the prior
+    // flow intact. Anonymous and authenticated-owner pools are separate:
+    // at most 70 anonymous + 30 owner reserve of the total 100, max 2/owner.
+    // Epoch is intentionally NOT checked here: a valid current session may
+    // start a fresh authorization replacing the same owner's stale-epoch flow
+    // left by a concurrent deletion (recovery); the fresh row takes the
+    // current epoch, scopes, PKCE and request. The stale consent itself stays
+    // rejected at consent time (owner/epoch mismatch), and replacing another
+    // owner's flow stays rejected above.
+    this.db.transaction(() => {
+      const now = Date.now();
+      this.prune(now);
+      const prev = previous ? this.db.prepare("SELECT * FROM oauth_pending WHERE id=?").get(sha256(previous)) as Pending | undefined : undefined;
+      if (prev?.owner_id && prev.owner_id !== (s?.owner_id ?? null)) throw new InvalidRequestError("Connection request belongs to another account; start again in your assistant.");
+      const total = this.count("oauth_pending") - (prev ? 1 : 0);
+      const anon = this.count("oauth_pending", "WHERE owner_id IS NULL") - (prev && !prev.owner_id ? 1 : 0);
+      const owned = s ? this.count("oauth_pending", "WHERE owner_id=?", [s.owner_id]) - (prev?.owner_id === s.owner_id ? 1 : 0) : 0;
+      if (total >= PENDING_TOTAL || (s ? owned >= PENDING_PER_OWNER : anon >= PENDING_ANON)) throw new InvalidRequestError("Too many pending connections; retry later.");
+      if (prev) this.db.prepare("DELETE FROM oauth_pending WHERE id=?").run(prev.id);
+      const pendingExpires = now + 600_000;
+      this.db.prepare("INSERT INTO oauth_pending VALUES(?,?,?,?,?,?)").run(sha256(raw), client.client_id, JSON.stringify({ ...params, scopes }), s?.owner_id ?? null, epoch, pendingExpires);
+      this.db.prepare("UPDATE oauth_clients SET expires=MAX(expires,?) WHERE id=?").run(pendingExpires, client.client_id);
+    })();
     res.append("set-cookie", `lp_connect=${raw}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${this.cfg.production ? "; Secure" : ""}`);
     res.redirect("/oauth/consent");
   }
@@ -74,7 +143,9 @@ export class LaunchpadOAuth implements OAuthServerProvider {
   resume(req: Request) { return this.pending(req) ? "/oauth/consent" : "/"; }
   private grant(id: string): Grant {
     const g = this.db.prepare("SELECT g.* FROM oauth_grants g JOIN owners o ON o.id=g.owner_id AND o.epoch=g.epoch WHERE g.id=? AND g.revoked=0 AND g.expires>?").get(id, Date.now()) as Grant | undefined;
-    if (!g) throw new InvalidGrantError("Connection expired or revoked.");
+    // Current pilot policy is re-checked here, so code exchange, refresh and
+    // access verification all deny old persisted grants after removal.
+    if (!g || !this.ownerAllowed(g.owner_id)) throw new InvalidGrantError("Connection expired or revoked.");
     return g;
   }
   private code(client: OAuthClientInformationFull, raw: string) {
@@ -161,10 +232,22 @@ export class LaunchpadOAuth implements OAuthServerProvider {
     });
     const consent = (req: Request) => {
       const p = this.pending(req), s = this.session(req);
-      if (!p || !s) return undefined;
+      if (!p || !s || !this.ownerAllowed(s.owner_id)) return undefined;
       const epoch = (this.db.prepare("SELECT epoch FROM owners WHERE id=?").get(s.owner_id) as { epoch: number }).epoch;
       if (p.owner_id && (p.owner_id !== s.owner_id || p.epoch !== epoch)) return undefined;
-      if (!p.owner_id) { this.db.prepare("UPDATE oauth_pending SET owner_id=?,epoch=? WHERE id=?").run(s.owner_id, epoch, p.id); p.owner_id = s.owner_id; p.epoch = epoch; }
+      if (!p.owner_id) {
+        // Login-to-consent bind: respect the per-owner cap atomically, and
+        // never delete another owner's (or this owner's) existing flows.
+        const bound = this.db.transaction(() => {
+          // Expired rows for this owner must not block binding; only this
+          // owner's expired rows are pruned here, live/other flows stay.
+          this.db.prepare("DELETE FROM oauth_pending WHERE owner_id=? AND expires<=?").run(s.owner_id, Date.now());
+          if (this.count("oauth_pending", "WHERE owner_id=? AND id!=?", [s.owner_id, p.id]) >= PENDING_PER_OWNER) return false;
+          return this.db.prepare("UPDATE oauth_pending SET owner_id=?,epoch=? WHERE id=? AND owner_id IS NULL").run(s.owner_id, epoch, p.id).changes === 1;
+        })();
+        if (!bound) return undefined;
+        p.owner_id = s.owner_id; p.epoch = epoch;
+      }
       return { p, s, params: JSON.parse(p.params) as AuthorizationParams };
     };
     app.get("/oauth/consent", requireOwner, (req, res) => {
@@ -184,10 +267,11 @@ export class LaunchpadOAuth implements OAuthServerProvider {
         this.db.prepare("DELETE FROM oauth_pending WHERE id=?").run(c.p.id); url.searchParams.set("error", "access_denied");
       } else {
         if (this.count("oauth_grants", "WHERE owner_id=?", [c.s.owner_id]) >= 100 || this.count("oauth_grants", "WHERE owner_id=? AND revoked=0", [c.s.owner_id]) >= 10) return res.status(409).send("Connection limit reached. Revoke an existing assistant connection.");
-        const code = opaque(), id = newId("grant");
+        const code = opaque(), id = newId("grant"), grantExpires = Date.now()+30*86400_000;
         this.db.transaction(() => {
           if (this.db.prepare("DELETE FROM oauth_pending WHERE id=?").run(c.p.id).changes !== 1) throw new Error("Consumed consent");
-          this.db.prepare("INSERT INTO oauth_grants VALUES(?,?,?,?,?,?,0,?,?)").run(id, c.s.owner_id, c.p.epoch, c.p.client_id, scopes.join(" "), this.resource, Date.now()+30*86400_000, c.params.redirectUri);
+          this.db.prepare("UPDATE oauth_clients SET expires=MAX(expires,?) WHERE id=?").run(grantExpires, c.p.client_id);
+          this.db.prepare("INSERT INTO oauth_grants VALUES(?,?,?,?,?,?,0,?,?)").run(id, c.s.owner_id, c.p.epoch, c.p.client_id, scopes.join(" "), this.resource, grantExpires, c.params.redirectUri);
           this.db.prepare("INSERT INTO oauth_codes VALUES(?,?,?,?,?)").run(sha256(code), id, c.params.codeChallenge, c.params.redirectUri, Date.now()+60_000);
           if (scopes.includes("progress:report")) this.db.prepare("UPDATE owners SET reporting_enabled=1 WHERE id=?").run(c.s.owner_id);
         })();

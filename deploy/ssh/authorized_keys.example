@@ -1,0 +1,6 @@
+# Template for the launchpad-deploy user's ~/.ssh/authorized_keys (operator
+# fills in the public key; the private half exists only as a GitHub
+# production-environment secret). `restrict` disables PTY, all forwarding,
+# agent/X11 and user-rc; the forced command is the ONLY thing this key can
+# run. No shell, no file-transfer subsystem — uploads arrive on stdin of `deploy`.
+restrict,command="/usr/local/lib/launchpad/forced-command.sh" ssh-ed25519 AAAA_REPLACE_WITH_DEPLOY_PUBLIC_KEY launchpad-deploy
