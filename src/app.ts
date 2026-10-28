@@ -345,10 +345,15 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       const topic = findTopic(SETUP_TOPICS, body.topic);
       const locale = parseLocale(body.locale);
       if (extra.length || !topic || !locale) return res.status(400).send("Choose one of the listed topics and languages. Unexpected fields are rejected; nothing was generated.");
+      const setupOwnerId = oid(req);
       let card: PublicCardView;
       try { card = await publicCards.generate(topic, locale); }
       catch { return res.status(503).send("Guidance is unavailable right now. The Connection page steps still work."); }
-      logActivity(db, oid(req), "owner", "setup_guidance_card", card.state === "completed" ? "ok" : card.state, `Generic public setup guidance card (${topic.id}/${locale}): ${card.state}${card.replayed ? ", saved replay" : ""}. No owner data was sent to the model.`);
+      // Race: /delete during the await clears activity and invalidates this
+      // session; resuming must not recreate owner data for a dead session.
+      const still = session(req);
+      if (!still || still.owner_id !== setupOwnerId) return res.redirect("/login");
+      logActivity(db, setupOwnerId, "owner", "setup_guidance_card", card.state === "completed" ? "ok" : card.state, `Generic public setup guidance card (${topic.id}/${locale}): ${card.state}${card.replayed ? ", saved replay" : ""}. No owner data was sent to the model.`);
       return res.type("html").send(page(req, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result: null, publicCards: setupPublicCards(card) })));
     }
     const topic = String(bodyOf(req).topic ?? "").slice(0, 100);

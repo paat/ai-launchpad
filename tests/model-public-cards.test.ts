@@ -464,6 +464,45 @@ test("all public-card states keep selection; defaults only with no card", () => 
   expect(none).not.toContain('value="et" selected');
 });
 
+test("setup POST invalidated by /delete during generate writes no owner activity and redirects to login", async () => {
+  const path = ledgerFile(0);
+  let started!: () => void;
+  const startedPromise = new Promise<void>((ok) => { started = ok; });
+  let release!: () => void;
+  const gate = new Promise<void>((ok) => { release = ok; });
+  let fetchCount = 0;
+  const fetchFn = (async () => {
+    fetchCount++;
+    started();
+    await gate;
+    return okChat("Shared guidance.");
+  }) as unknown as FetchFn;
+  const s = await start({ modelLedgerPath: path, modelFetchFn: fetchFn });
+  try {
+    const a = makeOwner(s.db, "own_a", `google:${SUB_A}`, "google");
+    const pending = postSetup(s, a, { topic: "connector", locale: "en" });
+    await startedPromise; // provider paused: generate in flight, no timing sleep
+    const del = await req(s.base, "/delete", { cookie: a.raw, fields: { csrf: a.csrf } });
+    expect(del.status).toBe(302);
+    release();
+    const res = await pending;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain("/login");
+    const body = await res.text();
+    expect(body).not.toContain("Shared guidance.");
+    expect(s.db.prepare("SELECT COUNT(*) n FROM activity WHERE owner_id='own_a'").get()).toEqual({ n: 0 });
+    expect((await req(s.base, "/setup", { cookie: a.raw })).status).toBe(302); // old session denied
+    expect(rowCount(path)).toBe(1); // shared completed card + allocation retained
+    expect(fetchCount).toBe(1);
+    // Replayable safely with a new session/owner without extra fetch.
+    const b = makeOwner(s.db, "own_b", `google:${SUB_B}`, "google");
+    const hb = await (await postSetup(s, b, { topic: "connector", locale: "en" })).text();
+    expect(hb).toContain("Shared guidance.");
+    expect(hb).toContain("Saved guidance");
+    expect(fetchCount).toBe(1);
+  } finally { await s.close(); }
+});
+
 test("reopened stale pending ledger: different card blocked/not started, zero calls, no requested row", async () => {
   const { path } = stalePendingLedgerFile("connector", "en");
   const other = SETUP_TOPICS.find((t) => t.id === "choose-assistant")!;
