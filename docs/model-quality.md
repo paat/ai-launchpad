@@ -1,10 +1,11 @@
 # Baseten model-quality harness (bounded, synthetic)
 
-Status: controlled integration harness only. The public runtime in
+Status: controlled integration harness only. The old adapter in
 [src/model.ts](../src/model.ts) remains hard-disabled for live inference
-(R-002), and its old adapter stays unreachable live. Nothing here enables
+(R-002) and stays unreachable live. This harness file alone enables no
 runtime/UI model calls, and no live call is part of tests or CI (tests/CI
-stay mock, $0). All cases are synthetic; no company or personal data.
+stay mock, $0). The separate reviewed public-cards slice built on this
+harness is piloted live owner-only — see [live-pilot.md](live-pilot.md). All cases are synthetic; no company or personal data.
 Two genuine operator-authorized live harness calls were completed through
 this harness on 2026-10-28 (see Live result below). This harness makes
 **no live quality claim beyond that bounded observation**: the outputs
@@ -162,20 +163,27 @@ data) via provider `baseten-meta`, exact model
 Operator review: both outputs were generic acceptable English/Estonian for
 their fixed synthetic prompts. This is not a benchmark, not a quality
 guarantee, not proof of business competence, and not a native-quality
-claim. No businesses or services were connected, no real action was taken,
-no real ChatGPT consumer connection was made, and there was no public
-deployment or public runtime activation. The public runtime and app helper
-remain hard-disabled for live inference (mock helper runs; UI/app itself runs).
+claim. At that historical stage, no businesses or services were
+connected, no real action was taken, and no real ChatGPT consumer
+connection had yet been made. Separately, the owner-only pilot later
+exercised a ChatGPT DCR OAuth flow and the reviewed public-cards path
+live — see [live-pilot.md](live-pilot.md). Default local development and
+tests stay mock ($0); the generic old `src/model.ts` adapter stays
+hard-disabled.
 
 Usage-based estimated cost at the pinned rates: $0.003323 (EN) +
-$0.002265 (ET) = **$0.005588 total estimate**. This estimate is computed
-from reported usage and is **not reconciled billing**. It is distinct from
-the conservative allocation: $2 per attempt, $4 allocated total for these
-two attempts, never refunded and never labelled actual spend. The existing
-operator-authorized pilot cap is $10 with at most 5 distinct attempts on
-the same ledger.
+$0.002265 (ET) = **$0.005588 total estimate** for these two historical
+calls. This estimate is computed from reported usage and is **not
+reconciled billing**. It is distinct from the conservative allocation:
+$2 per attempt, $4 allocated total for these two attempts, never refunded
+and never labelled actual spend. The existing operator-authorized pilot cap
+is $10 with at most 5 distinct attempts on the same ledger. Aggregate
+owner-only pilot (see [live-pilot.md](live-pilot.md)): 4 real calls total
+including these two, $8 allocated of the $10 cap, usage estimate $0.014840
+(not billing). Sole ledger and max-5-attempts rules unchanged. No new live
+calls were made for this docs update.
 
-## Public guidance cards (explicit opt-in product slice; policy selected, not deployed)
+## Public guidance cards (explicit opt-in product slice; piloted owner-only, not general availability)
 
 [src/model-public-cards.ts](../src/model-public-cards.ts) wraps this same
 harness for shared **public** guidance cards. It is off unless
@@ -229,20 +237,28 @@ remaining budget) and never the key, path or ledger contents.
 - Tests ([tests/model-public-cards.test.ts](../tests/model-public-cards.test.ts))
   are fake-only with synthetic keys/owners/ledgers and a network guard.
   The committed `deploy/release-mode` source policy selects
-  `public_cards`; that selection alone deploys and activates nothing,
-  and no live product test has occurred under it. Production activation
+  `public_cards`; that selection alone deploys and activates nothing.
+  The reviewed public-cards path was exercised live in the owner-only
+  pilot — see [live-pilot.md](live-pilot.md). Broader production activation
   remains a separately reviewed manual exact-SHA promotion after the
   private prerequisites and rollback gates, and the global private
   `MODEL_MODE` stays disabled for legacy rollback — the private env
   file is not edited to enable `public_cards`. The honest limitation
   stands: generic public guidance, not a bespoke business assessment.
 
-## Completion gates (harness live-tested; runtime still gated — policy selected, not deployed)
+## Completion gates (harness live-tested; old adapter still disabled — public-cards path piloted owner-only)
 
 The bounded live quality harness itself has now been live-tested as above
 (operator review, confirmed current published pricing and credits, and an
 explicit operator decision per run). The committed source policy selects
-`public_cards`, but no manual deployment or live product test has occurred
-under it: public runtime activation remains a separate, later manual
-promotion decision under R-002, and live inference in the runtime and UI
-remains disabled until then (UI/app itself runs).
+`public_cards`; the owner-only HTTPS pilot at `https://huppelaud.arikratt.ee`
+(28 Oct 2026 UTC / 29 Oct Tallinn, commit
+`2bf1d06265ae1c8173cb3491cd34f18441a36f04`) exercised the distinct reviewed
+public-cards path live (see [live-pilot.md](live-pilot.md) for the pinned
+runtime): setup topic `connector/et` generated plus identical saved replay;
+compiled one-shot background `copying-invoices/en` generated a saved card
+displayed via Playbooks GET (GET performs no inference; no scheduler or
+continuous-autonomy claim). The generic old `src/model.ts` adapter stays
+hard-disabled; local development and tests default to mock ($0). Aggregate
+pilot: 4 real calls total, $8 allocated of $10, estimate $0.014840 (not
+billing). Full pilot facts: [live-pilot.md](live-pilot.md).

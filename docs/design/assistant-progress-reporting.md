@@ -1,6 +1,6 @@
 # Assistant progress reporting and a trustworthy companion
 
-Design proposal, 27 October 2026. A local assessment/reporting slice is implemented; real consumer clients and external outcome verification remain untested. See [the current local contract](../local-demo.md). Supporting research: three parallel investigations of MCP protocol, evidence/state and owner experience; parent inspected the load-bearing primary specification excerpts. No cross-provider review is claimed.
+Design proposal, 27 October 2026. A local assessment/reporting slice is implemented; one owner/workspace ChatGPT DCR OAuth pilot submitted assessment v1 / progress v2 with saved receipts on the owner-only HTTPS pilot (28 Oct 2026 UTC; Claude not tested; receipts mean stored reports, not external verification). External outcome verification remains untested. See [the current local contract](../local-demo.md) and [the pilot facts](../live-pilot.md). Supporting research: three parallel investigations of MCP protocol, evidence/state and owner experience; parent inspected the load-bearing primary specification excerpts. No cross-provider review is claimed.
 
 ## Aim and limits
 

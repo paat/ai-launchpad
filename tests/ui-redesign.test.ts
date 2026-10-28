@@ -60,8 +60,8 @@ describe("status", () => {
   test("no-assessment state has one primary connection action, limits collapsed", () => {
     const html = statusBody({ label: "Synthetic OÜ", demo: true, assessment: null, coverage: computeCoverage(null), assessedAt: null, exclusions: [], historyCount: 0, reportingEnabled: false });
     expect(html).toContain('<a class="btn" href="/connection">Connect your assistant</a>');
-    expect(html.indexOf("Claude/ChatGPT remote connection remains unverified")).toBeGreaterThan(html.indexOf("Connection limits"));
-    expect(html).toContain("setup helper</a> gives fixture guidance");
+    expect(html.indexOf("ChatGPT was tested with one owner. Claude and broader plan compatibility are not yet verified.")).toBeGreaterThan(html.indexOf("Connection limits"));
+    expect(html).toContain("setup helper</a> gives setup guidance");
   });
 
   test("untrusted assessment text is escaped and never inline script", () => {
