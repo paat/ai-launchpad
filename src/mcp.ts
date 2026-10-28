@@ -65,11 +65,14 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
   const server = new McpServer({ name: "ai-launchpad", version: "0.2.0" });
   const need = (scope: string) => ctx.scopes.includes(scope);
 
-  server.registerTool("get_started", { description: "Start here. Returns the assessment framework, playbooks and how reporting works for this owner's workspace.", inputSchema: {} }, async () => {
+  server.registerTool("get_started", { description: "Start here. Public assessment framework, playbooks and reporting guidance for any authenticated connection; with progress:read it also returns this workspace's company_ref, label and sharing state.", inputSchema: {} }, async () => {
     logActivity(db, ctx.ownerId, "assistant", "get_started", "ok", "Assistant fetched getting-started guidance.");
-    return json({ workspace: { company_ref: ctx.companyRef, label: ctx.label }, framework: FRAMEWORK, playbooks: PLAYBOOKS, reporting_enabled: ctx.reportingEnabled,
+    const shared = { framework: FRAMEWORK, playbooks: PLAYBOOKS,
       tools: ["get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate"],
-      note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments only — no conversations or documents. Reporting never approves business actions." });
+      note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments only — no conversations or documents. Reporting never approves business actions.",
+      catalog_note: "search_services is a public research catalogue available to any authenticated connection; it never contains owner data." };
+    if (!need("progress:read")) return json(shared);
+    return json({ workspace: { company_ref: ctx.companyRef, label: ctx.label }, ...shared, reporting_enabled: ctx.reportingEnabled });
   });
 
   server.registerTool("get_progress", { description: "Get the assessment framework, latest agent assessment, agent-assessed coverage vs independently verified outcomes, revision history/exclusions, recent progress and next action.", inputSchema: {} }, async () => {
@@ -125,7 +128,7 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
     return json(receipt);
   });
 
-  server.registerTool("search_services", { description: `Search the ${178}-record Estonian business services research catalog. Entries are documented leads with connection guidance and primary sources, NOT runtime-verified connections.`, inputSchema: { query: z.string().max(120), limit: z.number().int().min(1).max(25).optional() } }, async (args) => {
+  server.registerTool("search_services", { description: `Search the ${178}-record Estonian business services research catalog. Entries are documented leads with connection guidance and primary sources, NOT runtime-verified connections. Public catalogue data: available to any authenticated connection; never contains owner data.`, inputSchema: { query: z.string().max(120), limit: z.number().int().min(1).max(25).optional() } }, async (args) => {
     const results = searchServices(args.query, args.limit ?? 10);
     logActivity(db, ctx.ownerId, "assistant", "search_services", "ok", `Catalog search returned ${results.length}.`);
     return json({ catalog_size: loadCatalog().length, disclaimer: "Research snapshot (27 Oct 2026). None of these services were runtime-tested by Launchpad.", results });
