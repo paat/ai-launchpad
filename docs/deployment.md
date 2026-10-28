@@ -77,7 +77,13 @@ packaging so the host extractor can reject **all** symlinks.
    unit (`UMask=0027`; completed snapshots and sidecars are explicitly
    chmod 0640, so the separate backup operator reads them through that
    group — the runtime user's primary group does not change, and the app
-   never chowns or alters the precreated directory). The separate
+   never chowns or alters the precreated directory). `launchpad-deploy`
+   is a member of `launchpad-backups` alongside the restricted backup
+   reader (setup: `usermod -aG launchpad-backups launchpad-deploy`):
+   the deploy backup gate runs as `launchpad-deploy` and must read/hash
+   the snapshots and sidecars, otherwise deploys abort. Snapshots
+   contain business data. The live DB/WAL/SHM stay private 0600 and the
+   0710 directory gives traversal/stat only. The separate
    restricted off-host backup operator owns the write path for
    `/var/lib/launchpad-offhost/receipt.json` once provisioned (below).
 3. Install root-owned control scripts (a deployment can never replace
