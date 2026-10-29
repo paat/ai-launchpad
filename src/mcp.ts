@@ -5,7 +5,7 @@ import { newId, nowIso, sha256 } from "./db.js";
 import { FRAMEWORK, PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { assessmentSchema, assessmentRevisionError, computeCoverage, evidenceRefs, s, type Assessment } from "./core.js";
 
-export interface Ctx { ownerId: string; scopes: string[]; companyRef: string; label: string; reportingEnabled: boolean; }
+export interface Ctx { ownerId: string; scopes: string[]; companyRef: string; label: string; reportingEnabled: boolean; baseUrl: string; }
 const json = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }], structuredContent: data as Record<string, unknown> });
 const err = (m: string) => ({ isError: true, content: [{ type: "text" as const, text: m }] });
 
@@ -102,6 +102,34 @@ function reportCapacityError(db: Db, ownerId: string): string | null {
   const recent = (db.prepare("SELECT count(*) n FROM reports WHERE owner_id=? AND created_at>=?").get(ownerId, since) as { n: number }).n;
   return recent >= 60 ? "Report rate limit reached (60 per minute). Retry later with the same report_id. Nothing was saved." : null;
 }
+// Approval cards: the digest binds the exact action (stable key order at
+// every level), so any changed field needs a new owner approval.
+export const canonicalJson = (v: unknown): string => Array.isArray(v) ? `[${v.map(canonicalJson).join(",")}]`
+  : v !== null && typeof v === "object" ? `{${Object.entries(v).filter(([, x]) => x !== undefined).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, x]) => `${JSON.stringify(k)}:${canonicalJson(x)}`).join(",")}}`
+  : JSON.stringify(v);
+export const approvalDigest = (action: unknown) => sha256(canonicalJson(action));
+export const approvalActionSchema = z.object({
+  kind: z.enum(["send_message", "send_invoice", "prepare_payment", "prepare_filing"]),
+  recipient: z.object({ name: s(120), address: s(120).optional() }).strict(),
+  amount_cents: z.number().int().min(1).max(999_999_999_999).optional(),
+  currency: z.enum(["EUR"]).default("EUR"),
+  period: s(40).optional(),
+  document: z.object({ title: s(120), content: s(4000) }).strict(),
+  summary: s(300),
+}).strict();
+const OUTCOME_FIRST: Record<string, string[]> = { send_message: ["sent", "failed"], send_invoice: ["sent", "failed"], prepare_payment: ["paid", "failed"], prepare_filing: ["submitted", "failed"] };
+const OUTCOME_NEXT: Record<string, string[]> = { sent: ["accepted", "rejected", "paid"], submitted: ["accepted", "rejected"] };
+export interface ApprovalRow { id: string; kind: string | null; report_id: string | null; payload_json: string; digest: string; state: string; expires_at: string; created_at: string; decided_at: string | null; consumed_at: string | null; outcome_json: string | null; }
+/** Lazy expiry: the window covers deciding and acting, so a pending or an
+ *  approved-but-unused approval past expires_at becomes expired on read. */
+export function expireApprovals(db: Db, ownerId: string) {
+  db.prepare("UPDATE approvals SET state='expired' WHERE owner_id=? AND state IN ('pending','approved') AND expires_at<=?").run(ownerId, nowIso());
+}
+export function getApproval(db: Db, ownerId: string, id: string) {
+  expireApprovals(db, ownerId);
+  return db.prepare("SELECT * FROM approvals WHERE id=? AND owner_id=?").get(id, ownerId) as ApprovalRow | undefined;
+}
+
 function saveReceipt(db: Db, ownerId: string, kind: string, reportId: string, payload: unknown, receipt: Record<string, unknown>) {
   db.prepare("INSERT INTO reports(owner_id,report_id,kind,payload_hash,payload_json,receipt_json,created_at) VALUES(?,?,?,?,?,?,?)").run(ownerId, reportId, kind, sha256(JSON.stringify(payload)), JSON.stringify(payload), JSON.stringify(receipt), nowIso());
 }
@@ -113,8 +141,9 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
   server.registerTool("get_started", { description: "Start here. Public assessment framework, playbooks and reporting guidance for any authenticated connection; with progress:read it also returns this workspace's company_ref, label and sharing state.", inputSchema: {} }, async () => {
     logActivity(db, ctx.ownerId, "assistant", "get_started", "ok", "Assistant fetched getting-started guidance.");
     const shared = { framework: FRAMEWORK, playbooks: PLAYBOOKS,
-      tools: ["get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate"],
+      tools: ["get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "request_approval", "get_approval", "record_action_outcome"],
       note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments only — no conversations or documents. Reporting never approves business actions.",
+      approvals_note: "Before sending, invoicing, paying or filing for the owner, call request_approval with the exact content and act only after get_approval returns approved. Launchpad never sends, pays or files.",
       catalog_note: "search_services is a public research catalogue available to any authenticated connection; it never contains owner data." };
     if (!need("progress:read")) return json(shared);
     return json({ workspace: { company_ref: ctx.companyRef, label: ctx.label }, ...shared, reporting_enabled: ctx.reportingEnabled });
@@ -193,6 +222,69 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
     return json({ candidate_id: id, status: "pending_moderation", deduplicated: false, note: "Pending human moderation. Not published or endorsed." });
   });
 
+  const approvalGate = (nothing: string) => !need("progress:report") ? "Missing scope progress:report." : !ctx.reportingEnabled ? `Progress sharing is stopped by the owner (it is off by default). ${nothing}` : null;
+
+  server.registerTool("request_approval", { description: "Ask the owner to approve one exact action (message, invoice, payment or filing) on their phone. The digest binds every field of action; any change needs a new approval. Launchpad never sends, pays or files: after get_approval returns approved, act with your own tools using exactly this content, then call record_action_outcome before expires_at. Expires 24 hours after the request, for deciding and for acting: an approved approval with no outcome recorded by then becomes expired. Idempotent by report_id; a replay returns the creation receipt plus the live current_state.", inputSchema: { report_id: s(80), action: approvalActionSchema } }, async (args) => {
+    const gate = approvalGate("Nothing was saved and no approval was requested."); if (gate) return err(gate);
+    if (["send_invoice", "prepare_payment"].includes(args.action.kind) && args.action.amount_cents === undefined) return err(`amount_cents is required for ${args.action.kind}. Nothing was saved and no approval was requested.`);
+    const prior = idempotent(db, ctx.ownerId, "approval", args.report_id, args);
+    if (prior === "conflict") return err("Conflict: report_id already used with a different payload. Nothing was saved and no approval was requested.");
+    if (prior) return json({ ...prior.receipt, current_state: getApproval(db, ctx.ownerId, String(prior.receipt.approval_id))?.state });
+    const capacityError = reportCapacityError(db, ctx.ownerId);
+    if (capacityError) return err(capacityError);
+    expireApprovals(db, ctx.ownerId);
+    const { total, pending } = db.prepare("SELECT count(*) total, count(*) FILTER (WHERE state='pending') pending FROM approvals WHERE owner_id=?").get(ctx.ownerId) as { total: number; pending: number };
+    if (total >= 200) return err("Approval limit reached for this workspace (200). The owner can export and delete progress to start again. Nothing was saved and no approval was requested.");
+    if (pending >= 20) return err("Too many approvals are waiting for the owner (20 pending). Ask the owner to decide on those first. Nothing was saved and no approval was requested.");
+    const id = newId("appr"), digest = approvalDigest(args.action), expires = new Date(Date.now() + 24 * 3600_000).toISOString();
+    const receipt = { approval_id: id, state: "pending", digest, expires_at: expires, approve_url: `${ctx.baseUrl}/approvals/${id}`, owner_instruction: "Ask the owner to open the link (or the Launchpad Status page) and approve or decline. Do not act before get_approval returns approved.", note: "Creation receipt replayed; current_state is live. Call get_approval before acting." };
+    db.transaction(() => {
+      db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at) VALUES(?,?,?,?,?,?,'pending',?,?)").run(id, ctx.ownerId, args.action.kind, args.report_id, JSON.stringify(args.action), digest, expires, nowIso());
+      saveReceipt(db, ctx.ownerId, "approval", args.report_id, args, receipt);
+    })();
+    logActivity(db, ctx.ownerId, "assistant", "request_approval", "ok", `Approval requested: ${args.action.kind} to ${args.action.recipient.name} (digest ${digest.slice(0, 12)}).`);
+    return json(receipt);
+  });
+
+  server.registerTool("get_approval", { description: "Check an approval you requested: state (pending, approved, declined, expired, consumed), digest, the exact action, decision time, expiry and any assistant-reported outcome. Act only when state is approved (it expires at expires_at if no outcome was recorded).", inputSchema: { approval_id: s(80) } }, async (args) => {
+    const gate = approvalGate("Nothing was read."); if (gate) return err(gate);
+    const a = getApproval(db, ctx.ownerId, args.approval_id);
+    if (!a) return err("Unknown approval_id in this workspace. Nothing was read.");
+    return json({ approval_id: a.id, state: a.state, digest: a.digest, action: JSON.parse(a.payload_json), created_at: a.created_at, decided_at: a.decided_at, expires_at: a.expires_at, outcome: a.outcome_json ? JSON.parse(a.outcome_json) : null });
+  });
+
+  server.registerTool("record_action_outcome", { description: "Record what happened after you acted on an approved action with your own tools. Requires the approval's exact digest; a changed payload needs a new approval. The first outcome must be recorded before expires_at, must fit the kind (send_message/send_invoice: sent or failed; prepare_payment: paid or failed; prepare_filing: submitted or failed) and consumes the approval (one use); later outcomes, also after expiry, may only advance it (sent → accepted/rejected/paid, submitted → accepted/rejected). Outcomes are labelled assistant_reported, never verified. Idempotent by report_id.", inputSchema: { report_id: s(80), approval_id: s(80), digest: s(64), outcome: z.enum(["sent", "submitted", "accepted", "rejected", "paid", "failed"]), observed_at: s(40), evidence_refs: evidenceRefs.optional() } }, async (args) => {
+    const gate = approvalGate("Nothing was recorded."); if (gate) return err(gate);
+    if (Number.isNaN(Date.parse(args.observed_at)) || Date.parse(args.observed_at) > Date.now() + 5 * 60_000) return err("observed_at is not a plausible timestamp. Nothing was recorded.");
+    const prior = idempotent(db, ctx.ownerId, "outcome", args.report_id, args);
+    if (prior === "conflict") return err("Conflict: report_id already used with a different payload. Nothing was recorded.");
+    if (prior) return json(prior.receipt);
+    const capacityError = reportCapacityError(db, ctx.ownerId);
+    if (capacityError) return err(capacityError);
+    const a = getApproval(db, ctx.ownerId, args.approval_id);
+    if (!a) return err("Unknown approval_id in this workspace. Nothing was recorded.");
+    if (args.digest !== a.digest) return err("Digest does not match the approved content. The payload changed: request a new approval for the changed payload and wait for the owner. Nothing was recorded.");
+    const prev = a.outcome_json ? JSON.parse(a.outcome_json) as { outcome: string; history: unknown[] } : null;
+    if (a.state === "pending") return err("The owner has not approved this yet. Do not act. Nothing was recorded.");
+    if (a.state === "expired") return err("This approval expired before an outcome was recorded; request a new approval. Nothing was recorded.");
+    const first = OUTCOME_FIRST[a.kind ?? ""] ?? [];
+    if (a.state === "approved" && !first.includes(args.outcome)) return err(`A ${a.kind} approval's first outcome must be ${first.join(" or ")}. Nothing was recorded.`);
+    if (a.state === "consumed" ? !OUTCOME_NEXT[prev?.outcome ?? ""]?.includes(args.outcome) : a.state !== "approved") {
+      return err(a.state === "consumed"
+        ? `This approval was already used (last outcome: ${prev?.outcome}). Approvals are one-use; an outcome may only advance sent → accepted/rejected/paid or submitted → accepted/rejected. Nothing was recorded.`
+        : `This approval is ${a.state}; nothing may be done under it. Request a new approval. Nothing was recorded.`);
+    }
+    const entry = { outcome: args.outcome, observed_at: args.observed_at, evidence_refs: args.evidence_refs ?? [], evidence_label: "assistant_reported" as const };
+    const savedAt = nowIso();
+    const receipt = { receipt_id: newId("rcpt"), kind: "action_outcome_saved", approval_id: a.id, state: "consumed", ...entry, saved_at: savedAt, meaning: "Launchpad recorded what your assistant reported. It did not send, pay or file anything and did not verify this outcome." };
+    db.transaction(() => {
+      db.prepare("UPDATE approvals SET state='consumed',consumed_at=COALESCE(consumed_at,?),outcome_json=? WHERE id=? AND owner_id=?").run(savedAt, JSON.stringify({ ...entry, history: [...(prev?.history ?? []), { ...entry, recorded_at: savedAt }] }), a.id, ctx.ownerId);
+      saveReceipt(db, ctx.ownerId, "outcome", args.report_id, args, receipt);
+    })();
+    logActivity(db, ctx.ownerId, "assistant", "record_action_outcome", "ok", `Outcome ${args.outcome} for approval ${a.id} (assistant reported, not verified).`);
+    return json(receipt);
+  });
+
   return server;
 }
 
@@ -204,4 +296,7 @@ export const TOOL_ARG_KEYS: Record<string, string[]> = {
   report_progress: ["report_id", "task_id", "expected_version", "observed_at", "milestone", "evidence_refs"],
   search_services: ["query", "limit"],
   submit_service_candidate: ["name", "connection", "jobs"],
+  request_approval: ["report_id", "action"],
+  get_approval: ["approval_id"],
+  record_action_outcome: ["report_id", "approval_id", "digest", "outcome", "observed_at", "evidence_refs"],
 };

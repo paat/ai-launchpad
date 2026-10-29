@@ -37,7 +37,7 @@ Both report types share one optimistic workspace version. Re-read `get_progress`
 
 Sharing defaults off. One explicit grant permits assessments, progress and private service nominations; stopping sharing blocks all three server-side. Nominations deduplicate within each owner's workspace, never across owners, and are not published automatically. Export and deletion are available. Deletion invalidates old sessions and tokens/epochs; only the deleting browser receives a fresh session.
 
-Synthetic approval mechanics live on a separate demo-only page: valid positive integer amounts, recipient/amount/period/document digest, one use, 15-minute expiry. Nothing is sent, filed, signed or paid.
+Approval cards: the assistant calls `request_approval` with the exact action; the owner approves or declines it at `/approvals/<id>` (linked from Status). The digest binds every field, approvals expire after 24 hours, and `record_action_outcome` needs the identical digest and consumes the approval once. Outcomes are assistant-reported, never verified. Launchpad sends, files, signs and pays nothing.
 
 ## Identity, storage and limits
 
