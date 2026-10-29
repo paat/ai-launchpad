@@ -14,7 +14,7 @@ Your own AI assistant (ChatGPT) becomes the interface to an Estonian small-busin
 ## Steps
 
 1. **Open the landing page** (after #21). Type "Mari Disain" and press "Näita tähtaegu". You see November deadlines, each marked "Arvutatud reeglist" with an official source link.
-2. **Connect ChatGPT** (after #21): "Ühenda oma assistent" → copy the address → ChatGPT settings → add a connector → paste. Sign in and approve the consent screen, which lists what the assistant can and can never do. Connecting needs a ChatGPT plan that allows custom connectors (not confirmed for all plans). Only ChatGPT has been tested; Claude has not.
+2. **Connect ChatGPT** (after #21): "Ühenda oma assistent" → copy this MCP address: `https://huppelaud.arikratt.ee/mcp` → ChatGPT settings → add a connector → paste. Sign in and approve the consent screen, which lists what the assistant can and can never do. Connecting needs a ChatGPT plan that allows custom connectors (not confirmed for all plans). Only ChatGPT has been tested; Claude has not.
 3. **Ask** in ChatGPT (add `Kasuta AI-hüppelauda: ` at the start if it doesn't call the tool):
    - `Mis on minu ettevõtte tähtajad sel kuul?` (*What are my deadlines this month?*) → dated list with sources (after #19).
    - `Demo Klient OÜ pole arvet nr 2026-014 maksnud — 240 eurot, maksetähtaeg oli 20. oktoober. Koosta viisakas maksemeeldetuletus ja küsi minult enne saatmist kinnitust.` → ChatGPT gives you a link to an approval card showing recipient, amount, document and period. "Kinnita täpselt see" approves exactly that payload; if anything changes the approval is void. Nothing is sent: the "sent" state is demo only.
