@@ -212,7 +212,7 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     const cookieB = await login("beta"); await grantSharing(cookieB);
     const cA = await mcpClient(await issueToken(cookieA));
     const cB = await mcpClient(await issueToken(cookieB));
-    expect((await cA.listTools()).tools.map((t) => t.name).sort()).toEqual(["get_progress", "get_started", "report_assessment", "report_progress", "search_services", "submit_service_candidate"]);
+    expect((await cA.listTools()).tools.map((t) => t.name).sort()).toEqual(["get_approval", "get_progress", "get_started", "record_action_outcome", "report_assessment", "report_progress", "request_approval", "search_services", "submit_service_candidate"]);
     // Each demo workspace was seeded only after explicit demo login, with a different next action.
     const a0 = parse(await cA.callTool({ name: "get_progress", arguments: {} }));
     const b0 = parse(await cB.callTool({ name: "get_progress", arguments: {} }));
@@ -279,23 +279,16 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     const otherAfter = await fetch(`${base}/`, { headers: { cookie: other }, redirect: "manual" });
     expect(otherAfter.status).toBe(302); expect(otherAfter.headers.get("location")).toBe("/login");
   });
-  test("synthetic approval (demo route only): invalid amounts rejected before persistence; exact payload consumes once", async () => {
+  test("demo mode: the synthetic approval routes are gone; the real card flow replaces them", async () => {
     const cookie = await login("beta");
-    const before = (db.prepare("SELECT count(*) n FROM approvals").get() as { n: number }).n;
-    const bad = await fetch(`${base}/approvals`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: `csrf=${await csrf(cookie)}&recipient=Demo&amount_cents=not-a-number&period=2026-10&document_ref=inv` });
-    expect(bad.status).toBe(400);
-    expect((db.prepare("SELECT count(*) n FROM approvals").get() as { n: number }).n).toBe(before);
-    // The main Connection UI carries no approval forms.
-    const conn = await (await fetch(`${base}/connection`, { headers: { cookie } })).text();
-    expect(conn).not.toContain('name="recipient"');
-    await fetch(`${base}/approvals`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: `csrf=${await csrf(cookie)}&recipient=Demo+Supplier&amount_cents=1200&period=2026-10&document_ref=inv-1` });
-    const html = await (await fetch(`${base}/demo/approvals`, { headers: { cookie } })).text();
-    const aid = /name="approval_id" value="([^"]+)"/.exec(html)![1];
-    expect((await fetch(`${base}/approvals/approve`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: `csrf=${await csrf(cookie)}&approval_id=${aid}&amount_cents=abc` })).status).toBe(400);
-    expect((await fetch(`${base}/approvals/approve`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: `csrf=${await csrf(cookie)}&approval_id=${aid}&amount_cents=9999` })).status).toBe(409);
-    const okRes = await fetch(`${base}/approvals/approve`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: `csrf=${await csrf(cookie)}&approval_id=${aid}&amount_cents=1200` });
-    expect(okRes.status).toBe(200); expect(await okRes.text()).toContain("nothing");
-    expect((await fetch(`${base}/approvals/approve`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: `csrf=${await csrf(cookie)}&approval_id=${aid}&amount_cents=1200` })).status).toBe(409);
+    const form = { cookie, "content-type": "application/x-www-form-urlencoded", origin: base };
+    expect((await fetch(`${base}/demo/approvals`, { headers: { cookie } })).status).toBe(404);
+    expect((await fetch(`${base}/approvals`, { method: "POST", headers: form, body: `csrf=${await csrf(cookie)}&recipient=Demo&amount_cents=1200&period=2026-10&document_ref=inv` })).status).toBe(404);
+    expect((await fetch(`${base}/approvals/approve`, { method: "POST", headers: form, body: `csrf=${await csrf(cookie)}&approval_id=x&amount_cents=1200` })).status).toBe(404);
+    const html = await (await fetch(`${base}/approvals`, { headers: { cookie } })).text();
+    expect(html).toContain("<h1>Approvals</h1>");
+    expect(html).not.toContain("Synthetic approval demo");
+    expect(html).toContain('<a href="/approvals">Approvals</a>');
   });
 });
 

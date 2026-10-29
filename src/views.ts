@@ -1,6 +1,6 @@
 import type { Assessment, Coverage } from "./core.js";
 import { isHandled } from "./core.js";
-import type { AssistantMilestones, Exclusion } from "./mcp.js";
+import type { ApprovalRow, AssistantMilestones, Exclusion } from "./mcp.js";
 
 export const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 
@@ -39,6 +39,8 @@ summary{cursor:pointer;font-weight:650;min-height:44px;display:flex;align-items:
 progress{width:100%;height:12px;accent-color:#1a4d2e}
 pre{white-space:pre-wrap;word-break:break-word;background:#eef1e7;border:1px solid #dde3d2;border-radius:10px;padding:12px;font-size:.8rem}
 code{word-break:break-all}
+pre.doc{max-height:55vh;overflow:auto;font-size:.9rem}
+dl.facts{margin:8px 0}dl.facts dt{font-size:.86rem;color:#4d5a48;margin-top:8px}dl.facts dd{margin:0;font-weight:650;overflow-wrap:anywhere}
 .endpoint{background:#eef1e7;border:1px solid #ccd6bc;border-radius:10px;padding:12px;margin:8px 0;font-size:.92rem}
 .endpoint code{font-weight:650}
 .quote{background:#f6f7f1;border:1px solid #dde3d2;border-radius:10px;padding:4px 12px;margin:8px 0}
@@ -71,7 +73,7 @@ export function shell(o: ShellOpts): string {
 <header class="top"><span class="mark" aria-hidden="true"></span><span class="brand">AI Launchpad</span><span class="badge" role="status">${esc(o.badge)}</span></header>
 <nav class="main" aria-label="Main">${nav.map(([href, label, key]) => `<a href="${href}"${o.active === key ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>
 <main>${o.body}</main>
-<footer><details><summary>Help and resources</summary><nav class="guides" aria-label="Guides"><a href="/playbooks">Playbooks</a><a href="/services">Service catalog</a><a href="/setup">Setup helper</a>${o.demo ? `<a href="/demo/approvals">Synthetic approval demo</a>` : ""}</nav></details>
+<footer><details><summary>Help and resources</summary><nav class="guides" aria-label="Guides"><a href="/playbooks">Playbooks</a><a href="/services">Service catalog</a><a href="/setup">Setup helper</a><a href="/approvals">Approvals</a></nav></details>
 <form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(o.csrf)}"><button type="submit" class="secondary">Log out</button></form></footer>
 </div></body></html>`;
 }
@@ -321,7 +323,7 @@ ${tokenRows || "<p class=\"muted\">No tokens yet.</p>"}</details>
 ${opts.candidates.map((c) => `<div class="row"><strong>${esc(c.name)}</strong> <span class="pill">${esc(c.status)}</span><br><span class="small muted">${esc(c.connection)} · ${esc(c.jobs)} · ${esc(c.created_at)}</span><form method="post" action="/candidates/delete"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="candidate_id" value="${esc(c.id)}"><button type="submit" class="secondary">Delete this nomination</button></form></div>`).join("") || "<p class=\"muted\">None yet.</p>"}
 </section>
 <section class="card"><h2>Your minimal data</h2>
-<p>Launchpad stores your assessments, task reports, activity, nominations and tokens — no conversations or documents. Deleting also revokes tokens and signs out other sessions, so old queued reports cannot recreate it. It does not delete any provider's records.</p>
+<p>Launchpad stores your assessments, task reports, approvals, activity, nominations and tokens — no conversations or documents. Deleting also revokes tokens and signs out other sessions, so old queued reports cannot recreate it. It does not delete any provider's records.</p>
 <p><a class="btn secondary" href="/export">Export my progress (JSON)</a></p>
 <form method="post" action="/delete" onsubmit="return confirm('Delete your Launchpad progress?')"><input type="hidden" name="csrf" value="${csrf}"><button type="submit" class="danger">Delete my progress</button></form></section>`;
 }
@@ -333,19 +335,58 @@ export function tokenOnceBody(raw: string): string {
 <p><a class="btn" href="/connection">Back to Connection</a></p></section>`;
 }
 
-export function approvalsBody(opts: { csrf: string; approvals: Record<string, string>[] }): string {
-  const csrf = esc(opts.csrf);
-  return `<section class="card hero"><h1>Synthetic approval demo</h1>
-<p><span class="badge">Demo only</span></p>
-<p>This page exists only to test the exact-payload approval rule with fake data. An approval binds recipient, amount, period and document by digest; any change invalidates it. Approving here sends, files, signs and pays <strong>nothing</strong>. There is no real approval product behind this.</p>
-<form method="post" action="/approvals"><input type="hidden" name="csrf" value="${csrf}">
-<label>Recipient <input name="recipient" value="Demo Supplier OÜ" maxlength="80" required></label>
-<label>Amount (cents, whole number) <input name="amount_cents" inputmode="numeric" value="1200" required></label>
-<label>Period <input name="period" value="2026-10" maxlength="20" required></label>
-<label>Document ref <input name="document_ref" value="demo-invoice-1" maxlength="80" required></label>
-<button type="submit">Create approval request</button></form>
-${opts.approvals.map((a) => `<div class="row"><code>${esc(a.id)}</code> · ${esc(a.state)} · expires ${esc(a.expires_at)}<br><span class="small">${esc(a.payload_json)}<br>digest ${esc(a.digest)}</span>${a.state === "pending" ? `<form method="post" action="/approvals/approve"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="approval_id" value="${esc(a.id)}"><label>Re-enter amount (cents) to approve exactly <input name="amount_cents" inputmode="numeric" required></label><button type="submit">Approve exact payload</button></form>` : ""}</div>`).join("")}
-</section>`;
+const APPROVAL_KINDS: Record<string, string> = { send_message: "Send a message", send_invoice: "Send an invoice", prepare_payment: "Prepare a payment", prepare_filing: "Prepare a filing" };
+const APPROVAL_STATES: Record<string, string> = { pending: "Waiting for you", approved: "Approved", declined: "Declined", expired: "Expired", consumed: "Used — your assistant reported an outcome" };
+const eur = (cents: unknown) => typeof cents === "number" ? new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR" }).format(cents / 100) : null;
+interface ApprovalView { kind?: string; recipient?: { name?: string; address?: string } | string; amount_cents?: number; period?: string; document?: { title?: string; content?: string }; document_ref?: string; summary?: string; }
+/** Stored payloads are parsed leniently so earlier synthetic rows still render. */
+function approvalView(a: ApprovalRow) {
+  let p: ApprovalView = {};
+  try { p = JSON.parse(a.payload_json) as ApprovalView; } catch { /* unreadable payload renders as unknown */ }
+  const recipient = typeof p.recipient === "string" ? { name: p.recipient } : p.recipient ?? {};
+  return { p, recipient, kind: APPROVAL_KINDS[a.kind ?? p.kind ?? ""] ?? "Earlier synthetic approval", amount: eur(p.amount_cents), state: APPROVAL_STATES[a.state] ?? a.state };
+}
+function timeLeft(iso: string): string {
+  const ms = Date.parse(iso) - Date.now();
+  if (!(ms > 0)) return "Expired";
+  const min = Math.ceil(ms / 60_000);
+  return `Expires in ${Math.floor(min / 60)} h ${min % 60} min`;
+}
+
+export function approvalsAttention(pending: number): string {
+  return pending ? `<section class="attention" aria-label="Approvals waiting"><h2>${pending} approval${pending === 1 ? "" : "s"} waiting for you</h2><p class="small">Your assistant asked before it acts. Nothing happens unless you approve the exact content.</p><a class="btn" href="/approvals">Review approvals</a></section>` : "";
+}
+
+export function approvalsListBody(rows: ApprovalRow[]): string {
+  const item = (a: ApprovalRow) => {
+    const v = approvalView(a);
+    return `<div class="row"><a href="/approvals/${esc(encodeURIComponent(a.id))}"><strong>${esc(v.kind)}</strong> · ${esc(v.recipient.name ?? "unknown recipient")}${v.amount ? ` · ${esc(v.amount)}` : ""}</a><br><span class="pill${a.state === "pending" ? " owner" : ""}">${esc(v.state)}</span><span class="small muted">${esc(fmtWhen(a.created_at) ?? a.created_at)}</span></div>`;
+  };
+  const pending = rows.filter((a) => a.state === "pending"), history = rows.filter((a) => a.state !== "pending");
+  return `<h1>Approvals</h1><p class="lede">Actions your assistant asked you to approve. Launchpad never sends, pays or files.</p>
+<section class="card" aria-label="Waiting for you"><h2>Waiting for you (${pending.length})</h2>${pending.map(item).join("") || `<p class="muted">Nothing is waiting for you.</p>`}</section>
+<section class="card" aria-label="History"><h2>History</h2>${history.map(item).join("") || `<p class="muted">No decided approvals yet.</p>`}</section>`;
+}
+
+export function approvalCardBody(opts: { csrf: string; a: ApprovalRow }): string {
+  const { a } = opts, v = approvalView(a);
+  let outcome: { outcome?: string; observed_at?: string } | null = null;
+  try { outcome = a.outcome_json ? JSON.parse(a.outcome_json) : null; } catch { outcome = null; }
+  const fact = (label: string, value: string | null | undefined) => value ? `<dt>${label}</dt><dd>${esc(value)}</dd>` : "";
+  const decision = a.state === "pending"
+    ? `<p class="small muted">${esc(timeLeft(a.expires_at))}</p>
+<form method="post" action="/approvals/${esc(encodeURIComponent(a.id))}/decide"><input type="hidden" name="csrf" value="${esc(opts.csrf)}"><input type="hidden" name="digest" value="${esc(a.digest)}">
+<button name="decision" value="approve">Approve exactly this</button><button class="secondary" name="decision" value="decline">Decline</button></form>`
+    : `<p role="status"><span class="pill">${esc(v.state)}</span> ${a.decided_at ? `Decided ${esc(fmtWhen(a.decided_at) ?? a.decided_at)}` : a.state === "expired" ? `Expired ${esc(fmtWhen(a.expires_at) ?? a.expires_at)}` : ""}</p>
+${outcome?.outcome ? `<p class="small">Your assistant reported: <strong>${esc(outcome.outcome)}</strong>${outcome.observed_at ? ` (${esc(fmtWhen(outcome.observed_at) ?? outcome.observed_at)})` : ""} · assistant reported, not verified by Launchpad.</p>` : ""}`;
+  return `<section class="card hero" aria-label="Approval"><p class="company">Approval request</p><h1>${esc(v.kind)}</h1>
+${v.p.summary ? `<p class="lede">${esc(v.p.summary)}</p>` : ""}
+<dl class="facts">${fact("To", v.recipient.name)}${fact("Address", v.recipient.address)}${fact("Amount", v.amount)}${fact("Period", v.p.period)}${fact("Document", v.p.document?.title ?? v.p.document_ref)}</dl>
+${v.p.document?.content ? `<h2>Exact content</h2><pre class="doc" tabindex="0">${esc(v.p.document.content)}</pre>` : ""}
+<p class="small muted">Digest <code>${esc(a.digest.slice(0, 12))}</code></p>
+<div class="note"><p class="small">Launchpad never sends, pays or files. After you approve, your assistant does this with its own tools, and only for exactly this content.</p></div>
+${decision}</section>
+<p><a href="/approvals">All approvals</a></p>`;
 }
 
 export interface PublicCardViewOpts { topicId: string; locale: string; state: string; output: string | null; replayed: boolean; }

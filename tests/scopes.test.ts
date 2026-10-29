@@ -61,6 +61,7 @@ async function grant(scopes: string, updates: boolean, actor = "alpha", browser?
   expect(policy).toContain("All connected assistants can search the public service catalogue");
   expect(policy).toContain("progress:report");
   expect(policy).toContain("saves concise assessments, task updates and private service nominations");
+  expect(policy).toContain("saves concise assessments, task updates and private service nominations. It can also ask you to approve a specific message, invoice, payment or filing; nothing happens unless you approve that exact content.");
   expect(policy).toContain("No conversations, source documents or Google tokens are shared");
   expect(policy).toContain("never authorizes payments, filings or signatures");
   expect(policy).not.toContain("get_started");

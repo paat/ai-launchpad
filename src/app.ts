@@ -3,13 +3,13 @@ import express, { type Request, type Response, type NextFunction } from "express
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
-import { buildMcpServer, getAssistantMilestones, getState, logActivity, TOOL_ARG_KEYS } from "./mcp.js";
+import { buildMcpServer, expireApprovals, getApproval, getAssistantMilestones, getState, logActivity, TOOL_ARG_KEYS, type ApprovalRow } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
 import type { FetchFn } from "./model-quality.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
-import { esc, shell, loginPage, statusBody, activityBody, connectionBody, tokenOnceBody, approvalsBody, setupBody, servicesBody, playbooksBody } from "./views.js";
+import { esc, shell, loginPage, statusBody, activityBody, connectionBody, tokenOnceBody, approvalsAttention, approvalsListBody, approvalCardBody, setupBody, servicesBody, playbooksBody } from "./views.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; }
 // Owner-only pilot allowlist: exact opaque Google `sub` values, never emails.
@@ -64,12 +64,6 @@ function cookieVal(req: Request, name: string): string | null {
 function safeEqual(a: string, b: string): boolean {
   const x = Buffer.from(a), y = Buffer.from(b);
   return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
-}
-function parseAmountCents(v: unknown): number | null {
-  const t = String(v ?? "").trim();
-  if (!/^\d{1,12}$/.test(t)) return null;
-  const n = Number(t);
-  return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 const isLoopback = (req: Request) => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? "");
 
@@ -312,7 +306,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   app.get("/", requireOwner, (req, res) => {
     const st = getState(db, oid(req));
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
-    res.type("html").send(page(req, "Is my admin handled?", "status", statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1, latestProgress: (st.progress[0] as unknown as { task_id: string; milestone: string; observed_at: string } | undefined) ?? null })));
+    expireApprovals(db, oid(req));
+    const pendingApprovals = (db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=? AND state='pending'").get(oid(req)) as { n: number }).n;
+    res.type("html").send(page(req, "Is my admin handled?", "status", approvalsAttention(pendingApprovals) + statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1, latestProgress: (st.progress[0] as unknown as { task_id: string; milestone: string; observed_at: string } | undefined) ?? null })));
   });
 
   app.get("/activity", requireOwner, (req, res) => {
@@ -399,42 +395,34 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     res.redirect("/connection");
   });
 
-  // Synthetic approval mechanics: demo transport only, never in the main flow.
-  app.get("/demo/approvals", requireOwner, (req, res) => {
-    if (!cfg.demo) return res.status(404).send("Not found.");
-    const approvals = db.prepare("SELECT id,payload_json,digest,state,expires_at FROM approvals WHERE owner_id=? ORDER BY created_at DESC LIMIT 5").all(oid(req)) as Record<string, string>[];
-    res.type("html").send(page(req, "Synthetic approval demo", "none", approvalsBody({ csrf: (req as Authed).csrf, approvals })));
+  // Approval cards: the owner decides on the exact payload the assistant
+  // requested over MCP. Launchpad itself never sends, pays or files.
+  app.get("/approvals", requireOwner, (req, res) => {
+    expireApprovals(db, oid(req));
+    const rows = db.prepare("SELECT * FROM approvals WHERE owner_id=? ORDER BY state='pending' DESC, created_at DESC LIMIT 200").all(oid(req)) as ApprovalRow[];
+    res.type("html").send(page(req, "Approvals", "none", approvalsListBody(rows)));
   });
-  app.post("/approvals", requireOwner, csrfOk, (req, res) => {
-    if (!cfg.demo) return res.status(404).send("Not found.");
-    const b = bodyOf(req);
-    const amount = parseAmountCents(b.amount_cents);
-    const recipient = String(b.recipient ?? "").trim().slice(0, 80);
-    const period = String(b.period ?? "").trim().slice(0, 20);
-    const documentRef = String(b.document_ref ?? "").trim().slice(0, 80);
-    if (amount === null || !recipient || !period || !documentRef) return res.status(400).send("Invalid approval request: amount must be a positive whole number of cents and recipient, period and document are required. Nothing was created.");
-    const payload = { recipient, amount_cents: amount, period, document_ref: documentRef, synthetic: true };
-    db.prepare("INSERT INTO approvals(id,owner_id,payload_json,digest,expires_at,created_at) VALUES(?,?,?,?,?,?)").run(newId("appr"), oid(req), JSON.stringify(payload), sha256(JSON.stringify(payload)), new Date(Date.now() + 15 * 60_000).toISOString(), nowIso());
-    res.redirect("/demo/approvals");
+  app.get("/approvals/:id", requireOwner, (req, res) => {
+    const a = getApproval(db, oid(req), req.params.id);
+    if (!a) return res.status(404).send("Approval not found in your workspace. Nothing was approved.");
+    res.type("html").send(page(req, "Approval", "none", approvalCardBody({ csrf: (req as Authed).csrf, a })));
   });
-  app.post("/approvals/approve", requireOwner, csrfOk, (req, res) => {
-    if (!cfg.demo) return res.status(404).send("Not found.");
-    const b = bodyOf(req);
-    const amount = parseAmountCents(b.amount_cents);
-    if (amount === null) return res.status(400).send("Invalid amount: enter the exact whole number of cents. Nothing was approved.");
-    const row = db.prepare("SELECT * FROM approvals WHERE id=? AND owner_id=?").get(String(b.approval_id ?? ""), oid(req)) as { payload_json: string; digest: string; state: string; expires_at: string } | undefined;
-    if (!row) return res.status(404).send("Approval not found.");
-    if (row.state !== "pending") return res.status(409).send("This approval was already used or closed. Approvals are one-use.");
-    if (Date.parse(row.expires_at) < Date.now()) { db.prepare("UPDATE approvals SET state='expired' WHERE id=?").run(b.approval_id); return res.status(409).send("Approval expired."); }
-    const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
-    if (sha256(JSON.stringify({ ...payload, amount_cents: amount })) !== row.digest) return res.status(409).send("Payload changed: the amount does not match the approved digest. Nothing was approved.");
-    db.prepare("UPDATE approvals SET state='approved_consumed',consumed_at=? WHERE id=?").run(nowIso(), b.approval_id);
-    logActivity(db, oid(req), "owner", "approval_consumed", "ok", "Synthetic approval consumed (nothing sent or paid).");
-    res.type("html").send(page(req, "Approved (synthetic)", "none", `<section class="card"><p>Exact payload approved and recorded. This demo sends, files and pays <strong>nothing</strong>. Receipt state: approved_consumed.</p><p><a href="/demo/approvals">Back</a></p></section>`));
+  app.post("/approvals/:id/decide", requireOwner, csrfOk, (req, res) => {
+    const decision = bodyOf(req).decision;
+    if (decision !== "approve" && decision !== "decline") return res.status(400).send("Choose Approve exactly this or Decline. Nothing was approved or declined.");
+    const a = getApproval(db, oid(req), req.params.id);
+    if (!a) return res.status(404).send("Approval not found in your workspace. Nothing was approved or declined.");
+    if (a.state !== "pending") return res.status(409).send(`This approval is already ${a.state}. Nothing was approved or declined; ask your assistant for a new approval if needed.`);
+    // A re-rendered card after a change can never approve a different payload.
+    if (!safeEqual(String(bodyOf(req).digest ?? ""), a.digest)) return res.status(409).send("This card is out of date: the content changed after it was shown. Nothing was approved or declined. Open the approval again.");
+    const state = decision === "approve" ? "approved" : "declined";
+    db.prepare("UPDATE approvals SET state=?,decided_at=? WHERE id=? AND owner_id=? AND state='pending'").run(state, nowIso(), a.id, oid(req));
+    logActivity(db, oid(req), "owner", "approval_decided", state, `Owner ${state} ${a.kind ?? "action"} (digest ${a.digest.slice(0, 12)}). Launchpad sent, paid and filed nothing.`);
+    res.redirect(`/approvals/${encodeURIComponent(a.id)}`);
   });
 
   app.get("/export", requireOwner, (req, res) => {
-    const data = { workspace: getState(db, oid(req)).ws, assessments: db.prepare("SELECT version,payload_json,created_at FROM assessments WHERE owner_id=?").all(oid(req)), progress: db.prepare("SELECT * FROM progress WHERE owner_id=?").all(oid(req)), candidates: db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=?").all(oid(req)), activity: db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=?").all(oid(req)) };
+    const data = { workspace: getState(db, oid(req)).ws, assessments: db.prepare("SELECT version,payload_json,created_at FROM assessments WHERE owner_id=?").all(oid(req)), progress: db.prepare("SELECT * FROM progress WHERE owner_id=?").all(oid(req)), candidates: db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=?").all(oid(req)), activity: db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=?").all(oid(req)), approvals: db.prepare("SELECT id,kind,report_id,payload_json,digest,state,created_at,expires_at,decided_at,consumed_at,outcome_json FROM approvals WHERE owner_id=?").all(oid(req)) };
     res.setHeader("content-disposition", "attachment; filename=launchpad-export.json");
     res.json(data);
   });
@@ -489,7 +477,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       }
       const ws = db.prepare("SELECT company_ref,label FROM workspaces WHERE owner_id=?").get(token.owner_id) as { company_ref: string; label: string };
       db.prepare("UPDATE mcp_tokens SET last_used_at=? WHERE id=?").run(nowIso(), token.id);
-      const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1 });
+      const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => { void transport.close(); void server.close(); });
       await server.connect(transport);

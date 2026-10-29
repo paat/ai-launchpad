@@ -23,7 +23,7 @@ async function fixture(run: (f: { db: ReturnType<typeof openDb>; c: Client; stop
   }
   const clients: Client[] = [];
   async function connect(reportingEnabled: boolean) {
-    const server = buildMcpServer(db, { ownerId: "one", scopes: ["progress:read", "progress:report"], companyRef: "workspace-one", label: "Your business workspace", reportingEnabled });
+    const server = buildMcpServer(db, { ownerId: "one", scopes: ["progress:read", "progress:report"], companyRef: "workspace-one", label: "Your business workspace", reportingEnabled, baseUrl: "http://localhost:3000" });
     const [ct, st] = InMemoryTransport.createLinkedPair();
     const c = new Client({ name: "synthetic-revision-test", version: "1" });
     await server.connect(st); await c.connect(ct); clients.push(c); return c;

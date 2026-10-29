@@ -37,6 +37,9 @@ export function openDb(path: string) {
   CREATE INDEX IF NOT EXISTS idx_oauth_grants_client ON oauth_grants(client_id);
   CREATE INDEX IF NOT EXISTS idx_oauth_clients_expires ON oauth_clients(expires);
   `);
+  // Backward-safe: approval card columns are added to an existing table in place.
+  const approvalCols = new Set((db.prepare("PRAGMA table_info(approvals)").all() as { name: string }[]).map((c) => c.name));
+  for (const col of ["kind", "report_id", "decided_at", "outcome_json"]) if (!approvalCols.has(col)) db.exec(`ALTER TABLE approvals ADD COLUMN ${col} TEXT`);
   return db;
 }
 export type Db = ReturnType<typeof openDb>;
