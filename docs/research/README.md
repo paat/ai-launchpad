@@ -17,6 +17,7 @@ Research date 25 Oct 2026. Five Codex legs (`codex --search exec`, gpt-6-astra, 
 | [K-browser-mcp-services.md](K-browser-mcp-services.md) | Seven browser-to-MCP providers: sessions, privacy, hosting and approval limits | — |
 | [L-courier-agent-services.md](L-courier-agent-services.md) | Courier MCP/API coverage, Estonia origins and operation boundaries | — |
 | [M-email-calendar-agent-services.md](M-email-calendar-agent-services.md) | Email, calendars, scheduling and reusable IMAP/SMTP/CalDAV connection routes | — |
+| [N-obligation-deadline-rules.md](N-obligation-deadline-rules.md) | Deterministic deadline rules for a one-person OÜ (29 Oct 2026): tier-A statute quotes, rule ids, holiday shift, computed Nov 2026–Dec 2027 dates, Ärikratt field mapping, UNKNOWN defaults | — |
 | **Total** | | **354** |
 
 ## Earlier synthesis
