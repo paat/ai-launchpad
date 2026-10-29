@@ -182,6 +182,61 @@ describe("approval cards over MCP", () => {
     expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "d-o", approval_id: d.approval_id, digest: d.digest, outcome: "sent", observed_at: new Date().toISOString() } }))).toMatch(/declined.*Nothing was recorded/s);
   });
 
+  test("an approved but unused approval expires for acting; a consumed one keeps advancing after expiry", async () => {
+    const o = owner("exp-approved");
+    const c = await client(o.token);
+    const a = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "ea1", action: reminder() } }));
+    expect((await decide(o, a.approval_id, { decision: "approve", digest: a.digest })).status).toBe(302);
+    db.prepare("UPDATE approvals SET expires_at=? WHERE id=?").run("2000-01-01T00:00:00.000Z", a.approval_id);
+    expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "ea-o", approval_id: a.approval_id, digest: a.digest, outcome: "sent", observed_at: new Date().toISOString() } })))
+      .toBe("This approval expired before an outcome was recorded; request a new approval. Nothing was recorded.");
+    expect(row(a.approval_id)).toMatchObject({ state: "expired", outcome_json: null });
+    expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: a.approval_id } })).state).toBe("expired");
+    const card = await (await fetch(`${base}/approvals/${a.approval_id}`, { headers: { cookie: o.cookie } })).text();
+    expect(card).toMatch(/Expired/); expect(card).toMatch(/Decided/); expect(card).not.toContain("Approve exactly this");
+
+    const u = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "ea2", action: reminder() } }));
+    await decide(o, u.approval_id, { decision: "approve", digest: u.digest });
+    parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "eu-1", approval_id: u.approval_id, digest: u.digest, outcome: "sent", observed_at: new Date().toISOString() } }));
+    db.prepare("UPDATE approvals SET expires_at=? WHERE id=?").run("2000-01-01T00:00:00.000Z", u.approval_id);
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "eu-2", approval_id: u.approval_id, digest: u.digest, outcome: "paid", observed_at: new Date().toISOString() } })).outcome).toBe("paid");
+    expect(row(u.approval_id).state).toBe("consumed");
+  });
+
+  test("the first outcome must fit the action kind", async () => {
+    const o = owner("first-outcome");
+    const c = await client(o.token);
+    const approve = async (id: string, action: Record<string, unknown>) => {
+      const r = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: id, action } }));
+      await decide(o, r.approval_id, { decision: "approve", digest: r.digest }); return r;
+    };
+    const call = (r: { approval_id: string; digest: string }, report_id: string, outcome: string) => c.callTool({ name: "record_action_outcome", arguments: { report_id, approval_id: r.approval_id, digest: r.digest, outcome, observed_at: new Date().toISOString() } });
+    const m = await approve("m", reminder({ kind: "send_message", amount_cents: undefined }));
+    expect(errText(await call(m, "m-paid", "paid"))).toBe("A send_message approval's first outcome must be sent or failed. Nothing was recorded.");
+    expect(row(m.approval_id)).toMatchObject({ state: "approved", outcome_json: null });
+    expect(parsed(await call(m, "m-sent", "sent")).outcome).toBe("sent");
+    const p = await approve("p", reminder({ kind: "prepare_payment" }));
+    expect(errText(await call(p, "p-sent", "sent"))).toMatch(/prepare_payment.*paid or failed\. Nothing was recorded/);
+    expect(parsed(await call(p, "p-paid", "paid")).outcome).toBe("paid");
+    const f = await approve("f", reminder({ kind: "prepare_filing", amount_cents: undefined }));
+    expect(errText(await call(f, "f-paid", "paid"))).toMatch(/prepare_filing.*submitted or failed\. Nothing was recorded/);
+    expect(parsed(await call(f, "f-failed", "failed")).outcome).toBe("failed");
+    const i = await approve("i", reminder());
+    expect(errText(await call(i, "i-submitted", "submitted"))).toMatch(/send_invoice.*sent or failed\. Nothing was recorded/);
+  });
+
+  test("a replayed request_approval reports the live state, not the stale creation state", async () => {
+    const o = owner("replay");
+    const c = await client(o.token);
+    const first = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "r1", action: reminder() } }));
+    const note = "Creation receipt replayed; current_state is live. Call get_approval before acting.";
+    expect(first).toMatchObject({ state: "pending", note });
+    expect(first.current_state).toBeUndefined();
+    await decide(o, first.approval_id, { decision: "approve", digest: first.digest });
+    const replay = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "r1", action: reminder() } }));
+    expect(replay).toEqual({ ...first, current_state: "approved", note });
+  });
+
   test("caps, scope and the sharing stop switch refuse with nothing saved", async () => {
     const o = owner("caps");
     const c = await client(o.token);

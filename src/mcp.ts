@@ -117,11 +117,13 @@ export const approvalActionSchema = z.object({
   document: z.object({ title: s(120), content: s(4000) }).strict(),
   summary: s(300),
 }).strict();
+const OUTCOME_FIRST: Record<string, string[]> = { send_message: ["sent", "failed"], send_invoice: ["sent", "failed"], prepare_payment: ["paid", "failed"], prepare_filing: ["submitted", "failed"] };
 const OUTCOME_NEXT: Record<string, string[]> = { sent: ["accepted", "rejected", "paid"], submitted: ["accepted", "rejected"] };
 export interface ApprovalRow { id: string; kind: string | null; report_id: string | null; payload_json: string; digest: string; state: string; expires_at: string; created_at: string; decided_at: string | null; consumed_at: string | null; outcome_json: string | null; }
-/** Lazy expiry: a pending approval past expires_at becomes expired on read. */
+/** Lazy expiry: the window covers deciding and acting, so a pending or an
+ *  approved-but-unused approval past expires_at becomes expired on read. */
 export function expireApprovals(db: Db, ownerId: string) {
-  db.prepare("UPDATE approvals SET state='expired' WHERE owner_id=? AND state='pending' AND expires_at<=?").run(ownerId, nowIso());
+  db.prepare("UPDATE approvals SET state='expired' WHERE owner_id=? AND state IN ('pending','approved') AND expires_at<=?").run(ownerId, nowIso());
 }
 export function getApproval(db: Db, ownerId: string, id: string) {
   expireApprovals(db, ownerId);
@@ -222,12 +224,12 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
 
   const approvalGate = (nothing: string) => !need("progress:report") ? "Missing scope progress:report." : !ctx.reportingEnabled ? `Progress sharing is stopped by the owner (it is off by default). ${nothing}` : null;
 
-  server.registerTool("request_approval", { description: "Ask the owner to approve one exact action (message, invoice, payment or filing) on their phone. The digest binds every field of action; any change needs a new approval. Launchpad never sends, pays or files: after get_approval returns approved, act with your own tools using exactly this content, then call record_action_outcome. Idempotent by report_id. Expires after 24 hours.", inputSchema: { report_id: s(80), action: approvalActionSchema } }, async (args) => {
+  server.registerTool("request_approval", { description: "Ask the owner to approve one exact action (message, invoice, payment or filing) on their phone. The digest binds every field of action; any change needs a new approval. Launchpad never sends, pays or files: after get_approval returns approved, act with your own tools using exactly this content, then call record_action_outcome before expires_at. Expires 24 hours after the request, for deciding and for acting: an approved approval with no outcome recorded by then becomes expired. Idempotent by report_id; a replay returns the creation receipt plus the live current_state.", inputSchema: { report_id: s(80), action: approvalActionSchema } }, async (args) => {
     const gate = approvalGate("Nothing was saved and no approval was requested."); if (gate) return err(gate);
     if (["send_invoice", "prepare_payment"].includes(args.action.kind) && args.action.amount_cents === undefined) return err(`amount_cents is required for ${args.action.kind}. Nothing was saved and no approval was requested.`);
     const prior = idempotent(db, ctx.ownerId, "approval", args.report_id, args);
     if (prior === "conflict") return err("Conflict: report_id already used with a different payload. Nothing was saved and no approval was requested.");
-    if (prior) return json(prior.receipt);
+    if (prior) return json({ ...prior.receipt, current_state: getApproval(db, ctx.ownerId, String(prior.receipt.approval_id))?.state });
     const capacityError = reportCapacityError(db, ctx.ownerId);
     if (capacityError) return err(capacityError);
     expireApprovals(db, ctx.ownerId);
@@ -235,7 +237,7 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
     if (total >= 200) return err("Approval limit reached for this workspace (200). The owner can export and delete progress to start again. Nothing was saved and no approval was requested.");
     if (pending >= 20) return err("Too many approvals are waiting for the owner (20 pending). Ask the owner to decide on those first. Nothing was saved and no approval was requested.");
     const id = newId("appr"), digest = approvalDigest(args.action), expires = new Date(Date.now() + 24 * 3600_000).toISOString();
-    const receipt = { approval_id: id, state: "pending", digest, expires_at: expires, approve_url: `${ctx.baseUrl}/approvals/${id}`, owner_instruction: "Ask the owner to open the link (or the Launchpad Status page) and approve or decline. Do not act before get_approval returns approved." };
+    const receipt = { approval_id: id, state: "pending", digest, expires_at: expires, approve_url: `${ctx.baseUrl}/approvals/${id}`, owner_instruction: "Ask the owner to open the link (or the Launchpad Status page) and approve or decline. Do not act before get_approval returns approved.", note: "Creation receipt replayed; current_state is live. Call get_approval before acting." };
     db.transaction(() => {
       db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at) VALUES(?,?,?,?,?,?,'pending',?,?)").run(id, ctx.ownerId, args.action.kind, args.report_id, JSON.stringify(args.action), digest, expires, nowIso());
       saveReceipt(db, ctx.ownerId, "approval", args.report_id, args, receipt);
@@ -244,14 +246,14 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
     return json(receipt);
   });
 
-  server.registerTool("get_approval", { description: "Check an approval you requested: state (pending, approved, declined, expired, consumed), digest, the exact action, decision time, expiry and any assistant-reported outcome. Act only when state is approved.", inputSchema: { approval_id: s(80) } }, async (args) => {
+  server.registerTool("get_approval", { description: "Check an approval you requested: state (pending, approved, declined, expired, consumed), digest, the exact action, decision time, expiry and any assistant-reported outcome. Act only when state is approved (it expires at expires_at if no outcome was recorded).", inputSchema: { approval_id: s(80) } }, async (args) => {
     const gate = approvalGate("Nothing was read."); if (gate) return err(gate);
     const a = getApproval(db, ctx.ownerId, args.approval_id);
     if (!a) return err("Unknown approval_id in this workspace. Nothing was read.");
     return json({ approval_id: a.id, state: a.state, digest: a.digest, action: JSON.parse(a.payload_json), created_at: a.created_at, decided_at: a.decided_at, expires_at: a.expires_at, outcome: a.outcome_json ? JSON.parse(a.outcome_json) : null });
   });
 
-  server.registerTool("record_action_outcome", { description: "Record what happened after you acted on an approved action with your own tools. Requires the approval's exact digest; a changed payload needs a new approval. The first outcome consumes the approval (one use); later outcomes may only advance it (sent → accepted/rejected/paid, submitted → accepted/rejected). Outcomes are labelled assistant_reported, never verified. Idempotent by report_id.", inputSchema: { report_id: s(80), approval_id: s(80), digest: s(64), outcome: z.enum(["sent", "submitted", "accepted", "rejected", "paid", "failed"]), observed_at: s(40), evidence_refs: evidenceRefs.optional() } }, async (args) => {
+  server.registerTool("record_action_outcome", { description: "Record what happened after you acted on an approved action with your own tools. Requires the approval's exact digest; a changed payload needs a new approval. The first outcome must be recorded before expires_at, must fit the kind (send_message/send_invoice: sent or failed; prepare_payment: paid or failed; prepare_filing: submitted or failed) and consumes the approval (one use); later outcomes, also after expiry, may only advance it (sent → accepted/rejected/paid, submitted → accepted/rejected). Outcomes are labelled assistant_reported, never verified. Idempotent by report_id.", inputSchema: { report_id: s(80), approval_id: s(80), digest: s(64), outcome: z.enum(["sent", "submitted", "accepted", "rejected", "paid", "failed"]), observed_at: s(40), evidence_refs: evidenceRefs.optional() } }, async (args) => {
     const gate = approvalGate("Nothing was recorded."); if (gate) return err(gate);
     if (Number.isNaN(Date.parse(args.observed_at)) || Date.parse(args.observed_at) > Date.now() + 5 * 60_000) return err("observed_at is not a plausible timestamp. Nothing was recorded.");
     const prior = idempotent(db, ctx.ownerId, "outcome", args.report_id, args);
@@ -264,6 +266,9 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
     if (args.digest !== a.digest) return err("Digest does not match the approved content. The payload changed: request a new approval for the changed payload and wait for the owner. Nothing was recorded.");
     const prev = a.outcome_json ? JSON.parse(a.outcome_json) as { outcome: string; history: unknown[] } : null;
     if (a.state === "pending") return err("The owner has not approved this yet. Do not act. Nothing was recorded.");
+    if (a.state === "expired") return err("This approval expired before an outcome was recorded; request a new approval. Nothing was recorded.");
+    const first = OUTCOME_FIRST[a.kind ?? ""] ?? [];
+    if (a.state === "approved" && !first.includes(args.outcome)) return err(`A ${a.kind} approval's first outcome must be ${first.join(" or ")}. Nothing was recorded.`);
     if (a.state === "consumed" ? !OUTCOME_NEXT[prev?.outcome ?? ""]?.includes(args.outcome) : a.state !== "approved") {
       return err(a.state === "consumed"
         ? `This approval was already used (last outcome: ${prev?.outcome}). Approvals are one-use; an outcome may only advance sent → accepted/rejected/paid or submitted → accepted/rejected. Nothing was recorded.`

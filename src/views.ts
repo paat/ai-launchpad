@@ -377,7 +377,7 @@ export function approvalCardBody(opts: { csrf: string; a: ApprovalRow }): string
     ? `<p class="small muted">${esc(timeLeft(a.expires_at))}</p>
 <form method="post" action="/approvals/${esc(encodeURIComponent(a.id))}/decide"><input type="hidden" name="csrf" value="${esc(opts.csrf)}"><input type="hidden" name="digest" value="${esc(a.digest)}">
 <button name="decision" value="approve">Approve exactly this</button><button class="secondary" name="decision" value="decline">Decline</button></form>`
-    : `<p role="status"><span class="pill">${esc(v.state)}</span> ${a.decided_at ? `Decided ${esc(fmtWhen(a.decided_at) ?? a.decided_at)}` : a.state === "expired" ? `Expired ${esc(fmtWhen(a.expires_at) ?? a.expires_at)}` : ""}</p>
+    : `<p role="status"><span class="pill">${esc(v.state)}</span> ${[a.decided_at ? `Decided ${esc(fmtWhen(a.decided_at) ?? a.decided_at)}` : "", a.state === "expired" ? `Expired ${esc(fmtWhen(a.expires_at) ?? a.expires_at)}${a.decided_at ? " before your assistant reported an outcome; it must ask again" : ""}` : ""].filter(Boolean).join(" · ")}</p>
 ${outcome?.outcome ? `<p class="small">Your assistant reported: <strong>${esc(outcome.outcome)}</strong>${outcome.observed_at ? ` (${esc(fmtWhen(outcome.observed_at) ?? outcome.observed_at)})` : ""} · assistant reported, not verified by Launchpad.</p>` : ""}`;
   return `<section class="card hero" aria-label="Approval"><p class="company">Approval request</p><h1>${esc(v.kind)}</h1>
 ${v.p.summary ? `<p class="lede">${esc(v.p.summary)}</p>` : ""}
