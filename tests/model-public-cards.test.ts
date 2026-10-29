@@ -6,7 +6,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { createApp, configFromEnv, type Config } from "../src/app.js";
 import { openDb, sha256, type Db } from "../src/db.js";
-import { BASETEN_MODEL, ModelQualityLedger, payloadHash, type FetchFn } from "../src/model-quality.js";
+import { BASETEN_MODEL, ModelQualityLedger, payloadHash, reservationMicroUsd, type FetchFn } from "../src/model-quality.js";
 import { FRICTION_TOPICS, PublicCards, SETUP_TOPICS, openExistingPublicLedger, publicCardRequestId } from "../src/model-public-cards.js";
 import { setupBody } from "../src/views.js";
 import { main as batchMain, parseArgs as parseBatchArgs } from "../scripts/model-public-cards.js";
@@ -28,8 +28,9 @@ const KEY = "synthetic-key-not-real";
 const SUB_A = "synthetic-subject-a", SUB_B = "synthetic-subject-b", SUB_DENIED = "synthetic-subject-denied";
 const tmpDir = () => mkdtempSync(join(tmpdir(), "pc-"));
 
-function seedCompleted(ledger: ModelQualityLedger, id: string, job: "setup_guidance" | "classify_friction", output: string) {
-  ledger.reserve(id, job, payloadHash(job, `synthetic operator input ${id}`));
+// Seeds default to the historical flat USD 2 allocation, as in production.
+function seedCompleted(ledger: ModelQualityLedger, id: string, job: "setup_guidance" | "classify_friction", output: string, allocation = 2_000_000) {
+  ledger.reserve(id, job, payloadHash(job, `synthetic operator input ${id}`), allocation);
   ledger.finalize(id, { status: "completed", output, input_tokens: 10, output_tokens: 5, actual_cost_micro_usd: 100 });
 }
 /** Create a recognized existing ledger file (0600) with seeded attempts. */
@@ -250,13 +251,16 @@ test("concurrent same-card POSTs: one fetch, second is pending, then replay", as
   } finally { await s.close(); }
 });
 
-test("two seeded quality allocations leave exactly three public-card slots, then exhausted", async () => {
-  const path = ledgerFile(2);
+test("production-seeded ledger with headroom for exactly three cards: three generate, the fourth is exhausted", async () => {
+  const cards = [["connector", "en"], ["connector", "et"], ["choose-assistant", "en"]] as const;
+  const need = cards.reduce((sum, [id, locale]) => sum + reservationMicroUsd("setup_guidance", SETUP_TOPICS.find((t) => t.id === id)!.input[locale]), 0);
+  const path = ledgerFile(4); // 4 × USD 2 like production: USD 2 headroom
+  { const l = openExistingPublicLedger(path); seedCompleted(l, "filler", "setup_guidance", "OPERATOR-ONLY", 2_000_000 - need); l.close(); }
   const { calls, fetchFn } = fakeModel(() => okChat("Slot guidance."));
   const s = await start({ modelLedgerPath: path, modelFetchFn: fetchFn });
   try {
     const a = makeOwner(s.db, "own_a", `google:${SUB_A}`, "google");
-    for (const [topic, locale] of [["connector", "en"], ["connector", "et"], ["choose-assistant", "en"]] as const) {
+    for (const [topic, locale] of cards) {
       const h = await (await postSetup(s, a, { topic, locale })).text();
       expect(h).toContain("Slot guidance.");
     }
@@ -264,7 +268,9 @@ test("two seeded quality allocations leave exactly three public-card slots, then
     const h4 = await (await postSetup(s, a, { topic: "choose-assistant", locale: "et" })).text();
     expect(h4).toContain("budget is exhausted");
     expect(calls).toHaveLength(3); // no fetch for the refused card
-    expect(rowCount(path)).toBe(5); // global five-attempt ledger, unchanged cap
+    expect(rowCount(path)).toBe(8); // 4 seeds + filler + 3 cards on the one global ledger
+    const l = openExistingPublicLedger(path);
+    try { expect(l.db.prepare("SELECT SUM(allocated_micro_usd) s FROM mq_attempts").get()).toEqual({ s: 10_000_000 }); } finally { l.close(); }
     // Saved cards still replay after exhaustion.
     const hr = await (await postSetup(s, a, { topic: "connector", locale: "en" })).text();
     expect(hr).toContain("Saved guidance");
@@ -378,7 +384,7 @@ function stalePendingLedgerFile(topicId: string, locale: "en" | "et"): { path: s
   const pendingId = publicCardRequestId(topic, locale);
   const l = openExistingPublicLedger(path);
   try {
-    l.reserve(pendingId, topic.job, payloadHash(topic.job, topic.input[locale]));
+    l.reserve(pendingId, topic.job, payloadHash(topic.job, topic.input[locale]), reservationMicroUsd(topic.job, topic.input[locale]));
     l.db.prepare("UPDATE mq_attempts SET created_at='2000-01-01', updated_at='2000-01-01' WHERE request_id=?").run(pendingId);
   } finally { l.close(); }
   return { path, pendingId };

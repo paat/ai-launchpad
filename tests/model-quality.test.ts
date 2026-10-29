@@ -3,8 +3,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  BASETEN_CHAT_URL, BASETEN_MODEL, MAX_CONTEXT_TOKENS, ModelQualityLedger,
-  calculateCostMicroUsd, payloadHash, runModelQualityAttempt, validateInput, type FetchFn,
+  ABSOLUTE_MAX_ATTEMPTS, BASETEN_CHAT_URL, BASETEN_MODEL, MAX_CONTEXT_TOKENS, MAX_INPUT_BYTES, ModelQualityLedger,
+  calculateCostMicroUsd, inputTokenBound, payloadHash, reservationMicroUsd, runModelQualityAttempt, validateInput, type FetchFn,
 } from "../src/model-quality.js";
 import { SYNTHETIC_CASES, main, parseArgs } from "../scripts/model-quality.js";
 
@@ -32,6 +32,8 @@ function fakeFetch(handler: (call: Call, n: number) => Response | Promise<Respon
 }
 const jsonRes = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
 const happy = () => fakeFetch(() => jsonRes(okChat()));
+// Reservation for the base request below (setup_guidance, fixed input).
+const ALLOC = 40_836;
 const base = (ledger: ModelQualityLedger, fetchFn: FetchFn, extra: Record<string, unknown> = {}) => ({
   job: "setup_guidance" as const, input: "Synthetic connector question?", requestId: "req-1",
   ledger, fetchFn, apiKey: SYNTHETIC_KEY, confirmCurrentPricing: true, ...extra,
@@ -46,18 +48,30 @@ describe("model quality harness (Baseten)", () => {
   });
   afterAll(() => { globalThis.fetch = realFetch; });
 
-  test("conservative full-context cost is $1.328128 under the $2 allocation; request shape is fixed", async () => {
-    // Full 1,048,576-token context charged as input + 4,096 output tokens.
+  test("per-attempt reservation is computed from the request actually sent; request shape is fixed", async () => {
     expect(calculateCostMicroUsd(MAX_CONTEXT_TOKENS, 4096)).toBe(1_328_128);
-    expect(calculateCostMicroUsd(MAX_CONTEXT_TOKENS, 4096)).toBeLessThan(2_000_000);
     expect(calculateCostMicroUsd(100, 10)).toBe(168);
+    // 331 instruction bytes + 29 input bytes + 2,048 template tokens.
+    expect(inputTokenBound("setup_guidance", "Synthetic connector question?")).toBe(2408);
+    // (ceil(2408 × $1.25/1M) + ceil(4096 × $4.25/1M)) × 2 = (3,010 + 17,408) × 2.
+    expect(reservationMicroUsd("setup_guidance", "Synthetic connector question?")).toBe(ALLOC);
+    // A 512-token classify_unmet_need on the largest valid input (2,000
+    // three-byte characters = 6,000 bytes; 2,000 chars cannot reach 8,192):
+    // (ceil(9,216 × 1.25) + 512 × 4.25) × 2 = (11,520 + 2,176) × 2.
+    const maxInput = "€".repeat(2000);
+    expect(validateInput(maxInput)).toBe(maxInput);
+    expect(inputTokenBound("classify_unmet_need", maxInput)).toBe(1168 + 6000 + 2048);
+    expect(reservationMicroUsd("classify_unmet_need", maxInput)).toBe(27_392);
+    // Even the theoretical 8,192-byte ceiling stays under USD 0.05.
+    expect(calculateCostMicroUsd(1168 + MAX_INPUT_BYTES + 2048, 512) * 2).toBe(32_872);
+    expect(calculateCostMicroUsd(1168 + MAX_INPUT_BYTES + 2048, 512) * 2).toBeLessThan(50_000);
     const ledger = ModelQualityLedger.open(":memory:");
     const { calls, fetchFn } = happy();
     // Extra caller fields must not inject endpoint/model/tools.
     const r = await runModelQualityAttempt(base(ledger, fetchFn, { model: "evil", url: "https://evil.invalid", tools: [{}] }) as never);
     expect(r).toMatchObject({
       status: "completed", mock: false, provider: "baseten-meta", model: BASETEN_MODEL,
-      allocatedMicroUsd: 2_000_000, actualCostMicroUsd: 168,
+      allocatedMicroUsd: ALLOC, actualCostMicroUsd: 168,
       inputTokens: 100, outputTokens: 10, replayed: false,
     });
     expect(r.output).toBe("Synthetic bounded answer.");
@@ -74,6 +88,7 @@ describe("model quality harness (Baseten)", () => {
     expect(calls.every((c) => c.init.redirect === "manual" && c.init.method === "POST")).toBe(true);
     expect(JSON.stringify(r)).not.toContain(SYNTHETIC_KEY);
     expect(JSON.stringify(r)).not.toContain("secret-reasoning-detail"); // reasoning_content never surfaced
+    expect(ledger.get("req-1")?.allocated_micro_usd).toBe(ALLOC); // stored per-attempt reservation
     expect(ledger.get("req-1")).not.toHaveProperty("input"); // hash only, no raw input stored
     expect(JSON.stringify(ledger.get("req-1"))).not.toContain("Synthetic connector question?");
     expect(JSON.stringify(ledger.get("req-1"))).not.toContain("secret-reasoning-detail");
@@ -131,67 +146,80 @@ describe("model quality harness (Baseten)", () => {
     ledger.close();
   });
 
-  test("two connections contend for the last of five slots; pending blocks fail-closed", { timeout: 30_000 }, () => {
+  test("production-seeded ledger: two connections contend for the remaining headroom; pending blocks fail-closed", { timeout: 30_000 }, () => {
     const path = tmpLedger();
     const a = ModelQualityLedger.open(path);
     const b = ModelQualityLedger.open(path);
     const ins = a.db.prepare("INSERT INTO mq_attempts(request_id,payload_hash,job,status,allocated_micro_usd,created_at,updated_at) VALUES(?, 'h','setup_guidance','completed',2000000,'t','t')");
     a.db.transaction(() => { for (let i = 0; i < 4; i++) ins.run(`seed-${i}`); })();
-    expect(a.reserve("last", "setup_guidance", "hash-last").replayed).toBe(false);
-    expect(() => b.reserve("other", "setup_guidance", "hash-other")).toThrow(/pending/);
+    expect(a.reserve("last", "setup_guidance", "hash-last", 2_000_000).replayed).toBe(false);
+    expect(() => b.reserve("other", "setup_guidance", "hash-other", 1)).toThrow(/pending/);
     a.finalize("last", { status: "completed" });
-    expect(() => b.reserve("other", "setup_guidance", "hash-other")).toThrow(/cap or attempt limit/);
+    expect(() => b.reserve("other", "setup_guidance", "hash-other", 1)).toThrow(/cap or attempt limit/);
     expect(b.db.prepare("SELECT COUNT(*) n FROM mq_attempts").get()).toEqual({ n: 5 });
     expect(b.db.prepare("SELECT COALESCE(SUM(allocated_micro_usd),0) s FROM mq_attempts").get()).toEqual({ s: 10_000_000 });
+    // Invalid allocations are refused before any row is written.
+    for (const bad of [0, -1, 1.5, 10_000_001]) expect(() => b.reserve(`bad-${bad}`, "setup_guidance", "h", bad)).toThrow(/Allocation/);
     a.close(); b.close();
   });
 
-  test("five-attempt ceiling: the sixth distinct attempt is refused with no network", async () => {
+  test("attempt backstop is 1000; the USD 10 ceiling binds first for real reservations", { timeout: 30_000 }, async () => {
+    expect(ABSOLUTE_MAX_ATTEMPTS).toBe(1000);
+    const tiny = ModelQualityLedger.open(":memory:");
+    tiny.db.transaction(() => {
+      for (let i = 0; i < 1000; i++) { tiny.reserve(`t-${i}`, "setup_guidance", `h-${i}`, 1); tiny.finalize(`t-${i}`, { status: "completed" }); }
+    })();
+    expect(() => tiny.reserve("t-1000", "setup_guidance", "h", 1)).toThrow(/cap or attempt limit/);
+    tiny.close();
+    // Real reservations: floor(10,000,000 / 40,836) = 244 attempts, then refused with no network.
     const ledger = ModelQualityLedger.open(":memory:");
     const { calls, fetchFn } = happy();
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 244; i++) {
       const r = await runModelQualityAttempt(base(ledger, fetchFn, { requestId: `req-${i}` }));
       expect(r.status).toBe("completed");
     }
-    expect(calls).toHaveLength(5);
-    await expect(runModelQualityAttempt(base(ledger, fetchFn, { requestId: "req-6" }))).rejects.toMatchObject({ code: "budget_exhausted" });
-    expect(calls).toHaveLength(5);
-    expect(ledger.db.prepare("SELECT COUNT(*) n FROM mq_attempts").get()).toEqual({ n: 5 });
+    await expect(runModelQualityAttempt(base(ledger, fetchFn, { requestId: "req-245" }))).rejects.toMatchObject({ code: "budget_exhausted" });
+    expect(calls).toHaveLength(244);
+    expect(ledger.db.prepare("SELECT COUNT(*) n, SUM(allocated_micro_usd) s FROM mq_attempts").get()).toEqual({ n: 244, s: 244 * ALLOC });
     ledger.close();
   });
 
   test("crashed pending attempt stays charged, non-replayable, blocks new attempts", { timeout: 30_000 }, async () => {
     const path = tmpLedger();
     const a = ModelQualityLedger.open(path);
-    a.reserve("crashed", "setup_guidance", payloadHash("setup_guidance", "Synthetic connector question?"));
+    a.reserve("crashed", "setup_guidance", payloadHash("setup_guidance", "Synthetic connector question?"), ALLOC);
     a.close();
     const ledger = ModelQualityLedger.open(path);
     const { calls, fetchFn } = happy();
     const replay = await runModelQualityAttempt(base(ledger, fetchFn, { requestId: "crashed" }));
-    expect(replay).toMatchObject({ status: "pending", replayed: true, allocatedMicroUsd: 2_000_000 });
+    expect(replay).toMatchObject({ status: "pending", replayed: true, allocatedMicroUsd: ALLOC });
     await expect(runModelQualityAttempt(base(ledger, fetchFn, { requestId: "fresh" }))).rejects.toMatchObject({ code: "attempt_in_flight" });
     expect(calls).toHaveLength(0);
     ledger.close();
   });
 
-  test("total-usage boundaries: exactly at context/output caps completes; one token over breaches; inconsistent total is uncertain", async () => {
-    // Exactly 1,048,576 total with exactly 4,096 output: within caps.
+  test("usage boundaries: cost exactly at the attempt's own reservation completes; one micro-USD over, over the context or over the job's max_tokens breaches", async () => {
+    // 18,742 input + 4,096 output tokens cost exactly the 40,836 reservation.
     let ledger = ModelQualityLedger.open(":memory:");
-    let f = fakeFetch(() => jsonRes(okChat({
-      usage: { prompt_tokens: MAX_CONTEXT_TOKENS - 4096, completion_tokens: 4096, total_tokens: MAX_CONTEXT_TOKENS },
-    })));
+    let f = fakeFetch(() => jsonRes(okChat({ usage: { prompt_tokens: 18_742, completion_tokens: 4096, total_tokens: 22_838 } })));
     let r = await runModelQualityAttempt(base(ledger, f.fetchFn));
-    expect(r).toMatchObject({ status: "completed", inputTokens: MAX_CONTEXT_TOKENS - 4096, outputTokens: 4096 });
-    expect(r.actualCostMicroUsd).toBe(1_323_008);
+    expect(r).toMatchObject({ status: "completed", actualCostMicroUsd: ALLOC, allocatedMicroUsd: ALLOC });
     ledger.close();
 
-    // One token over the context cap (cost still below $2): breach, charged, suppressed output.
+    // One more input token: 40,837 > 40,836 reserved. Breach, charged, output suppressed.
+    ledger = ModelQualityLedger.open(":memory:");
+    f = fakeFetch(() => jsonRes(okChat({ usage: { prompt_tokens: 18_743, completion_tokens: 4096, total_tokens: 22_839 } })));
+    r = await runModelQualityAttempt(base(ledger, f.fetchFn));
+    expect(r).toMatchObject({ status: "provider_contract_breach", errorCode: "usage_exceeds_caps", output: null, allocatedMicroUsd: ALLOC, actualCostMicroUsd: 40_837 });
+    ledger.close();
+
+    // One token over the context cap: breach.
     ledger = ModelQualityLedger.open(":memory:");
     f = fakeFetch(() => jsonRes(okChat({
       usage: { prompt_tokens: MAX_CONTEXT_TOKENS - 9, completion_tokens: 10, total_tokens: MAX_CONTEXT_TOKENS + 1 },
     })));
     r = await runModelQualityAttempt(base(ledger, f.fetchFn));
-    expect(r).toMatchObject({ status: "provider_contract_breach", errorCode: "usage_exceeds_caps", output: null, allocatedMicroUsd: 2_000_000 });
+    expect(r).toMatchObject({ status: "provider_contract_breach", errorCode: "usage_exceeds_caps", output: null, allocatedMicroUsd: ALLOC });
     ledger.close();
 
     // Output one token over 4,096 breaches even with a small total.
@@ -201,11 +229,19 @@ describe("model quality harness (Baseten)", () => {
     expect(r).toMatchObject({ status: "provider_contract_breach", errorCode: "usage_exceeds_caps", output: null });
     ledger.close();
 
+    // classify_unmet_need asks for max_tokens 512 and 513 output tokens breach its own limit.
+    ledger = ModelQualityLedger.open(":memory:");
+    f = fakeFetch(() => jsonRes(okChat({ usage: { prompt_tokens: 10, completion_tokens: 513, total_tokens: 523 } })));
+    r = await runModelQualityAttempt(base(ledger, f.fetchFn, { job: "classify_unmet_need", input: "{\"need\":\"synthetic\"}" }));
+    expect(f.calls[0].body.max_tokens).toBe(512);
+    expect(r).toMatchObject({ status: "provider_contract_breach", errorCode: "usage_exceeds_caps", output: null, allocatedMicroUsd: reservationMicroUsd("classify_unmet_need", "{\"need\":\"synthetic\"}") });
+    ledger.close();
+
     // total_tokens inconsistent with prompt+completion: invalid usage, uncertain, charged.
     ledger = ModelQualityLedger.open(":memory:");
     f = fakeFetch(() => jsonRes(okChat({ usage: { prompt_tokens: 100, completion_tokens: 10, total_tokens: 999 } })));
     r = await runModelQualityAttempt(base(ledger, f.fetchFn));
-    expect(r).toMatchObject({ status: "uncertain", errorCode: "missing_or_invalid_usage", output: null, allocatedMicroUsd: 2_000_000 });
+    expect(r).toMatchObject({ status: "uncertain", errorCode: "missing_or_invalid_usage", output: null, allocatedMicroUsd: ALLOC });
     ledger.close();
   });
 
@@ -215,7 +251,7 @@ describe("model quality harness (Baseten)", () => {
     const r = await runModelQualityAttempt(base(ledger, wrong.fetchFn));
     expect(r).toMatchObject({
       status: "provider_contract_breach", errorCode: "model_identity_mismatch",
-      output: null, allocatedMicroUsd: 2_000_000, model: BASETEN_MODEL,
+      output: null, allocatedMicroUsd: ALLOC, model: BASETEN_MODEL,
     });
     const after = happy();
     await expect(runModelQualityAttempt(base(ledger, after.fetchFn, { requestId: "req-2" }))).rejects.toMatchObject({ code: "suppressed_after_breach" });
@@ -249,7 +285,7 @@ describe("model quality harness (Baseten)", () => {
       const { calls, fetchFn } = fakeFetch(handler);
       const r = await runModelQualityAttempt(base(ledger, fetchFn, { timeoutMs: 20 }));
       expect(r, code).toMatchObject({ status: "uncertain", errorCode: code, mock: false, output: null });
-      expect(ledger.get("req-1")?.allocated_micro_usd).toBe(2_000_000);
+      expect(ledger.get("req-1")?.allocated_micro_usd).toBe(ALLOC);
       expect(calls).toHaveLength(1); // single chat call, no preflight, no retry
       ledger.close();
     }
@@ -285,7 +321,7 @@ describe("model quality harness (Baseten)", () => {
     let ledger = ModelQualityLedger.open(":memory:");
     const boom = fakeFetch(() => { throw new Error("socket exploded with sensitive detail"); });
     let r = await runModelQualityAttempt(base(ledger, boom.fetchFn));
-    expect(r).toMatchObject({ status: "failed", errorCode: "provider_failed", allocatedMicroUsd: 2_000_000 });
+    expect(r).toMatchObject({ status: "failed", errorCode: "provider_failed", allocatedMicroUsd: ALLOC });
     expect(JSON.stringify(r)).not.toContain("sensitive detail");
     expect(boom.calls).toHaveLength(1);
     ledger.close();
@@ -316,10 +352,10 @@ describe("model quality harness (Baseten)", () => {
       const r = await runModelQualityAttempt(base(ledger, f.fetchFn));
       expect(r, name).toMatchObject({
         status: "provider_contract_breach", output: null,
-        allocatedMicroUsd: 2_000_000, actualCostMicroUsd: null,
+        allocatedMicroUsd: ALLOC, actualCostMicroUsd: null,
         errorCode: name.startsWith("wrong-model") ? "model_identity_mismatch" : "usage_exceeds_caps",
       });
-      expect(ledger.get("req-1")).toMatchObject({ status: "provider_contract_breach", allocated_micro_usd: 2_000_000, output: null, actual_cost_micro_usd: null });
+      expect(ledger.get("req-1")).toMatchObject({ status: "provider_contract_breach", allocated_micro_usd: ALLOC, output: null, actual_cost_micro_usd: null });
       const after = happy();
       await expect(runModelQualityAttempt(base(ledger, after.fetchFn, { requestId: "req-2" })), name).rejects.toMatchObject({ code: "suppressed_after_breach" });
       expect(after.calls, name).toHaveLength(0);

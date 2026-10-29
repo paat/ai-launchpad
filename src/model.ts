@@ -3,7 +3,7 @@
  * budget value can reach a network transport from the app. The Baseten adapter
  * below is kept isolated for a future, separately verified spending-control
  * build and is exercised only by unit tests with a fake fetch. */
-export type ModelJob = "setup_guidance" | "classify_friction";
+export type ModelJob = "setup_guidance" | "classify_friction" | "classify_unmet_need";
 export interface ModelResult { job: ModelJob; output: string; provider: string; mock: boolean; note: string; }
 
 const MAX_INPUT = 2000;

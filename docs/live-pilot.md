@@ -35,7 +35,10 @@ below. No new live calls were made for this docs update.
   is not billing. No private business input.
 - Historical stage preserved: the original 2 quality calls estimated
   $0.005588 with $4 allocated at that stage; the aggregate pilot is now
-  4 calls / $8 allocated. Sole ledger and max-5-attempts rules unchanged.
+  4 calls / $8 allocated. Sole ledger and max-5-attempts rules were
+  unchanged at that time; since 2026-10-29 (issue #20) new attempts reserve
+  per request under the same $10 ceiling, with a 1,000-attempt backstop
+  (see [model-quality.md](model-quality.md)).
 
 ## Release evidence and recovery limits
 

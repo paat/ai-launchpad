@@ -41,6 +41,12 @@ export function openDb(path: string) {
   // Backward-safe: approval card columns are added to an existing table in place.
   const approvalCols = new Set((db.prepare("PRAGMA table_info(approvals)").all() as { name: string }[]).map((c) => c.name));
   for (const col of ["kind", "report_id", "decided_at", "outcome_json"]) if (!approvalCols.has(col)) db.exec(`ALTER TABLE approvals ADD COLUMN ${col} TEXT`);
+  // Friction loop (#20): owner-scoped unmet needs. Only de-identified text
+  // is stored; the raw request is never kept.
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS unmet_needs(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, report_id TEXT NOT NULL, payload_hash TEXT NOT NULL, need_redacted TEXT NOT NULL, blocker TEXT NOT NULL, job_hint_redacted TEXT, state TEXT NOT NULL, reason TEXT, model_input TEXT, classify_started_at TEXT, classified_by TEXT, category TEXT, demand_label TEXT, same_as TEXT, spec TEXT, decided_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(owner_id, report_id));
+  CREATE INDEX IF NOT EXISTS idx_unmet_needs_state ON unmet_needs(state);
+  `);
   return db;
 }
 export type Db = ReturnType<typeof openDb>;
