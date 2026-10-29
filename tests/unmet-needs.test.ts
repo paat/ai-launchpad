@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { Server } from "node:http";
 import { chmodSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,9 +10,10 @@ import { openDb, sha256, type Db } from "../src/db.js";
 import { BASETEN_MODEL, ModelQualityLedger, payloadHash, reservationMicroUsd, type FetchFn } from "../src/model-quality.js";
 import { openExistingPublicLedger } from "../src/model-public-cards.js";
 import {
-  MAX_EXISTING_LABELS, UNMET_NEED_NEXT, buildModelInput, deidentify, liveClassifier, mockClassifier,
+  MAX_EXISTING_LABELS, UNMET_NEED_NEXT, UNMET_NEED_RECHECK_MS, buildModelInput, deidentify, liveClassifier, mockClassifier,
   parseClassification, unmetNeedRequestId,
 } from "../src/unmet-needs.js";
+import { demandPage } from "../src/views.js";
 
 // Fake-only: global fetch may reach the local test server and nothing else.
 const nativeFetch = globalThis.fetch;
@@ -54,9 +55,36 @@ describe("deidentify", () => {
     ["Connect my Coop Pank account", "Connect my Coop Pank account"],
     ["File my VAT return for Q3 2026", "File my VAT return for Q3 2026"],
     ["Esita käibedeklaratsioon ja TSD", "Esita käibedeklaratsioon ja TSD"],
+    // Separated digit groups (≥ 7 digits in total) become one placeholder.
+    ["isikukood 380.0108.5718", "isikukood [number]"],
+    ["code 3800 1085 718 here", "code [number] here"],
+    ["ref 12-34-56-78", "ref [number]"],
+    ["id 380/0108/5718.", "id [number]."],
+    ["nr 38 00 10 85 718", "nr [number]"],
+    ["acct 221 - 020 - 145 685", "acct [number]"],
+    ["version 1.2.3 and 10.0.3 stay", "version 1.2.3 and 10.0.3 stay"],
+    // Bare domains on any alphabetic TLD.
+    ["upload at portal.example.xyz", "upload at [url]"],
+    ["see foo.co.ee.", "see [url]."],
+    ["via api.demo-supplier.shop/v1/upload now", "via [url] now"],
+    ["at PORTAL.EXAMPLE.XYZ now", "at [url] now"],
+    ["test.example.museum", "[url]"],
+    ["Use e.g. the portal, etc. and i.e. more. Next step", "Use e.g. the portal, etc. and i.e. more. Next step"],
+    ["upgrade to v2.4.1 first", "upgrade to v2.4.1 first"],
+    // Company names in any case before a legal form.
+    ["contract with demo supplier OÜ ends", "contract with [company] ends"],
+    ["contract with DEMO SUPPLIER OÜ ends", "contract with [company] ends"],
+    ["contract with demo supplier oü ends", "contract with [company] ends"],
+    ["invoice from näidis ehitus AS today", "invoice from [company] today"],
+    ["member of korteri ühistu kü", "member of [company]"],
+    ["grant for demo selts mtü and Demo Fond SA", "grant for [company] and [company]"],
+    ["registered as demo trading fie", "registered as [company]"],
+    ["the same as last month, pay as you go", "the same as last month, pay as you go"],
+    ["Kas sa saad aidata", "Kas sa saad aidata"],
   ];
   test.each(cases)("%s", (input, expected) => {
     expect(deidentify(input)).toBe(expected);
+    expect(deidentify(expected)).toBe(expected); // idempotent
   });
   test("idempotent, no identifier survives a mixed synthetic message", () => {
     const raw = "Mari (mari@example.ee, +372 5123 4567, isikukood 49001010000) wants Demo Supplier OÜ (12345678) paid €1 500 from EE38 2200 2210 2014 5685, see https://x.example.ee";
@@ -90,6 +118,10 @@ describe("strict classification output", () => {
   test("output that de-identification would change is rejected", () => {
     expect(parse({ ...ok, spec: "Pay the €1 200 VAT for the owner from the bank account." })).toEqual({ ok: false, reason: "identifiers_in_output" });
     expect(parse({ ...ok, demand_label: "Mail owner@example.ee" })).toEqual({ ok: false, reason: "identifiers_in_output" });
+  });
+  test("label and spec must contain no digits at all (prompt contract)", () => {
+    expect(parse({ ...ok, spec: "Pay 1200 for the form through the tax portal." })).toEqual({ ok: false, reason: "identifiers_in_output" });
+    expect(parse({ ...ok, demand_label: "Form 390 filing" })).toEqual({ ok: false, reason: "identifiers_in_output" });
   });
   test("model input carries only need, blocker and at most 30 public labels within the ledger bound", () => {
     const labels = Array.from({ length: 40 }, (_, i) => `Published demand label number ${String.fromCharCode(65 + (i % 26))}${i}`.slice(0, 80));
@@ -280,6 +312,31 @@ test("per-owner caps: 20 needs per day, 200 total, 10 classifications per day (r
   } finally { await s.close(); }
 });
 
+test("deferred needs are re-kicked on a timer: daily-limited needs reach classified without a new report or restart", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const s = await start();
+  try {
+    const a = makeOwner(s.db, "own_a", `google:${SUB}`);
+    for (let i = 0; i < 12; i++) expect((await tool(s, a, { report_id: `n-${i}`, need: `Synthetic need ${i}`, blocker: "no_connector" })).isError).toBe(false);
+    await s.queue.idle();
+    expect(s.db.prepare("SELECT count(*) n FROM unmet_needs WHERE state='received' AND reason='owner_daily_limit'").get()).toEqual({ n: 2 });
+    // A day later: the earlier classifications fall out of the daily window.
+    s.db.prepare("UPDATE unmet_needs SET classify_started_at='2000-01-01T00:00:00.000Z' WHERE classify_started_at IS NOT NULL").run();
+    vi.advanceTimersByTime(UNMET_NEED_RECHECK_MS);
+    await s.queue.idle();
+    expect(s.db.prepare("SELECT state,count(*) n FROM unmet_needs GROUP BY state").all()).toEqual([{ state: "classified", n: 12 }]);
+  } finally { vi.useRealTimers(); await s.close(); }
+});
+
+test("/demand hero credits Meta's model only when a published item was classified live", () => {
+  const item = { label: "Bank account connector", count: 1, category: "banking_payments" as const, spec: "Read balances.", firstSeen: "2026-09", lastSeen: "2026-09", live: 0, mock: 1 };
+  const lede = (html: string) => html.match(/<p class="lede">(.*?)<\/p>/)![1];
+  expect(lede(demandPage([item]))).toContain("classified by a local test classifier (sample).");
+  expect(lede(demandPage([item]))).not.toContain("Meta");
+  expect(lede(demandPage([item, { ...item, label: "Other", live: 1, mock: 0 }]))).toContain("classified by Meta's open model Muse Spark Open.");
+  expect(lede(demandPage([]))).toBe("What Estonian businesses asked their AI assistants to do that no connector can do yet. Anonymous, owner-approved.");
+});
+
 test("disabled mode never classifies; need stays visibly received", async () => {
   const s = await start({ modelMode: "disabled" });
   try {
@@ -440,7 +497,7 @@ test("publish / keep private: session + CSRF + exact Origin, owner-scoped, one d
 
 test("/demand is public, cacheable, aggregated, escaped, honest about classifier, and never leaks owner data", async () => {
   const path = ledgerFile(0);
-  const label = "Tax portal <script>alert(1)</script> filing";
+  const label = "Tax portal <script>alert(origin)</script> filing";
   let n = 0;
   const { fetchFn } = fakeModel(() => chat(classification(++n === 1 ? { demand_label: label } : { demand_label: "Something new", same_as: label })));
   const s = await start(liveCfg(path, fetchFn));
@@ -463,8 +520,8 @@ test("/demand is public, cacheable, aggregated, escaped, honest about classifier
     expect(res.headers.get("cache-control")).toBe("public, max-age=60");
     const html = await res.text();
     expect(html).toContain("What Estonian businesses asked their AI assistants to do that no connector can do yet. Anonymous, owner-approved, classified by Meta's open model Muse Spark Open.");
-    expect(html).toContain("Tax portal &lt;script&gt;alert(1)&lt;/script&gt; filing");
-    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("Tax portal &lt;script&gt;alert(origin)&lt;/script&gt; filing");
+    expect(html).not.toContain("<script>alert(origin)</script>");
     expect(html).toContain("2 requests");
     expect(html).toContain(`Meta ${BASETEN_MODEL} (live) × 2`);
     expect(html).toContain("local mock (not a model) × 1");

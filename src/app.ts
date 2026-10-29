@@ -11,7 +11,7 @@ import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPubl
 import type { FetchFn } from "./model-quality.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { esc, shell, loginPage, statusBody, activityBody, connectionBody, tokenOnceBody, approvalsAttention, approvalsListBody, approvalCardBody, deadlinesCard, deadlinesHint, setupBody, servicesBody, playbooksBody, unmetNeedsBody, demandPage } from "./views.js";
-import { UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
+import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; }
 // Owner-only pilot allowlist: exact opaque Google `sub` values, never emails.
@@ -120,6 +120,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   };
   const unmetNeeds = new UnmetNeedQueue(db, needClassifier, (ownerId, action, outcome, summary) => logActivity(db, ownerId, "launchpad", action, outcome, summary));
   unmetNeeds.kick(); // resume any received/interrupted needs after a restart
+  // Deferred needs (daily limit, another attempt in flight) retry without a new report or restart.
+  setInterval(() => unmetNeeds.kick(), UNMET_NEED_RECHECK_MS).unref();
   const app = express();
   app.disable("x-powered-by");
   // Forwarded addresses are trusted only when explicitly configured, and

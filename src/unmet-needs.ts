@@ -39,39 +39,55 @@ export const OWNER_TOTAL_NEEDS = 200;
 export const OWNER_DAILY_CLASSIFICATIONS = 10;
 export const MAX_EXISTING_LABELS = 30;
 const DAY_MS = 86_400_000;
+/** Deferred needs (daily limit, another attempt in flight) are retried this often. */
+export const UNMET_NEED_RECHECK_MS = 10 * 60_000;
 export const UNMET_NEED_NEXT = "Launchpad will de-identify and classify this need; the owner decides on the Status page whether to publish it as anonymous open demand.";
 
 // --- deterministic de-identification -------------------------------------
 
 const NUM = String.raw`\d+(?:[ .,  –-]\d+)*`;
+/** Digit groups joined by a space, dot, dash or slash. */
+const SEP = String.raw`(?: ?[./-] ?| )`;
+/** Legal forms: the Ü forms and FIE in any case; AS and SA only in capitals
+ * ("as" and "sa" are ordinary English and Estonian words). */
+const anyCase = (w: string) => [...w].map((c) => `[${c}${c.toLowerCase()}]`).join("");
+const LEGAL = String.raw`(?:${["MTÜ", "OÜ", "UÜ", "TÜ", "KÜ", "FIE"].map(anyCase).join("|")}|AS|SA)(?![\p{L}\p{N}])`;
+/** Words that start a sentence part, never a company name. */
+const NOT_NAME = String.raw`(?:a|an|the|and|or|of|to|for|from|with|by|at|on|in|into|via|as|is|my|our|your|their|this|that|ja|ning|või|ka|et|kui|minu|meie|see|selle)\s`;
+const digitCount = (m: string) => m.replace(/\D/g, "").length;
 /** Ordered: earlier, more specific rules win (an e-mail is never re-read
  * as a domain, an IBAN or phone never as a digit run). Placeholders
  * contain no digits, '@' or dots, so the function is idempotent. */
-const RULES: readonly [RegExp, string][] = [
+const RULES: readonly [RegExp, string | ((m: string) => string)][] = [
   [/[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}/gu, "[email]"],
   [/(?:https?:\/\/|www\.)[^\s<>"']+/giu, "[url]"],
-  [/(?<![\p{L}\p{N}.-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:ee|eu|com|net|org|io|co|info|biz|app|dev|ai|lv|lt|fi|se|de|uk)(?![\p{L}\p{N}-])(?:\/[^\s<>"']*)?/giu, "[url]"],
+  // Bare domains on any alphabetic TLD (2–24 letters, one case): "e.g.",
+  // "etc." and version strings have no such TLD; "end.Next" is mixed case.
+  [/(?<![\p{L}\p{N}.@-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\.)+(?:[a-z]{2,24}|[A-Z]{2,24})(?![\p{L}\p{N}-]|\.[\p{L}\p{N}])(?:\/[^\s<>"']*)?/gu, "[url]"],
   [/(?<![\p{L}\p{N}])[A-Za-z]{2}\d{2}(?: ?[A-Z0-9]{4}){3,7}(?: ?[A-Z0-9]{1,3})?(?![\p{L}\p{N}])/gu, "[iban]"],
   [/(?<![\p{L}\p{N}+])(?:\+|00)\d[\d ()-]{5,18}\d/gu, "[phone]"],
   [new RegExp(String.raw`(?:[€$£]|(?<![\p{L}])(?:EUR|USD|GBP)(?![\p{L}]))\s?${NUM}|${NUM}\s?(?:[€$£]|(?:EUR|USD|GBP|eurot?|euros?)(?![\p{L}]))`, "giu"), "[amount]"],
-  [/(?<![\p{L}\p{N}])(?:\p{Lu}[\p{L}\p{N}&'.-]*\s+){1,4}(?:OÜ|MTÜ|FIE|UÜ|TÜ)(?![\p{L}\p{N}])/gu, "[company]"],
+  // Capitalised names first; then names in any case, not starting at a function word.
+  [new RegExp(String.raw`(?<![\p{L}\p{N}])(?:\p{Lu}[\p{L}\p{N}&'.-]*\s+){1,4}${LEGAL}`, "gu"), "[company]"],
+  [new RegExp(String.raw`(?<![\p{L}\p{N}])(?:(?!${NOT_NAME})\p{L}[\p{L}\p{N}&'.-]*\s+){1,4}${LEGAL}`, "gu"), "[company]"],
   [/(?<!\p{N})\d(?:[ -]?\d){12,18}(?!\p{N})/gu, "[card]"],
   [/(?<!\p{N})[1-6]\d{10}(?!\p{N})/gu, "[personal_code]"],
-  [/(?<!\p{N})(?:5\d{6,7}|[3-8]\d{2,3}[ -]\d{4})(?!\p{N})/gu, "[phone]"],
+  [new RegExp(String.raw`(?<!\p{N}${SEP}?)(?:5\d{6,7}|[3-8]\d{2,3}[ -]\d{4})(?!${SEP}?\p{N})`, "gu"), "[phone]"],
   [/(?<!\p{N})\d{8}(?!\p{N})/gu, "[registry_code]"],
-  [/(?<!\p{N})\d{2,4}(?:[ -]\d{2,4}){2,}(?!\p{N})/gu, "[number]"],
+  [new RegExp(String.raw`(?<!\p{N})\d+(?:${SEP}\d+)+`, "gu"), (m) => digitCount(m) >= 7 ? "[number]" : m],
   [/\d{5,}/gu, "[number]"],
 ];
 
 /** Pure: replace e-mail addresses, URLs/domains, IBANs, phone numbers,
  * money amounts, company names with an Estonian legal form, card-like
  * digit runs, personal codes (11 digits), registry codes (8 digits) and
- * other long digit runs with typed placeholders. Names without a legal
- * form are not detectable here; the tool asks the assistant to omit them
- * and the owner reviews everything before publishing. */
+ * other long digit runs (also split into groups) with typed placeholders.
+ * Names without a legal form are not detectable here; the tool asks the
+ * assistant to omit them and the owner reviews everything before
+ * publishing. */
 export function deidentify(text: string): string {
   let out = text;
-  for (const [re, placeholder] of RULES) out = out.replace(re, placeholder);
+  for (const [re, placeholder] of RULES) out = typeof placeholder === "string" ? out.replace(re, placeholder) : out.replace(re, placeholder);
   return out;
 }
 
@@ -136,7 +152,8 @@ const singleLine = (v: unknown, min: number, max: number): string | null => {
 /** Strict: exactly one JSON object (an optional single ```json fence is
  * tolerated) with exactly the four keys, a fixed category, bounded
  * single-line strings and `same_as` from the given labels only. Output
- * that de-identification would change is rejected, never repaired. */
+ * with any digit in label or spec (the prompt contract), or that
+ * de-identification would change, is rejected, never repaired. */
 export function parseClassification(text: string, existingLabels: readonly string[]): ParseResult {
   const invalid: ParseResult = { ok: false, reason: "invalid_output" };
   const body = text.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, "$1");
@@ -155,7 +172,7 @@ export function parseClassification(text: string, existingLabels: readonly strin
     sameAs = existingLabels.find((l) => normalizeLabel(l) === normalizeLabel(o.same_as as string)) ?? null;
     if (!sameAs) return invalid;
   }
-  if (deidentify(label) !== label || deidentify(spec) !== spec) return { ok: false, reason: "identifiers_in_output" };
+  if (/\p{N}/u.test(label + spec) || deidentify(label) !== label || deidentify(spec) !== spec) return { ok: false, reason: "identifiers_in_output" };
   return { ok: true, value: { category: o.category as Category, demand_label: label, same_as: sameAs, spec } };
 }
 
