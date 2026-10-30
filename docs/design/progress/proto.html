@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="et">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Käest ära · edenemine · AI-hüppelaud</title>
+<style>
+/* AI-hüppelaud — direction A „Selge leht”. Tokens first; everything else derives. */
+:root{color-scheme:light;
+--c-bg:#fff;--c-surface-2:#F4F6F2;--c-ink:#14201A;--c-muted:#4F5B53;
+--c-primary:#1B5E3B;--c-primary-ink:#fff;--c-deep:#0F3D25;--c-mint:#A3E0B5;
+--c-att:#9A4A00;--c-att-dark:#6B4E00;--c-att-bg:#FFF4D6;--c-att-bd:#F0C36B;
+--c-danger:#B42318;--c-focus:#1F5FD6;--c-border:#DCE2DA;--c-divider:#E6EAE3;
+--lbl-official-bg:#E1F0E3;--lbl-official-fg:#14502A;--lbl-official-bd:#B9DCC2;
+--lbl-rule-bg:#fff;--lbl-rule-fg:#1B5E3B;--lbl-rule-bd:#1B5E3B;
+--lbl-assistant-bg:#ECEEE9;--lbl-assistant-fg:#3D4640;--lbl-assistant-bd:#D5D9D2;
+--lbl-owner-bg:#14201A;--lbl-owner-fg:#fff;--lbl-owner-bd:#14201A;
+--lbl-sample-bg:transparent;--lbl-sample-fg:#4F5B53;--lbl-sample-bd:#8A948C;
+--st-waiting-bg:#FFF4D6;--st-waiting-fg:#6B4E00;--st-waiting-bd:#F0C36B;
+--st-approved-bg:#1B5E3B;--st-approved-fg:#fff;
+--st-sent-bg:#E3ECF9;--st-sent-fg:#1D4580;
+--st-accepted-bg:#E1F0E3;--st-accepted-fg:#14502A;
+--st-rejected-bg:#FBE5E3;--st-rejected-fg:#B42318;
+--fs-display:clamp(2.125rem,6.5vw,3.25rem);--fs-h1:clamp(1.75rem,5.5vw,2.5rem);--fs-amount:2.75rem;
+--fs-h2:1.25rem;--fs-lg:1.125rem;--fs-md:1rem;--fs-sm:.9375rem;--fs-xs:.8125rem;
+--s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-6:24px;--s-8:32px;--s-12:48px;--s-16:64px;
+--r-sm:6px;--r-md:12px;--r-lg:16px;--r-xl:20px;--tap:44px;
+--ease:cubic-bezier(.2,.7,.2,1);--t-fast:160ms;--t-med:200ms}
+*{box-sizing:border-box}
+html{font-size:106.25%}
+@media (min-width:480px){html{font-size:100%}}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--c-bg);color:var(--c-ink);line-height:1.55;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.wrap{max-width:640px;margin:auto;padding:0 var(--s-4) var(--s-12)}
+.wrap--wide{max-width:1080px}
+@media (min-width:960px){.wrap--tana{max-width:1040px}}
+a{color:var(--c-primary);text-underline-offset:.15em}
+a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible,label:focus-within{outline:3px solid var(--c-focus);outline-offset:2px}
+h1,h2,h3,p,dl,ul,ol{overflow-wrap:anywhere}
+h1{font-size:var(--fs-h1);font-weight:800;line-height:1.1;letter-spacing:-.025em;margin:var(--s-2) 0 var(--s-3)}
+h2{font-size:var(--fs-h2);font-weight:750;line-height:1.25;letter-spacing:-.01em;margin:0 0 var(--s-3)}
+.lede{font-size:var(--fs-lg);color:var(--c-muted);margin:0 0 var(--s-4);max-width:36rem}
+.muted{color:var(--c-muted)}.small{font-size:var(--fs-sm)}.xs{font-size:var(--fs-xs)}
+.num{font-variant-numeric:tabular-nums}
+.vh{position:absolute!important;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* --- Header and nav --- */
+.top{display:flex;align-items:center;gap:var(--s-3);min-height:60px;padding:var(--s-2) 0}
+.brand{display:inline-flex;align-items:center;gap:10px;min-height:var(--tap);margin-right:auto;color:var(--c-ink);text-decoration:none;font-weight:800;font-size:1.125rem;letter-spacing:-.02em;white-space:nowrap}
+.mark{width:24px;height:24px;border-radius:7px;background:var(--c-deep);position:relative;flex:none}
+.mark::after{content:"";position:absolute;left:7px;top:5px;width:6px;height:11px;border:solid var(--c-mint);border-width:0 3px 3px 0;transform:rotate(45deg)}
+.lang{display:inline-flex;align-items:center;justify-content:center;min-width:var(--tap);min-height:var(--tap);padding:0 10px;border:1px solid var(--c-border);border-radius:var(--r-md);color:var(--c-ink);font-size:var(--fs-sm);font-weight:750;letter-spacing:.04em;text-decoration:none;transition:border-color var(--t-fast) var(--ease)}
+.lang:hover{border-color:var(--c-muted)}
+nav.tabs{display:flex;gap:var(--s-2);margin:0 0 var(--s-4);border-bottom:1px solid var(--c-divider)}
+nav.tabs a{position:relative;flex:1 1 0;display:flex;align-items:center;justify-content:center;min-height:48px;padding:var(--s-2) var(--s-2);color:var(--c-muted);font-weight:700;text-decoration:none;transition:color var(--t-fast) var(--ease)}
+nav.tabs a:hover{color:var(--c-ink)}
+nav.tabs a[aria-current="page"]{color:var(--c-ink)}
+nav.tabs a[aria-current="page"]::after{content:"";position:absolute;left:var(--s-2);right:var(--s-2);bottom:-1px;height:3px;border-radius:3px 3px 0 0;background:var(--c-primary)}
+@media (min-width:600px){nav.tabs a{flex:0 0 auto;padding:var(--s-2) var(--s-4)}}
+.sample-bar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2) var(--s-3);margin:0 0 var(--s-6);padding:var(--s-2) var(--s-3);border:1px dashed var(--lbl-sample-bd);border-radius:var(--r-md);color:var(--c-muted);font-size:var(--fs-xs)}
+.sample-bar strong{color:var(--c-ink);letter-spacing:.06em;font-size:var(--fs-xs)}
+
+/* --- Chips: kind (where it came from) and state (where it is) --- */
+.labels{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 var(--s-2)}
+.label-chip,.state-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:2px 8px;border:1px solid transparent;border-radius:var(--r-sm);font-size:var(--fs-xs);font-weight:650;line-height:1.4}
+.label-chip--official{background:var(--lbl-official-bg);color:var(--lbl-official-fg);border-color:var(--lbl-official-bd)}
+.label-chip--rule{background:var(--lbl-rule-bg);color:var(--lbl-rule-fg);border-color:var(--lbl-rule-bd)}
+.label-chip--assistant{background:var(--lbl-assistant-bg);color:var(--lbl-assistant-fg);border-color:var(--lbl-assistant-bd)}
+.label-chip--owner{background:var(--lbl-owner-bg);color:var(--lbl-owner-fg);border-color:var(--lbl-owner-bd)}
+.label-chip--sample{background:var(--lbl-sample-bg);color:var(--lbl-sample-fg);border:1px dashed var(--lbl-sample-bd);text-transform:uppercase;letter-spacing:.06em}
+.state-chip{border-radius:999px;padding:2px 10px 2px 8px}
+.state-chip::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:currentColor}
+.state-chip--waiting{background:var(--st-waiting-bg);color:var(--st-waiting-fg);border-color:var(--st-waiting-bd)}
+.state-chip--approved{background:var(--st-approved-bg);color:var(--st-approved-fg)}
+.state-chip--sent{background:var(--st-sent-bg);color:var(--st-sent-fg)}
+.state-chip--accepted{background:var(--st-accepted-bg);color:var(--st-accepted-fg)}
+.state-chip--rejected{background:var(--st-rejected-bg);color:var(--st-rejected-fg)}
+.state-chip--demo{border:1px dashed currentColor}
+
+/* --- Buttons --- */
+.btn,button{display:inline-flex;align-items:center;justify-content:center;gap:var(--s-2);min-height:56px;padding:12px 24px;border:1px solid var(--c-primary);border-radius:var(--r-md);background:var(--c-primary);color:var(--c-primary-ink);font:inherit;font-size:var(--fs-lg);font-weight:750;text-decoration:none;cursor:pointer;width:100%;margin:0;transition:background var(--t-fast) var(--ease),transform var(--t-fast) var(--ease),box-shadow var(--t-fast) var(--ease)}
+.btn:hover,button:hover{background:#17522f}
+.btn:active,button:active{transform:translateY(1px)}
+.btn--secondary,button.secondary{background:#fff;color:var(--c-primary);border-color:var(--c-border)}
+.btn--secondary:hover,button.secondary:hover{background:var(--c-surface-2)}
+.btn--text,button.text{background:none;border-color:transparent;color:var(--c-primary);min-height:var(--tap);font-size:var(--fs-md);width:auto;padding:8px 12px}
+.btn--text:hover,button.text:hover{background:var(--c-surface-2)}
+.btn--danger-text{color:var(--c-danger)}
+.btn--auto{width:auto}
+.tap-link{display:inline-flex;align-items:center;min-height:var(--tap);font-weight:650}
+
+/* --- Sections (not cards) --- */
+.section{padding:var(--s-6) 0;border-top:1px solid var(--c-divider)}
+.section:first-of-type{border-top:0}
+.section h2{display:flex;align-items:baseline;gap:var(--s-2)}
+.section h2 .count{font-size:var(--fs-sm);font-weight:650;color:var(--c-muted)}
+.row{padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider)}
+.row:last-child{border-bottom:0}
+.row strong{display:block;font-size:var(--fs-md)}
+.row .meta{margin:2px 0 0;color:var(--c-muted);font-size:var(--fs-sm)}
+details{margin:var(--s-3) 0 0}
+summary{display:flex;align-items:center;gap:var(--s-2);min-height:var(--tap);cursor:pointer;font-weight:650;color:var(--c-primary);list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"";flex:none;width:8px;height:8px;margin-left:2px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform var(--t-fast) var(--ease)}
+details[open]>summary::after{transform:rotate(45deg)}
+details.plain>summary{color:var(--c-muted);font-size:var(--fs-sm)}
+.boxed{padding:var(--s-3) var(--s-4);border:1px solid var(--c-divider);border-radius:var(--r-md);background:var(--c-surface-2)}
+.boxed p{margin:var(--s-1) 0}
+
+/* --- Ask card: the only elevated object on Täna --- */
+.ask{position:relative;display:flex;align-items:center;gap:var(--s-3);margin:0 0 var(--s-3);padding:var(--s-4) var(--s-4) var(--s-4) var(--s-6);border:1px solid var(--c-border);border-radius:var(--r-lg);background:#fff;color:inherit;text-decoration:none;box-shadow:0 1px 2px rgba(20,32,26,.04),0 8px 24px -16px rgba(20,32,26,.25);transition:box-shadow var(--t-fast) var(--ease),transform var(--t-fast) var(--ease)}
+.ask::before{content:"";position:absolute;left:0;top:var(--s-3);bottom:var(--s-3);width:4px;border-radius:0 4px 4px 0;background:var(--c-att-bd)}
+a.ask:hover{box-shadow:0 1px 2px rgba(20,32,26,.06),0 12px 28px -14px rgba(20,32,26,.35);transform:translateY(-1px)}
+.ask>div{flex:1 1 auto;min-width:0}
+.ask .labels{margin:0 0 var(--s-1)}
+.ask-title{display:block;font-size:var(--fs-lg);font-weight:750;line-height:1.3;color:var(--c-ink)}
+.ask .meta{margin:2px 0 0;color:var(--c-muted);font-size:var(--fs-sm)}
+.ask details{margin-top:var(--s-1)}
+.ask .chev{flex:none;width:10px;height:10px;border-top:2px solid var(--c-muted);border-right:2px solid var(--c-muted);transform:rotate(45deg)}
+.ask--note::before{background:var(--c-border)}
+
+/* --- Täna hero --- */
+.hero{padding:var(--s-2) 0 var(--s-6)}
+.company{margin:0;font-weight:700;color:var(--c-primary);font-size:var(--fs-sm)}
+.hero h1{margin:var(--s-1) 0 var(--s-2)}
+.sum{display:flex;flex-wrap:wrap;gap:6px;margin:var(--s-4) 0 0;padding:0;list-style:none}
+.sum a{display:inline-flex;align-items:center;gap:5px;min-height:var(--tap);padding:4px 10px 4px 8px;border:1px solid var(--c-border);border-radius:999px;color:var(--c-ink);text-decoration:none;font-weight:650;font-size:var(--fs-xs);transition:background var(--t-fast) var(--ease)}
+.sum a:hover{background:var(--c-surface-2)}
+.sum b{font-size:var(--fs-md);font-weight:800;font-variant-numeric:tabular-nums}
+.sum a.needs{background:var(--c-att-bg);border-color:var(--c-att-bd);color:var(--c-att-dark)}
+.tana-grid{display:grid;gap:0 var(--s-12)}
+@media (min-width:960px){.tana-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.tana-grid>.col .section:first-child{border-top:0}}
+
+/* --- Deadline row --- */
+.deadlines{list-style:none;margin:0;padding:0}
+.deadline{display:grid;grid-template-columns:4.5rem minmax(0,1fr);gap:var(--s-3);padding:var(--s-4) 0;border-bottom:1px solid var(--c-divider)}
+.deadline:last-child{border-bottom:0}
+.date{display:flex;flex-direction:column;align-items:center;align-self:start;padding:8px 4px 8px;border-radius:var(--r-md);background:var(--c-surface-2);line-height:1.1;text-align:center}
+.date b{font-size:1.75rem;font-weight:800;letter-spacing:-.03em;color:var(--c-primary);font-variant-numeric:tabular-nums}
+.date span{font-size:var(--fs-xs);font-weight:700}
+.date small{margin-top:2px;font-size:.75rem;color:var(--c-muted)}
+.deadline h3{margin:0 0 2px;font-size:var(--fs-lg);font-weight:750;line-height:1.3}
+.deadline p{margin:0 0 var(--s-2);color:var(--c-muted);font-size:var(--fs-sm)}
+.deadline .labels{margin:0}
+.src{display:inline-flex;align-items:center;min-height:var(--tap);padding:0 2px;font-size:var(--fs-sm);font-weight:650;color:var(--lbl-official-fg);text-decoration-color:var(--lbl-official-bd)}
+.deadline details{margin-top:var(--s-1)}
+.deadline details>summary{font-size:var(--fs-sm)}
+.who{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 10px;margin:0;font-size:var(--fs-sm)}
+.who dt{font-weight:700;color:var(--c-muted)}.who dt.me{color:var(--c-att)}.who dd{margin:0}
+.who .prompt{grid-column:1/-1;margin:var(--s-2) 0 0;color:var(--c-muted)}
+
+/* --- Ticket: the approval card --- */
+.ticket{margin:0 0 var(--s-8);border:1px solid var(--c-border);border-radius:var(--r-xl);background:#fff;box-shadow:0 1px 2px rgba(20,32,26,.04),0 16px 40px -28px rgba(20,32,26,.35);overflow:clip}
+.strip{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2) var(--s-3);padding:var(--s-3) var(--s-4);font-weight:700;font-size:var(--fs-sm)}
+.strip--wait{background:var(--c-att-bg);color:var(--c-att-dark);border-bottom:1px solid var(--c-att-bd)}
+.strip--ok{background:var(--c-primary);color:#fff}
+.strip--ok .label-chip--owner{background:#fff;color:var(--c-primary);border-color:#fff}
+.strip .dot{width:9px;height:9px;border-radius:50%;background:currentColor;flex:none}
+.strip .right{margin-left:auto;font-weight:500;opacity:.9}
+.strip--ok .right{color:var(--c-mint)}
+.ticket-body{padding:var(--s-4) var(--s-4) 0}
+@media (min-width:600px){.ticket-body{padding:var(--s-6) var(--s-6) 0}}
+.kind{margin:0;font-size:var(--fs-xs);font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--c-muted)}
+.kind small{font-weight:500;letter-spacing:0;text-transform:none;font-size:var(--fs-sm)}
+.ticket h1{margin:var(--s-1) 0 var(--s-3)}
+.why{margin:0 0 var(--s-4);font-size:var(--fs-md)}
+.why b{font-weight:750}
+.amount{display:flex;align-items:baseline;flex-wrap:wrap;gap:var(--s-2) var(--s-4);margin:var(--s-2) 0 var(--s-4);padding:var(--s-3) 0;border-top:1px solid var(--c-divider);border-bottom:1px solid var(--c-divider)}
+.amount b{font-size:var(--fs-amount);font-weight:800;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.amount span{color:var(--c-muted);font-size:var(--fs-sm)}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:var(--s-3) var(--s-6);margin:0 0 var(--s-4)}
+.facts div{min-width:0}
+.facts dt{font-size:var(--fs-xs);font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--c-muted)}
+.facts dd{margin:2px 0 0;font-size:var(--fs-lg);font-weight:650;line-height:1.3}
+.facts dd small{display:block;font-size:var(--fs-sm);font-weight:400;color:var(--c-muted)}
+.letter{margin:0 0 var(--s-4);padding:var(--s-3) var(--s-4);border-left:3px solid var(--c-border);border-radius:0 var(--r-md) var(--r-md) 0;background:var(--c-surface-2);font:inherit;font-size:var(--fs-md);line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.hand{margin:0 0 var(--s-4);padding:0;font-size:var(--fs-sm);color:var(--c-muted)}
+.hand b{color:var(--c-att);font-weight:700}
+.decide{position:static;z-index:2;display:flex;flex-wrap:nowrap;align-items:center;gap:var(--s-2) var(--s-3);margin:0 calc(-1 * var(--s-4));padding:var(--s-3) var(--s-4) max(var(--s-3),env(safe-area-inset-bottom));background:rgba(255,255,255,.92);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-top:1px solid var(--c-divider)}
+@media (min-width:600px){.decide{margin:0 calc(-1 * var(--s-6));padding-left:var(--s-6);padding-right:var(--s-6)}}
+.decide .btn{flex:1 1 auto;min-width:0;padding-left:12px;padding-right:12px}
+.decide .btn--text{flex:0 0 auto;white-space:nowrap}
+@media (max-width:879px){.decide{position:sticky;bottom:0}}
+@media (max-width:479px){.decide .btn{font-size:var(--fs-md);min-height:52px}}
+@media (max-width:339px){.decide{flex-wrap:wrap}}
+.fine{margin:var(--s-3) 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
+.ticket-foot{padding:var(--s-2) var(--s-4) var(--s-4)}
+@media (min-width:600px){.ticket-foot{padding:var(--s-2) var(--s-6) var(--s-6)}}
+.callout{margin:0 0 var(--s-4);padding:var(--s-3) var(--s-4);border:1px solid var(--c-att-bd);border-radius:var(--r-md);background:var(--c-att-bg)}
+.callout p{margin:var(--s-1) 0}
+.callout kbd{font:inherit;font-weight:800;padding:0 4px;border-radius:4px;background:#fff;border:1px solid var(--c-att-bd)}
+.offer{margin:0 0 var(--s-4);padding:var(--s-4);border:2px solid var(--c-primary);border-radius:var(--r-lg);background:#fff}
+.offer h2{margin:0 0 var(--s-1)}
+.offer .limits{margin:0 0 var(--s-3);font-size:var(--fs-md)}
+.offer .limits b{font-weight:750}
+.offer .btn{margin:var(--s-2) 0 0}
+.offer details{margin-top:var(--s-2)}
+.offer label{display:block;font-weight:650;margin:var(--s-3) 0 var(--s-1)}
+.offer input[type=text]{font:inherit;min-height:48px;width:100%;padding:8px 12px;border:1px solid var(--c-border);border-radius:var(--r-md)}
+.check{display:flex;align-items:flex-start;gap:var(--s-3);min-height:var(--tap);padding:8px 0;font-weight:600;cursor:pointer}
+.check input{width:22px;height:22px;margin:1px 0 0;accent-color:var(--c-primary);flex:none}
+.check small{display:block;font-weight:400;color:var(--c-muted)}
+.steps{list-style:none;margin:var(--s-4) 0;padding:0}
+.step{position:relative;display:flex;gap:var(--s-3);padding:0 0 var(--s-3)}
+.step:last-child{padding-bottom:0}
+.step:not(:last-child)::after{content:"";position:absolute;left:11px;top:26px;bottom:0;width:2px;background:var(--c-divider)}
+.step i{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:2px solid var(--c-border);border-radius:50%;background:#fff;font-style:normal;font-size:.75rem;font-weight:800;color:#fff}
+.step--done i{background:var(--c-primary);border-color:var(--c-primary)}
+.step--demo i{border-style:dashed;border-color:var(--c-muted);color:var(--c-muted)}
+.step span{font-weight:650;padding-top:1px}
+.step--todo span{font-weight:500;color:var(--c-muted)}
+.step small{display:block;font-weight:400;color:var(--c-muted);font-size:var(--fs-sm)}
+.between{display:flex;align-items:center;gap:var(--s-3);margin:0 0 var(--s-6);color:var(--c-muted);font-size:var(--fs-sm);font-weight:650}
+.between::before,.between::after{content:"";flex:1;height:1px;background:var(--c-divider)}
+.stamp{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#fff;color:var(--c-primary);flex:none}
+.stamp svg{width:16px;height:16px}
+.stamp path{stroke-dasharray:24;stroke-dashoffset:0;animation:draw .3s var(--ease) both}
+@keyframes draw{from{stroke-dashoffset:24}to{stroke-dashoffset:0}}
+
+/* --- Landing --- */
+.hero-l{display:grid;grid-template-areas:"text" "phone" "proof";gap:var(--s-6);margin:var(--s-4) 0 var(--s-12)}
+.hero-l>.text{grid-area:text}.hero-l>.teaser{grid-area:phone}.hero-l>.proof{grid-area:proof}
+.hero-l h1{font-size:var(--fs-display);line-height:1.05;letter-spacing:-.03em;margin:0 0 var(--s-4)}
+.hero-l h1 span{color:var(--c-primary)}
+.hero-l .lede{color:var(--c-ink);font-size:var(--fs-lg);max-width:34rem;margin-bottom:var(--s-6)}
+.hero-l .btn{font-size:var(--fs-lg)}
+.hero-l .sub{margin:var(--s-3) 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
+@media (min-width:880px){.hero-l{grid-template-areas:"text phone" "proof phone";grid-template-columns:minmax(0,1fr) 340px;gap:var(--s-4) var(--s-16);align-items:start;margin:var(--s-8) 0 var(--s-16)}.hero-l .btn{width:auto;padding:14px 36px}}
+.proof{display:grid;gap:var(--s-2);margin:0;padding:0;list-style:none}
+.proof li{display:flex;align-items:flex-start;gap:var(--s-3);padding:var(--s-3) 0;border-top:1px solid var(--c-divider)}
+.proof strong{display:block;font-size:var(--fs-md);font-weight:750}
+.proof span{font-size:var(--fs-sm);color:var(--c-muted)}
+.ico{flex:none;display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:12px;background:var(--c-surface-2);color:var(--c-primary)}
+.ico svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+@media (min-width:600px){.proof{grid-template-columns:repeat(2,minmax(0,1fr));gap:0 var(--s-6)}}
+.teaser{width:100%;max-width:340px;margin:0 auto}
+.teaser figcaption{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:var(--s-2);margin-top:var(--s-3);font-size:var(--fs-sm);color:var(--c-muted)}
+.phone{padding:10px;border-radius:44px;background:var(--c-deep);box-shadow:0 30px 60px -28px rgba(15,61,37,.6),inset 0 0 0 2px #2b5c40}
+.screen{display:flex;flex-direction:column;height:560px;overflow:hidden;border-radius:34px;background:var(--c-surface-2)}
+.bar{display:flex;align-items:center;gap:10px;padding:20px 16px 10px;background:#fff;border-bottom:1px solid var(--c-divider)}
+.ava{flex:none;width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--c-deep),#6f9c63)}
+.who-b{line-height:1.2}.who-b b{display:block;font-size:var(--fs-sm)}.who-b small{color:var(--c-muted);font-size:.75rem}
+.chat{display:flex;flex:1;flex-direction:column;justify-content:flex-end;gap:8px;padding:8px 12px 14px;font-size:.875rem;line-height:1.4}
+.bubble{max-width:88%;padding:8px 12px;border-radius:18px;margin:0}
+.bubble--me{align-self:flex-end;background:var(--c-primary);color:#fff;border-bottom-right-radius:6px}
+.bubble--ai{align-self:flex-start;background:#fff;border:1px solid var(--c-border);border-bottom-left-radius:6px}
+.bubble b{color:var(--c-primary)}
+.bubble .labels{gap:4px;margin:6px 0 0}
+.mini{padding:12px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:#fff;box-shadow:0 8px 20px -12px rgba(20,32,26,.3)}
+.mini .labels{margin:0 0 6px}
+.mini-title{margin:0 0 2px;font-weight:750}
+.mini-facts{display:flex;justify-content:space-between;gap:8px;margin:0 0 10px;color:var(--c-muted)}.mini-facts b{color:var(--c-ink);font-variant-numeric:tabular-nums}
+.mini-done{display:flex;align-items:center;justify-content:center;min-height:40px;padding:0 10px;border:1px dashed var(--st-accepted-fg);border-radius:var(--r-md);background:var(--st-accepted-bg);color:var(--st-accepted-fg);font-weight:700;text-align:center}
+.mini-rule{display:flex;align-items:center;justify-content:center;min-height:36px;margin-top:8px;padding:0 10px;border-radius:999px;background:var(--lbl-owner-bg);color:#fff;font-size:var(--fs-xs);font-weight:700;text-align:center}
+.landing h2{font-size:clamp(1.5rem,3.5vw,2rem);letter-spacing:-.02em;margin:0 0 var(--s-4)}
+.how{display:grid;gap:var(--s-3);margin:0 0 var(--s-12);padding:0;list-style:none;counter-reset:how}
+.how li{counter-increment:how;display:flex;align-items:flex-start;gap:var(--s-4);padding:var(--s-4);border:1px solid var(--c-border);border-radius:var(--r-lg);font-size:var(--fs-lg);font-weight:650;line-height:1.35}
+.how .ico{position:relative}
+.how .ico::after{content:counter(how);position:absolute;top:-6px;right:-6px;display:flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--c-primary);color:#fff;font-size:.7rem;font-weight:800}
+@media (min-width:760px){.how{grid-template-columns:repeat(3,minmax(0,1fr))}.how li{flex-direction:column;gap:var(--s-3)}}
+.trust{display:grid;gap:var(--s-2);margin:0 0 var(--s-8);padding:var(--s-6);list-style:none;border-radius:var(--r-xl);background:var(--c-deep);color:#fff}
+.trust li{display:flex;align-items:center;gap:var(--s-3);min-height:var(--tap);font-weight:700}
+.trust li::before{content:"";flex:none;width:8px;height:15px;margin:0 10px 4px 8px;border:solid var(--c-mint);border-width:0 3px 3px 0;transform:rotate(45deg)}
+@media (min-width:760px){.trust{grid-template-columns:repeat(3,minmax(0,1fr));padding:var(--s-6) var(--s-8)}}
+footer{margin-top:var(--s-8);padding-top:var(--s-4);border-top:1px solid var(--c-divider);display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2) var(--s-4);font-size:var(--fs-sm)}
+footer a{display:inline-flex;align-items:center;justify-content:center;min-height:var(--tap);min-width:var(--tap)}
+footer .spacer{flex:1}
+
+/* --- Motion rules --- */
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* --- Käest ära: the handover bar (direction A tokens; prefix ho-) --- */
+/* Each segment of the bar is one named back-office job. Three fills:
+   outlined = still yours · mid green = assistant prepares, you approve ·
+   deep green = at its ceiling (standing approval, or law says you file).
+   Dashed = someone else does it (assistant's assessment). */
+:root{--ho-prep:#3F8A5E}
+.states{display:flex;gap:var(--s-2);margin:0 0 var(--s-6);padding:0;list-style:none;flex-wrap:wrap}
+.states a{display:inline-flex;align-items:center;min-height:var(--tap);padding:0 14px;border:1px solid var(--c-border);border-radius:999px;color:var(--c-ink);font-weight:650;font-size:var(--fs-sm);text-decoration:none}
+.states a:hover{background:var(--c-surface-2)}
+.state{padding:var(--s-8) 0 var(--s-12);border-top:2px solid var(--c-ink);scroll-margin-top:var(--s-4)}
+.state:first-of-type{border-top:0;padding-top:0}
+.where{margin:0 0 var(--s-4);font-size:var(--fs-xs);font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--c-muted)}
+.where+*{margin-top:0}
+.mock{position:relative;margin:0 0 var(--s-8);padding:var(--s-4) var(--s-4) 0;border:1px dashed var(--c-border);border-radius:var(--r-lg)}
+.mock .hero{padding-top:0}
+@media (min-width:600px){.mock{padding:var(--s-6) var(--s-6) 0}}
+
+/* Compact strip: lives in the Täna hero under the three pills. One tappable line + bar. */
+.ho-strip{display:block;margin:var(--s-4) 0 0;padding:var(--s-3) 0 var(--s-4);border-top:1px solid var(--c-divider);color:inherit;text-decoration:none}
+.ho-strip:hover .ho-line b{text-decoration:underline;text-underline-offset:.15em}
+.ho-line{display:flex;align-items:baseline;gap:var(--s-2) var(--s-3);flex-wrap:wrap;margin:0 0 var(--s-2);font-size:var(--fs-md)}
+.ho-line b{font-weight:750;color:var(--c-primary)}
+.ho-line .num{font-weight:800}
+.ho-line span{color:var(--c-muted);font-size:var(--fs-sm)}
+.ho-line .go{color:var(--c-primary);font-weight:650;font-size:var(--fs-sm)}
+@media (min-width:600px){.ho-line .go{margin-left:auto}}
+.ho-bar{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;height:14px;margin:0;padding:0;list-style:none}
+.ho-seg{position:relative;border-radius:5px;border:2px solid var(--c-muted);background:#fff}
+.ho-seg--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
+.ho-seg--done{border-color:var(--c-primary);background:var(--c-primary)}
+.ho-seg--other{border-style:dashed;border-color:var(--c-muted);background:repeating-linear-gradient(135deg,transparent 0 4px,var(--c-divider) 4px 8px)}
+.ho-seg--wait::after{content:"";position:absolute;right:-3px;top:-6px;width:10px;height:10px;border-radius:50%;background:var(--c-att-bd);border:2px solid #fff}
+.ho-bar--lg{height:20px;gap:6px}
+.ho-bar--lg .ho-seg{border-radius:6px}
+
+/* Full section (Ühendus → Käest ära). */
+.ho h2{margin-bottom:var(--s-1)}
+.ho .ho-sum{margin:0 0 var(--s-3);font-size:var(--fs-h2);font-weight:750;line-height:1.3;letter-spacing:-.01em}
+.ho .ho-sum .num{font-size:var(--fs-h1);font-weight:800;line-height:1;letter-spacing:-.025em;color:var(--c-primary);font-variant-numeric:tabular-nums}
+.ho .ho-sum small{display:block;margin-top:var(--s-1);font-size:var(--fs-md);font-weight:400;color:var(--c-muted)}
+.ho-month{margin:var(--s-3) 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
+.ho-month b{color:var(--c-ink);font-weight:750;font-variant-numeric:tabular-nums}
+.ho-legend{display:flex;flex-wrap:wrap;gap:var(--s-2) var(--s-4);margin:var(--s-3) 0 0;padding:0;list-style:none;font-size:var(--fs-xs);color:var(--c-muted)}
+.ho-legend li{display:inline-flex;align-items:center;gap:6px}
+.ho-legend i{width:14px;height:10px;border-radius:3px;border:2px solid var(--c-muted);background:#fff}
+.ho-legend i.ho-seg--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
+.ho-legend i.ho-seg--done{border-color:var(--c-primary);background:var(--c-primary)}
+.ho-legend i.ho-seg--other{border-style:dashed}
+
+.ho-jobs{list-style:none;margin:var(--s-4) 0 0;padding:0;border-top:1px solid var(--c-divider)}
+.ho-job{display:grid;grid-template-columns:28px minmax(0,1fr);gap:var(--s-2) var(--s-3);padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider);color:inherit;text-decoration:none}
+.ho-job:hover .ho-title{text-decoration:underline;text-underline-offset:.15em}
+.ho-mark{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-top:2px;border:2px solid var(--c-muted);border-radius:50%;background:#fff;color:#fff;font-style:normal;font-weight:800;font-size:.8rem;line-height:1}
+.ho-mark--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
+.ho-mark--done{border-color:var(--c-primary);background:var(--c-primary)}
+.ho-mark--other{border-style:dashed;color:var(--c-muted)}
+.ho-mark svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.ho-title{display:block;font-size:var(--fs-lg);font-weight:750;line-height:1.3}
+.ho-rung{margin:2px 0 0;font-size:var(--fs-md);font-weight:600}
+.ho-rung--done{color:var(--c-primary)}
+.ho-rung--prep{color:#2F6E49}
+.ho-rung--mine{color:var(--c-muted)}
+.ho-ev{margin:2px 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
+.ho-ev .num{font-variant-numeric:tabular-nums}
+.ho-ev .label-chip{vertical-align:1px;margin-left:4px}
+.ho-job .ho-ev .state-chip{margin-top:4px}
+
+/* The one next step: the only elevated object in the section; reuses .ask. */
+.ho-next{margin:var(--s-6) 0 0}
+.ho-next h3{margin:0 0 var(--s-3);font-size:var(--fs-h2);font-weight:750;letter-spacing:-.01em}
+.ho-next .ask{display:block;padding:var(--s-4) var(--s-4) var(--s-4) var(--s-6)}
+.ho-next .ask::before{background:var(--c-primary)}
+.ho-next .ask .ask-title{margin:0 0 var(--s-1)}
+.ho-next .ask p{margin:0 0 var(--s-2)}
+.ho-next .ask .btn{margin-top:var(--s-3)}
+.ho-next .ask .limits{font-size:var(--fs-md)}
+.ho-next .ask .limits b{font-weight:750}
+.ho-next .quote{margin:var(--s-2) 0 0;padding:var(--s-3) var(--s-4);border-left:3px solid var(--c-border);border-radius:0 var(--r-md) var(--r-md) 0;background:var(--c-surface-2);font-size:var(--fs-md)}
+.ho-next .quote span{display:block;color:var(--c-muted);font-size:var(--fs-sm);margin-bottom:2px}
+.ho-next .ask .tap-link{margin-top:var(--s-1)}
+.ho-note{margin:var(--s-4) 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
+.ho-finding{display:flex;gap:var(--s-2);align-items:flex-start;margin:var(--s-4) 0 0;padding:var(--s-3) var(--s-4);border:1px solid var(--c-att-bd);border-radius:var(--r-md);background:var(--c-att-bg);color:var(--c-att-dark);font-size:var(--fs-sm)}
+.ho-finding b{font-weight:750}
+.ho-finding a{color:inherit;font-weight:650}
+.ho-finding .tap-link{display:inline-flex;min-height:var(--tap);align-items:center;margin:-10px 0}
+
+@media (min-width:960px){
+  .ho-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--s-8) var(--s-12);align-items:start}
+  .ho-grid>.ho-next{margin-top:0;position:sticky;top:var(--s-4)}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap wrap--tana">
+<header class="top"><a class="brand" href="#"><span class="mark" aria-hidden="true"></span>AI-hüppelaud</a><a class="lang" href="#" hreflang="en" lang="en">EN<span class="vh"> · in English</span></a></header>
+<nav class="tabs" aria-label="Peamenüü"><a href="#">Täna</a><a href="#">Tehtud</a><a href="#" aria-current="page">Ühendus</a></nav>
+<p class="sample-bar"><strong>NÄIDIS</strong> Mari Disain OÜ · päriselt ei saadeta</p>
+<main>
+<ul class="states" aria-label="Kolm seisu">
+<li><a href="#day1">Päev 1 · ühendatud</a></li>
+<li><a href="#week2">Nädal 2 · esimesed tööd</a></li>
+<li><a href="#month2">Kuu 2 · püsiload</a></li>
+</ul>
+
+<!-- ======================= PÄEV 1 ======================= -->
+<section class="state" id="day1" aria-labelledby="d1-h">
+<h2 id="d1-h" class="vh">Päev 1</h2>
+<p class="where">Täna · ülaosa</p>
+<div class="mock">
+<section class="hero" aria-labelledby="d1-t">
+<p class="company">Mari Disain OÜ</p>
+<h1 id="d1-t">Täna pole sinult midagi vaja</h1>
+<p class="lede">Ühendus töötab. Küsi assistendilt: „Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?” <span class="small">reede, 30. oktoober</span></p>
+<ul class="sum" aria-label="Kokkuvõte">
+<li><a href="#"><b>0</b> ootab sinult</a></li>
+<li><a href="#"><b>0</b> assistent tegi</a></li>
+<li><a href="#"><b>2</b> tulekul</a></li>
+</ul>
+<a class="ho-strip" href="#d1-ho" aria-label="Käest ära: 0 tööd 3-st. Alusta ühest. Vaata lähemalt.">
+<p class="ho-line"><b>Käest ära: <span class="num">0</span> tööd 3-st</b><span>alusta ühest</span><span class="go">Vaata →</span></p>
+<ul class="ho-bar" aria-hidden="true"><li class="ho-seg"></li><li class="ho-seg"></li><li class="ho-seg"></li></ul>
+</a>
+</section>
+</div>
+
+<p class="where">Ühendus · jaotis „Käest ära”</p>
+<section class="section ho" id="d1-ho" aria-labelledby="d1-ho-h">
+<h2 id="d1-ho-h">Käest ära</h2>
+<p class="ho-sum"><span class="num">0</span> tööd 3-st on sinu käest ära<small>Siia tulevad tööd, mille assistent on päriselt ära teinud, mitte klikid ega lubadused.</small></p>
+<ul class="ho-bar ho-bar--lg" aria-label="3 tööd, kõik veel sinu käes">
+<li class="ho-seg"><span class="vh">Maksemeeldetuletused: sinu käes</span></li>
+<li class="ho-seg"><span class="vh">KMD ettevalmistus: sinu käes</span></li>
+<li class="ho-seg"><span class="vh">Majandusaasta aruanne: sinu käes</span></li>
+</ul>
+<ul class="ho-legend" aria-hidden="true"><li><i></i>sinu käes</li><li><i class="ho-seg--prep"></i>assistent valmistab ette, sina kinnitad</li><li><i class="ho-seg--done"></i>assistent teeb ise või lagi käes</li><li><i class="ho-seg--other"></i>teeb keegi teine</li></ul>
+<p class="ho-month">Oktoobris: assistent pole veel ühtegi tööd teinud. Ühendatud täna kell 14:02 (Claude).</p>
+
+<div class="ho-grid">
+<div>
+<ul class="ho-jobs">
+<li><a class="ho-job" href="#"><i class="ho-mark" aria-hidden="true"></i><div><span class="ho-title">Maksemeeldetuletused</span><p class="ho-rung ho-rung--mine">Teed ise</p><p class="ho-ev">Assistent oskab: leiab tasumata arved ja koostab kirja; sina kinnitad iga kirja täpselt sellisena.</p></div></a></li>
+<li><a class="ho-job" href="#"><i class="ho-mark" aria-hidden="true"></i><div><span class="ho-title">KMD ettevalmistus</span><p class="ho-rung ho-rung--mine">Teed ise</p><p class="ho-ev">Järgmine tähtaeg 20. nov <span class="label-chip label-chip--rule">Arvutatud reeglist</span><br>Lagi: esitad alati ise e-MTA-s oma Smart-ID-ga; assistent paneb numbrid valmis.</p></div></a></li>
+<li><a class="ho-job" href="#"><i class="ho-mark" aria-hidden="true"></i><div><span class="ho-title">Majandusaasta aruanne</span><p class="ho-rung ho-rung--mine">Teed ise</p><p class="ho-ev">Hooajaline: tähtaeg 30. juuni 2027 <span class="label-chip label-chip--rule">Arvutatud reeglist</span><br>Assistent saab alustada, kui aasta on lõppenud.</p></div></a></li>
+</ul>
+<p class="ho-note">Nimekiri tuleb sinu tähtaegadest ja assistendi mängukavadest. Kui assistent salvestab oma hinnangu, lisanduvad sealt ka teised tööd, mida sa praegu ise teed.</p>
+</div>
+
+<div class="ho-next">
+<h3>Järgmine samm: anna üks töö ära</h3>
+<div class="ask">
+<span class="labels"><span class="label-chip label-chip--rule">Mängukava</span></span>
+<span class="ask-title">Lase assistendil koostada esimene maksemeeldetuletus</span>
+<p class="muted">Kõige kiirem võit: see on ainus igakuine töö, mille saab hiljem püsiloaga täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.</p>
+<p class="quote"><span>Palu assistendilt:</span>„Vaata, millised minu arved on tasumata, ja koosta esimesele meeldetuletus. Küsi minult kinnitust enne saatmist.”</p>
+<a class="tap-link" href="#">Raamatupidamise ühendused → Kataloog</a>
+</div>
+</div>
+</div>
+<details class="plain"><summary>Kuidas see arvutatakse</summary><div class="boxed small"><p>Üks lahter = üks töö. Lahter täitub ainult salvestatud kinnitusest, mille tulemus on saadetud, esitatud või makstud (assistendi teade), või kehtivast püsiloast. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.</p></div></details>
+</section>
+</section>
+
+<!-- ======================= NÄDAL 2 ======================= -->
+<section class="state" id="week2" aria-labelledby="w2-h">
+<h2 id="w2-h" class="vh">Nädal 2</h2>
+<p class="where">Täna · ülaosa</p>
+<div class="mock">
+<section class="hero" aria-labelledby="w2-t">
+<p class="company">Mari Disain OÜ</p>
+<h1 id="w2-t">Sinult on täna vaja üht asja</h1>
+<p class="lede">1 kinnitus. Ülejäänu valmistab ette sinu assistent. <span class="small">neljapäev, 12. november</span></p>
+<ul class="sum" aria-label="Kokkuvõte">
+<li><a class="needs" href="#"><b>1</b> ootab sinult</a></li>
+<li><a href="#"><b>4</b> assistent tegi</a></li>
+<li><a href="#"><b>2</b> tulekul</a></li>
+</ul>
+<a class="ho-strip" href="#w2-ho" aria-label="Käest ära: 2 tööd 4-st. 1 ootab iga kord sinu kinnitust. Vaata lähemalt.">
+<p class="ho-line"><b>Käest ära: <span class="num">2</span> tööd 4-st</b><span>1 ootab iga kord sinu kinnitust</span><span class="go">Vaata →</span></p>
+<ul class="ho-bar" aria-hidden="true"><li class="ho-seg ho-seg--prep ho-seg--wait"></li><li class="ho-seg ho-seg--other"></li><li class="ho-seg"></li><li class="ho-seg"></li></ul>
+</a>
+</section>
+</div>
+
+<p class="where">Ühendus · jaotis „Käest ära”</p>
+<section class="section ho" id="w2-ho" aria-labelledby="w2-ho-h">
+<h2 id="w2-ho-h">Käest ära</h2>
+<p class="ho-sum"><span class="num">2</span> tööd 4-st on sinu käest ära<small>1 teeb assistent sinu kinnitusega, 1 teeb raamatupidaja. Assistendi hinnang lisas nimekirja 1 töö: arved.</small></p>
+<ul class="ho-bar ho-bar--lg" aria-label="4 tööd: 1 assistent valmistab ette, 1 teeb raamatupidaja, 2 sinu käes">
+<li class="ho-seg ho-seg--prep ho-seg--wait"><span class="vh">Maksemeeldetuletused: assistent valmistab ette, sina kinnitad; 1 ootab praegu</span></li>
+<li class="ho-seg ho-seg--other"><span class="vh">KMD ettevalmistus: teeb raamatupidaja</span></li>
+<li class="ho-seg"><span class="vh">Majandusaasta aruanne: sinu käes</span></li>
+<li class="ho-seg"><span class="vh">Arvete koostamine: sinu käes</span></li>
+</ul>
+<ul class="ho-legend" aria-hidden="true"><li><i></i>sinu käes</li><li><i class="ho-seg--prep"></i>assistent valmistab ette, sina kinnitad</li><li><i class="ho-seg--done"></i>assistent teeb ise või lagi käes</li><li><i class="ho-seg--other"></i>teeb keegi teine</li></ul>
+<p class="ho-month">Novembris: <b>3</b> tööd tehtud, igaüks sinu kinnitusega. <b>0</b> ilma sinuta.</p>
+
+<div class="ho-grid">
+<div>
+<ul class="ho-jobs">
+<li><a class="ho-job" href="#"><i class="ho-mark ho-mark--prep" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></i><div><span class="ho-title">Maksemeeldetuletused</span><p class="ho-rung ho-rung--prep">Assistent valmistab ette, sina kinnitad</p><p class="ho-ev"><span class="num">3</span> saadetud, <span class="num">1</span> makstud · viimati eile <span class="label-chip label-chip--assistant">Assistent teatas</span><br><span class="state-chip state-chip--waiting">1 ootab sinu kinnitust</span></p></div></a></li>
+<li><a class="ho-job" href="#"><i class="ho-mark ho-mark--other" aria-hidden="true">R</i><div><span class="ho-title">KMD ettevalmistus</span><p class="ho-rung ho-rung--mine">Teeb raamatupidaja <span class="label-chip label-chip--assistant">Assistendi hinnang</span></p><p class="ho-ev">Oktoobri KMD: numbrid raamatupidajalt, esitad sina e-MTA-s 20. nov.</p></div></a></li>
+<li><a class="ho-job" href="#"><i class="ho-mark" aria-hidden="true"></i><div><span class="ho-title">Majandusaasta aruanne</span><p class="ho-rung ho-rung--mine">Teed ise</p><p class="ho-ev">Hooajaline: tähtaeg 30. juuni 2027. Assistent saab alustada jaanuaris.</p></div></a></li>
+<li><a class="ho-job" href="#"><i class="ho-mark" aria-hidden="true"></i><div><span class="ho-title">Arvete koostamine</span><p class="ho-rung ho-rung--mine">Teed ise</p><p class="ho-ev">„Koostad arved pärast iga tööd käsitsi.” <span class="label-chip label-chip--assistant">Assistendi hinnang</span><br>Assistent saab arve ette valmistada ja sinu kinnitusel saata.</p></div></a></li>
+</ul>
+<p class="ho-finding"><span aria-hidden="true">!</span><span><b>1 kinnitus aegus kasutamata</b> (3. nov). Palu assistendil pärast sinu kinnitust kohe saata ja tulemus kirja panna. <a class="tap-link" href="#">Vaata kinnitust</a></span></p>
+</div>
+
+<div class="ho-next">
+<h3>Järgmine samm: anna meeldetuletused täiesti käest ära</h3>
+<div class="ask">
+<span class="labels"><span class="label-chip label-chip--owner">Sinu püsiluba</span></span>
+<span class="ask-title">Luba edaspidi meeldetuletused automaatselt</span>
+<p class="limits">Ainult <b>Demo Klient OÜ</b> ja <b>Põhja Puit OÜ</b> (senised saajad), kuni <b>500 €</b> kirja kohta, kuni <b>10</b> päevas, <b>90 päeva</b>. Lõpetad millal tahes.</p>
+<p class="muted small">Piirid on võetud sinu 3 senisest kinnitusest (suurim 240 €). Assistent saadab ise ja annab iga kirja kohta siia teada.</p>
+<button type="button">Luba automaatselt</button>
+<details><summary>Muuda piire</summary><div class="boxed small"><p>Saajad: ainult senised · kõik saajad (ka uued)</p><p>Ülempiir kirja kohta: 500 €</p></div></details>
+</div>
+</div>
+</div>
+<details class="plain"><summary>Kuidas see arvutatakse</summary><div class="boxed small"><p>Üks lahter = üks töö. Lahter täitub ainult salvestatud kinnitusest, mille tulemus on saadetud, esitatud või makstud (assistendi teade), või kehtivast püsiloast. „Teeb raamatupidaja” on assistendi hinnang, mida AI-hüppelaud ei kontrollinud. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.</p></div></details>
+</section>
+</section>
+
+<!-- ======================= KUU 2 ======================= -->
+<section class="state" id="month2" aria-labelledby="m2-h">
+<h2 id="m2-h" class="vh">Kuu 2</h2>
+<p class="where">Täna · ülaosa</p>
+<div class="mock">
+<section class="hero" aria-labelledby="m2-t">
+<p class="company">Mari Disain OÜ</p>
+<h1 id="m2-t">Täna pole sinult midagi vaja</h1>
+<p class="lede">Assistent saatis täna 1 meeldetuletuse sinu püsiloaga. <span class="small">teisipäev, 15. detsember</span></p>
+<ul class="sum" aria-label="Kokkuvõte">
+<li><a href="#"><b>0</b> ootab sinult</a></li>
+<li><a href="#"><b>9</b> assistent tegi</a></li>
+<li><a href="#"><b>2</b> tulekul</a></li>
+</ul>
+<a class="ho-strip" href="#m2-ho" aria-label="Käest ära: 3 tööd 4-st. Detsembris 4 tööd ilma sinuta. Vaata lähemalt.">
+<p class="ho-line"><b>Käest ära: <span class="num">3</span> tööd 4-st</b><span>detsembris 4 tööd ilma sinuta</span><span class="go">Vaata →</span></p>
+<ul class="ho-bar" aria-hidden="true"><li class="ho-seg ho-seg--done"></li><li class="ho-seg ho-seg--done"></li><li class="ho-seg ho-seg--prep"></li><li class="ho-seg"></li></ul>
+</a>
+</section>
+</div>
+
+<p class="where">Ühendus · jaotis „Käest ära”</p>
+<section class="section ho" id="m2-ho" aria-labelledby="m2-ho-h">
+<h2 id="m2-ho-h">Käest ära</h2>
+<p class="ho-sum"><span class="num">3</span> tööd 4-st on sinu käest ära<small>2 ilma sinuta, 1 sinu kinnitusega. Aastaaruanne tuleb kevadel.</small></p>
+<ul class="ho-bar ho-bar--lg" aria-label="4 tööd: 2 assistent teeb ise, 1 assistent valmistab ette, 1 sinu käes">
+<li class="ho-seg ho-seg--done"><span class="vh">Maksemeeldetuletused: assistent teeb ise püsiloaga</span></li>
+<li class="ho-seg ho-seg--done"><span class="vh">KMD ettevalmistus: assistent valmistab ette, sina esitad; lagi käes</span></li>
+<li class="ho-seg ho-seg--prep"><span class="vh">Arvete koostamine: assistent valmistab ette, sina kinnitad</span></li>
+<li class="ho-seg"><span class="vh">Majandusaasta aruanne: sinu käes</span></li>
+</ul>
+<ul class="ho-legend" aria-hidden="true"><li><i></i>sinu käes</li><li><i class="ho-seg--prep"></i>assistent valmistab ette, sina kinnitad</li><li><i class="ho-seg--done"></i>assistent teeb ise või lagi käes</li><li><i class="ho-seg--other"></i>teeb keegi teine</li></ul>
+<p class="ho-month">Detsembris: <b>7</b> tööd tehtud, <b>4</b> ilma sinuta. Novembris 3, kõik sinu kinnitusega.</p>
+
+<div class="ho-grid">
+<div>
+<ul class="ho-jobs">
+<li><a class="ho-job" href="#"><i class="ho-mark ho-mark--done" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></i><div><span class="ho-title">Maksemeeldetuletused</span><p class="ho-rung ho-rung--done">Assistent teeb ise <span class="label-chip label-chip--owner">Sinu püsiluba</span></p><p class="ho-ev">Detsembris <span class="num">4</span> saadetud ilma sinuta, <span class="num">2</span> makstud · täna 09:40 <span class="label-chip label-chip--assistant">Assistent teatas</span><br>Püsiluba: sõnumid 2 saajale, kuni 500 € · aegub 10. veebr</p></div></a></li>
+<li><a class="ho-job" href="#"><i class="ho-mark ho-mark--done" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></i><div><span class="ho-title">KMD ettevalmistus</span><p class="ho-rung ho-rung--done">Assistent valmistab ette, sina esitad <span class="label-chip label-chip--official">Lagi käes: seadus</span></p><p class="ho-ev">Novembri KMD esitatud 19. nov <span class="label-chip label-chip--assistant">Assistent teatas</span> · järgmine 20. dets <span class="label-chip label-chip--rule">Arvutatud reeglist</span><br>Seadus: deklaratsiooni esitad ise e-MTA-s; rohkem käest ära anda ei saa.</p></div></a></li>
+<li><a class="ho-job" href="#"><i class="ho-mark ho-mark--prep" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></i><div><span class="ho-title">Arvete koostamine</span><p class="ho-rung ho-rung--prep">Assistent valmistab ette, sina kinnitad</p><p class="ho-ev">Detsembris <span class="num">3</span> arvet saadetud, igaüks sinu kinnitusega · viimati 12. dets <span class="label-chip label-chip--assistant">Assistent teatas</span></p></div></a></li>
+<li><a class="ho-job" href="#"><i class="ho-mark" aria-hidden="true"></i><div><span class="ho-title">Majandusaasta aruanne</span><p class="ho-rung ho-rung--mine">Teed ise</p><p class="ho-ev">Hooajaline: tähtaeg 30. juuni 2027 <span class="label-chip label-chip--rule">Arvutatud reeglist</span> · assistent saab alustada jaanuaris.</p></div></a></li>
+</ul>
+</div>
+
+<div class="ho-next">
+<h3>Järgmine samm: anna arved täiesti käest ära</h3>
+<div class="ask">
+<span class="labels"><span class="label-chip label-chip--owner">Sinu püsiluba</span></span>
+<span class="ask-title">Luba edaspidi arved püsiklientidele automaatselt</span>
+<p class="limits">Ainult <b>3 senist saajat</b>, kuni <b>1 200 €</b> arve kohta, kuni <b>10</b> päevas, <b>90 päeva</b>. Lõpetad millal tahes.</p>
+<p class="muted small">Piirid on võetud sinu 3 senisest arvekinnitusest (suurim 1 180 €). Uuele kliendile küsib assistent ikka sinu kinnitust.</p>
+<button type="button">Luba automaatselt</button>
+<details><summary>Muuda piire</summary><div class="boxed small"><p>Saajad: ainult senised · kõik saajad (ka uued)</p><p>Ülempiir arve kohta: 1 200 €</p></div></details>
+</div>
+<p class="ho-note">Pärast seda: meeldetuletuste püsiluba aegub 10. veebruaril; pikendad siitsamast.</p>
+</div>
+</div>
+<details class="plain"><summary>Kuidas see arvutatakse</summary><div class="boxed small"><p>Üks lahter = üks töö. Lahter täitub ainult salvestatud kinnitusest, mille tulemus on saadetud, esitatud või makstud (assistendi teade), või kehtivast püsiloast. KMD ja aastaaruande lagi on seaduses: esitad ja allkirjastad ise. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.</p></div></details>
+</section>
+</section>
+</main>
+<footer><a href="#">Kinnitused</a><a href="#">Andmed ja õigused</a><a href="#">Kataloog</a><a href="#">Abi</a><span class="spacer"></span><a href="#">Logi välja</a></footer>
+</div>
+</body>
+</html>
