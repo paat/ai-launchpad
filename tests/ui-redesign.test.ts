@@ -273,6 +273,11 @@ describe("landing and connect", () => {
     expect(en).toContain("VAT return (KMD) and VAT payment · Calculated by rule · Source: VAT Act § 27, § 38.");
   });
 
+  test("landing transcript: the send is credited to the assistant, not the owner (tribunal T-003)", () => {
+    expect(landingBody({ lang: "et" })).toContain("<li>Sina: Kinnitatud</li><li>Assistent: Saadetud (näidis)</li></ol>");
+    expect(landingBody({ lang: "en" })).toContain("<li>You: Approved</li><li>Assistant: Sent (sample)</li></ol>");
+  });
+
   test("landing teaser: the dates are the engine's for November 2026 (10.11 TSD, 20.11 KMD)", () => {
     const m = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2026-11-01T10:00:00Z"), months: 1 });
     const due = Object.fromEntries(m.obligations.map((o) => [o.rule_id, o.effective_due]));

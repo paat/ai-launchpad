@@ -1083,7 +1083,8 @@ export function landingBody(o: { lang: Lang }): string {
     [t("Assistent", "Assistant"), `${kmd[0]} — ${kmd[1]} · ${rule} · ${kmdSource}. ${tsd[0]} — ${tsd[1]} · ${tsdSource}. ${offer}`],
     [t("Sina", "You"), ask2],
     [t("Assistent", "Assistant"), `${t("Kinnitus", "Approval")}: ${card} · ${client} · ${amount}. „${approve}”`],
-    [t("Sina", "You"), done.replace("✓ ", "")],
+    [t("Sina", "You"), t("Kinnitatud", "Approved")],
+    [t("Assistent", "Assistant"), t("Saadetud (näidis)", "Sent (sample)")],
   ].map(([who, text]) => `<li>${esc(who)}: ${esc(text)}</li>`).join("");
   const steps = [
     t("Ühenda oma ChatGPT või Claude (2 minutit)", "Connect your ChatGPT or Claude (2 minutes)"),
