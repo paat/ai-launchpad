@@ -272,7 +272,7 @@ test("report_unmet_need: scope, sharing, de-identified storage, receipt, idempot
     const readOnly = makeOwner(s.db, "own_r", `google:${SUB_B}`, { scopes: "progress:read" });
     const off = makeOwner(s.db, "own_off", "google:off", { reporting: false });
     const args = { report_id: "need-1", need: RAW_NEED, blocker: "portal_without_api", job_hint: "VAT for Demo Supplier OÜ" };
-    expect((await tool(s, readOnly, args)).text).toBe("Missing scope progress:report.");
+    expect((await tool(s, readOnly, args)).text).toBe("The owner connected you read-only, so you cannot prepare work for their approval. Tell the owner: „Et saaksin seda sinu eest ette valmistada, ühenda mind AI-hüppelauaga uuesti ja märgi „Jah: valmistab töid ette”.” Nothing was saved.");
     expect((await tool(s, off, args)).text).toContain("Progress sharing is stopped");
     expect((await tool(s, a, { ...args, blocker: "anything" })).isError).toBe(true);
     expect((await tool(s, a, { ...args, need: "x".repeat(601) })).isError).toBe(true);

@@ -45,11 +45,67 @@ export function searchServices(query: string, limit: number) {
     note: "Research catalog entry, not runtime-verified by Launchpad. Connect it in your own assistant; Launchpad does not fetch or broker it.",
   }));
 }
-export const PLAYBOOKS = [
-  { id: "deadlines-check", title: "Check this month's obligations", summary: "Read-only first win: list known responsibilities and check official sources for current dates. Launchpad does not compute or fabricate tax deadlines here.", source: "https://www.emta.ee/en/business-client/taxes-and-payment", source_label: "Estonian Tax and Customs Board (EMTA)" },
-  { id: "annual-report-status", title: "Check annual report status", summary: "Confirm filing status in official registers and prepare a draft plan with your accountant. Nothing is submitted by this demo.", source: "https://www.rik.ee/en/e-business-register", source_label: "Centre of Registers and Information Systems (RIK)" },
-  { id: "counterparty-check", title: "Check a company before taking the job", summary: "Look up public registry and tax-debt information before agreeing work. Public data does not prove mandate or creditworthiness.", source: "https://www.emta.ee/en/business-client/taxes-and-payment/payment-arrears/payment-tax-liabilities-instalments", source_label: "EMTA — tax liabilities" },
-  { id: "vat-status-check", title: "Check VAT registration status", summary: "Verify VAT registration details against official guidance before invoicing. This demo gives no tax advice.", source: "https://www.riigiteataja.ee/en/akt/512062025002", source_label: "Value Added Tax Act (Riigi Teataja)" },
+export const APPROVAL_KINDS = ["send_message", "send_invoice", "prepare_payment", "prepare_filing"] as const;
+/** Executable job playbooks (#26): deterministic instructions for the owner's
+ *  own agent. Launchpad never runs the job; triggers are obligation rule_ids. */
+export interface Playbook {
+  id: string; title: string; title_et: string; summary: string; source: string; source_label: string;
+  triggers: string[]; needs: string[]; steps: string[];
+  approval_kind: (typeof APPROVAL_KINDS)[number] | null; done_when: string; verify_with: string;
+}
+export const PLAYBOOKS: Playbook[] = [
+  { id: "deadlines-check", title: "Check the owner's deadlines", title_et: "Vaata üle oma tähtajad",
+    summary: "Call get_obligations: rules compute each date with its official source. Ask the facts_needed questions first, because one answer can remove a row. Then offer each row's handoff and ask whether to start.",
+    source: "https://www.emta.ee/en/business-client/taxes-and-payment", source_label: "Estonian Tax and Customs Board (EMTA)",
+    triggers: [], needs: ["The company's registry code or name (owner fact)."],
+    steps: [
+      "Call get_obligations. Rules compute every date; quote them with each row's source link and never compute a deadline yourself.",
+      "Ask the facts_needed questions first: one answer can remove a row. Call get_obligations again with the owner's answers.",
+      "For each row with a playbook_id, offer in one line to prepare it and ask whether to start. Then follow that playbook's steps.",
+    ],
+    approval_kind: null, done_when: "The owner has seen each deadline with its source and has said which jobs to prepare.", verify_with: "Each row's official source link." },
+  { id: "payment-reminder", title: "Remind a customer about an overdue invoice", title_et: "Meenuta kliendile tasumata arvet",
+    summary: "Find unpaid invoices past due, draft a polite reminder and send it only after the owner approves the exact text and recipient.",
+    source: "https://www.riigiteataja.ee/akt/V%C3%95S", source_label: "Võlaõigusseadus § 113 (viivis), Riigi Teataja",
+    triggers: [],
+    needs: ["Unpaid sales invoices: the owner's accounting connector (search_services, e.g. werkzeug, trivis) or a file the owner shares.", "The owner's own email tool to send the reminder."],
+    steps: [
+      "Find unpaid invoices past their due date in the owner's accounting connector or in a file the owner shares.",
+      "Draft a polite reminder in the owner's language with the invoice number, amount and due date as they appear on the invoice. Do not threaten late-payment interest (viivis) unless the owner asks for it.",
+      "Call request_approval with kind send_message, the recipient, amount_cents, period and the exact reminder as document.",
+      "After the owner says it is approved, call get_approval. Act only if its state is approved, and send exactly that text with your own tools; Launchpad sends nothing.",
+      "Call record_action_outcome with outcome sent (or failed).",
+      "Advance the outcome to paid only if you see the payment, for example in the accounting connector.",
+    ],
+    approval_kind: "send_message", done_when: "The approved reminder was sent and record_action_outcome recorded sent.", verify_with: "The payment in the owner's accounting connector or bank statement; until then the outcome stays sent." },
+  { id: "vat-return-prep", title: "Prepare the monthly VAT return (KMD)", title_et: "Valmista ette käibedeklaratsioon (KMD)",
+    summary: "Gather the month's invoices, take the figures from the accounting software's own VAT report and get the owner's approval; the owner files in e-MTA.",
+    source: "https://www.riigiteataja.ee/akt/130062026129", source_label: "Käibemaksuseadus § 27, Riigi Teataja",
+    triggers: ["vat-return-kmd"],
+    needs: ["The month's sales and purchase invoices: the owner's accounting connector (search_services, e.g. werkzeug, trivis) or files the owner shares.", "The accounting software's own VAT report for the period."],
+    steps: [
+      "Gather the period's sales and purchase invoices from the owner's accounting connector or from files the owner shares.",
+      "Check that none are missing (gaps in invoice numbers, purchases without an invoice) and ask the owner about each gap.",
+      "Take the VAT figures from the accounting software's own VAT report. Never calculate a tax amount yourself; if no report exists, tell the owner and stop.",
+      "Call request_approval with kind prepare_filing, the period and the report's exact figures in the document.",
+      "After get_approval returns approved, tell the owner the figures to enter. The owner files the return in e-MTA with their own Smart-ID or ID-card; never automate the login, signature or submission.",
+      "When the owner says it is filed, call record_action_outcome with outcome submitted.",
+    ],
+    approval_kind: "prepare_filing", done_when: "The owner filed the return in e-MTA and record_action_outcome recorded submitted.", verify_with: "The owner's e-MTA filing confirmation; the submitted outcome is the owner's or your report, not verified by Launchpad." },
+  { id: "annual-report", title: "Prepare the annual report", title_et: "Valmista ette majandusaasta aruanne",
+    summary: "Check the register status, gather what the report needs and give the owner a checklist; the owner signs and submits in the e-Business Register.",
+    source: "https://www.riigiteataja.ee/akt/106072023131", source_label: "Äriseadustik § 179, Riigi Teataja",
+    triggers: ["annual-report", "annual-report-overdue"],
+    needs: ["The financial year's accounts: the owner's accounting connector (search_services, e.g. werkzeug, trivis) or files the owner shares.", "Owner facts the report asks for, such as the activity description and the number of employees."],
+    steps: [
+      "Check the register status with get_obligations: an annual-report or annual-report-overdue row means the report is not listed as filed.",
+      "Gather what the report needs: the balance sheet and income statement from the accounting software, the activity description and the owner's answers.",
+      "Give the owner a checklist of what is ready and what is still missing.",
+      "Optionally call request_approval with kind prepare_filing and the exact report draft, then act only after get_approval returns approved.",
+      "The owner signs and submits the report in the e-Business Register; never automate the login, signature or submission.",
+      "If you used an approval, call record_action_outcome with outcome submitted once the owner says it is submitted.",
+    ],
+    approval_kind: "prepare_filing", done_when: "The owner submitted the report in the e-Business Register.", verify_with: "Public register report_status: get_obligations stops showing the row once the register lists the report as filed." },
 ];
 export const DOMAINS = ["money", "customers", "people", "legal_sector", "operations"] as const;
 export const FRAMEWORK = {
