@@ -195,9 +195,15 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
     const y = f0.getUTCFullYear() + k, end = fyEnd(y);
     return { y, end, ...dated(addMonths(end, 6)) };
   }).filter((r) => founded === null || r.end >= founded);
-  // ÄS § 179: the first financial year (the one containing the founding date) may run up to 18 months, so its report date is never definite.
-  const firstFyY = founded !== null && fyRows[0] && fyEnd(fyRows[0].y - 1) < founded ? fyRows[0].y : undefined;
-  const firstFy = { applies: "if" as const, condition_et: "Esimese majandusaasta lõpp sõltub põhikirjast (võib olla kuni 18 kuud).", condition_en: "The end of the first financial year depends on the articles of association (it may run up to 18 months)." };
+  // ÄS § 179: the first financial year (the one containing the founding date) may run up to 18 months. With an assumed FY end its
+  // report date is never definite; with a known FY end it is definite only when ending a year later (E2) would exceed 18 months.
+  let firstFyY = founded !== null && fyRows[0] && fyEnd(fyRows[0].y - 1) < founded ? fyRows[0].y : undefined;
+  let firstFy = { applies: "if" as const, condition_et: "Esimese majandusaasta lõpp sõltub põhikirjast (võib olla kuni 18 kuud).", condition_en: "The end of the first financial year depends on the articles of association (it may run up to 18 months)." };
+  if (firstFyY !== undefined && fy.provenance !== "assumption") {
+    const e1 = fyEnd(firstFyY), e2 = fyEnd(firstFyY + 1);
+    if (e2 >= addMonths(founded!, 18)) firstFyY = undefined;
+    else firstFy = { applies: "if", condition_et: `Esimene majandusaasta võib lõppeda ${etDate(e1)} või ${etDate(e2)} (kuni 18 kuud), sõltuvalt põhikirjast.`, condition_en: `The first financial year may end on ${enDate(e1)} or ${enDate(e2)} (up to 18 months), depending on the articles of association.` };
+  }
   const fyLabel = (r: { y: number; end: string }) => fy.value === "12-31" ? { et: `${r.y}. a majandusaasta aruanne`, en: `${r.y} annual report` } : { et: `Majandusaasta aruanne (majandusaasta lõppes ${etDate(r.end)})`, en: `Annual report (financial year ended ${enDate(r.end)})` };
   // Register signal: latest_year is the newest report period on file; filed refers to that period.
   const filedFor = (y: number): boolean | null => {

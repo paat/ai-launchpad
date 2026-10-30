@@ -158,8 +158,8 @@ describe("rules engine (memo § 3, pure)", () => {
     const filed = { ...young, annual_report: SYNTHETIC_COMPANIES[MARI].facts.annual_report };
     expect(ofRule(filed, "2027-06-01", "annual-report")).toMatchObject([{ period_label_en: "2026 annual report", ...firstFy }]);
     expect(ofRule(filed, "2027-07-05", "annual-report-overdue")).toMatchObject([{ period_label_en: "2026 annual report", applies: "if", condition_et: firstFy.condition_et }]);
-    // A known FY end still has an open-ended first year; later financial years keep the ordinary rule.
-    expect(ofRule({ ...filed, fy_end: { value: "12-31", provenance: "assistant_supplied" } }, "2027-06-01", "annual-report")).toMatchObject([{ applies: "if", condition_et: firstFy.condition_et }]);
+    // A known FY end: ending on 31.12.2027 would exceed 18 months, so the first year ends 31.12.2026; later financial years keep the ordinary rule.
+    expect(ofRule({ ...filed, fy_end: { value: "12-31", provenance: "assistant_supplied" } }, "2027-06-01", "annual-report")).toMatchObject([{ applies: "yes" }]);
     expect(ofRule(filed, "2028-06-01", "annual-report")).toMatchObject([{ period_label_en: "2027 annual report", applies: "yes" }]);
     // Founded 2012 or unknown: output unchanged.
     for (const facts of [SYNTHETIC_COMPANIES[MARI].facts, SYNTHETIC_COMPANIES[KASE].facts, {}]) for (const day of ["2026-10-30", "2027-06-01", "2027-07-05"]) {
@@ -172,6 +172,11 @@ describe("rules engine (memo § 3, pure)", () => {
   test("annual report: the first financial year comes from the founding date, not from today's year (#43)", () => {
     const facts: CompanyFacts = { founded: { value: "2024-12-30", provenance: "public_register" }, annual_report: { value: { latest_year: 2024, filed: false, overdue_days: null }, provenance: "public_register" } };
     expect(ofRule(facts, "2026-01-05", "annual-report-overdue", 3)).toMatchObject([{ period_label_en: "2024 annual report", applies: "if", condition_en: "The end of the first financial year depends on the articles of association (it may run up to 18 months)." }]);
+  });
+
+  test("annual report: with a known FY end the first year is conditional only when the 18-month rule allows two end dates (#43)", () => {
+    const facts: CompanyFacts = { founded: { value: "2026-09-01", provenance: "public_register" }, fy_end: { value: "12-31", provenance: "assistant_supplied" }, annual_report: SYNTHETIC_COMPANIES[MARI].facts.annual_report };
+    expect(ofRule(facts, "2027-06-01", "annual-report")).toMatchObject([{ period_label_en: "2026 annual report", applies: "if", condition_et: "Esimene majandusaasta võib lõppeda 31.12.2026 või 31.12.2027 (kuni 18 kuud), sõltuvalt põhikirjast.", condition_en: "The first financial year may end on 31 December 2026 or 31 December 2027 (up to 18 months), depending on the articles of association." }]);
   });
 
   test("VAT threshold: annual-report revenue and the assistant's year-to-date turnover stay separate", () => {
