@@ -100,10 +100,28 @@ describe("rules engine (memo § 3, pure)", () => {
     const r = computeObligations(facts, { today: at("2026-11-01"), months: 1 });
     expect(r.obligations.filter((o) => o.rule_id === "tsd-monthly-return")).toMatchObject([{ applies: "if", condition_en: expect.stringContaining("employee") }]);
     expect(r.facts_needed.map((n) => n.fact)).toContain("other_tsd_triggers_last_month");
-    // Labour taxes in the latest quarter → yes, even when the assistant says no payouts.
-    expect(ofRule({ ...facts, labour_taxes_last_quarter: { value: 900, provenance: "public_register" } }, "2026-11-01", "tsd-monthly-return")).toMatchObject([{ applies: "yes" }]);
+    // Labour taxes in the latest quarter are lagged: likely, never yes.
+    expect(ofRule({ ...facts, labour_taxes_last_quarter: { value: 900, provenance: "public_register" } }, "2026-11-01", "tsd-monthly-return")).toMatchObject([{ applies: "if" }]);
     // Both "no" facts must come from the assistant.
     expect(ofRule({ ...facts, other_tsd_triggers_last_month: { value: false, provenance: "public_register" } }, "2026-11-01", "tsd-monthly-return")).toMatchObject([{ applies: "if" }]);
+  });
+
+  test("TSD: lagged labour taxes give applies: if with a likely reason; payouts questions only for an in-window row (tribunal T-001)", () => {
+    const labour: CompanyFacts = { labour_taxes_last_quarter: { value: 900, provenance: "public_register" } };
+    const rows = ofRule(labour, "2026-11-01", "tsd-monthly-return", 3);
+    expect(rows.length).toBe(3);
+    for (const o of rows) expect(o).toMatchObject({ applies: "if", condition_et: expect.stringContaining("Kehtib, kui"), condition_en: expect.stringContaining("Applies if"), reason_et: "Tõenäoliselt kehtib: viimases kvartalis deklareeriti tööjõumakse.", reason_en: "Likely applies: labour taxes were declared in the latest quarter." });
+    // Only the assistant's payouts "yes" for that period makes the row definite.
+    const paid = ofRule({ ...labour, payouts_last_month: { value: true, provenance: "assistant_supplied" } }, "2026-11-01", "tsd-monthly-return", 3);
+    expect(paid.map((o) => [o.period_label_en, o.applies])).toEqual([["October 2026 payouts", "yes"], ["November 2026 payouts", "if"], ["December 2026 payouts", "if"]]);
+    // 25 Oct, months 2: September's TSD (due 12 Oct) is outside the window, so no September question.
+    const late = computeObligations({}, { today: at("2026-10-25"), months: 2 });
+    expect(late.facts_needed.map((n) => n.fact)).not.toContain("payouts_last_month");
+    const lateNo = computeObligations({ payouts_last_month: { value: false, provenance: "assistant_supplied" } }, { today: at("2026-10-25"), months: 2 });
+    expect(lateNo.facts_needed.map((n) => n.fact)).not.toContain("other_tsd_triggers_last_month");
+    // 3 Nov, months 1: October's TSD (due 10 Nov) is inside the window, so ask about October.
+    const early = computeObligations({}, { today: at("2026-11-03"), months: 1 });
+    expect(early.facts_needed).toContainEqual({ fact: "payouts_last_month", question_et: "Kas maksid oktoobris palka, juhatuse liikme tasu või dividende?", question_en: "Did the company pay salary, a board member fee or dividends in October?" });
   });
 
   test("annual report: filed null (unknown) never counts as filed", () => {
@@ -309,7 +327,7 @@ describe("get_obligations tool and status card", () => {
     spy.mockRestore();
     expect(r.company).toMatchObject({ registry_code: FAKE_VALID, provenance: "assistant_supplied", unavailable: "not_configured" });
     expect(r.company.label_en).not.toContain("Official");
-    expect(r.facts_needed.map((n: { fact: string }) => n.fact)).toEqual(expect.arrayContaining(["payouts_last_month", "fy_end", "annual_report"]));
+    expect(r.facts_needed.map((n: { fact: string }) => n.fact)).toEqual(expect.arrayContaining(["fy_end", "annual_report"]));
     expect(r.facts_needed.map((n: { fact: string }) => n.fact)).not.toContain("vat_registered");
     const kmd = r.obligations.find((o: { rule_id: string }) => o.rule_id === "vat-return-kmd");
     expect(kmd).toMatchObject({ applies: "yes", applies_because: [{ fact: "vat_registered", value: true, provenance: "assistant_supplied" }] });

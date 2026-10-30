@@ -122,20 +122,22 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
   const payouts = facts.payouts_last_month, others = facts.other_tsd_triggers_last_month, labour = facts.labour_taxes_last_quarter;
   // Register employee counts are quarterly, lagged and exclude board members: they never suppress a row.
   const saidNo = (f: Fact<boolean> | undefined) => known(f) && !f.value && f.provenance === "assistant_supplied";
-  if (!known(payouts)) need("payouts_last_month", `Kas maksid ${ET_IN[lastMonth.m0]} palka, juhatuse liikme tasu või dividende?`, `Did the company pay salary, a board member fee or dividends in ${EN_MONTH[lastMonth.m0]}?`);
   for (const dm of dueMonths) {
     const d = dated(iso(utc(dm.y, dm.m0, 10)));
     if (!inWindow(d.effective_due)) continue;
     const p = periodOf(dm);
     const isLast = p.y === lastMonth.y && p.m0 === lastMonth.m0;
+    // Ask about last month's payouts only when that month's TSD row is in the window.
+    if (isLast && !known(payouts)) need("payouts_last_month", `Kas maksid ${ET_IN[p.m0]} palka, juhatuse liikme tasu või dividende?`, `Did the company pay salary, a board member fee or dividends in ${EN_MONTH[p.m0]}?`);
     let row: Pick<Obligation, "applies" | "condition_et" | "condition_en" | "reason_et" | "reason_en"> | null;
     if (isLast && known(payouts) && payouts.value) row = { applies: "yes", reason_et: `Kehtib, sest maksid ${ET_IN[p.m0]} palka, juhatuse liikme tasu või dividende.`, reason_en: `Applies because the company made payouts in ${EN_MONTH[p.m0]}.` };
     else if (isLast && saidNo(payouts) && saidNo(others)) row = null; // EMTA: no zero-return without payouts or employees.
-    else if (known(labour) && labour.value > 0) row = { applies: "yes", reason_et: "Kehtib, sest viimases kvartalis deklareeriti tööjõumakse.", reason_en: "Applies because labour taxes were declared in the latest quarter." };
     else {
       const et = isLast && known(payouts) ? "Kehtib, kui sul on töölepinguga töötaja, kelle töötamine pole TÖR-is peatatud." : `Kehtib, kui maksid ${ET_IN[p.m0]} palka, juhatuse liikme tasu või dividende või kui sul on töölepinguga töötaja.`;
       const en = isLast && known(payouts) ? "Applies if you have an employee under an employment contract whose work is not suspended in the employment register." : `Applies if you paid salary, a board member fee or dividends in ${EN_MONTH[p.m0]} or have an employee under an employment contract.`;
-      row = { applies: "if", condition_et: et, condition_en: en, reason_et: et, reason_en: en };
+      // Register labour taxes are quarterly and lagged: a likely signal, never a definite yes.
+      const likely = known(labour) && labour.value > 0;
+      row = { applies: "if", condition_et: et, condition_en: en, reason_et: likely ? "Tõenäoliselt kehtib: viimases kvartalis deklareeriti tööjõumakse." : et, reason_en: likely ? "Likely applies: labour taxes were declared in the latest quarter." : en };
       if (isLast && known(payouts) && !known(others)) need("other_tsd_triggers_last_month", `Kas sul oli ${ET_IN[p.m0]} töölepinguga töötaja (ka palgata) või muu TSD kohustus?`, `Did the company have an employee under an employment contract (even unpaid) or any other TSD obligation in ${EN_MONTH[p.m0]}?`);
     }
     if (!row) continue;
