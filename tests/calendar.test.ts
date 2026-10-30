@@ -274,22 +274,24 @@ describe("calendar feed over HTTP", () => {
     expect(second).toMatch(/SUMMARY:KMD ja käibemaks · /);
     expect(registerCalls).toBe(1);
   });
-  test("a failing register is called once across 3 feed fetches within 10 minutes, and the feed says it is unavailable", async () => {
+  test("a register without the company is called once across feed fetches over 2 hours, and the feed says the code was not found (#41)", async () => {
     await start({ arikrattApiKey: "test-key", arikrattMcpUrl: registerUrl });
     registerFails = true;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const t0 = Date.now(); let offset = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => t0 + offset);
     try {
       const path = await realCompanyFeedPath();
       expect(await realFeed(path)).toContain("X-WR-CALDESC:Avaliku registri andmeid laaditakse");
       await vi.waitFor(() => expect(warn).toHaveBeenCalledWith("Status deadlines: register lookup failed (not_found)."));
-      for (let i = 0; i < 2; i++) {
+      for (offset = 0; offset <= 2 * 3600_000; offset += 30 * 60_000) {
         const ics = await realFeed(path);
-        expect(ics).toContain("X-WR-CALDESC:Avalik register pole praegu kättesaadav. Sündmusi ei loodud.");
+        expect(ics).toContain("X-WR-CALDESC:Registrikoodiga ettevõtet registrist ei leitud — palu assistendil kood üle kontrollida. Sündmusi ei loodud.");
         expect(ics).not.toContain("BEGIN:VEVENT");
       }
       await new Promise((ok) => setTimeout(ok, 200));
       expect(registerCalls).toBe(1);
-    } finally { warn.mockRestore(); }
+    } finally { clock.mockRestore(); warn.mockRestore(); }
   });
 
   test("the feed, its 404 and 429 and the one-time page are private, no-store", async () => {
