@@ -42,6 +42,8 @@ export function mapCompany(code: string, raw: unknown): { company: CompanyCard; 
   const facts: CompanyFacts = { registry_code: fact(code) };
   const name = str(profile.name) ?? str(r.name);
   if (name) facts.company_name = fact(name);
+  const founded = str(profile.founded)?.slice(0, 10);
+  if (founded && /^\d{4}-\d{2}-\d{2}$/.test(founded) && !Number.isNaN(Date.parse(founded))) facts.founded = fact(founded);
   const confirm: string[] = [];
   if ("vat_number" in profile) {
     const registered = str(profile.vat_number) !== null;
