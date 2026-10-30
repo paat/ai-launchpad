@@ -177,3 +177,55 @@ test("catalogue is identical across owners and revocation still kills OAuth acce
     await expect(sdk(b.tokens.access_token)).rejects.toThrow();
   } finally { await ca.close(); await cb.close(); }
 });
+
+// The consent page up to (not through) the owner's decision.
+async function consentPage(scopes: string) {
+  const client = await (await register()).json(), b = new Browser();
+  const params = { response_type:"code",client_id:client.client_id, redirect_uri:client.redirect_uris[0], resource:base+"/mcp", code_challenge:createHash("sha256").update(randomBytes(32)).digest("base64url"),code_challenge_method:"S256",state:"copy-state",scope:scopes };
+  expect((await b.request("/authorize?"+new URLSearchParams(params))).headers.get("location")).toBe("/oauth/consent");
+  await b.login();
+  return { b, html: await (await b.request("/oauth/consent")).text() };
+}
+const reject = async (c: { b: Browser; html: string }) => { await c.b.request("/oauth/consent", { csrf: field(c.html, "csrf"), flow: field(c.html, "flow"), decision: "reject" }); return c.html; };
+const STORED_ET = "Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, kinnitamiseks esitatud tekstid ja anonüümseks muudetud soovid, kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.";
+
+test("consent copy is derived from the requested scopes and never claims we store only approvals (#21)", async () => {
+  const both = await reject(await consentPage("progress:read progress:report"));
+  expect(both).toContain("näha sinu ettevõtte tähtaegu ja tööde seisu");
+  expect(both).toContain(STORED_ET);
+  expect(both).toContain("Ilma selleta saab Scope test assistant ainult lugeda.");
+  const read = await reject(await consentPage("progress:read"));
+  expect(read).toContain("näha sinu ettevõtte tähtaegu ja tööde seisu");
+  expect(read).not.toContain("salvestame");
+  expect(read).toContain("Sinu vestlusi ega faile AI-hüppelaud ei saa.");
+  // Report-only: no read ability is promised, and the unticked box means no connection (the handler denies it).
+  const { b, html } = await consentPage("progress:report");
+  expect(html).not.toContain("tähtaegu ja tööde seisu");
+  expect(html).toContain("öelda, mida ta saab sinu eest ära teha");
+  expect(html).toContain("Ilma linnukeseta ühendust ei looda ja Scope test assistant saab teate, et keeldusid.");
+  expect(html).not.toContain("ainult lugeda");
+  expect(html).toContain(STORED_ET);
+  for (const page of [both, read, html]) { expect(page).not.toContain("ainult selle"); expect(page).not.toContain("only what you are asked"); }
+  const unticked = await b.request("/oauth/consent", { csrf: field(html, "csrf"), flow: field(html, "flow"), decision: "allow" });
+  const location = new URL(unticked.headers.get("location")!);
+  expect(location.searchParams.get("error")).toBe("access_denied");
+  expect(location.searchParams.get("code")).toBeNull();
+  expect(db.prepare("SELECT count(*) n FROM oauth_grants").get()).toEqual({ n: 0 });
+});
+
+test("consent shows no owner nav or footer, and its errors render in the shell with lang and a way back (#21)", async () => {
+  const { b, html } = await consentPage("progress:read progress:report");
+  expect(html).not.toContain('<nav class="main"');
+  expect(html).not.toContain("Logi välja");
+  expect(html).not.toContain("Abi ja lisad");
+  await b.request("/oauth/consent", { csrf: field(html, "csrf"), flow: field(html, "flow"), decision: "reject" });
+  const again = await b.request("/oauth/consent");
+  expect(again.status).toBe(400);
+  const body = await again.text();
+  expect(body).toContain('<html lang="et">');
+  expect(body).toContain("Ühendamise taotlus on aegunud");
+  expect(body).toContain('href="/uhenda"');
+  const post = await b.request("/oauth/consent", { csrf: field(html, "csrf"), flow: field(html, "flow"), decision: "allow" });
+  expect(post.status).toBe(400);
+  expect(await post.text()).toContain('<html lang="et">');
+});

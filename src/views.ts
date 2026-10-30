@@ -311,19 +311,22 @@ export interface ShellOpts {
   head?: string;
   /** English-only owner pages declare their own language inside the shell. */
   bodyLang?: Lang;
+  /** No owner nav or footer (mid-OAuth consent): nothing invites leaving the flow. */
+  bare?: boolean;
 }
 export function shell(o: ShellOpts): string {
   const l = o.lang ?? "et", t = tr(l), other: Lang = l === "et" ? "en" : "et", owner = o.csrf !== "";
   const nav = [["/", t("Täna", "Today"), "tana"], ["/activity", t("Tehtud", "Done"), "tehtud"], ["/uhenda", t("Ühendus", "Connection"), "uhendus"]] as const;
   const toggle = `<a class="lang-toggle" href="${esc(o.toggle ?? `?lang=${other}`)}" hreflang="${other}" lang="${other}">${other.toUpperCase()}<span class="vh"> · ${other === "en" ? "in English" : "eesti keeles"}</span></a>`;
   const main = o.bodyLang && o.bodyLang !== l ? `<div lang="${o.bodyLang}">${o.body}</div>` : o.body;
-  const footer = owner
+  const footer = o.bare ? ""
+    : owner
     ? `<footer><details><summary>${t("Abi ja lisad", "Help and resources")}</summary><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/approvals">${t("Kinnitused", "Approvals")}</a><a href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/playbooks">Playbooks</a><a href="/services">${t("Teenuste kataloog", "Service catalog")}</a><a href="/setup">${t("Abi alustamiseks", "Setup helper")}</a></nav></details>
 <form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(o.csrf)}"><button type="submit" class="secondary">${t("Logi välja", "Log out")}</button></form></footer>`
     : `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/login">${t("Logi sisse", "Sign in")}</a></nav></footer>`;
   return `<!doctype html><html lang="${l}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${o.head ?? ""}<title>${esc(o.title)} · ${t("AI-hüppelaud", "AI Launchpad")}</title><style>${CSS}</style></head><body><div class="wrap">
 <header class="top"><span class="mark" aria-hidden="true"></span><span class="brand">${t("AI-hüppelaud", "AI Launchpad")}</span>${o.sample ? sampleChip(l) : ""}${toggle}</header>
-${owner ? `<nav class="main" aria-label="${t("Peamenüü", "Main")}">${nav.map(([href, label, key]) => `<a href="${href}"${o.active === key ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>` : ""}
+${owner && !o.bare ? `<nav class="main" aria-label="${t("Peamenüü", "Main")}">${nav.map(([href, label, key]) => `<a href="${href}"${o.active === key ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>` : ""}
 <main>${main}</main>
 ${footer}
 </div></body></html>`;
