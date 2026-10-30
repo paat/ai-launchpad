@@ -182,7 +182,7 @@ const PERSON = "Synthetic Person Name", PERSON_CODE = "38001010000";
 let fake: Server; let fakeUrl = ""; let toolCalls = 0;
 function fakeCompany(code: string) {
   return {
-    snapshot_id: "20261029T054510Z", as_of: "2026-10-29", found: true,
+    snapshot_id: "20261029T054510Z", as_of: "2026-10-29", found: true, disclaimer: "Ametlike avaandmete väljavõte; mitte ametlik registriväljavõte, õigusnõu ega krediidiotsus.",
     sources: [{ key: "ariregister", name: "Äriregister", licence: "CC BY 4.0", licence_url: "https://creativecommons.org/licenses/by/4.0/", as_of: "2026-10-29" }, { key: "emta", name: "EMTA avaandmed", licence: "CC BY-SA 3.0", licence_url: "https://creativecommons.org/licenses/by-sa/3.0/" }],
     profile: { name: "Synthetic Register OÜ", vat_number: "EE000000000", emtak_code: "74101" },
     board: { members: [{ name: PERSON, personal_code: PERSON_CODE, role: "juhatuse liige" }] },
@@ -243,6 +243,12 @@ describe("Ärikratt adapter", () => {
     for (const blob of [JSON.stringify(r), JSON.stringify(cached)]) for (const p of [PERSON, PERSON_CODE, "board", "members", "emtak"]) expect(blob).not.toContain(p);
     const found = await arikratt(db, { apiKey: "test-key", url: fakeUrl }).search("Synthetic");
     expect(found).toEqual({ ok: true, matches: [{ name: "Synthetic Register OÜ", registry_code: FAKE_VALID }] });
+  });
+  test("register card: official open data via Ärikratt, never an official source; keeps the disclaimer (tribunal T-005)", () => {
+    const { company } = mapCompany(FAKE_VALID, fakeCompany(FAKE_VALID));
+    expect(company).toMatchObject({ label_et: "Ametlikud avaandmed (Ärikratt) · Äriregister ja EMTA, seisuga 2026-10-29", label_en: "Official open data (via Ärikratt) · Business Register and EMTA, as of 2026-10-29", disclaimer: "Ametlike avaandmete väljavõte; mitte ametlik registriväljavõte, õigusnõu ega krediidiotsus." });
+    expect(JSON.stringify(company)).not.toMatch(/Ametlik allikas|Official source/);
+    expect(mapCompany(FAKE_VALID, {}).company.disclaimer).toBeUndefined();
   });
   test("maps the live financials object to latest annual revenue with the report year", () => {
     const { facts } = mapCompany(FAKE_VALID, { as_of: "2026-10-29", profile: { vat_number: null }, financials: { year: 2025, report_basis: "annual_report", revenue: 45000, revenue_reason: null, employees_avg: 1 } });
@@ -366,7 +372,7 @@ describe("get_obligations tool and status card", () => {
     const plain = await (await fetch(`${base}/`, { headers: { cookie: owner("plain").cookie } })).text();
     expect(plain).not.toContain("Järgmised tähtajad");
   });
-  test("a configured lookup labels real public-register facts as the official source", async () => {
+  test("a configured lookup labels real public-register facts as official open data, never an official source", async () => {
     const cfg2: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
     const { app: app2, db: db2 } = createApp(cfg2, openDb(":memory:"));
     const s2 = await new Promise<Server>((ok) => { const s = app2.listen(0, "127.0.0.1", () => ok(s)); });
@@ -378,7 +384,8 @@ describe("get_obligations tool and status card", () => {
       db2.prepare("INSERT INTO mcp_tokens(id,owner_id,token_hash,scopes,epoch,created_at) VALUES('t','o',?,'progress:read',1,?)").run(sha256("lp_t"), now);
       const c = await client("lp_t", `${base2}/mcp`);
       const r = parsed(await c.callTool({ name: "get_obligations", arguments: { facts: { company_name: "Synthetic Register" } } }));
-      expect(r.company).toMatchObject({ name: "Synthetic Register OÜ", registry_code: FAKE_VALID, synthetic: false, provenance: "public_register", snapshot_id: "20261029T054510Z", label_et: expect.stringContaining("Ametlik allikas") });
+      expect(r.company).toMatchObject({ name: "Synthetic Register OÜ", registry_code: FAKE_VALID, synthetic: false, provenance: "public_register", snapshot_id: "20261029T054510Z", label_et: expect.stringContaining("Ametlikud avaandmed (Ärikratt)") });
+      expect(JSON.stringify(r)).not.toMatch(/Ametlik allikas|Official source/);
       expect(r.data_as_of).toBe("2026-10-29");
       expect(JSON.stringify(r)).not.toContain(PERSON);
     } finally { s2.close(); }

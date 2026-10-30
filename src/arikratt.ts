@@ -15,6 +15,8 @@ export interface CompanyCard {
   name: string | null; registry_code: string; synthetic: boolean;
   provenance: "public_register" | "synthetic_fixture" | "assistant_supplied"; label_et: string; label_en: string;
   snapshot_id: string | null; as_of: string | null; sources: RegisterSource[]; attribution: string;
+  /** Ärikratt's own disclaimer from the response, verbatim. */
+  disclaimer?: string;
 }
 export interface RegisterSource { key: string; name: string | null; licence: string | null; licence_url: string | null; }
 export type Unavailable = "not_cached" | "not_configured" | "invalid_code" | "not_found" | "timeout" | "unauthorized" | "error";
@@ -29,7 +31,7 @@ const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null
 /** Field mapping per memo § 4. Only the paths below are ever read. */
 export function mapCompany(code: string, raw: unknown): { company: CompanyCard; facts: CompanyFacts; confirm: string[] } {
   const r = rec(raw), profile = rec(r.profile), status = rec(r.report_status), debt = rec(r.tax_debt), fin = rec(r.financials);
-  const as_of = str(r.as_of);
+  const as_of = str(r.as_of), disclaimer = str(r.disclaimer);
   const fact = <T>(value: T): Fact<T> => ({ value, provenance: "public_register", source: "arikratt:get_company", ...(as_of ? { as_of } : {}) });
   const tax = (Array.isArray(r.tax) ? r.tax : []).map(rec).sort((a, b) => (num(b.year) ?? 0) - (num(a.year) ?? 0) || (num(b.quarter) ?? 0) - (num(a.quarter) ?? 0));
   const facts: CompanyFacts = { registry_code: fact(code) };
@@ -55,7 +57,7 @@ export function mapCompany(code: string, raw: unknown): { company: CompanyCard; 
   const https = (v: unknown) => { const u = str(v); return u?.startsWith("https://") ? u : null; };
   const sources = (Array.isArray(r.sources) ? r.sources : []).map(rec).map((s) => ({ key: str(s.key), name: str(s.name), licence: str(s.licence), licence_url: https(s.licence_url) }))
     .filter((s): s is RegisterSource => s.key !== null).slice(0, 10);
-  return { company: { name, registry_code: code, synthetic: false, provenance: "public_register", label_et: `Ametlik allikas · Äriregister ja EMTA${as_of ? `, seisuga ${as_of}` : ""}`, label_en: `Official source · Business Register and EMTA${as_of ? `, as of ${as_of}` : ""}`, snapshot_id: str(r.snapshot_id), as_of, sources, attribution: ARIKRATT_ATTRIBUTION }, facts, confirm };
+  return { company: { name, registry_code: code, synthetic: false, provenance: "public_register", label_et: `Ametlikud avaandmed (Ärikratt) · Äriregister ja EMTA${as_of ? `, seisuga ${as_of}` : ""}`, label_en: `Official open data (via Ärikratt) · Business Register and EMTA${as_of ? `, as of ${as_of}` : ""}`, snapshot_id: str(r.snapshot_id), as_of, sources, attribution: ARIKRATT_ATTRIBUTION, ...(disclaimer ? { disclaimer } : {}) }, facts, confirm };
 }
 
 export function arikratt(db: Db, cfg: ArikrattConfig) {
