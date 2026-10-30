@@ -13,7 +13,7 @@ import {
   MAX_EXISTING_LABELS, UNMET_NEED_NEXT, UNMET_NEED_RECHECK_MS, buildModelInput, cleanText, deidentify, liveClassifier, mockClassifier,
   parseClassification, unmetNeedRequestId,
 } from "../src/unmet-needs.js";
-import { demandPage } from "../src/views.js";
+import { demandPage, unmetNeedsBody } from "../src/views.js";
 
 // Fake-only: global fetch may reach the local test server and nothing else.
 const nativeFetch = globalThis.fetch;
@@ -340,6 +340,15 @@ test("deferred needs are re-kicked on a timer: daily-limited needs reach classif
     await s.queue.idle();
     expect(s.db.prepare("SELECT state,count(*) n FROM unmet_needs GROUP BY state").all()).toEqual([{ state: "classified", n: 12 }]);
   } finally { vi.useRealTimers(); await s.close(); }
+});
+
+test("a failed classification never reads as classified by the model", () => {
+  const need = { id: "need_f", state: "classification_failed", reason: "invalid_output", need_redacted: "File VAT", blocker: "portal_without_api", job_hint_redacted: null, category: null, demand_label: null, same_as: null, spec: null, classified_by: BASETEN_MODEL, created_at: "2026-10-30T10:00:00.000Z" };
+  const failed = unmetNeedsBody({ csrf: "c", needs: [need] });
+  expect(failed).not.toMatch(/classified by|Liigitas/i);
+  expect(failed).toContain("classification attempt failed");
+  const kept = unmetNeedsBody({ csrf: "c", needs: [{ ...need, state: "kept_private", reason: null, category: "tax_filings", demand_label: "VAT return filing", spec: "Prepare the VAT return." }] });
+  expect(kept).toContain(`classified by Meta ${BASETEN_MODEL} (live)`);
 });
 
 test("/demand hero credits Meta's model only when a published item was classified live", () => {

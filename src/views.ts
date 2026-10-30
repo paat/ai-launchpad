@@ -522,7 +522,7 @@ const categoryLabel = (c: string | null) => CATEGORY_LABELS[c as Category] ?? c 
 function needRow(n: OwnerNeed): string {
   const why = [NEED_STATE_TEXT[n.state], n.reason ? NEED_REASON_TEXT[n.reason] ?? n.reason : ""].filter(Boolean).join(" ");
   return `<div class="row"><strong>${esc(n.demand_label ?? "Not classified yet")}</strong> <span class="pill">${esc(NEED_STATE_LABEL[n.state] ?? n.state)}</span>${n.category ? `<span class="pill">${esc(categoryLabel(n.category))}</span>` : ""}
-<p class="small">${esc(why)}</p><p class="small muted">${esc(n.need_redacted)}<br>Blocker: ${esc(BLOCKER_LABELS[n.blocker as Blocker] ?? n.blocker)} · ${esc(fmtWhen(n.created_at) ?? n.created_at)}${n.classified_by ? ` · classified by ${esc(classifiedByLabel(n.classified_by))}` : ""}</p></div>`;
+<p class="small">${esc(why)}</p><p class="small muted">${esc(n.need_redacted)}<br>Blocker: ${esc(BLOCKER_LABELS[n.blocker as Blocker] ?? n.blocker)} · ${esc(fmtWhen(n.created_at) ?? n.created_at)}${n.classified_by ? n.state === "classification_failed" ? " · classification attempt failed" : ` · classified by ${esc(classifiedByLabel(n.classified_by))}` : ""}</p></div>`;
 }
 
 /** Owner review of unmet requests (Status page). Only rendered when the
