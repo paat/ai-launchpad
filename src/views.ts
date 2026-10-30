@@ -147,6 +147,7 @@ details[open]>summary::after{transform:rotate(45deg)}
 .deadline-wd{margin-top:2px;font-size:var(--fs-xs);color:var(--c-muted)}
 .deadline-title{margin:2px 0;font-size:1.0625rem;font-weight:750;line-height:1.3}
 .deadline-reason{margin:0;color:var(--c-muted);font-size:.9375rem}
+.deadline-cond{margin:2px 0;font-size:.9375rem}
 .deadline-meta{display:flex;flex-wrap:wrap;align-items:center;gap:0 var(--s-3);margin-top:2px}
 .deadline-row--done .deadline-date{background:var(--lbl-official-bg)}
 .tap-link{display:inline-flex;align-items:center;min-height:var(--tap);font-size:var(--fs-sm);font-weight:650}
@@ -809,13 +810,18 @@ function deadlineRow(o: Obligation, l: Lang, opts: { now: Date; prompts: boolean
   }
   const h = o.handoff;
   const shifted = o.shifted ? ` ${t("Tähtaeg nihkus järgmisele tööpäevale.", "Moved to the next working day.")}` : "";
+  // A conditional deadline or risk never reads as definite: the condition sits under the title, the handoff is qualified.
+  // Warnings are worded as conditions already; the TSD question handoff is itself the condition check.
+  const cond = o.applies === "if" && o.condition_et && o.kind !== "warning" ? t(o.condition_et, o.condition_en ?? o.condition_et) : "";
+  const reason = t(o.reason_et, o.reason_en);
+  const qualify = cond && o.rule_id !== "tsd-monthly-return" ? t("Kui see kehtib: ", "If this applies: ") : "";
   return `<li class="deadline-row">${tile}
-<div><h3 class="deadline-title">${esc(t(o.title_et, o.title_en))} · ${esc(t(o.period_label_et, o.period_label_en))}</h3>
-<p class="deadline-reason">${lead ? `<strong>${esc(lead)}</strong> ` : ""}${esc(t(o.reason_et, o.reason_en))}${esc(shifted)}</p>
+<div><h3 class="deadline-title">${o.kind === "risk" && cond ? t("Võimalik: ", "Possible: ") : ""}${esc(t(o.title_et, o.title_en))} · ${esc(t(o.period_label_et, o.period_label_en))}</h3>
+${cond ? `<p class="deadline-cond"><strong>${esc(cond)}</strong></p>` : ""}<p class="deadline-reason">${lead ? `<strong>${esc(lead)}</strong> ` : ""}${reason !== cond ? esc(reason) : ""}${esc(shifted)}</p>
 <div class="deadline-meta">${labelChip("rule", t("Arvutatud reeglist", "Calculated by rule"))}<a class="tap-link" href="${esc(o.source.url)}" rel="noopener noreferrer"><span>${t("Allikas", "Source")}: <span lang="et">${esc(o.source.act_et)} ${esc(o.source.section)}</span><span aria-hidden="true">&nbsp;↗</span></span></a></div></div>
-<div class="deadline-offer"><dl class="handoff"><dt>${t("Assistent", "Your assistant")}</dt><dd>${esc(t(h.assistant_et, h.assistant_en))}</dd><dt class="me">${t("Sina", "You")}</dt><dd>${esc(t(h.owner_et, h.owner_en))}</dd></dl>
+<div class="deadline-offer">${qualify ? `<p class="small"><strong>${qualify.slice(0, -2)}</strong></p>` : ""}<dl class="handoff"><dt>${t("Assistent", "Your assistant")}</dt><dd>${esc(t(h.assistant_et, h.assistant_en))}</dd><dt class="me">${t("Sina", "You")}</dt><dd>${esc(t(h.owner_et, h.owner_en))}</dd></dl>
 ${o.rule_id === "vat-return-kmd" ? `<p class="small muted">${t("Summad arvutab sinu raamatupidamisprogramm, mitte tehisaru.", "Your accounting software calculates the amounts, not AI.")}</p>` : ""}
-${opts.prompts ? `<div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(t(h.prompt_et, h.prompt_en))}”</p></div>` : ""}</div></li>`;
+${opts.prompts ? `<div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(qualify + t(h.prompt_et, h.prompt_en))}”</p></div>` : ""}</div></li>`;
 }
 
 export function deadlinesList(r: DeadlinesView, l: Lang, opts: { now?: Date; prompts?: boolean } = {}): string {
@@ -828,10 +834,11 @@ export function deadlinesList(r: DeadlinesView, l: Lang, opts: { now?: Date; pro
 const FACT_RULE: Record<string, string> = { vat_registered: "vat-return-kmd", payouts_last_month: "tsd-monthly-return", other_tsd_triggers_last_month: "tsd-monthly-return", fy_end: "annual-report", annual_report: "annual-report", ytd_turnover_this_year: "vat-registration-threshold" };
 function questions(r: DeadlinesView, l: Lang): { q: string; then: string }[] {
   const t = tr(l);
-  return r.facts_needed.filter((f) => r.obligations.some((o) => o.rule_id.startsWith(FACT_RULE[f.fact] ?? "\u0000"))).map((f) => {
-    const tsd = f.fact === "payouts_last_month" ? r.obligations.find((o) => o.rule_id === "tsd-monthly-return" && o.applies === "if" && o.effective_due) : undefined;
+  return r.facts_needed.filter((f) => r.obligations.some((o) => o.rule_id.startsWith(FACT_RULE[f.fact] ?? "\u0000") && (!f.period_label_et || o.period_label_et === f.period_label_et))).map((f) => {
+    // The TSD row for the same payout period; it goes away only when payouts and other triggers are both "no".
+    const tsd = f.period_label_et ? r.obligations.find((o) => o.rule_id === "tsd-monthly-return" && o.period_label_et === f.period_label_et && o.effective_due) : undefined;
     const d = tsd?.effective_due ? civil(tsd.effective_due) : null;
-    return { q: t(f.question_et, f.question_en), then: d ? t(`Kui ei, võib ${d.getUTCDate()}. ${ET_OF[d.getUTCMonth()]} TSD ära jääda.`, `If not, the ${C_DAY_MON.en.format(d)} TSD may not be needed.`) : "" };
+    return { q: t(f.question_et, f.question_en), then: d ? t(`Kui ei maksnud ega olnud töötajat, kaob ${d.getUTCDate()}. ${ET_OF[d.getUTCMonth()]} TSD rida.`, `If you made no payouts and had no employee, the ${C_DAY_MON.en.format(d)} TSD row goes away.`) : "" };
   });
 }
 
@@ -892,21 +899,21 @@ export interface TanaOpts {
   /** Pending, approved and consumed approvals, newest first. */
   approvals: ApprovalRow[];
   progress: { task_id: string; milestone: string; observed_at: string }[];
-  /** null: no registry code known; "not_cached": register facts are being fetched; unavailable_reason: the register lookup failed. */
-  deadlines: DeadlinesView | "not_cached" | { unavailable_reason: string } | null;
+  /** null: no registry code known; "not_cached": register facts are being fetched; "invalid_code": the assistant's code fails the checksum; unavailable_reason: the register lookup failed. */
+  deadlines: DeadlinesView | "not_cached" | "invalid_code" | { unavailable_reason: string } | null;
   needs: OwnerNeed[];
   /** Count of the assistant's saved reports (real records). */
   reportCount: number;
   now?: Date;
 }
 /** The register lookup is unavailable: ask the assistant instead, with the plain reason. */
-export const deadlinesHint = (l: Lang, reason: string) => `<p class="small">${tr(l)("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?”", "Deadlines: ask your assistant \"What are my deadlines?\"")} <span class="muted" lang="en">${esc(reason)}</span></p>`;
+export const deadlinesHint = (l: Lang, reason: string, reasonLang: Lang = "en") => `<p class="small">${tr(l)("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?”", "Deadlines: ask your assistant \"What are my deadlines?\"")} <span class="muted"${reasonLang !== l ? ` lang="${reasonLang}"` : ""}>${esc(reason)}</span></p>`;
 const TRY_PROMPT: [string, string] = ["Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?", "What admin do I have this month, and what can you do yourself?"];
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function tanaBody(o: TanaOpts): string {
   const l = o.lang, t = tr(l), now = o.now ?? new Date(), a = o.assessment;
-  const deadlines = o.deadlines && o.deadlines !== "not_cached" && "obligations" in o.deadlines ? o.deadlines : null;
+  const deadlines = o.deadlines && typeof o.deadlines === "object" && "obligations" in o.deadlines ? o.deadlines : null;
   const pending = o.approvals.filter((x) => x.state === "pending");
   const qs = deadlines ? questions(deadlines, l) : [];
   const next = a?.next_action.needs_owner ? a.next_action : null;
@@ -959,6 +966,7 @@ export function tanaBody(o: TanaOpts): string {
 
   const tulekul = deadlines ? deadlinesList(deadlines, l, { now, prompts: true })
     : o.deadlines === "not_cached" ? `<p class="muted">${t("Registri andmeid laaditakse. Värskenda lehte hetke pärast.", "Register facts are loading. Refresh the page in a moment.")}</p>`
+    : o.deadlines === "invalid_code" ? deadlinesHint(l, t("Registrikood ei ole korrektne — palu assistendil see üle kontrollida.", "The registry code is not valid — ask your assistant to check it."), l)
     : o.deadlines && "unavailable_reason" in o.deadlines ? deadlinesHint(l, o.deadlines.unavailable_reason)
     : `<p class="muted">${t(`Tähtajad ilmuvad siia, kui assistent teab sinu registrikoodi. Küsi temalt: „${TRY_PROMPT[0]}”`, `Deadlines appear here once your assistant knows your registry code. Ask it: “${TRY_PROMPT[1]}”`)}</p>`;
 

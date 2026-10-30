@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { shell, loginBody, tanaBody, activityBody, connectionBody, setupBody, landingBody, connectBody, approvalCardBody, fmtEur, fmtDeadline, fmtPeriod, fmtWhen, type TanaOpts } from "../src/views.js";
+import { shell, loginBody, tanaBody, deadlinesList, activityBody, connectionBody, setupBody, landingBody, connectBody, approvalCardBody, fmtEur, fmtDeadline, fmtPeriod, fmtWhen, type TanaOpts } from "../src/views.js";
 import { computeObligations } from "../src/obligations.js";
 import { SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import type { ApprovalRow } from "../src/mcp.js";
@@ -93,7 +93,7 @@ describe("Täna", () => {
     expect(html).toContain("1 kinnitus, 1 vastus ja 1 järgmine samm. Ülejäänu valmistab ette sinu assistent.");
     expect(html).toContain('<a class="btn" href="/approvals/appr_1">Vaata kinnitust</a>');
     expect(html).toContain("Vasta assistendile ühele küsimusele:");
-    expect(html).toContain("Kui ei, võib 10. novembri TSD ära jääda.");
+    expect(html).toContain("Kui ei maksnud ega olnud töötajat, kaob 10. novembri TSD rida.");
     expect(html).toContain("Valikuline:");
     expect(html).not.toContain("Kas põhikiri määrab"); // a question that changes no row on screen is not asked
     expect(tana({ assessment: null, coverage: computeCoverage(null) })).toContain("Täna pole sinult midagi vaja");
@@ -118,6 +118,45 @@ describe("Täna", () => {
     expect(tegi).toContain("Kinnitatud · ootab assistendi teadet");
     expect(tegi).toContain("Valmistas ette: Sales invoicing");
     expect(tegi).not.toContain("started");
+  });
+
+  test("the payouts question maps to the TSD row of the same period, never the first conditional one (#21, QA D-01, D-16)", () => {
+    // 3 Nov: the October question goes with the 10 Nov row (October payouts), even when the 10 Dec row is listed first.
+    const reordered = { ...mariDeadlines, obligations: [...mariDeadlines.obligations].reverse() };
+    const html = tana({ deadlines: reordered });
+    expect(html).toContain("„Kas maksid oktoobris palka, juhatuse liikme tasu või dividende?” Kui ei maksnud ega olnud töötajat, kaob 10. novembri TSD rida.");
+    expect(html).not.toContain("detsembri TSD");
+    expect(landingBody({ lang: "en", q: "Mari", state: { kind: "result", result: reordered }, now: NOW })).toContain("If you made no payouts and had no employee, the 10 Nov TSD row goes away.");
+    // 30 Oct: September's TSD (due 12 Oct) is past, so no September question is asked at all.
+    const oct30 = new Date("2026-10-30T10:00:00Z"), m = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: oct30, months: 2 });
+    const page = tana({ now: oct30, deadlines: { ...mariDeadlines, obligations: m.obligations, facts_needed: m.facts_needed } });
+    expect(page).not.toContain("septembris");
+    expect(page).not.toContain("TSD rida.");
+    // The handoff matches the engine: the row goes away only when there were no payouts and no employee.
+    expect(html).toContain("küsib, kas maksid oktoobri palka või oli töötaja; kui kumbagi polnud, kaob see rida");
+    expect(html).not.toContain("kui väljamakseid polnud, kaob see rida");
+  });
+
+  test("conditional rows render their condition; an unknown annual report never reads as definite (#21, #30 item 5, QA D-02, D-11)", () => {
+    const unknown = computeObligations({}, { today: NOW, months: 2 });
+    const html = tana({ deadlines: { ...mariDeadlines, company: { ...mariDeadlines.company, synthetic: false, provenance: "assistant_supplied" }, obligations: unknown.obligations, facts_needed: unknown.facts_needed } });
+    const risk = html.slice(html.indexOf("Majandusaasta aruanne on tähtajast maas") - 40);
+    expect(risk.slice(0, 200)).toContain("Võimalik: Majandusaasta aruanne on tähtajast maas");
+    expect(risk).toContain('<p class="deadline-cond"><strong>Kehtib, kui 2025. a majandusaasta aruanne on esitamata.</strong></p>');
+    expect(risk).toContain("<p class=\"small\"><strong>Kui see kehtib</strong></p>");
+    expect(risk).toContain("„Kui see kehtib: Koosta mulle sammud hilinenud majandusaasta aruande esitamiseks.”");
+    expect(risk).toContain("registrist kustutamine on võimalik alates 30.09.2026");
+    const tul = html.slice(html.indexOf('id="tulekul"')).replace(/datetime="[^"]*"/g, "");
+    expect(tul).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    // An annual-report row with an unknown filing state shows its condition under the title.
+    const june = computeObligations({}, { today: new Date("2026-06-01T10:00:00Z"), months: 1 });
+    const annual = deadlinesList({ ...mariDeadlines, obligations: june.obligations.filter((o) => o.rule_id === "annual-report"), facts_needed: [] }, "et", { now: new Date("2026-06-01T10:00:00Z"), prompts: true });
+    expect(annual).toContain('<p class="deadline-cond"><strong>Kehtib, kui 2025. a majandusaasta aruanne on esitamata.</strong></p>');
+    expect(annual).toContain("„Kui see kehtib: Pane majandusaasta aruande jaoks vajalikud andmed kokku");
+    // Definite rows carry no condition line.
+    const kmd = deadlinesList({ ...mariDeadlines, obligations: mariDeadlines.obligations.filter((o) => o.rule_id === "vat-return-kmd") }, "et", { now: NOW, prompts: true });
+    expect(kmd).not.toContain("deadline-cond");
+    expect(kmd).not.toContain("Kui see kehtib");
   });
 
   test("Tulekul rows: date first, rule label, source, handoff with Sina; synthetic is Näidis, never official", () => {

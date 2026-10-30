@@ -122,13 +122,15 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // background fill per code (errors logged once, never thrown) and moves on.
   // A failed fill blocks new fills for that code for 10 minutes.
   const FILL_RETRY_MS = 10 * 60_000;
-  const fillBlockedUntil = new Map<string, number>(); // in flight: Infinity
+  const fillBlocked = new Map<string, { until: number; reason?: string }>(); // in flight: until Infinity, no reason
   const fillInBackground = (code: string) => {
-    if ((fillBlockedUntil.get(code) ?? 0) > Date.now()) return;
-    fillBlockedUntil.set(code, Infinity);
-    const failed = () => fillBlockedUntil.set(code, Date.now() + FILL_RETRY_MS);
-    void register.lookup(code).then((r) => { if (r.ok) fillBlockedUntil.delete(code); else { failed(); console.warn(`Status deadlines: register lookup failed (${r.unavailable}).`); } }, (e) => { failed(); console.warn("Status deadlines: register lookup failed.", e); });
+    if ((fillBlocked.get(code)?.until ?? 0) > Date.now()) return;
+    fillBlocked.set(code, { until: Infinity });
+    const failed = (reason: string) => fillBlocked.set(code, { until: Date.now() + FILL_RETRY_MS, reason });
+    void register.lookup(code).then((r) => { if (r.ok) fillBlocked.delete(code); else { failed(r.reason); console.warn(`Status deadlines: register lookup failed (${r.unavailable}).`); } }, (e) => { failed("The register lookup failed."); console.warn("Status deadlines: register lookup failed.", e); });
   };
+  /** The plain reason of a failed fill while it is remembered (10 minutes). */
+  const fillFailure = (code: string) => { const b = fillBlocked.get(code); return b?.reason && b.until > Date.now() ? b.reason : undefined; };
   const unmetNeeds = new UnmetNeedQueue(db, needClassifier, (ownerId, action, outcome, summary) => logActivity(db, ownerId, "launchpad", action, outcome, summary));
   unmetNeeds.kick(); // resume any received/interrupted needs after a restart
   // Deferred needs (daily limit, another attempt in flight) retry without a new report or restart.
@@ -406,6 +408,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const deadlines = ref && /^\d{8}$/.test(ref) ? await companyObligations(register, { registryCode: ref, months: 2, cacheOnly: true }) : null;
     // Any unavailable register lookup renders the one-line hint (with the plain reason unless only not cached yet).
     const unavailable = deadlines?.ok ? deadlines.result.company.unavailable : undefined;
+    // A remembered failed fill shows its reason, not "loading".
+    const failure = unavailable === "not_cached" ? fillFailure(ref!) : undefined;
     if (unavailable === "not_cached") fillInBackground(ref!);
     expireApprovals(db, oid(req));
     const approvals = db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state IN ('pending','approved','consumed') ORDER BY created_at DESC LIMIT 50").all(oid(req)) as ApprovalRow[];
@@ -415,7 +419,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       lang: l, csrf: (req as Authed).csrf, sample: (req as Authed).ownerKind === "demo", label: st.ws.label,
       assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions,
       approvals, progress: st.progress as unknown as { task_id: string; milestone: string; observed_at: string }[],
-      deadlines: !deadlines?.ok ? null : unavailable === "not_cached" ? "not_cached" : unavailable ? { unavailable_reason: deadlines.result.company.unavailable_reason ?? unavailable } : deadlines.result as DeadlinesView,
+      // A checksum-invalid ref is the only lookup that computes nothing: say so instead of dropping the section.
+      deadlines: !deadlines ? null : !deadlines.ok ? "invalid_code" : failure ? { unavailable_reason: failure } : unavailable === "not_cached" ? "not_cached" : unavailable ? { unavailable_reason: deadlines.result.company.unavailable_reason ?? unavailable } : deadlines.result as DeadlinesView,
       needs: ownerNeeds(db, oid(req)), reportCount,
     })));
   } catch (e) { next(e); } });
