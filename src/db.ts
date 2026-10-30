@@ -55,6 +55,8 @@ export function openDb(path: string) {
   CREATE TABLE IF NOT EXISTS unmet_needs(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, report_id TEXT NOT NULL, payload_hash TEXT NOT NULL, need_redacted TEXT NOT NULL, blocker TEXT NOT NULL, job_hint_redacted TEXT, state TEXT NOT NULL, reason TEXT, model_input TEXT, classify_started_at TEXT, classified_by TEXT, category TEXT, demand_label TEXT, same_as TEXT, spec TEXT, decided_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(owner_id, report_id));
   CREATE INDEX IF NOT EXISTS idx_unmet_needs_state ON unmet_needs(state);
   `);
+  // Calendar feed (#29): one secret feed per owner; only the token's sha256 is stored.
+  db.exec("CREATE TABLE IF NOT EXISTS calendar_feeds(owner_id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL)");
   return db;
 }
 export type Db = ReturnType<typeof openDb>;

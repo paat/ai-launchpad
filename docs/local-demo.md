@@ -70,3 +70,15 @@ Local bounds: hard total of 500 registered clients; 100 unused is the new-regist
 `/health` reports `release_sha` as the exact env-validated `LAUNCHPAD_RELEASE_SHA` (exactly 40 lowercase hex) or `null` when unset. Forwarded-address trust is opt-in and off by default (`LAUNCHPAD_TRUST_LOOPBACK_PROXY=0`); when enabled it trusts only an exact loopback proxy at hop 0 (such as local Caddy that overwrites/sanitizes `X-Forwarded-For`), never blanket proxy trust. The app cannot by itself verify that a Cloudflare or other upstream forwarding header is genuine.
 
 Tests use real local HTTP and the official SDK OAuth client, with a small synthetic browser cookie jar for login/consent, plus mocked signed Google identity tokens. External fetches are rejected by the OAuth test harness. No live Google or model calls are needed. Publication requires passing parent checks and an independent review.
+
+## Deadlines in the owner's own calendar (#29)
+
+On **Ühendus** a signed-in owner (demo login works) chooses „Lisa tähtajad oma kalendrisse”. The response shows a secret feed address once, `/calendar/<token>.ics`; only the token's sha256 is stored (`calendar_feeds`, one per owner). „Lõpeta kalendri jagamine”, or deleting progress, removes it, and the old address then returns 404. Subscribe with iPhone (tap the link, or Calendar → Add Subscription Calendar), Google Calendar on a computer (Other calendars → From URL) or Outlook (Add calendar → Subscribe from web). The phone's calendar is the notifier; Launchpad sends nothing.
+
+The feed holds one all-day event per dated obligation over three months: a reminder 7 days and 1 day before, the sentence to say to the assistant, the official source and „Tähtaeg on arvutatud reeglist, mitte esitatud ega makstud.” Synthetic companies are marked NÄIDIS, conditional rows „Võimalik:”. It never contains approvals, amounts, customers, needs or assessment text. It is computed by rules from the cache only: it never calls the register, so real-company events appear only while the register facts are cached (24 h, filled when the owner opens Täna or the assistant asks for deadlines). Otherwise, and when no registry code is known, the feed is an empty calendar whose description says why. Each address is limited to 60 fetches an hour. Calendar apps refresh subscribed feeds on their own schedule (hours; Outlook documents about 3 h, sometimes over 24 h), and nothing can be approved from a calendar entry.
+
+Optional, documentation only: an owner with Claude scheduled tasks can paste this prompt into a task:
+
+> Each weekday at 08:00 call get_obligations; for anything due within 14 days, offer to prepare it and ask me before sending anything.
+
+Whether ChatGPT scheduled tasks can call Launchpad has not been verified.

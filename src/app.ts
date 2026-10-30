@@ -11,7 +11,8 @@ import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPubl
 import type { FetchFn } from "./model-quality.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "./fixtures.js";
 import { validRegistryCode } from "./obligations.js";
-import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, activityBody, connectionBody, tokenOnceBody, approvalsListBody, approvalCardBody, setupBody, servicesBody, playbooksBody, demandBody, type Lang, type ShellOpts, type LandingState, type ConnectState, type DeadlinesView } from "./views.js";
+import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
+import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, servicesBody, playbooksBody, demandBody, type Lang, type ShellOpts, type LandingState, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; }
@@ -98,6 +99,27 @@ export function lookupLimiter() {
     return "ok";
   };
 }
+
+// Calendar feed limit (per process, in memory): 60 fetches per token per
+// hour, so a leaked feed URL cannot be used as a lookup proxy.
+const FEED_FETCHES_PER_HOUR = 60, FEED_WINDOW_MS = 3600_000;
+export function feedLimiter() {
+  const fetches = new Map<string, number[]>();
+  return (tokenHash: string, now = Date.now()): boolean => {
+    const recent = (fetches.get(tokenHash) ?? []).filter((t) => now - t < FEED_WINDOW_MS);
+    if (recent.length >= FEED_FETCHES_PER_HOUR) { fetches.set(tokenHash, recent); return false; }
+    if (fetches.size > 10_000) for (const [k, v] of fetches) if (!v.some((t) => now - t < FEED_WINDOW_MS)) fetches.delete(k);
+    recent.push(now); fetches.set(tokenHash, recent);
+    return true;
+  };
+}
+/** Plain Estonian reason for a feed without events when the register gave no facts. */
+const REGISTER_GAP_ET: Record<string, string> = {
+  not_cached: "Avaliku registri andmed pole veel laaditud — ava AI-hüppelaud või küsi assistendilt „Mis on minu tähtajad?”",
+  not_configured: "Avaliku registri päring pole selles serveris seadistatud",
+  invalid_code: "Registrikood ei sobi — palu assistendil kood üle kontrollida",
+  not_found: "Avalikus registris pole selle koodiga ettevõtet — palu assistendil kood üle kontrollida",
+};
 
 export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   const releaseSha = cfg.releaseSha ?? null;
@@ -508,6 +530,45 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     res.type("html").send(page(req, res, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result }), { bodyLang: "en" }));
   });
 
+  // Calendar feed (#29): the unguessable token in the path is the only
+  // credential. Cache-only (never a register call), rules only, and only
+  // rule output plus the company's public or synthetic name: no approvals,
+  // needs or assessment content.
+  const feedAllowed = feedLimiter();
+  app.get("/calendar/:file", async (req, res, next) => { try {
+    const m = /^([A-Za-z0-9_-]{43})\.ics$/.exec(req.params.file);
+    const hash = m ? sha256(m[1]) : "";
+    const feed = m ? db.prepare("SELECT owner_id FROM calendar_feeds WHERE token_hash=?").get(hash) as { owner_id: string } | undefined : undefined;
+    if (!feed || !ownerAllowed(feed.owner_id)) return res.status(404).end();
+    if (!feedAllowed(hash)) return res.status(429).set("retry-after", "3600").end();
+    const ref = getState(db, feed.owner_id).assessment?.company_registry_ref?.trim();
+    const base = { host: new URL(cfg.baseUrl).hostname, now: new Date(), company: null, obligations: [] };
+    let body: string;
+    if (!ref || !/^\d{8}$/.test(ref)) body = deadlinesCalendar({ ...base, emptyReason: ICS_NO_COMPANY });
+    else {
+      const r = await companyObligations(register, { registryCode: ref, months: 3, cacheOnly: true });
+      const gap = !r.ok ? r.unavailable ?? "invalid_code" : r.result.company.unavailable;
+      const company = r.ok && r.result.company.name ? { name: r.result.company.name, synthetic: r.result.company.synthetic } : null;
+      body = gap || !r.ok
+        ? deadlinesCalendar({ ...base, company, emptyReason: `${REGISTER_GAP_ET[gap ?? ""] ?? "Avalik register pole praegu kättesaadav"}. Sündmusi ei loodud.` })
+        : deadlinesCalendar({ ...base, company, obligations: r.result.obligations.filter((o) => o.effective_due !== null && o.effective_due >= r.result.window.from) });
+    }
+    res.type("text/calendar; charset=utf-8").send(body);
+  } catch (e) { next(e); } });
+  app.post("/calendar/feed", requireOwner, csrfOk, (req, res) => {
+    const raw = randomBytes(32).toString("base64url");
+    db.prepare("INSERT INTO calendar_feeds(owner_id,token_hash,created_at) VALUES(?,?,?) ON CONFLICT(owner_id) DO UPDATE SET token_hash=excluded.token_hash,created_at=excluded.created_at").run(oid(req), sha256(raw), nowIso());
+    logActivity(db, oid(req), "owner", "calendar_feed_created", "ok", "Calendar feed created (one per owner; a new one replaces the old address).");
+    // One-time display in this POST response, like manual tokens.
+    const l = langOf(res);
+    res.type("html").send(page(req, res, tr(l)("Kalendri aadress", "Calendar address"), "uhendus", calendarOnceBody(l, `${cfg.baseUrl.replace(/\/+$/, "")}/calendar/${raw}.ics`)));
+  });
+  app.post("/calendar/feed/revoke", requireOwner, csrfOk, (req, res) => {
+    db.prepare("DELETE FROM calendar_feeds WHERE owner_id=?").run(oid(req));
+    logActivity(db, oid(req), "owner", "calendar_feed_revoked", "ok", "Calendar feed stopped; its address now returns 404.");
+    res.redirect("/uhenda");
+  });
+
   app.get("/connection", requireOwner, (req, res) => {
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
     const tokens = db.prepare("SELECT id,scopes,revoked,created_at,last_used_at FROM mcp_tokens WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, unknown>[];
@@ -588,7 +649,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
         } else state = { kind: "waiting" };
       }
     }
-    const body = connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "claude" ? "claude" : "chatgpt", state, owner: !!s });
+    const feed = s ? db.prepare("SELECT created_at FROM calendar_feeds WHERE owner_id=?").get(s.owner_id) as { created_at: string } | undefined : undefined;
+    const body = connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "claude" ? "claude" : "chatgpt", state, owner: !!s, ...(s ? { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null } } : {}) });
     res.type("html").send(shell({ title: tr(l)("Ühenda", "Connect"), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, sample: kind === "demo", toggle: toggleHref(req, l), body,
       // Zero JS: while an owner waits for the first assistant contact, the page reloads itself.
       head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "" }));
@@ -604,7 +666,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       oauth.revokeOwner(oid(req));
       db.prepare("DELETE FROM oauth_pending WHERE id=?").run(sha256(connectCookie(req)));
       db.prepare("UPDATE owners SET reporting_enabled=0 WHERE id=?").run(oid(req));
-      for (const t of ["assessments", "reports", "progress", "activity", "approvals", "candidates", "unmet_needs"]) db.prepare(`DELETE FROM ${t} WHERE owner_id=?`).run(oid(req));
+      for (const t of ["assessments", "reports", "progress", "activity", "approvals", "candidates", "unmet_needs", "calendar_feeds"]) db.prepare(`DELETE FROM ${t} WHERE owner_id=?`).run(oid(req));
       db.prepare("UPDATE mcp_tokens SET revoked=1,last_used_at=NULL WHERE owner_id=?").run(oid(req));
       db.prepare("UPDATE owners SET epoch=epoch+1 WHERE id=?").run(oid(req));
       db.prepare("UPDATE workspaces SET version=0 WHERE owner_id=?").run(oid(req));
