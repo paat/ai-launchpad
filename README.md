@@ -33,7 +33,7 @@ First persona: a one-person Estonian service OÜ, books in e-arveldaja or Merit.
 
 1. **The owner's own assistant is the interface.** We don't run a chatbot that competes with it. The only exception is a temporary setup helper for people who have no assistant yet.
 2. **No forms.** What public registers or the assistant's own context already know is never asked. The owner answers only what nobody else can.
-3. **Nothing is filed, paid, signed or sent without an approval** bound to the exact recipient, amount, period and document. Every action leaves a receipt.
+3. **Nothing is filed, paid, signed or sent without an approval bound to the exact action** — given each time, or by a standing rule the owner set with hard limits (kind, recipients, amount, count, expiry), revocable at any time. Filings and payments are always confirmed by the owner in the official channel. Every action leaves a receipt.
 4. **Rules compute, models read.** Deadlines, tax amounts and obligations come from deterministic rules code with official sources; models read documents, plan steps and draft text.
 5. **Store minimal private operational state.** Identity/workspace references, bounded assessments and task reports, grants, receipts and activity support the companion. These are not re-derivable from public registers. Do not request conversations or source documents; let owners inspect, export and delete their progress. [Current limits](docs/local-demo.md#identity-storage-and-limits).
 6. **Reuse before building.** Existing MCP servers (accounting, bank, credit data, the assistant's built-in e-mail and calendar) are curated, not rebuilt. New adapters are built where demand shows.
