@@ -1073,7 +1073,7 @@ const STEP_ICONS = [
 ];
 
 export function landingBody(o: { lang: Lang }): string {
-  const l = o.lang, t = tr(l), amount = fmtEur(24000, l), total = fmtEur(186000, l);
+  const l = o.lang, t = tr(l), amount = fmtEur(24000, l), total = fmtEur(72000, l);
   // One conversation, used for the animation and the screen-reader transcript. It leads with money; the deadline is one offer at the end.
   const ask = t("Kes mulle võlgu on?", "Who owes me money?");
   const owed = t(`Kolm arvet on üle tähtaja, kokku ${total}. Koostasin igale viisaka meeldetuletuse.`, `Three invoices are overdue, ${total} in total. I drafted a polite reminder for each.`);

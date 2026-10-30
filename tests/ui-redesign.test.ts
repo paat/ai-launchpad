@@ -240,14 +240,14 @@ describe("landing and connect", () => {
   test("landing: jobs taken off the owner, a labelled CSS-only chat teaser that leads with money, 2-minute start, trust strip, no search (owner 2026-10-30)", () => {
     const et = landingBody({ lang: "et" }), en = landingBody({ lang: "en" });
     for (const s of ["Tegele sellega, milles oled hea. <span>Kontoritöö teeb sinu AI-assistent.</span>", "Meeldetuletused võlgnikele, arved KMD jaoks, aastaaruande kontroll — assistent valmistab ette, sina kinnitad ühe puudutusega. Töötab sinu oma ChatGPT või Claude&#39;iga.",
-      '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "Kes mulle võlgu on?", `Kolm arvet on üle tähtaja, kokku ${fmtEur(186000, "et")}. Koostasin igale viisaka meeldetuletuse.`,
+      '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "Kes mulle võlgu on?", `Kolm arvet on üle tähtaja, kokku ${fmtEur(72000, "et")}. Koostasin igale viisaka meeldetuletuse.`,
       "Maksemeeldetuletus · 1/3", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud: demo", '<span class="mock-allow">Luba sarnased automaatselt</span><span class="mock-rule">Püsiluba: meeldetuletused kuni 500\u00a0€</span>',
       "Järgmised saadan ise.", "Muide, <b>20.\u00a0nov</b> on KMD — kas valmistan oktoobri arved ette?",
       "Mida assistent sinu eest ära teeb", "<strong>Võlgnikud</strong>Leiab tasumata arved ja saadab meeldetuletused.", "<strong>KMD</strong>Kogub kuu arved ja paneb deklaratsiooni valmis. Esitad ise.",
       "<strong>Aastaaruanne</strong>Paneb kokku, mida aruandeks vaja. Allkirjastad ise.", "<strong>Tähtajad</strong>Teab sinu ettevõtte tähtaegu ja tuletab meelde.",
       "Alusta 2 minutiga", "Ühenda oma ChatGPT või Claude", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega — või luba edaspidi automaatselt", 'href="/demand"']) expect(et, s).toContain(s);
     for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Reminders to customers who owe you, invoices for the VAT return, the annual-report checklist", "Connect your assistant", ">Sample<",
-      "Who owes me money?", `Three invoices are overdue, ${fmtEur(186000, "en")} in total.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "Allow similar ones automatically", "Standing approval: reminders up to 500\u00a0€",
+      "Who owes me money?", `Three invoices are overdue, ${fmtEur(72000, "en")} in total.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "Allow similar ones automatically", "Standing approval: reminders up to 500\u00a0€",
       "I&#39;ll send the next ones myself.", "By the way, the VAT return is due <b>20\u00a0Nov</b> — shall I prepare October&#39;s invoices?", "What your assistant takes off your plate", "Start in 2 minutes", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
     // Four jobs, three steps, three trust items in the owner's order; no TSD bubble and no deadline-led copy.
     expect(et.match(/<ul class="jobs">.*?<\/ul>/s)![0].match(/<li>/g)).toHaveLength(4);
