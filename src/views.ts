@@ -582,7 +582,7 @@ ${content}
 ${handoffBox(v.kindKey, l)}
 <form method="post" action="/approvals/${esc(encodeURIComponent(a.id))}/decide"><input type="hidden" name="csrf" value="${esc(opts.csrf)}"><input type="hidden" name="digest" value="${esc(a.digest)}">
 <button name="decision" value="approve">${t("Kinnita täpselt see", "Approve exactly this")}</button><button class="secondary" name="decision" value="decline">${t("Keeldu", "Decline")}</button></form>
-<p class="small muted">${t(`Kui assistent muudab midagi, küsib ta uue kinnituse. Kehtib 24 tundi, kuni ${fmtUntil(a.expires_at, l, now)}.`, `If your assistant changes anything, it asks again. Valid for 24 hours, until ${fmtUntil(a.expires_at, l, now)}.`)}</p>
+<p class="small muted">${esc(t(`Kui assistent muudab midagi, küsib ta uue kinnituse. Kehtib 24 tundi, kuni ${fmtUntil(a.expires_at, l, now)}.`, `If your assistant changes anything, it asks again. Valid for 24 hours, until ${fmtUntil(a.expires_at, l, now)}.`))}</p>
 <p class="small muted">${t("AI-hüppelaud ise ei saada, maksa ega esita midagi; seda teeb sinu assistent oma tööriistadega ja ainult täpselt selle sisuga.", "AI Launchpad itself never sends, pays or files; your assistant does this with its own tools, and only with exactly this content.")}${sample ? ` ${t("Näidis: päriselt ei saadeta.", "Sample: nothing is really sent.")}` : ""}</p>
 ${approvalTech(a, v, l)}
 </article>
@@ -595,7 +595,7 @@ ${approvalTech(a, v, l)}
 <p role="status"><strong>${t("Nüüd on assistendi kord.", "Now it's your assistant's turn.")}</strong> ${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}${v.amount ? ` · ${esc(v.amount)}` : ""}</p>
 <div class="notice"><p><strong>${t("Mine tagasi ChatGPT-sse või Claude'i ja kirjuta „<code>Kinnitasin</code>”.", "Go back to ChatGPT or Claude and write “<code>Approved</code>” (“Kinnitasin” works too).")}</strong></p><p class="small">${t("Assistent näeb sinu kinnitust alles siis, kui talle kirjutad.", "Your assistant only sees your approval when you write to it.")}</p></div>
 ${stateLine(a, v, l, sample)}
-<p class="small muted">${t(`Kui assistent ei teata tulemusest ${fmtUntil(a.expires_at, l, now)}, kinnitus aegub ja ta peab uuesti küsima.`, `If your assistant does not report an outcome by ${fmtUntil(a.expires_at, l, now)}, the approval expires and it must ask again.`)}</p>
+<p class="small muted">${esc(t(`Kui assistent ei teata tulemusest ${fmtUntil(a.expires_at, l, now)}, kinnitus aegub ja ta peab uuesti küsima.`, `If your assistant does not report an outcome by ${fmtUntil(a.expires_at, l, now)}, the approval expires and it must ask again.`))}</p>
 ${approvalTech(a, v, l)}
 ${back}
 </article>`;
@@ -607,7 +607,7 @@ ${back}
 <div class="labels">${outcomeChip(last, l, sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}${sampleC}</div>
 <h1 class="receipt-head" id="a-h">${head}</h1>
 <p>${[v.recipient.name, v.amount].filter(Boolean).map(esc).join(" · ")}${v.recipient.name || v.amount ? " · " : ""}${esc(v.title)}</p>
-<p class="small"><strong>${t(`Sinu kinnitusi selles töös: ${a.decided_at ? 1 : 0}.`, `Your approvals in this job: ${a.decided_at ? 1 : 0}.`)}</strong> ${t("Töö tegi assistent; tulemus on tema teade, AI-hüppelaud seda ei kontrollinud.", "Your assistant did the work; the result is its report, not checked by AI Launchpad.")}</p>
+<p class="small"><strong>${esc(t(`Sinu kinnitusi selles töös: ${a.decided_at ? 1 : 0}.`, `Your approvals in this job: ${a.decided_at ? 1 : 0}.`))}</strong> ${t("Töö tegi assistent; tulemus on tema teade, AI-hüppelaud seda ei kontrollinud.", "Your assistant did the work; the result is its report, not checked by AI Launchpad.")}</p>
 ${stateLine(a, v, l, sample)}
 ${content ? `<details><summary>${t("Mida sa kinnitasid", "What you approved")}</summary>${approvalFacts(v, l)}${content}</details>` : ""}
 ${approvalTech(a, v, l)}
@@ -986,11 +986,11 @@ export function tanaBody(o: TanaOpts): string {
 
   const c = o.coverage;
   const how = `<details><summary>${t("Kuidas see kokku pandi", "How this was put together")}</summary>
-<p class="small">${deadlines?.company.synthetic ? t("Tähtajad: reeglistik ja näidisandmed.", "Deadlines: rules and sample data.") : deadlines?.company.provenance === "public_register" ? t("Tähtajad: reeglistik ja avalikud avaandmed (Ärikratt).", "Deadlines: rules and public open data (Ärikratt).") : t("Tähtajad: reeglistik ja sinu assistendi teated.", "Deadlines: rules and your assistant's reports.")} ${t(`Assistendi teated: ${o.reportCount}, AI-hüppelaud neid ei kontrollinud. Allikast kontrollitud tulemusi: ${c.independently_verified_outcomes}.`, `Assistant reports: ${o.reportCount}, not checked by AI Launchpad. Outcomes verified at the source: ${c.independently_verified_outcomes}.`)} ${t("Säästetud aega ei ole mõõdetud, seega me seda ei näita.", "Time saved is not measured, so we don't show it.")}</p>
-${a ? `<p class="small">${t(`Assistendi hinnangul on ${c.covered} kohustust ${c.denominator}-st kaardistatust korras${c.percent != null ? ` (${c.percent}%)` : ""}.`, `Your assistant assesses ${c.covered} of ${c.denominator} mapped responsibilities as handled${c.percent != null ? ` (${c.percent}%)` : ""}.`)}${o.assessedAt ? ` ${t("Hinnatud", "Assessed")} ${esc(fmtWhen(o.assessedAt, l, now))}.` : ""}</p>
+<p class="small">${deadlines?.company.synthetic ? t("Tähtajad: reeglistik ja näidisandmed.", "Deadlines: rules and sample data.") : deadlines?.company.provenance === "public_register" ? t("Tähtajad: reeglistik ja avalikud avaandmed (Ärikratt).", "Deadlines: rules and public open data (Ärikratt).") : t("Tähtajad: reeglistik ja sinu assistendi teated.", "Deadlines: rules and your assistant's reports.")} ${esc(t(`Assistendi teated: ${o.reportCount}, AI-hüppelaud neid ei kontrollinud. Allikast kontrollitud tulemusi: ${c.independently_verified_outcomes}.`, `Assistant reports: ${o.reportCount}, not checked by AI Launchpad. Outcomes verified at the source: ${c.independently_verified_outcomes}.`))} ${t("Säästetud aega ei ole mõõdetud, seega me seda ei näita.", "Time saved is not measured, so we don't show it.")}</p>
+${a ? `<p class="small">${esc(t(`Assistendi hinnangul on ${c.covered} kohustust ${c.denominator}-st kaardistatust korras${c.percent != null ? ` (${c.percent}%)` : ""}.`, `Your assistant assesses ${c.covered} of ${c.denominator} mapped responsibilities as handled${c.percent != null ? ` (${c.percent}%)` : ""}.`))}${o.assessedAt ? ` ${t("Hinnatud", "Assessed")} ${esc(fmtWhen(o.assessedAt, l, now))}.` : ""}</p>
 <p class="small muted">${a.company_label ? t("Ettevõtte nime andis sinu assistent", "Company label supplied by your assistant") : t("Tööruumi nimi", "Workspace label")}${a.company_registry_ref ? ` · ${t("registriviide", "registry ref")} ${esc(a.company_registry_ref)}` : ""} — ${t("seda ei ole avalikust registrist kontrollitud ja see ei tõenda volitust.", "not verified against a public register, and not a mandate.")}</p>
 <p class="small">${esc(a.conclusion)}</p>
-<ul class="tight">${a.responsibilities.map((r) => `<li class="small">${esc(r.label)} — ${r.is_core ? t("sinu põhitöö", "your core work") : isHandled(r) ? t(`teeb ${r.executor} (assistendi hinnang)`, `handled by ${r.executor} (your assistant's assessment)`) : r.applicability === "unresolved" ? t("lahtine", "unresolved") : t("teed praegu ise", "you do it yourself now")}<br><span class="muted">${esc(r.reason)}</span></li>`).join("")}</ul>` : ""}
+<ul class="tight">${a.responsibilities.map((r) => `<li class="small">${esc(r.label)} — ${r.is_core ? t("sinu põhitöö", "your core work") : isHandled(r) ? esc(t(`teeb ${r.executor} (assistendi hinnang)`, `handled by ${r.executor} (your assistant's assessment)`)) : r.applicability === "unresolved" ? t("lahtine", "unresolved") : t("teed praegu ise", "you do it yourself now")}<br><span class="muted">${esc(r.reason)}</span></li>`).join("")}</ul>` : ""}
 ${o.exclusions.length ? `<p class="small muted">${t("Varasematest hinnangutest eemaldatud:", "Removed since earlier assessments:")} ${o.exclusions.map((x) => esc(x.label)).join(", ")}</p>` : ""}
 </details>`;
 
@@ -1088,5 +1088,5 @@ export function activityBody(opts: { rows: Record<string, string>[]; receipts: R
 ${techDetails(l, `<h2>${t("Kogu logi", "Full log")}</h2>${opts.rows.map((r) => `<div class="row"><code>${esc(r.action)}</code> · ${esc(r.actor)} · ${esc(r.outcome)}<br><span class="small muted">${esc(r.created_at)} · ${esc(r.summary)}</span></div>`).join("") || `<p>${t("Logi on tühi.", "No activity yet.")}</p>`}
 <h2>${t("Salvestatud teated (täpselt nagu salvestati)", "Accepted report payloads (exactly as saved)")}</h2>
 ${opts.receipts.map((r) => `<details><summary>${esc(r.kind)} ${esc(r.report_id)} · ${esc(r.created_at)}</summary><pre>${esc(r.payload_json)}</pre><pre>${esc(r.receipt_json)}</pre></details>`).join("") || `<p>${t("Teateid veel pole.", "No reports yet.")}</p>`}
-${opts.exclusions.length ? `<h2>${t("Varasematest hinnangutest eemaldatud", "Exclusions from earlier revisions")}</h2>${opts.exclusions.map((x) => `<div class="row"><strong>${esc(x.label)}</strong> <span class="small muted">v${x.last_seen_version} · ${esc(x.last_applicability)} / ${esc(x.last_arrangement)}</span></div>`).join("")}` : ""}`)}`;
+${opts.exclusions.length ? `<h2>${t("Varasematest hinnangutest eemaldatud", "Exclusions from earlier revisions")}</h2>${opts.exclusions.map((x) => `<div class="row"><strong>${esc(x.label)}</strong> <span class="small muted">v${esc(x.last_seen_version)} · ${esc(x.last_applicability)} / ${esc(x.last_arrangement)}</span></div>`).join("")}` : ""}`)}`;
 }

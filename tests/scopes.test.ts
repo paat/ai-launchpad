@@ -306,3 +306,21 @@ test("deleting progress clears last use from the owner's grants and tokens (#21)
   expect((await b.request("/delete", { csrf: await b.csrf() })).status).toBe(302);
   for (const t of ["oauth_grants", "mcp_tokens"]) expect(db.prepare(`SELECT count(*) n FROM ${t} WHERE owner_id=? AND last_used_at IS NOT NULL`).get(ownerId)).toEqual({ n: 0 });
 });
+
+test("an assistant's client name renders escaped on consent and /uhenda (tribunal T-001)", async () => {
+  const XSS = "<img src=x onerror=alert(1)>";
+  const inert = (html: string, where: string) => { expect(html, where).toContain("&lt;img src=x onerror=alert(1)&gt;"); expect(html, where).not.toContain("<img src=x"); };
+  const client = await (await register({ client_name: XSS })).json();
+  const b = new Browser();
+  const params = { response_type: "code", client_id: client.client_id, redirect_uri: client.redirect_uris[0], resource: base + "/mcp", code_challenge: createHash("sha256").update("v".repeat(43)).digest("base64url"), code_challenge_method: "S256", state: "xss", scope: "progress:read progress:report" };
+  expect((await b.request("/authorize?" + new URLSearchParams(params))).headers.get("location")).toBe("/oauth/consent");
+  await b.login();
+  inert(await (await b.request("/oauth/consent")).text(), "consent");
+  const g = await grant("progress:read", false, "alpha", new Browser(), XSS);
+  const c = await sdk(g.tokens.access_token);
+  try { await c.callTool({ name: "get_started", arguments: {} }); } finally { await c.close(); }
+  db.prepare("UPDATE owners SET kind='google' WHERE subject='demo-alpha'").run();
+  const html = await (await g.b.request("/uhenda")).text();
+  expect(html).toContain("Ühendatud · &lt;img src=x onerror=alert(1)&gt; jõudis kohale");
+  inert(html, "/uhenda");
+});

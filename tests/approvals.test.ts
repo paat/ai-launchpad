@@ -306,3 +306,28 @@ test("existing approvals table is migrated in place and legacy rows still load",
     } finally { await new Promise<void>((ok) => s.close(() => ok())); migrated.close(); }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// tribunal T-001: assistant-supplied text never renders as markup on Täna, Tehtud or the approval pages.
+const XSS = "<img src=x onerror=alert(1)>";
+const pageOf = async (o: { cookie: string }, path: string) => { const r = await fetch(`${base}${path}`, { headers: { cookie: o.cookie } }); expect(r.status, path).toBe(200); return r.text(); };
+const inert = (html: string, path: string) => { expect(html, path).toContain("&lt;img src=x onerror=alert(1)&gt;"); expect(html, path).not.toContain("<img src=x"); };
+test("report_assessment executor, label, reason, company_label and next_action render escaped on Täna and Tehtud (tribunal T-001)", async () => {
+  const o = owner("xss-assessment");
+  const c = await client(o.token);
+  const assessment = {
+    assessed_domains: ["money"], company_label: XSS, gaps: [XSS], conclusion: XSS,
+    responsibilities: [{ id: "invoicing", domain: "money", label: XSS, applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: XSS, access: "Owner-granted access", success_criterion: "Invoices drafted", next_checkpoint: "Next run", reason: XSS, evidence_refs: [] }],
+    next_action: { title: XSS, rationale: XSS, estimated_effort_saved: XSS, uncertainty: XSS, needs_owner: true },
+  };
+  expect(parsed(await c.callTool({ name: "report_assessment", arguments: { report_id: "xss-1", expected_version: 0, assessment } })).version).toBe(1);
+  expect(parsed(await c.callTool({ name: "report_progress", arguments: { report_id: "xss-p", task_id: "invoicing", expected_version: 1, observed_at: new Date().toISOString(), milestone: "draft_prepared" } })).receipt_id).toBeTruthy();
+  const tana = await pageOf(o, "/");
+  expect(tana).toContain(`teeb &lt;img src=x onerror=alert(1)&gt; (assistendi hinnang)`);
+  for (const path of ["/", "/activity"]) inert(path === "/" ? tana : await pageOf(o, path), path);
+});
+test("an approval document title and recipient render escaped on Täna, Tehtud and the approval pages (tribunal T-001)", async () => {
+  const o = owner("xss-approval");
+  const c = await client(o.token);
+  const req = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "xss-a", action: reminder({ document: { title: XSS, content: "Tere!" }, recipient: { name: XSS } }) } }));
+  for (const path of ["/", "/activity", "/approvals", `/approvals/${req.approval_id}`]) inert(await pageOf(o, path), path);
+});
