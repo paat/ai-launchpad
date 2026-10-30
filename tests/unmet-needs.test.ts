@@ -362,6 +362,19 @@ test("disabled mode never classifies; need stays visibly received", async () => 
   } finally { await s.close(); }
 });
 
+test("disabled mode also moves an interrupted classifying row to visibly unavailable", async () => {
+  const db = openDb(":memory:");
+  const a = makeOwner(db, "own_a", `google:${SUB}`);
+  const now = new Date().toISOString();
+  db.prepare("INSERT INTO unmet_needs(id,owner_id,report_id,payload_hash,need_redacted,blocker,state,model_input,classify_started_at,created_at,updated_at) VALUES('need_stuck','own_a','s','h','File VAT','portal_without_api','classifying',?,?,?,?)").run(buildModelInput("File VAT", "portal_without_api", []), now, now, now);
+  const s = await start({ modelMode: "disabled" }, db);
+  try {
+    await s.queue.idle();
+    expect(needRow(db, "need_stuck")).toMatchObject({ state: "received", reason: "classification_unavailable", classified_by: null });
+    expect(await (await http(s, "/", { cookie: a.raw })).text()).toContain("classification is not available on this server");
+  } finally { await s.close(); }
+});
+
 test("live mode: only de-identified need, blocker and public labels reach the model on the same ledger; tool never waits", async () => {
   const path = ledgerFile(4);
   let release!: () => void;

@@ -286,6 +286,8 @@ export class UnmetNeedQueue {
       skipped.add(row.id);
       if (!this.classifier) {
         if (row.state === "received" && row.reason !== "classification_unavailable") this.set(row.id, "received", { reason: "classification_unavailable" });
+        // An interrupted row keeps its saved input, so a later classifier replays the ledger.
+        if (row.state === "classifying") this.set(row.id, "classifying", { state: "received", reason: "classification_unavailable", classify_started_at: null });
         continue;
       }
       let input = row.model_input;
