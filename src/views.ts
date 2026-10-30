@@ -1023,7 +1023,35 @@ ${how}`;
 
 // --- Connect (spec screen 2, simplified per ux2: no QR) ---
 export type ConnectState = { kind: "anon" } | { kind: "sample" } | { kind: "waiting" } | { kind: "connected"; who: string | null; at: string };
-export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; now?: Date }): string {
+// --- Calendar feed (#29): the owner's own calendar is the notifier; read-only, no Launchpad sender. ---
+const calendarSetup = (l: Lang) => { const t = tr(l); return `<ul class="small">
+<li>${t("iPhone: puuduta linki või ava Kalender → Lisa tellitav kalender ja kleebi aadress.", "iPhone: tap the link, or open Calendar → Add Subscription Calendar and paste the address.")}</li>
+<li>${t("Google Calendar: ava see arvutis, vali Muud kalendrid → URL-i kaudu ja kleebi aadress.", "Google Calendar: on a computer, choose Other calendars → From URL and paste the address.")}</li>
+<li>${t("Outlook: vali Lisa kalender → Telli veebist ja kleebi aadress.", "Outlook: choose Add calendar → Subscribe from web and paste the address.")}</li></ul>
+<p class="small muted">${t("Kalender uueneb mõne tunni jooksul; kinnitada saab ainult assistendi kaudu.", "The calendar updates within a few hours; you approve only through your assistant.")}</p>`; };
+function calendarSection(l: Lang, c: { csrf: string; createdAt: string | null }): string {
+  const t = tr(l), csrf = `<input type="hidden" name="csrf" value="${esc(c.csrf)}">`;
+  const state = c.createdAt
+    ? `<p>${t("Kalendri jagamine on sees.", "Calendar sharing is on.")} <span class="small muted">${esc(fmtWhen(c.createdAt, l))}</span></p>
+<p class="small muted">${t("Aadressi näidati ainult üks kord. Kui see kadus, lõpeta jagamine ja lisa uus.", "The address was shown only once. If you lost it, stop sharing and add a new one.")}</p>
+<form method="post" action="/calendar/feed/revoke">${csrf}<button type="submit" class="secondary">${t("Lõpeta kalendri jagamine", "Stop sharing the calendar")}</button></form>`
+    : `<form method="post" action="/calendar/feed">${csrf}<button type="submit">${t("Lisa tähtajad oma kalendrisse", "Add the deadlines to your calendar")}</button></form>`;
+  return `<section class="card" aria-labelledby="cal-h"><h2 id="cal-h">${t("Tähtajad sinu kalendris", "Deadlines in your calendar")}</h2>
+<p class="small">${t("Sinu kalender tuletab tähtaega meelde nädal ja päev ette ning ütleb, mida assistendile öelda.", "Your calendar reminds you a week and a day ahead and tells you what to say to your assistant.")}</p>
+${state}
+${calendarSetup(l)}</section>`;
+}
+export function calendarOnceBody(l: Lang, url: string): string {
+  const t = tr(l);
+  return `<section class="card hero"><h1>${t("Sinu kalendri aadress", "Your calendar address")}</h1>
+<p>${t("Näidatakse <strong>üks kord</strong>. Hoia see enda teada: aadressiga näeb igaüks sinu tähtaegu.", "Shown <strong>once</strong>. Keep it to yourself: anyone with the address can see your deadlines.")}</p>
+<div class="endpoint"><code>${esc(url).replace(/\//g, "/<wbr>")}</code></div>
+<p><a class="btn" href="${esc(url.replace(/^https:/, "webcals:").replace(/^http:/, "webcal:"))}">${t("Ava kalendris (iPhone)", "Open in Calendar (iPhone)")}</a></p>
+${calendarSetup(l)}
+<p><a class="tap-link" href="/uhenda">${t("Tagasi: Ühendus", "Back: Connection")}</a></p></section>`;
+}
+
+export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; now?: Date; calendar?: { csrf: string; createdAt: string | null } }): string {
   const l = o.lang, t = tr(l), now = o.now ?? new Date();
   const base = String(o.baseUrl ?? "").replace(/\/+$/, ""), endpoint = `${base}/mcp`, here = `${base}/uhenda?a=${o.assistant}`;
   let parsed: URL | null = null;
@@ -1054,6 +1082,7 @@ ${o.owner ? `<p class="small"><a class="tap-link" href="/setup">${t("Pole veel a
 <li><h3 class="step-title">${t("Logi sisse ja vali, mida assistent tohib", "Sign in and choose what your assistant may do")}</h3><p class="small muted">${esc(t(`Märgi „Jah: ${name} valmistab ette …”, kui tahad, et ta valmistaks sulle kinnitamiseks kirju, arveid ja deklaratsioone.`, `Tick “Yes: ${name} prepares …” if you want it to prepare messages, invoices and returns for your approval.`))}</p></li></ol></section>
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
+${o.calendar ? calendarSection(l, o.calendar) : ""}
 ${remoteReady ? `<section class="card" aria-labelledby="phone-h"><h2 id="phone-h">${t("Jätka telefonis", "Continue on your phone")}</h2><p class="small muted">${t("Ava see aadress oma telefonis:", "Open this address on your phone:")}</p><p class="big-url">${wbr(here)}</p></section>` : ""}
 ${techDetails(l, `${techList([[t("MCP-aadress", "MCP address"), endpoint], [t("Sisselogimine", "Sign-in"), "OAuth 2.1 + PKCE"], [t("Õigused", "Scopes"), "progress:read · progress:report (Jah-linnukesega)"], [t("Kliendi nimi", "Client name"), t("kliendi enda antud, kontrollimata", "supplied by the client, not verified")]])}
 <p class="small"><a class="tap-link" href="${CHATGPT_GUIDE}" rel="noopener noreferrer">${t("OpenAI juhend", "OpenAI guide")}</a> · <a class="tap-link" href="${CLAUDE_GUIDE}" rel="noopener noreferrer">${t("Claude'i juhend", "Claude guide")}</a>${o.owner ? ` · <a class="tap-link" href="/connection">${t("Käsitsi võtmed", "Manual tokens")}</a>` : ""}</p>`)}
@@ -1071,6 +1100,8 @@ const DONE_VERBS: Record<string, [string, string]> = {
   unmet_need_kept_private: ["Sina jätsid soovi privaatseks", "You kept a request private"],
   unmet_need_classified: ["Soov liigitati", "A request was classified"],
   demo_fixture_seeded: ["Näidisandmed laaditi", "Sample data loaded"],
+  calendar_feed_created: ["Sina lisasid tähtajad oma kalendrisse", "You added the deadlines to your calendar"],
+  calendar_feed_revoked: ["Sina lõpetasid kalendri jagamise", "You stopped sharing the calendar"],
 };
 export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date; approvals?: ApprovalRow[] }): string {
   const l = opts.lang, t = tr(l), now = opts.now ?? new Date();
