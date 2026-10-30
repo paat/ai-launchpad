@@ -352,7 +352,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     if (prior === "conflict") return err("Conflict: report_id already used with a different payload. Nothing was saved and no approval was requested.");
     if (prior) {
       const live = getApproval(db, ctx.ownerId, String(prior.receipt.approval_id))?.state;
-      if (live === "approved") return json({ ...prior.receipt, state: live, current_state: live });
+      if (live === "approved" || live === "pending") return json({ ...prior.receipt, state: live, current_state: live });
       const { owner_instruction: _owner, ...rest } = prior.receipt;
       return json({ ...rest, state: live, current_state: live, assistant_instruction: `This approval is ${live}. Do not send, pay or file anything for it. If the owner still wants this done, make a new request_approval with a new report_id.` });
     }

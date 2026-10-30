@@ -312,6 +312,14 @@ describe("approval cards over MCP", () => {
     expect(replay).toEqual({ ...first, state: "approved", current_state: "approved", note });
   });
 
+  test("a replay of a still-pending request keeps pending and the owner instruction (tribunal T-001)", async () => {
+    const c = await client(owner("replay-pending").token);
+    const first = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "rp1", action: reminder() } }));
+    const replay = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "rp1", action: reminder() } }));
+    expect(replay).toMatchObject({ approval_id: first.approval_id, state: "pending", current_state: "pending", owner_instruction: first.owner_instruction });
+    expect(JSON.stringify(replay)).not.toContain("new request_approval");
+  });
+
   test("caps, scope and the sharing stop switch refuse with nothing saved", async () => {
     const o = owner("caps");
     const c = await client(o.token);
