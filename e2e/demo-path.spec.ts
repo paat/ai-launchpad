@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => { await page.setViewportSize({ width: 390, h
 test("public landing: what the product does, then Connect leads to /uhenda", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("lang", "et");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Sinu AI-assistent teeb kontoritöö. Sina kinnitad ainult selle, mis sind seob.");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Tegele sellega, milles oled hea. Kontoritöö teeb sinu AI-assistent.");
   await expect(page.locator("main .label-chip--sample").first()).toHaveText("Näidis");
   await noOverflow(page);
   await page.screenshot({ path: `${SHOTS}/landing-390.png`, fullPage: true });
