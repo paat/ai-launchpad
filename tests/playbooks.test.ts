@@ -7,6 +7,7 @@ import { arikratt } from "../src/arikratt.js";
 import { APPROVAL_KINDS, PLAYBOOKS } from "../src/catalog.js";
 import { buildMcpServer, companyObligations, type Ctx } from "../src/mcp.js";
 import { computeObligations, type CompanyFacts, type Fact } from "../src/obligations.js";
+import { DEMO_FIXTURES } from "../src/fixtures.js";
 
 const MARI = "19990001", FAKE_VALID = "10000062";
 const at = (day: string) => new Date(`${day}T10:00:00Z`);
@@ -39,8 +40,9 @@ describe("executable job playbooks (#26)", () => {
     expect(vat).toMatch(/owner files the return in e-MTA with their own Smart-ID or ID-card; never automate/);
     expect(byId("annual-report").steps.join(" ")).toMatch(/owner signs and submits the report in the e-Business Register; never automate/);
     const remind = byId("payment-reminder").steps.join(" ");
-    expect(remind).toContain("Do not threaten late-payment interest (viivis) unless the owner asks for it.");
-    expect(remind).toMatch(/request_approval with action kind send_message.*get_approval.*record_action_outcome with outcome sent.*paid with record_action_outcome using a NEW report_id.*only if you see the payment/s);
+    expect(remind).toContain("Do not cite the statute or interest in the reminder unless the owner asks.");
+    expect(remind).not.toMatch(/threaten|viivis/);
+    expect(remind).toMatch(/request_approval with action kind send_message.*get_approval.*record_action_outcome with outcome sent.*Record paid only after a sent outcome, with a NEW report_id.*only if you see the payment/s);
   });
 
   test("every trigger is a rule_id the engine can emit, mapped to one playbook, with the same official source", () => {
@@ -159,6 +161,10 @@ describe("agent-facing copy over MCP", () => {
       ["request_approval", { report_id: "r", action: filing }, "Nothing was saved and no approval was requested."],
       ["record_action_outcome", { report_id: "r", approval_id: "appr_x", digest: "x", outcome: "submitted", observed_at: new Date().toISOString() }, "Nothing was recorded."],
       ["report_unmet_need", { report_id: "r", need: "Fill a portal form", blocker: "portal_without_api" }, "Nothing was saved."],
+      // #36 item 5: the reporting tools give the same reconnect guidance.
+      ["report_assessment", { report_id: "r", expected_version: 0, assessment: DEMO_FIXTURES.alpha }, "Nothing was saved."],
+      ["report_progress", { report_id: "r", task_id: "t", expected_version: 0, observed_at: new Date().toISOString(), milestone: "started" }, "Nothing was saved."],
+      ["submit_service_candidate", { name: "Synthetic Service", connection: "https://service.example", jobs: "Invoices" }, "No nomination was saved."],
     ];
     for (const [name, args, nothing] of calls) {
       const t = errText(await c.callTool({ name, arguments: args }));
@@ -179,11 +185,15 @@ describe("agent-facing copy over MCP", () => {
     for (const id of ["vat-return-prep", "annual-report"]) expect(byId(id).steps, id).toContain(recheck);
   });
 
-  test("annual-report: approval of the exact draft is required, acted on only when approved, outcome recorded (tribunal T-003)", () => {
+  test("annual-report: approval of the period, key figures and signed version is required, acted on only when approved, outcome recorded (tribunal T-003, #36 item 1)", () => {
     const p = byId("annual-report");
     expect(p.steps.join(" ")).not.toMatch(/optional/i);
     const approval = p.steps.findIndex((x) => x.includes("request_approval with action kind prepare_filing"));
-    expect(p.steps[approval]).toContain("document.content: the exact report draft");
+    // document.content holds at most 4000 characters: it binds the key figures, not the full draft.
+    expect(p.steps[approval]).toContain("period: the financial year");
+    expect(p.steps[approval]).toContain("document.title: the file name or version the owner will sign in the e-Business Register");
+    expect(p.steps[approval]).toContain("document.content: the key figures (revenue, profit and balance-sheet totals) exactly as they appear in the accounting software, not the full draft");
+    expect(JSON.stringify(p)).not.toMatch(/exact (report )?draft|approved draft/);
     expect(p.steps[approval]).toContain("This approval is REQUIRED before the owner signs or submits.");
     const filing = p.steps.findIndex((x) => x.includes("owner signs and submits the report"));
     expect(p.steps[filing]).toMatch(/^Act only after get_approval returns approved/);
@@ -201,6 +211,18 @@ describe("agent-facing copy over MCP", () => {
     expect(byId("payment-reminder").summary).toContain("Nothing is sent until you approve the exact text, amount and recipient.");
   });
 
+  test("payment-reminder: re-check expiry and renew before sending; paid only after a sent outcome (#36 items 2–3)", () => {
+    const steps = byId("payment-reminder").steps;
+    const recheck = steps.findIndex((x) => x.startsWith("Right before sending, call get_approval."));
+    expect(steps[recheck]).toBe("Right before sending, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged reminder first. Approvals are valid for 24 hours.");
+    const send = steps.findIndex((x) => x.startsWith("Act only after get_approval returns approved"));
+    const sent = steps.indexOf("Call record_action_outcome with outcome sent (or failed).");
+    const paid = steps.findIndex((x) => x.startsWith("Record paid only after a sent outcome, with a NEW report_id"));
+    expect(steps.findIndex((x) => x.includes("request_approval"))).toBeLessThan(recheck);
+    expect([recheck < send, send < sent, sent < paid]).toEqual([true, true, true]);
+    expect(steps[paid]).toContain("A failed reminder can never become paid.");
+  });
+
   test("the expiry re-check only re-checks and renews; recording comes after the owner files (tribunal T-004)", () => {
     for (const id of ["vat-return-prep", "annual-report"]) {
       const steps = byId(id).steps;
@@ -216,7 +238,7 @@ describe("agent-facing copy over MCP", () => {
 
   test("every expired-approval renewal asks for a NEW report_id (tribunal T-002)", () => {
     const renewals = PLAYBOOKS.flatMap((p) => p.steps.filter((x) => /expired/.test(x)).map((x) => [p.id, x] as const));
-    expect(renewals.map(([id]) => id)).toEqual(["vat-return-prep", "annual-report"]);
+    expect(renewals.map(([id]) => id)).toEqual(["payment-reminder", "vat-return-prep", "annual-report"]);
     for (const [id, x] of renewals) expect(x, id).toContain("request a fresh approval with a NEW report_id (the same report_id returns the expired receipt)");
   });
   const body = (r: unknown) => JSON.parse((r as { content: { text: string }[] }).content[0].text);
