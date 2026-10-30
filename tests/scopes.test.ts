@@ -109,20 +109,20 @@ test("scope alignment across real OAuth grants: report-only public get_started, 
     const rawReport = textOf(await cReport.callTool({ name: "get_started", arguments: {} }));
     expect(rawReport).not.toContain("company_ref");
     expect(rawReport).not.toContain("reporting_enabled");
-    expect(rawReport).not.toContain("Plumbing");
+    expect(rawReport).not.toContain("Mari Disain");
 
     // Read scopes preserve owner-specific getting-started behavior.
     const startedRead = parse(await cRead.callTool({ name: "get_started", arguments: {} }));
     expect(startedRead.workspace.company_ref).toBeTruthy();
-    expect(startedRead.workspace.label).toContain("Plumbing");
+    expect(startedRead.workspace.label).toContain("Mari Disain");
     expect(startedRead).toHaveProperty("reporting_enabled");
     const startedCombined = parse(await cCombined.callTool({ name: "get_started", arguments: {} }));
-    expect(startedCombined.workspace.label).toContain("Plumbing");
+    expect(startedCombined.workspace.label).toContain("Mari Disain");
 
     // get_progress is denied without progress:read.
     const denied = await cReport.callTool({ name: "get_progress", arguments: {} }) as { isError?: boolean };
     expect(denied.isError).toBe(true);
-    expect(parse(await cRead.callTool({ name: "get_progress", arguments: {} })).workspace.label).toContain("Plumbing");
+    expect(parse(await cRead.callTool({ name: "get_progress", arguments: {} })).workspace.label).toContain("Mari Disain");
     const combinedState = parse(await cCombined.callTool({ name: "get_progress", arguments: {} }));
     expect(combinedState.assessment).not.toBeNull();
 
@@ -144,7 +144,7 @@ test("scope alignment across real OAuth grants: report-only public get_started, 
       expect(res.catalog_size).toBe(181);
       expect(res.results.length).toBeGreaterThan(0);
       queries.push(JSON.stringify(res.results));
-      expect(JSON.stringify(res)).not.toContain("Plumbing");
+      expect(JSON.stringify(res)).not.toContain("Mari Disain");
       expect(JSON.stringify(res)).not.toContain("company_ref");
     }
     expect(queries[0]).toBe(queries[1]);
@@ -161,7 +161,7 @@ test("catalogue is identical across owners and revocation still kills OAuth acce
   try {
     const pa = parse(await ca.callTool({ name: "get_progress", arguments: {} }));
     const pb = parse(await cb.callTool({ name: "get_progress", arguments: {} }));
-    expect(pa.workspace.label).toContain("Plumbing");
+    expect(pa.workspace.label).toContain("Mari Disain");
     expect(pb.workspace.label).toContain("Bakery");
     expect(pa.assessment).not.toEqual(pb.assessment);
     const sa = parse(await ca.callTool({ name: "search_services", arguments: { query: "invoice", limit: 5 } }));

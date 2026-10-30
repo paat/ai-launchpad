@@ -11,7 +11,7 @@ import { openDb, sha256 } from "../src/db.js";
 import { assistantFactsSchema, companyObligations, TOOL_ARG_KEYS } from "../src/mcp.js";
 import { arikratt, CACHE_TTL_MS, mapCompany } from "../src/arikratt.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
-import { computeObligations, easterSunday, publicHolidays, shiftToWorkingDay, validRegistryCode, type CompanyFacts } from "../src/obligations.js";
+import { HANDOFF, computeObligations, easterSunday, publicHolidays, shiftToWorkingDay, validRegistryCode, type CompanyFacts } from "../src/obligations.js";
 
 const MARI = "19990001", KASE = "19990002", FAKE_VALID = "10000062", SLOW = "10000107";
 const at = (day: string) => new Date(`${day}T10:00:00Z`);
@@ -174,6 +174,26 @@ describe("rules engine (memo § 3, pure)", () => {
     const r = computeObligations(SYNTHETIC_COMPANIES[MARI].facts, { today: new Date("2026-11-30T22:30:00Z"), months: 3 });
     expect(r.window).toEqual({ from: "2026-12-01", to: "2027-02-28" });
     expect(r.obligations.filter((o) => o.kind === "deadline").map((o) => o.effective_due)).toEqual(["2026-12-10", "2026-12-21", "2027-01-11", "2027-01-20", "2027-02-10", "2027-02-22"]);
+  });
+
+  test("every rule_id computeObligations can emit has a static handoff (no model, no amounts)", () => {
+    const said = <T>(value: T) => ({ value, provenance: "assistant_supplied" as const });
+    const scenarios: CompanyFacts[] = [
+      {}, // everything unknown: KMD "if", TSD "if", annual "if"
+      { vat_registered: said(true), payouts_last_month: said(true), annual_report: said({ latest_year: 2024, filed: false, overdue_days: 120 }) },
+      { vat_registered: said(false), ytd_turnover_this_year: said(12_000), hire_or_board_fee_starting: said(true) },
+    ];
+    const seen = new Set<string>();
+    for (const facts of scenarios) for (const day of ["2026-06-01", "2026-11-01"]) for (const o of computeObligations(facts, { today: at(day), months: 3 }).obligations) {
+      const key = o.rule_id === "tsd-monthly-return" ? `${o.rule_id}:${o.applies}` : o.rule_id;
+      seen.add(key);
+      expect(HANDOFF[key], key).toBeDefined();
+      for (const v of Object.values(o.handoff)) { expect(v.trim(), key).not.toBe(""); expect(v, key).not.toMatch(/\{kuu\}|\{month\}|\d/); }
+    }
+    // The scenarios reach every rule, so no HANDOFF entry is dead and no emitted rule lacks one.
+    expect([...seen].sort()).toEqual(Object.keys(HANDOFF).sort());
+    const kmd = computeObligations({ vat_registered: said(true) }, { today: at("2026-11-01"), months: 1 }).obligations.find((o) => o.rule_id === "vat-return-kmd")!;
+    expect(kmd.handoff).toMatchObject({ assistant_et: "kogub oktoobri arved kokku ja kontrollib, et ükski pole puudu", owner_et: "esitad KMD e-MTA-s oma Smart-ID-ga", prompt_et: "Valmista oktoobri KMD jaoks arved ette ja küsi minult kinnitust enne, kui midagi saadad.", assistant_en: "gathers October's invoices and checks none are missing" });
   });
 });
 
@@ -365,12 +385,14 @@ describe("get_obligations tool and status card", () => {
       for (const b of ob.applies_because) expect(b).toMatchObject({ provenance: "synthetic", source: "synthetic_fixture" });
     }
     const html = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
-    for (const s of ["Järgmised tähtajad", "Next deadlines", "Mari Disain OÜ", "Arvutatud reeglist", "Calculated by rule", "Näidis · Sample", "https://www.riigiteataja.ee/akt/", "KMD ja käibemaks", "Tähtajad arvutab reeglistik, mitte tehisaru."]) expect(html, s).toContain(s);
+    for (const s of ["Tulekul", '<ul class="deadlines">', "Mari Disain OÜ", "Arvutatud reeglist", '<span class="label-chip label-chip--sample">Näidis</span>', "https://www.riigiteataja.ee/akt/", "KMD ja käibemaks", "Tähtajad arvutab reeglistik, mitte tehisaru.", '<dt class="me">Sina</dt>']) expect(html, s).toContain(s);
     expect(html).not.toContain("Ametlik allikas");
-    expect(html).toMatch(/<strong>\d{1,2}\. [a-zõäöü]+, (esmaspäev|teisipäev|kolmapäev|neljapäev|reede)<\/strong>/);
-    // No registry code known: no card, the existing layout stays.
+    // Date first: a dated tile per row, with the Estonian weekday.
+    expect(html).toMatch(/<time class="deadline-date" datetime="\d{4}-\d{2}-\d{2}"><span class="deadline-day">\d{1,2}<\/span><span class="deadline-mon">[a-zõäöü]+\.?<\/span><span class="deadline-wd">(esmaspäev|teisipäev|kolmapäev|neljapäev|reede)<\/span><\/time>/);
+    // No registry code known: no deadline rows, an honest pointer instead.
     const plain = await (await fetch(`${base}/`, { headers: { cookie: owner("plain").cookie } })).text();
-    expect(plain).not.toContain("Järgmised tähtajad");
+    expect(plain).not.toContain('<ul class="deadlines">');
+    expect(plain).toContain("Tähtajad ilmuvad siia, kui assistent teab sinu registrikoodi.");
   });
   test("Status: an unavailable register lookup renders the hint and the plain reason, never a deadlines card (tribunal T-006)", async () => {
     const html = await (await fetch(`${base}/`, { headers: { cookie: owner("nokeyref", FAKE_VALID).cookie } })).text();
@@ -434,8 +456,8 @@ describe("get_obligations tool and status card", () => {
       const html = await res.text();
       expect(Date.now() - t0).toBeLessThan(1000);
       expect(res.status).toBe(200);
-      expect(html).toContain("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?”");
-      expect(html).not.toContain("Järgmised tähtajad");
+      expect(html).toContain("Registri andmeid laaditakse. Värskenda lehte hetke pärast.");
+      expect(html).not.toContain('<ul class="deadlines">');
     } finally { warn.mockRestore(); s3.close(); }
   });
 });

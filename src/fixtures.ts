@@ -5,24 +5,26 @@ import type { CompanyFacts, Fact } from "./obligations.js";
  * explicit synthetic demo login (never for real/Google workspaces) and always
  * labelled synthetic + assistant-reported, not verified. */
 export const DEMO_COMPANIES = [
-  { key: "alpha", label: "Demo Plumbing OÜ (synthetic)" },
+  { key: "alpha", label: "Mari Disain OÜ (näidis)" },
   { key: "beta", label: "Demo Bakery OÜ (synthetic)" },
 ] as const;
 
+// One coherent demo company (ux2 change 6): the same Mari Disain OÜ as the
+// synthetic register facts below (19990001), a one-person graphic-design OÜ.
 const alpha: Assessment = assessmentSchema.parse({
-  assessed_domains: ["money", "customers", "people", "legal_sector", "operations"],
-  company_label: "Demo Plumbing OÜ (synthetic fixture)",
+  assessed_domains: ["money", "customers", "operations"],
+  company_label: "Mari Disain OÜ (näidis)",
   company_registry_ref: "19990001",
   responsibilities: [
-    { id: "invoicing", domain: "money", label: "Sales invoicing", applicability: "applicable", is_core: false, arrangement: "proposed", reason: "Owner writes invoices by hand after each job; no connection exists yet. (Synthetic fixture.)", evidence_refs: ["fixture:alpha-invoicing"] },
-    { id: "vat-prep", domain: "money", label: "Monthly VAT return preparation", applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: "Existing external accountant (fixture)", access: "Accountant already has accounting-software access", success_criterion: "Draft VAT summary ready for owner review each month", next_checkpoint: "Next monthly close (fixture date)", reason: "Accountant already prepares the numbers; owner only reviews. Nothing is filed by Launchpad.", evidence_refs: ["fixture:alpha-vat"] },
-    { id: "plumbing-work", domain: "operations", label: "Doing plumbing jobs", applicability: "applicable", is_core: true, arrangement: "none", reason: "This is the owner's trade — core work stays with the owner.", evidence_refs: [] },
-    { id: "employee-contracts", domain: "people", label: "Employee contracts", applicability: "unresolved", is_core: false, arrangement: "none", reason: "Fixture leaves this unresolved on purpose: whether seasonal help counts as employment is unassessed, so no percentage is shown.", evidence_refs: [] },
+    { id: "design-work", domain: "operations", label: "Disainitööd", applicability: "applicable", is_core: true, arrangement: "none", reason: "Omaniku põhitöö; see jääb talle. (Näidis.)", evidence_refs: [] },
+    { id: "invoicing", domain: "money", label: "Arvete koostamine", applicability: "applicable", is_core: false, arrangement: "none", reason: "Mari koostab arved pärast iga tööd käsitsi. (Näidis.)", evidence_refs: ["fixture:alpha-invoicing"] },
+    { id: "payment-reminders", domain: "customers", label: "Maksemeeldetuletused", applicability: "applicable", is_core: false, arrangement: "none", reason: "Tasumata arveid jälgib Mari ise ja kirjutab meeldetuletused käsitsi. (Näidis.)", evidence_refs: ["fixture:alpha-reminders"] },
+    { id: "vat-prep", domain: "money", label: "KMD ettevalmistus", applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: "raamatupidaja", access: "Raamatupidajal on raamatupidamisprogrammi ligipääs (näidis)", success_criterion: "KMD numbrid on iga kuu enne 20. kuupäeva Mari jaoks valmis", next_checkpoint: "Järgmine kuu lõpetamine (näidis)", reason: "Raamatupidaja teeb KMD numbrid; Mari esitab. AI-hüppelaud ei esita midagi. (Näidis.)", evidence_refs: ["fixture:alpha-vat"] },
   ],
-  gaps: ["Employee-contract applicability is unassessed in this fixture."],
-  assumptions: ["Synthetic example only; no real company data was used."],
-  conclusion: "Synthetic fixture: bookkeeping prep is already delegated, invoicing is still manual, and one people question is unresolved — so no coverage percentage is claimed.",
-  next_action: { title: "Connect invoicing to your assistant", rationale: "Removes hand-written invoices after every job — the most repeated admin work in this fixture.", estimated_effort_saved: "Unknown; unmeasured", savings_basis: "unknown", uncertainty: "Fixture volumes are invented; measure before promising hours.", needs_owner: true },
+  gaps: [],
+  assumptions: ["Näidis: päris ettevõtte andmeid ei kasutatud."],
+  conclusion: "Näidis: KMD numbrid teeb raamatupidaja, arved ja maksemeeldetuletused teeb Mari veel käsitsi.",
+  next_action: { title: "Lase assistendil tasumata arvetele meeldetuletused koostada", rationale: "Kaotab arvete käsitsi jälgimise; sina ainult kinnitad iga kirja.", savings_basis: "unknown", uncertainty: "Näidise mahud on välja mõeldud; aega pole mõõdetud.", needs_owner: true },
 });
 
 const beta: Assessment = assessmentSchema.parse({

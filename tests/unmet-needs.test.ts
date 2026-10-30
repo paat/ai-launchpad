@@ -13,7 +13,7 @@ import {
   MAX_EXISTING_LABELS, UNMET_NEED_NEXT, UNMET_NEED_RECHECK_MS, buildModelInput, cleanText, deidentify, liveClassifier, mockClassifier,
   parseClassification, recordUnmetNeed, unmetNeedRequestId,
 } from "../src/unmet-needs.js";
-import { demandPage, unmetNeedsBody } from "../src/views.js";
+import { demandBody, unmetNeedsBody } from "../src/views.js";
 
 // Fake-only: global fetch may reach the local test server and nothing else.
 const nativeFetch = globalThis.fetch;
@@ -321,7 +321,7 @@ test("per-owner caps: 20 needs per day, 200 total, 10 classifications per day (r
     const states = s.db.prepare("SELECT state,reason,count(*) n FROM unmet_needs GROUP BY state,reason ORDER BY state").all();
     expect(states).toEqual([{ state: "classified", reason: null, n: 10 }, { state: "received", reason: "owner_daily_limit", n: 2 }]);
     const html = await (await http(s, "/", { cookie: a.raw })).text();
-    expect(html).toContain("daily classification limit (10 per day)");
+    expect(html).toContain("päevane liigituste piir (10 päevas)");
     expect(s.db.prepare("SELECT count(*) n FROM activity WHERE action='unmet_need_classification' AND outcome='deferred'").get()).toEqual({ n: 2 });
 
     for (let i = 12; i < 20; i++) expect((await tool(s, a, { report_id: `n-${i}`, need: `Synthetic need ${i}`, blocker: "no_connector" })).isError).toBe(false);
@@ -355,20 +355,24 @@ test("deferred needs are re-kicked on a timer: daily-limited needs reach classif
 
 test("a failed classification never reads as classified by the model", () => {
   const need = { id: "need_f", state: "classification_failed", reason: "invalid_output", need_redacted: "File VAT", blocker: "portal_without_api", job_hint_redacted: null, category: null, demand_label: null, same_as: null, spec: null, classified_by: BASETEN_MODEL, created_at: "2026-10-30T10:00:00.000Z" };
-  const failed = unmetNeedsBody({ csrf: "c", needs: [need] });
+  const failed = unmetNeedsBody({ csrf: "c", needs: [need], lang: "en" });
   expect(failed).not.toMatch(/classified by|Liigitas/i);
   expect(failed).toContain("classification attempt failed");
-  const kept = unmetNeedsBody({ csrf: "c", needs: [{ ...need, state: "kept_private", reason: null, category: "tax_filings", demand_label: "VAT return filing", spec: "Prepare the VAT return." }] });
-  expect(kept).toContain(`classified by Meta ${BASETEN_MODEL} (live)`);
+  const kept = unmetNeedsBody({ csrf: "c", needs: [{ ...need, state: "kept_private", reason: null, category: "tax_filings", demand_label: "VAT return filing", spec: "Prepare the VAT return." }], lang: "en" });
+  expect(kept).toMatch(new RegExp(`Classified by.*Meta ${BASETEN_MODEL} \\(live\\)`, "s"));
 });
 
 test("/demand hero credits Meta's model only when a published item was classified live", () => {
   const item = { label: "Bank account connector", count: 1, category: "banking_payments" as const, spec: "Read balances.", firstSeen: "2026-09", lastSeen: "2026-09", live: 0, mock: 1 };
   const lede = (html: string) => html.match(/<p class="lede">(.*?)<\/p>/)![1];
-  expect(lede(demandPage([item]))).toContain("classified by a local test classifier (sample).");
-  expect(lede(demandPage([item]))).not.toContain("Meta");
-  expect(lede(demandPage([item, { ...item, label: "Other", live: 1, mock: 0 }]))).toContain("classified by Meta's open model Muse Spark Open.");
-  expect(lede(demandPage([]))).toBe("What Estonian businesses asked their AI assistants to do that no connector can do yet. Anonymous, owner-approved.");
+  expect(lede(demandBody([item], "en"))).toContain("classified by a local test classifier (sample).");
+  expect(lede(demandBody([item], "en"))).not.toContain("Meta");
+  expect(lede(demandBody([item, { ...item, label: "Other", live: 1, mock: 0 }], "en"))).toContain("classified by Meta's open model Muse Spark Open.");
+  expect(lede(demandBody([], "en"))).toBe("What Estonian businesses asked their AI assistants to do that no connector can do yet. Anonymous, owner-approved.");
+  expect(lede(demandBody([item], "et"))).toContain("liigitanud kohalik testliigitaja (näidis).");
+  // Card labels: live model output carries the AI chip; mock output is a sample.
+  expect(demandBody([item], "et")).toContain('<span class="label-chip label-chip--sample">Näidis</span>');
+  expect(demandBody([{ ...item, live: 1, mock: 0 }], "et")).toContain("AI liigitus · Meta Muse Spark Open");
 });
 
 test("disabled mode never classifies; need stays visibly received", async () => {
@@ -378,7 +382,7 @@ test("disabled mode never classifies; need stays visibly received", async () => 
     const r = await tool(s, a, { report_id: "d", need: "Connect my bank", blocker: "no_connector" });
     await s.queue.idle();
     expect(needRow(s.db, r.data.need_id)).toMatchObject({ state: "received", reason: "classification_unavailable", classified_by: null });
-    expect(await (await http(s, "/", { cookie: a.raw })).text()).toContain("classification is not available on this server");
+    expect(await (await http(s, "/", { cookie: a.raw })).text()).toContain("liigitamine pole selles serveris praegu saadaval");
   } finally { await s.close(); }
 });
 
@@ -465,7 +469,7 @@ test("failure states are honest and terminal; ledger refusals map to visible sta
   const failed = (reason: string) => ({ state: "classification_failed", reason, category: null, demand_label: null });
   let out = await run(ledgerFile(0), () => chat("Sure! The category is tax."));
   expect(out.row).toMatchObject(failed("invalid_output"));
-  expect(out.html).toContain("not valid classification data");
+  expect(out.html).toContain("Vastus ei olnud korrektne liigitus");
   out = await run(ledgerFile(0), () => chat(classification({ spec: "Pay the €1 200 VAT for the owner from the bank account." })));
   expect(out.row).toMatchObject(failed("identifiers_in_output"));
   out = await run(ledgerFile(0), () => new Response("secret-provider-detail", { status: 500 }));
@@ -476,7 +480,7 @@ test("failure states are honest and terminal; ledger refusals map to visible sta
   out = await run(ledgerFile(5), () => chat(classification()));
   expect(out.row).toMatchObject(failed("budget_exhausted"));
   expect(out.calls).toBe(0);
-  expect(out.html).toContain("budget is exhausted");
+  expect(out.html).toContain("mudelieelarve on otsas");
   out = await run(ledgerFile(1, "provider_contract_breach"), () => chat(classification()));
   expect(out.row).toMatchObject(failed("suppressed_after_breach"));
   expect(out.calls).toBe(0);
@@ -485,7 +489,7 @@ test("failure states are honest and terminal; ledger refusals map to visible sta
   out = await run(pendingPath, () => chat(classification()));
   expect(out.row).toMatchObject({ state: "received", reason: "attempt_in_flight", classify_started_at: null });
   expect(out.calls).toBe(0);
-  expect(out.html).toContain("has not started");
+  expect(out.html).toContain("pole see veel alanud");
   const l = openExistingPublicLedger(pendingPath);
   try { expect(l.db.prepare("SELECT count(*) n FROM mq_attempts").get()).toEqual({ n: 1 }); } finally { l.close(); }
   // This need's own ledger row left pending by a crash: interrupted, never re-sent.
@@ -513,11 +517,16 @@ test("publish / keep private: session + CSRF + exact Origin, owner-scoped, one d
     const n2 = (await tool(s, a, { report_id: "2", need: "Sign the annual report", blocker: "needs_owner_pin_or_signature" })).data.need_id;
     await s.queue.idle();
     const status = await (await http(s, "/", { cookie: a.raw })).text();
-    expect(status).toContain("Requests your assistant could not do");
-    expect(status).toContain("Publish anonymously");
-    expect(status).toContain("Keep private");
+    expect(status).toContain("Seda ei saa assistent sinu eest teha");
+    expect(status).toContain("Avalda anonüümselt");
+    expect(status).toContain("Jäta privaatseks");
     expect(status).toContain("Connect my Coop Pank account"); // redacted text, owner view only
-    expect(status).toContain("local mock (not a model)");
+    expect(status).toContain("Mida assistent saab teha:");
+    expect(status).toContain("valmistab kõik ette; PIN-i või allkirja annad sina");
+    expect(status).toContain("(valikuline)");
+    expect(status).toContain("local mock (not a model)"); // technical detail
+    expect(status).not.toContain("AI liigitus · Meta Muse Spark Open"); // mock output is a sample, never "AI"
+    expect(status).toContain("Täna pole sinult midagi vaja"); // undecided needs never count in the hero
     const decide = (o: Owner, fields: Record<string, string>, extra: { origin?: string | null } = {}) => http(s, "/unmet-needs/decide", { cookie: o.raw, fields, ...extra });
     expect((await decide(a, { csrf: "wrong", need_id: n1, decision: "publish" })).status).toBe(403);
     expect((await decide(a, { csrf: a.csrf, need_id: n1, decision: "publish" }, { origin: "null" })).status).toBe(403);
@@ -536,9 +545,9 @@ test("publish / keep private: session + CSRF + exact Origin, owner-scoped, one d
     const acts = (s.db.prepare("SELECT action FROM activity WHERE owner_id='own_a' AND actor='owner'").all() as { action: string }[]).map((x) => x.action);
     expect(acts).toEqual(["unmet_need_published", "unmet_need_kept_private"]);
     const after = await (await http(s, "/", { cookie: a.raw })).text();
-    expect(after).toContain("Decided requests (2)");
-    expect(after).toContain("Published anonymously");
-    expect(after).toContain("Kept private");
+    expect(after).toContain("Otsustatud soovid (2)");
+    expect(after).toContain("Avaldatud anonüümselt");
+    expect(after).toContain("Jäetud privaatseks");
   } finally { await s.close(); }
 });
 
@@ -566,14 +575,22 @@ test("/demand is public, cacheable, aggregated, escaped, honest about classifier
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("public, max-age=60");
     const html = await res.text();
-    expect(html).toContain("What Estonian businesses asked their AI assistants to do that no connector can do yet. Anonymous, owner-approved, classified by Meta's open model Muse Spark Open.");
+    expect(html).toContain('<html lang="et">');
+    expect(html).toContain("Mida Eesti ettevõtjad oma AI-assistendilt palusid, aga mida ükski ühendus veel teha ei oska. Anonüümne, omaniku loal, liigitanud Meta avatud mudel Muse Spark Open.");
     expect(html).toContain("Tax portal &lt;script&gt;alert(origin)&lt;/script&gt; filing");
     expect(html).not.toContain("<script>alert(origin)</script>");
-    expect(html).toContain("2 requests");
+    expect(html).toContain("2 soovi");
     expect(html).toContain(`Meta ${BASETEN_MODEL} (live) × 2`);
     expect(html).toContain("local mock (not a model) × 1");
     expect(html.indexOf("Tax portal")).toBeLessThan(html.indexOf("Bank account connector")); // sorted by count
-    expect(html).toMatch(/First seen \d{4}-\d{2} · last seen \d{4}-\d{2}/);
+    expect(html).toMatch(/Esimest korda [a-zõäöü]+ \d{4} · viimati [a-zõäöü]+ \d{4}/);
+    // English on request (?lang=en): same aggregate, not shared-cached because it sets the lang cookie.
+    const en = await http(s, "/demand?lang=en");
+    expect(en.headers.get("cache-control")).toBe("no-store");
+    const enHtml = await en.text();
+    expect(enHtml).toContain('<html lang="en">');
+    expect(enHtml).toContain("What Estonian businesses asked their AI assistants to do that no connector can do yet. Anonymous, owner-approved, classified by Meta's open model Muse Spark Open.");
+    expect(enHtml).toContain("2 requests");
     for (const leak of ["own_a", "own_b", SUB, COMPANY, EMAIL, "ws-own_a", "[company]", "[iban]", "secret hint", "mock text", "classified text", "Not yet published", "Unpublished spec", n1, n2, "Something new"]) expect(html, leak).not.toContain(leak);
     // Linked from the login page and the signed-in footer.
     expect(await (await http(s, "/login")).text()).toContain('href="/demand"');
@@ -595,7 +612,7 @@ test("export includes unmet needs; delete removes them (and their public demand)
     expect(await (await http(s, "/demand")).text()).toContain("VAT return filing");
     expect((await http(s, "/delete", { cookie: a.raw, fields: { csrf: a.csrf } })).status).toBe(302);
     expect(s.db.prepare("SELECT count(*) n FROM unmet_needs").get()).toEqual({ n: 0 });
-    expect(await (await http(s, "/demand")).text()).toContain("No published demand yet.");
+    expect(await (await http(s, "/demand")).text()).toContain("Avaldatud soove veel pole.");
     const l = openExistingPublicLedger(path);
     try { expect(l.db.prepare("SELECT count(*) n FROM mq_attempts").get()).toEqual({ n: 1 }); } finally { l.close(); }
   } finally { await s.close(); }

@@ -124,7 +124,16 @@ test("live inference is hard-disabled even with a positive budget; the isolated 
 
 describe("HTTP security basics", () => {
   test("unauthenticated companion redirects; production config denies demo; unconfigured Google is an honest 503 without a stack", async () => {
-    expect((await fetch(`${base}/`, { redirect: "manual" })).status).toBe(302);
+    // Visitors without a session get the public landing (no owner data); companion pages still redirect.
+    const landing = await fetch(`${base}/`, { redirect: "manual" });
+    expect(landing.status).toBe(200);
+    const landingHtml = await landing.text();
+    expect(landingHtml).toContain("Sinu ettevõtte tähtajad ühe otsinguga");
+    expect(landingHtml).not.toContain('action="/auth/logout"');
+    for (const path of ["/activity", "/approvals", "/connection"]) {
+      const r = await fetch(`${base}${path}`, { redirect: "manual" });
+      expect(r.status).toBe(302); expect(r.headers.get("location")).toBe("/login");
+    }
     expect(configFromEnv({ NODE_ENV: "production", LAUNCHPAD_DEMO: "1", LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS: "synthetic-subject" } as NodeJS.ProcessEnv).demo).toBe(false);
     const g = await fetch(`${base}/auth/login/google`);
     expect(g.status).toBe(503); expect(await g.text()).not.toContain(" at ");
@@ -286,9 +295,9 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     expect((await fetch(`${base}/approvals`, { method: "POST", headers: form, body: `csrf=${await csrf(cookie)}&recipient=Demo&amount_cents=1200&period=2026-10&document_ref=inv` })).status).toBe(404);
     expect((await fetch(`${base}/approvals/approve`, { method: "POST", headers: form, body: `csrf=${await csrf(cookie)}&approval_id=x&amount_cents=1200` })).status).toBe(404);
     const html = await (await fetch(`${base}/approvals`, { headers: { cookie } })).text();
-    expect(html).toContain("<h1>Approvals</h1>");
+    expect(html).toContain("<h1>Kinnitused</h1>");
     expect(html).not.toContain("Synthetic approval demo");
-    expect(html).toContain('<a href="/approvals">Approvals</a>');
+    expect(html).toContain('<a href="/approvals">Kinnitused</a>');
   });
 });
 
@@ -358,7 +367,7 @@ describe("Google OIDC through mock transport (no external network)", () => {
     expect(ok.status).toBe(302);
     const sessionCookie = ok.headers.getSetCookie().find(c => c.startsWith("lp_session="))!.split(";")[0];
     const home = await fetch(`${gBase}/`, { headers: { cookie: sessionCookie }, redirect: "manual" });
-    expect(home.status).toBe(200); expect(await home.text()).toContain("first assessment");
+    expect(home.status).toBe(200); expect(await home.text()).toContain("Täna pole sinult midagi vaja");
     expect((await callback(cb, cookie)).status).toBe(400);
     expect(g.db.prepare("SELECT count(*) n FROM assessments").get()).toEqual({ n: 0 });
   });

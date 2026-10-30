@@ -31,29 +31,31 @@ test("owner approves an exact-payload card at 390px through a real browser form 
     const req = result.structuredContent as { approval_id: string; digest: string; approve_url: string };
 
     await page.goto(cfg.baseUrl);
-    await expect(page.getByRole("heading", { name: "1 approval waiting for you" })).toBeVisible();
-    await page.getByRole("link", { name: "Review approvals" }).click();
-    await expect(page.getByRole("heading", { name: "Approvals" })).toBeVisible();
-    await page.getByRole("link", { name: /Send a message/ }).click();
+    await expect(page.getByRole("heading", { name: "Sinult on täna vaja üht asja" })).toBeVisible();
+    await page.getByRole("link", { name: "Vaata kinnitust" }).click();
     expect(page.url()).toBe(req.approve_url);
 
-    await expect(page.getByRole("heading", { name: "Send a message" })).toBeVisible();
-    await expect(page.getByText("Synthetic Client OÜ")).toBeVisible();
-    await expect(page.getByText("€1,240.00", { exact: true })).toBeVisible();
-    await expect(page.getByText(req.digest.slice(0, 12))).toBeVisible();
-    await expect(page.getByText(/Expires in 2[34] h/)).toBeVisible();
-    await expect(page.getByText("Launchpad never sends, pays or files. After you approve, your assistant does this with its own tools, and only for exactly this content.")).toBeVisible();
-    await expect(page.locator("pre.doc")).toContainText("Please pay to EE00 0000 0000 0000 0000.");
-    // Long content scrolls inside the card; the page never overflows sideways.
-    expect(await page.locator("pre.doc").evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Payment reminder: invoice 2026-014");
+    await expect(page.locator("dl.facts").getByText("Synthetic Client OÜ")).toBeVisible();
+    await expect(page.getByText("1240,00\u00a0€", { exact: true })).toBeVisible();
+    await expect(page.getByText("oktoober 2026", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Kehtib 24 tundi, kuni (homme|täna) kella \d{2}:\d{2}-ni\./)).toBeVisible();
+    // The digest is technical detail: hidden until Tehniline info is opened.
+    await expect(page.getByText(req.digest)).toBeHidden();
+    await page.getByText("Tehniline info").click();
+    await expect(page.getByText(req.digest)).toBeVisible();
+    // The full text is visible (no clamp, no inner scroll): the owner approves exactly this.
+    await expect(page.locator("pre.letter")).toContainText("Please pay to EE00 0000 0000 0000 0000.");
+    expect(await page.locator("pre.letter").evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     await page.screenshot({ path: `${SHOTS}/approval-card-390.png`, fullPage: true });
 
     // Genuine same-origin form POST: must carry a real Origin (not null) and the CSRF field.
-    await page.getByRole("button", { name: "Approve exactly this" }).click();
+    await page.getByRole("button", { name: "Kinnita täpselt see" }).click();
     await expect(page).toHaveURL(req.approve_url);
-    await expect(page.locator("main [role=status]")).toContainText(/Approved Decided .* UTC/);
-    await expect(page.getByRole("button", { name: "Approve exactly this" })).toHaveCount(0);
+    await expect(page.locator("main [role=status]")).toContainText("Nüüd on assistendi kord.");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/✓ Kinnitatud \d{2}:\d{2}/);
+    await expect(page.getByRole("button", { name: "Kinnita täpselt see" })).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/approval-approved-390.png`, fullPage: true });
 
     const after = await client.callTool({ name: "get_approval", arguments: { approval_id: req.approval_id } });

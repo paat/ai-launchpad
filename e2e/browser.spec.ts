@@ -7,40 +7,37 @@ const SHOTS = process.env.SHOT_DIR ?? "test-results/screenshots";
 mkdirSync(SHOTS, { recursive: true });
 
 for (const width of [390, 320]) {
-  test(`real HTML form demo login + primary actions at ${width}px`, async ({ page }) => {
+  test(`real HTML form demo login + Täna + management pages at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/login");
-    await expect(page.getByText("Local synthetic demo")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Proovi näidisettevõttega" })).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/login-${width}.png`, fullPage: true });
 
     // A genuine browser form POST (this is the Origin/referrer regression).
-    await page.getByRole("button", { name: /Demo Plumbing/ }).click();
+    await page.getByRole("button", { name: /Mari Disain/ }).click();
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole("heading", { name: "Your next step" })).toBeVisible();
-    await expect(page.getByText("Connect invoicing to your assistant")).toBeVisible();
-    await expect(page.getByText(/Your assistant.s assessment · not independently checked/)).toBeVisible();
-    await expect(page.getByText("Needs you")).toBeVisible();
-    await expect(page.getByText(/Independently verified: 0/)).toBeVisible();
-    await expect(page.getByText("Synthetic demo · mock data")).toBeVisible();
-    await expect(page.getByText(/Assessed .* UTC/).first()).toBeVisible();
-    await expect(page.getByText("Needs attention")).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("lang", "et");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Sinult on täna vaja|^Täna pole sinult midagi vaja/);
+    await expect(page.locator("main h2").nth(0)).toHaveText(/^Ootab sinult/);
+    await expect(page.locator("main h2").nth(1)).toHaveText(/^Assistent tegi/);
+    await expect(page.locator("main h2").nth(2)).toHaveText(/^Tulekul/);
+    await expect(page.getByText("Lase assistendil tasumata arvetele meeldetuletused koostada", { exact: false }).first()).toBeVisible();
+    await expect(page.locator("header .label-chip--sample")).toHaveText("Näidis");
+    await expect(page.getByText("Lisaks teeb raamatupidaja: KMD ettevalmistus (assistendi hinnang).")).toBeVisible();
     // No horizontal overflow at phone widths.
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
-    await page.screenshot({ path: `${SHOTS}/status-${width}.png`, fullPage: true });
+    await page.screenshot({ path: `${SHOTS}/tana-${width}.png`, fullPage: true });
 
-    // The single Assessment details disclosure opens on tap and keeps all
-    // detail content: responsibilities, conclusion, savings, timestamp.
-    await page.getByText("Assessment details").click();
-    await expect(page.getByText("Sales invoicing")).toBeVisible();
-    await expect(page.getByText(/Responsibilities & evidence/)).toBeVisible();
-    await expect(page.getByText(/Synthetic fixture: bookkeeping prep/)).toBeVisible();
-    await expect(page.getByText("Savings not measured yet.")).toBeVisible();
-    await expect(page.getByText("Unknown; unmeasured")).toHaveCount(0);
+    // The single summary disclosure opens on tap and keeps the assessment detail.
+    await page.getByText("Kuidas see kokku pandi").click();
+    await expect(page.getByText("Säästetud aega ei ole mõõdetud, seega me seda ei näita.")).toBeVisible();
+    await expect(page.getByText(/Arvete koostamine — teed praegu ise/)).toBeVisible();
 
-    // Connection: grant sharing, issue a token (shown once, never in the URL).
-    await page.getByRole("link", { name: "Connection", exact: true }).click();
-    // Demo owners persist across viewport cases; reset through the actual UI.
+    // Data and permissions (English management page): grant sharing, issue a token (shown once, never in the URL).
+    await page.goto("/uhenda");
+    await page.getByRole("link", { name: "Andmed ja õigused" }).last().click();
+    await expect(page).toHaveURL(/\/connection$/);
     const stop = page.getByRole("button", { name: "Stop progress sharing" });
     if (await stop.isVisible()) await stop.click();
     await expect(page.getByText(/Currently:/)).toContainText("off");
@@ -53,71 +50,34 @@ for (const width of [390, 320]) {
     expect(page.url()).not.toContain("lp_");
     await page.screenshot({ path: `${SHOTS}/connection-${width}.png`, fullPage: true });
 
-    await page.getByRole("link", { name: "Connection", exact: true }).click();
+    await page.goto("/connection");
     await page.getByRole("button", { name: "Stop progress sharing" }).click();
     await expect(page.getByText(/Currently:/)).toContainText("off");
 
-    // Activity shows the seeded synthetic fixture honestly.
-    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Activity", exact: true }).click();
-    await expect(page.getByText(/Synthetic demo fixture/)).toBeVisible();
-    await page.screenshot({ path: `${SHOTS}/activity-${width}.png`, fullPage: true });
+    // Tehtud shows the seeded sample honestly, in plain verbs.
+    await page.getByRole("navigation", { name: "Peamenüü" }).getByRole("link", { name: "Tehtud", exact: true }).click();
+    await expect(page.getByText("Näidisandmed laaditi")).toBeVisible();
+    await page.screenshot({ path: `${SHOTS}/tehtud-${width}.png`, fullPage: true });
   });
 }
 
-test("second synthetic business has a different next action", async ({ page }) => {
+test("second synthetic business has a different next action; English on request", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/login");
   await page.getByRole("button", { name: /Demo Bakery/ }).click();
-  await expect(page.getByText("Reconnect bookkeeping access")).toBeVisible();
+  await expect(page.getByText("Reconnect bookkeeping access").first()).toBeVisible();
+  await page.getByRole("link", { name: /^EN/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.locator("main h2").nth(0)).toHaveText(/^Needs you/);
+  // The choice persists in the lang cookie.
+  await page.goto("/activity");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Done");
+  await page.goto("/?lang=et");
   // Desktop keeps the same single-column view without overflow.
   await page.setViewportSize({ width: 1280, height: 800 });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
-  await page.screenshot({ path: `${SHOTS}/status-desktop.png`, fullPage: true });
-});
-
-test("Copy next step copies the prompt, with a manual fallback on failure", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/login");
-  await page.getByRole("button", { name: /Demo Plumbing/ }).click();
-  await expect(page.getByRole("heading", { name: "Your next step" })).toBeVisible();
-  const copy = page.getByRole("button", { name: "Copy next step" });
-  await expect(copy).toBeVisible();
-  await expect(page.getByText("Paste into your assistant.")).toBeVisible();
-
-  // Success wiring: capture exactly what the page asks the clipboard to write.
-  await page.evaluate(() => {
-    (window as unknown as { __copied: string | null }).__copied = null;
-    Object.defineProperty(window.navigator, "clipboard", {
-      value: {
-        writeText: (t: string) => {
-          (window as unknown as { __copied: string | null }).__copied = t;
-          return Promise.resolve();
-        },
-      },
-      configurable: true,
-    });
-  });
-  await copy.click();
-  await expect(page.getByText("Copied — paste it into your assistant.")).toBeVisible();
-  const copied = await page.evaluate(() => (window as unknown as { __copied: string | null }).__copied);
-  expect(copied).toContain("Connect invoicing to your assistant");
-  expect(copied).toContain("Removes hand-written invoices after every job");
-
-  // Deterministic failure: clipboard rejects, so the manual fallback appears
-  // with the same prompt in a readonly text area.
-  await page.evaluate(() => {
-    Object.defineProperty(window.navigator, "clipboard", {
-      value: { writeText: () => Promise.reject(new Error("denied")) },
-      configurable: true,
-    });
-  });
-  await copy.click();
-  await expect(page.getByText("Copy failed — select the text below")).toBeVisible();
-  const fallback = page.locator("#copy-next-text");
-  await expect(fallback).toBeVisible();
-  await expect(fallback).toHaveValue(/Connect invoicing to your assistant/);
-  await expect(fallback).toHaveValue(/Removes hand-written invoices after every job/);
+  await page.screenshot({ path: `${SHOTS}/tana-desktop.png`, fullPage: true });
 });
 
 test("OAuth consent approve and reject through real browser form POSTs", async ({ page, request }) => {
@@ -150,11 +110,13 @@ test("OAuth consent approve and reject through real browser form POSTs", async (
 
     // Start from /authorize, then sign in through the real demo form.
     await page.goto(authUrl("browser-state-approve"));
-    await page.getByRole("button", { name: /Demo Plumbing/ }).click();
+    await page.getByRole("button", { name: /Mari Disain/ }).click();
     await expect(page).toHaveURL(/\/oauth\/consent/);
-    await expect(page.getByRole("heading", { name: /Connect Browser consent test/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Ühenda Browser consent test AI-hüppelauaga?" })).toBeVisible();
+    await expect(page.getByText("Tagasi: 127.0.0.1")).toBeVisible();
+    await page.screenshot({ path: `${SHOTS}/consent-390.png`, fullPage: true });
     // Genuine same-origin form POST: must carry a real Origin (not null).
-    await page.getByRole("button", { name: "Connect assistant" }).click();
+    await page.getByRole("button", { name: "Ühenda", exact: true }).click();
     await expect(page.getByText("synthetic callback received")).toBeVisible();
     expect(page.url()).toContain("code=");
     expect(page.url()).toContain("state=browser-state-approve");
@@ -167,7 +129,7 @@ test("OAuth consent approve and reject through real browser form POSTs", async (
     // A second flow from the same browser rejects cleanly.
     await page.goto(authUrl("browser-state-reject"));
     await expect(page).toHaveURL(/\/oauth\/consent/);
-    await page.getByRole("button", { name: "Reject connection" }).click();
+    await page.getByRole("button", { name: "Ära ühenda" }).click();
     await expect(page.getByText("synthetic callback received")).toBeVisible();
     expect(page.url()).toContain("error=access_denied");
     expect(page.url()).not.toContain("code=");
