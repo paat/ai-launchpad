@@ -186,8 +186,17 @@ async function consentPage(scopes: string) {
   await b.login();
   return { b, html: await (await b.request("/oauth/consent")).text() };
 }
+const STORED_EN = "If you allow preparing work, we store work status, your assistant's assessment, texts sent for your approval, private service nominations and anonymised requests until you delete them.";
 const reject = async (c: { b: Browser; html: string }) => { await c.b.request("/oauth/consent", { csrf: field(c.html, "csrf"), flow: field(c.html, "flow"), decision: "reject" }); return c.html; };
-const STORED_ET = "Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, kinnitamiseks esitatud tekstid ja anonüümseks muudetud soovid, kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.";
+const STORED_ET = "Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, kinnitamiseks esitatud tekstid, privaatsed teenusesoovitused ja anonüümseks muudetud soovid, kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.";
+
+test("consent storage sentence lists private service nominations in both languages for read+report and report-only (#21)", async () => {
+  for (const scopes of ["progress:read progress:report", "progress:report"]) {
+    const c = await consentPage(scopes);
+    expect(c.html).toContain(STORED_ET);
+    expect(await (await c.b.request("/oauth/consent?lang=en")).text()).toContain(STORED_EN);
+  }
+});
 
 test("consent copy is derived from the requested scopes and never claims we store only approvals (#21)", async () => {
   const both = await reject(await consentPage("progress:read progress:report"));
@@ -243,4 +252,57 @@ test("/uhenda names the client that actually reached the MCP endpoint, not the n
   const html = await (await b.request("/uhenda")).text();
   expect(html).toContain("Ühendatud · ChatGPT jõudis kohale");
   expect(html).not.toContain("Claude jõudis");
+});
+
+// A real (non-sample) owner with one OAuth ChatGPT grant that has called a tool.
+async function realChatgpt() {
+  const b = new Browser();
+  const chatgpt = await grant("progress:read", false, "alpha", b, "ChatGPT");
+  db.prepare("UPDATE owners SET kind='google' WHERE subject='demo-alpha'").run();
+  const call = async (token: string) => { const c = await sdk(token); try { await c.callTool({ name: "get_started", arguments: {} }); } finally { await c.close(); } };
+  await call(chatgpt.tokens.access_token);
+  const ownerId = (db.prepare("SELECT id FROM owners WHERE subject='demo-alpha'").get() as { id: string }).id;
+  const manual = async () => (/lp_[A-Za-z0-9_-]{43}/.exec(await (await b.request("/tokens", { csrf: await b.csrf() })).text()))![0];
+  return { b, chatgpt, call, ownerId, manual };
+}
+const grantUse = () => (db.prepare("SELECT last_used_at FROM oauth_grants").get() as { last_used_at: string | null }).last_used_at;
+
+test("/uhenda never shows a later manual-token call's time as the OAuth client's (#21)", async () => {
+  const { b, call, manual } = await realChatgpt();
+  db.prepare("UPDATE oauth_grants SET last_used_at='2026-10-01T09:00:00.000Z'").run();
+  await call(await manual());
+  const html = await (await b.request("/uhenda")).text();
+  expect(html).toContain("Ühendatud · Sinu assistent jõudis kohale");
+  expect(html).not.toContain("ChatGPT jõudis");
+});
+
+test("/uhenda shows an OAuth grant as connected from its own last use, even with the activity log removed (#21)", async () => {
+  const { b } = await realChatgpt();
+  db.prepare("DELETE FROM activity").run();
+  db.prepare("DELETE FROM assessments").run();
+  expect(await (await b.request("/uhenda")).text()).toContain("Ühendatud · ChatGPT jõudis kohale");
+});
+
+test("last use is written only when older than 5 minutes, and never to mcp_tokens for OAuth calls (#21)", async () => {
+  const { b, call, chatgpt } = await realChatgpt();
+  const recent = new Date(Date.now() - 60_000).toISOString();
+  db.prepare("UPDATE oauth_grants SET last_used_at=?").run(recent);
+  await call(chatgpt.tokens.access_token);
+  await call(chatgpt.tokens.access_token);
+  expect(grantUse()).toBe(recent);
+  expect(db.prepare("SELECT count(*) n FROM mcp_tokens").get()).toEqual({ n: 0 });
+  expect(await (await b.request("/uhenda")).text()).toContain("Ühendatud · ChatGPT jõudis kohale");
+  const stale = new Date(Date.now() - 6 * 60_000).toISOString();
+  db.prepare("UPDATE oauth_grants SET last_used_at=?").run(stale);
+  await call(chatgpt.tokens.access_token);
+  expect(grantUse()! > stale).toBe(true);
+});
+
+test("deleting progress clears last use from the owner's grants and tokens (#21)", async () => {
+  const { b, call, ownerId, manual } = await realChatgpt();
+  await call(await manual());
+  expect(db.prepare("SELECT count(*) n FROM mcp_tokens WHERE owner_id=? AND last_used_at IS NOT NULL").get(ownerId)).toEqual({ n: 1 });
+  expect(grantUse()).not.toBeNull();
+  expect((await b.request("/delete", { csrf: await b.csrf() })).status).toBe(302);
+  for (const t of ["oauth_grants", "mcp_tokens"]) expect(db.prepare(`SELECT count(*) n FROM ${t} WHERE owner_id=? AND last_used_at IS NOT NULL`).get(ownerId)).toEqual({ n: 0 });
 });

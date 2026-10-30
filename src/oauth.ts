@@ -22,6 +22,11 @@ const SCOPES = ["progress:read", "progress:report"];
 const PENDING_TOTAL = 100, PENDING_ANON = 70, PENDING_PER_OWNER = 2;
 const CLIENT_TOTAL = 500, CLIENT_UNUSED = 100, UNUSED_TTL_MS = 15 * 60_000, UNUSED_GRACE_MS = 2 * 60_000, UNUSED_GRACE_MARGIN_MS = 1000;
 const opaque = () => randomBytes(32).toString("base64url");
+// Last use is coarse (5 min) and written only when stale: read-only tool calls stay read-only.
+export const touchLastUsed = (db: Db, table: "oauth_grants" | "mcp_tokens", id: string) => {
+  const now = Date.now();
+  db.prepare(`UPDATE ${table} SET last_used_at=? WHERE id=? AND (last_used_at IS NULL OR last_used_at<?)`).run(new Date(now).toISOString(), id, new Date(now - 5 * 60_000).toISOString());
+};
 type Session = { owner_id: string; csrf: string };
 type Pending = { id: string; client_id: string; params: string; owner_id: string | null; epoch: number | null; expires: number };
 type Grant = { id: string; owner_id: string; epoch: number; client_id: string; scopes: string; resource: string; revoked: number; expires: number };
@@ -195,7 +200,7 @@ export class LaunchpadOAuth implements OAuthServerProvider {
     const c = this.db.prepare("SELECT * FROM oauth_credentials WHERE hash=? AND kind='access' AND expires>?").get(sha256(raw), Date.now()) as Credential | undefined;
     if (!c) throw new InvalidTokenError("Invalid access token.");
     const g = this.grant(c.grant_id);
-    this.db.prepare("UPDATE oauth_grants SET last_used_at=? WHERE id=?").run(new Date().toISOString(), g.id);
+    touchLastUsed(this.db, "oauth_grants", g.id);
     return { token: raw, clientId: g.client_id, scopes: g.scopes.split(" "), expiresAt: Math.floor(c.expires/1000), resource: new URL(g.resource), extra: { ownerId: g.owner_id, epoch: g.epoch, grantId: g.id } };
   }
   async revokeToken(client: OAuthClientInformationFull, request: OAuthTokenRevocationRequest) {
@@ -207,7 +212,7 @@ export class LaunchpadOAuth implements OAuthServerProvider {
     })();
   }
   revokeOwner(ownerId: string) {
-    this.db.prepare("UPDATE oauth_grants SET revoked=1 WHERE owner_id=?").run(ownerId);
+    this.db.prepare("UPDATE oauth_grants SET revoked=1,last_used_at=NULL WHERE owner_id=?").run(ownerId);
     this.db.prepare("DELETE FROM oauth_pending WHERE owner_id=?").run(ownerId);
   }
   install(app: Express, requireOwner: RequestHandler, csrfOk: RequestHandler) {
@@ -272,7 +277,7 @@ export class LaunchpadOAuth implements OAuthServerProvider {
 <form method="post" action="/oauth/consent"><input type="hidden" name="csrf" value="${esc(c.s.csrf)}"><input type="hidden" name="flow" value="${esc(c.p.id)}">${report ? `<h2>${t("Kas lased tal töid ette valmistada?", "Let it prepare work for you?")}</h2>
 <label class="check"><input type="checkbox" name="updates" value="1"><span>${t(`Jah: ${name} valmistab ette kirjad, arved ja deklaratsioonid ning küsib iga kord sinult kinnitust`, `Yes: ${name} prepares messages, invoices and returns, and asks you every time before anything goes out`)}</span></label>
 <p class="small muted">${read ? t(`Ilma selleta saab ${name} ainult lugeda. Kirju ega arveid ta sinu eest ette valmistada ei saa. Hiljem lisamiseks tuleb ${name} uuesti ühendada.`, `Without it, ${name} can only read. It can't prepare messages or invoices for you. To add this later, reconnect ${name}.`) : t(`${name} küsib ainult töid ette valmistada. Ilma linnukeseta ühendust ei looda ja ${name} saab teate, et keeldusid.`, `${name} asks only to prepare work. Without the tick, no connection is made and ${name} is told you declined.`)}</p>
-<p class="small muted">${t("Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, kinnitamiseks esitatud tekstid ja anonüümseks muudetud soovid, kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.", "If you allow preparing work, we store work status, your assistant's assessment, texts sent for your approval and anonymised requests until you delete them. AI Launchpad never receives your conversations or files.")}</p>` : ""}
+<p class="small muted">${t("Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, kinnitamiseks esitatud tekstid, privaatsed teenusesoovitused ja anonüümseks muudetud soovid, kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.", "If you allow preparing work, we store work status, your assistant's assessment, texts sent for your approval, private service nominations and anonymised requests until you delete them. AI Launchpad never receives your conversations or files.")}</p>` : ""}
 <h2>${t(`AI-hüppelaua kaudu ei saa ${name} kunagi`, `Through AI Launchpad, ${name} can never`)}</h2><ul class="tight"><li>${t("ise maksta, deklaratsioone esitada ega allkirjastada", "pay, file returns or sign on its own")}</li></ul>
 ${report ? "" : `<p class="small muted">${t("Sinu vestlusi ega faile AI-hüppelaud ei saa.", "AI Launchpad never receives your conversations or files.")}</p>`}
 <button name="decision" value="allow">${t("Ühenda", "Connect")}</button><button class="secondary" name="decision" value="reject">${t("Ära ühenda", "Don't connect")}</button></form>

@@ -1,4 +1,4 @@
-import { LaunchpadOAuth, connectCookie } from "./oauth.js";
+import { LaunchpadOAuth, connectCookie, touchLastUsed } from "./oauth.js";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -563,15 +563,18 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const kind = s ? (db.prepare("SELECT kind FROM owners WHERE id=?").get(s.owner_id) as { kind: string } | undefined)?.kind ?? "" : "";
     let state: ConnectState = { kind: "anon" };
     if (s) {
-      const m = getAssistantMilestones(db, s.owner_id);
-      if (m.synthetic) state = { kind: "sample" };
-      else if (m.lastContact) {
-        // The client whose grant last reached the MCP endpoint, never merely the newest consent.
-        const g = db.prepare("SELECT c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? AND g.revoked=0 AND g.last_used_at IS NOT NULL ORDER BY g.last_used_at DESC LIMIT 1").get(s.owner_id) as { metadata: string } | undefined;
-        let who: string | null = null;
-        try { const n = (JSON.parse(g?.metadata ?? "{}") as { client_name?: unknown }).client_name; who = typeof n === "string" && n.trim() ? n.trim().slice(0, 40) : null; } catch { who = null; }
-        state = { kind: "connected", who, at: m.lastContact.at };
-      } else state = { kind: "waiting" };
+      if (kind === "demo") state = { kind: "sample" };
+      else {
+        // Each credential's own last use: an OAuth grant names its client; a manual token stays unnamed.
+        const g = db.prepare("SELECT c.metadata, g.last_used_at at FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? AND g.revoked=0 AND g.last_used_at IS NOT NULL ORDER BY g.last_used_at DESC LIMIT 1").get(s.owner_id) as { metadata: string; at: string } | undefined;
+        const tok = db.prepare("SELECT max(last_used_at) at FROM mcp_tokens WHERE owner_id=? AND revoked=0").get(s.owner_id) as { at: string | null };
+        if (tok.at && (!g || tok.at > g.at)) state = { kind: "connected", who: null, at: tok.at };
+        else if (g) {
+          let who: string | null = null;
+          try { const n = (JSON.parse(g.metadata) as { client_name?: unknown }).client_name; who = typeof n === "string" && n.trim() ? n.trim().slice(0, 40) : null; } catch { who = null; }
+          state = { kind: "connected", who, at: g.at };
+        } else state = { kind: "waiting" };
+      }
     }
     const body = connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "claude" ? "claude" : "chatgpt", state, owner: !!s });
     res.type("html").send(shell({ title: tr(l)("Ühenda", "Connect"), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, sample: kind === "demo", toggle: toggleHref(req, l), body,
@@ -590,7 +593,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       db.prepare("DELETE FROM oauth_pending WHERE id=?").run(sha256(connectCookie(req)));
       db.prepare("UPDATE owners SET reporting_enabled=0 WHERE id=?").run(oid(req));
       for (const t of ["assessments", "reports", "progress", "activity", "approvals", "candidates", "unmet_needs"]) db.prepare(`DELETE FROM ${t} WHERE owner_id=?`).run(oid(req));
-      db.prepare("UPDATE mcp_tokens SET revoked=1 WHERE owner_id=?").run(oid(req));
+      db.prepare("UPDATE mcp_tokens SET revoked=1,last_used_at=NULL WHERE owner_id=?").run(oid(req));
       db.prepare("UPDATE owners SET epoch=epoch+1 WHERE id=?").run(oid(req));
       db.prepare("UPDATE workspaces SET version=0 WHERE owner_id=?").run(oid(req));
       // Invalidate every session: another browser must not silently keep
@@ -614,9 +617,11 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       const auth = req.headers.authorization ?? "";
       const raw = auth.startsWith("Bearer ") ? auth.slice(7) : "";
       let token = raw ? db.prepare("SELECT * FROM mcp_tokens WHERE token_hash=?").get(sha256(raw)) as { id: string; owner_id: string; scopes: string; epoch: number; revoked: number } | undefined : undefined;
+      let oauthGrant = false;
       if (!token && raw) {
         try {
           const info = await oauth.verifyAccessToken(raw);
+          oauthGrant = true;
           token = { id: String(info.extra!.grantId), owner_id: String(info.extra!.ownerId), epoch: Number(info.extra!.epoch), scopes: info.scopes.join(","), revoked: 0 };
         } catch { /* Same controlled 401 for expired/revoked OAuth credentials. */ }
       }
@@ -634,7 +639,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
         if (extra.length) return res.json({ jsonrpc: "2.0", id: rpc.id ?? null, result: { content: [{ type: "text", text: `Unexpected field(s) rejected: ${extra.join(", ")}. Reports accept only the documented fields; nothing was saved and no state (verified/paid/approved) can be set by a report.` }], isError: true } });
       }
       const ws = db.prepare("SELECT company_ref,label FROM workspaces WHERE owner_id=?").get(token.owner_id) as { company_ref: string; label: string };
-      db.prepare("UPDATE mcp_tokens SET last_used_at=? WHERE id=?").run(nowIso(), token.id);
+      if (!oauthGrant) touchLastUsed(db, "mcp_tokens", token.id);
       const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl }, register, { onUnmetNeed: () => unmetNeeds.kick() });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => { void transport.close(); void server.close(); });
