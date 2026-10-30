@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { shell, loginBody, tanaBody, deadlinesList, activityBody, connectionBody, setupBody, landingBody, connectBody, approvalCardBody, fmtEur, fmtDeadline, fmtPeriod, fmtWhen, type TanaOpts } from "../src/views.js";
+import { shell, loginBody, tanaBody, deadlinesList, approvalsListBody, activityBody, connectionBody, setupBody, landingBody, connectBody, approvalCardBody, fmtEur, fmtDeadline, fmtPeriod, fmtWhen, type TanaOpts } from "../src/views.js";
 import { computeObligations } from "../src/obligations.js";
 import { SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import type { ApprovalRow } from "../src/mcp.js";
@@ -111,11 +111,11 @@ describe("Täna", () => {
     const waiting = approval({ id: "appr_3", state: "approved", decided_at: "2026-11-03T11:00:00Z" });
     const html = tana({ approvals: [done, waiting], progress: [{ task_id: "invoicing", milestone: "draft_prepared", observed_at: "2026-11-03T09:15:00Z" }, { task_id: "invoicing", milestone: "started", observed_at: "2026-11-03T09:00:00Z" }] });
     const tegi = html.slice(html.indexOf('id="tegi"'), html.indexOf('id="tulekul"'));
-    expect(tegi).toContain("Assistent tegi (3)");
+    expect(tegi).toContain("Assistent tegi (2)"); // the sent reminder and the prepared draft; approved-without-outcome is not done yet
     expect(tegi).toContain("Demo Klient OÜ");
     expect(tegi).toContain('<span class="state-chip state-chip--sent state-chip--demo">Saadetud: demo</span>');
     expect(tegi).toContain('<span class="label-chip label-chip--assistant">Assistent teatas</span>');
-    expect(tegi).toContain("Kinnitatud · ootab assistendi teadet");
+    expect(tegi).toContain("Pooleli · ootab assistendi teadet");
     expect(tegi).toContain("Valmistas ette: Sales invoicing");
     expect(tegi).not.toContain("started");
   });
@@ -159,6 +159,47 @@ describe("Täna", () => {
     expect(kmd).not.toContain("Kui see kehtib");
   });
 
+  test("the assistant's rationale and effort estimate are labelled, never in the hero or the counts (#21, QA D-03)", () => {
+    const claimed = assessmentSchema.parse({ ...assessment, next_action: { ...assessment.next_action, rationale: "Säästab sulle umbes 7 tundi nädalas.", estimated_effort_saved: "umbes 7 tundi nädalas", savings_basis: "observed" } });
+    const html = tana({ assessment: claimed, coverage: computeCoverage(claimed) });
+    const hero = html.slice(0, html.indexOf("</section>"));
+    expect(hero).not.toContain("7");
+    const ootab = html.slice(html.indexOf('id="ootab"'), html.indexOf('id="tegi"'));
+    expect(ootab).toContain('<p class="small"><span class="muted">Assistendi hinnang:</span> Säästab sulle umbes 7 tundi nädalas. umbes 7 tundi nädalas</p>');
+    expect(ootab.split("7 tundi").length - 1).toBe(3); // the labelled line twice, the quoted prompt once
+  });
+
+  test("Kuidas see kokku pandi names the source actually read (#21, QA D-06)", () => {
+    const how = (html: string) => html.slice(html.indexOf("<summary>Kuidas see kokku pandi"));
+    expect(how(tana({ deadlines: mariDeadlines }))).toContain("Tähtajad: reeglistik ja näidisandmed.");
+    const official = { ...mariDeadlines, company: { ...mariDeadlines.company, synthetic: false, provenance: "public_register" as const } };
+    expect(how(tana({ deadlines: official }))).toContain("Tähtajad: reeglistik ja avalikud avaandmed (Ärikratt).");
+    const told = { ...mariDeadlines, company: { ...mariDeadlines.company, synthetic: false, provenance: "assistant_supplied" as const } };
+    expect(how(tana({ deadlines: told }))).toContain("Tähtajad: reeglistik ja sinu assistendi teated.");
+    expect(how(tana({ deadlines: null }))).toContain("Tähtajad: reeglistik ja sinu assistendi teated.");
+    for (const html of [tana({ deadlines: told }), tana({ deadlines: null })]) expect(html).not.toContain("avalik register");
+  });
+
+  test("Assistent tegi counts only finished work; a failed outcome waits for the owner (#21, QA D-09)", () => {
+    const outcome = (o: string) => JSON.stringify({ outcome: o, observed_at: "2026-11-03T09:00:00Z", history: [{ outcome: o, observed_at: "2026-11-03T09:00:00Z" }] });
+    const sent = approval({ id: "appr_s", state: "consumed", decided_at: "2026-11-03T08:00:00Z", consumed_at: "2026-11-03T09:00:00Z", outcome_json: outcome("sent") });
+    const failed = approval({ id: "appr_f", state: "consumed", decided_at: "2026-11-03T08:00:00Z", consumed_at: "2026-11-03T09:00:00Z", outcome_json: outcome("failed") });
+    const waiting = approval({ id: "appr_w", state: "approved", decided_at: "2026-11-03T11:00:00Z" });
+    const quiet = { ...assessment, gaps: [], responsibilities: assessment.responsibilities.filter((r) => r.applicability !== "unresolved"), next_action: { ...assessment.next_action, needs_owner: false } };
+    const html = tana({ assessment: quiet, coverage: computeCoverage(quiet), approvals: [sent, failed, waiting], progress: [{ task_id: "invoicing", milestone: "draft_prepared", observed_at: "2026-11-03T09:15:00Z" }] });
+    const ootab = html.slice(html.indexOf('id="ootab"'), html.indexOf('id="tegi"'));
+    const tegi = html.slice(html.indexOf('id="tegi"'), html.indexOf('id="tulekul"'));
+    expect(html).toContain('<a href="#tegi"><b>2</b><span>assistent tegi</span></a>');
+    expect(tegi).toContain("Assistent tegi (2)");
+    expect(tegi).toContain("Pooleli · ootab assistendi teadet");
+    expect(tegi).not.toContain("Ei õnnestunud");
+    expect(ootab).toContain("Ootab sinult (1)");
+    expect(ootab).toContain('<span class="state-chip state-chip--rejected">Ei õnnestunud — vaata üle</span>');
+    expect(ootab).toContain('href="/approvals/appr_f"');
+    expect(html).toContain("Sinult on täna vaja üht asja");
+    expect(html).toContain('<a class="needs" href="#ootab"><b>1</b>');
+  });
+
   test("Tulekul rows: date first, rule label, source, handoff with Sina; synthetic is Näidis, never official", () => {
     const html = tana({ deadlines: mariDeadlines });
     const tul = html.slice(html.indexOf('id="tulekul"'));
@@ -175,7 +216,10 @@ describe("Täna", () => {
     const claimed = assessmentSchema.parse({ ...assessment, next_action: { ...assessment.next_action, estimated_effort_saved: "3 hours per week", savings_basis: "observed" } });
     const html = tana({ assessment: claimed, coverage: computeCoverage(claimed), deadlines: mariDeadlines, approvals: [approval()] });
     expect(html).not.toContain("<script");
-    expect(html).not.toContain("3 hours");
+    // The assistant's estimate appears only under its label, never as our claim in the hero.
+    expect(html.slice(0, html.indexOf("</section>"))).not.toContain("3 hours");
+    expect(html.match(/[^>]*3 hours/g)).toEqual([" It may carry a deadline. 3 hours"]);
+    expect(html).toContain('<span class="muted">Assistendi hinnang:</span> It may carry a deadline. 3 hours per week');
     const visible = html.replace(/<details class="tech-details">[\s\S]*?<\/details>/g, "").replace(/datetime="[^"]*"/g, "");
     expect(visible).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}|UTC/);
   });
@@ -230,7 +274,9 @@ describe("landing and connect", () => {
     expect(pending).toContain("<strong>Miks:</strong> Demo Klient OÜ pole arvet tasunud.");
     expect(pending).toContain("oktoober 2026");
     expect(pending).toContain("Kiri, täpselt sellisena");
-    expect(pending).toContain("Kehtib 24 tundi, kuni homme kella 14:31-ni.");
+    // A non-breaking hyphen: "-ni" never wraps onto its own line (QA D-22).
+    expect(pending).toContain("Kehtib 24 tundi, kuni homme kella 14:31\u2011ni.");
+    expect(pending).not.toContain("14:31-ni");
     expect(pending).not.toContain("15 minutit");
     const approved = approvalCardBody({ csrf: "c", a: approval({ state: "approved", decided_at: "2026-11-03T12:36:00Z" }), lang: "et", sample: true, now: NOW });
     expect(approved).toContain("Kinnitatud 14:36");
@@ -239,6 +285,29 @@ describe("landing and connect", () => {
     expect(approved).toContain("Saadetud: ootab assistendi teadet");
     expect(approved).not.toContain("<script");
     expect(approvalCardBody({ csrf: "c", a: approval({ state: "declined", decided_at: "2026-11-03T12:36:00Z" }), lang: "et", sample: false, now: NOW })).toContain("Keeldusid. Midagi ei saadetud. Ütle assistendile, mida muuta.");
+  });
+});
+
+describe("QA minors (#21)", () => {
+  const sentRow = approval({ id: "appr_s", state: "consumed", decided_at: "2026-11-03T08:00:00Z", consumed_at: "2026-11-03T09:00:00Z", outcome_json: JSON.stringify({ outcome: "sent", observed_at: "2026-11-03T09:00:00Z", history: [{ outcome: "sent", observed_at: "2026-11-03T09:00:00Z" }] }) });
+  test("approvals history marks synthetic outcomes Saadetud: demo, as on the card and Täna (QA D-05)", () => {
+    expect(approvalsListBody([sentRow], "et", true, NOW)).toContain('<span class="state-chip state-chip--sent state-chip--demo">Saadetud: demo</span>');
+    expect(approvalsListBody([sentRow], "en", true, NOW)).toContain("Sent: demo");
+    expect(approvalsListBody([sentRow], "et", false, NOW)).not.toContain(": demo");
+  });
+  test("EN approved card asks for “Approved” and accepts either word (QA D-18)", () => {
+    const en = approvalCardBody({ csrf: "c", a: approval({ state: "approved", decided_at: "2026-11-03T12:36:00Z" }), lang: "en", sample: false, now: NOW });
+    expect(en).toContain("write “<code>Approved</code>” (“Kinnitasin” works too).");
+  });
+  test("no phone hand-off without a public HTTPS address (QA D-14)", () => {
+    const local = connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "chatgpt", state: { kind: "anon" }, owner: false });
+    expect(local).not.toContain("Jätka telefonis");
+    expect(local).toContain("Avalik HTTPS-aadress pole selles serveris veel seadistatud");
+    expect(connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "anon" }, owner: false })).toContain("Jätka telefonis");
+  });
+  test("Tulekul company line has no leading separator when the name is unknown (QA D-23)", () => {
+    const told = { ...mariDeadlines, company: { ...mariDeadlines.company, name: null, synthetic: false, provenance: "assistant_supplied" as const, label_et: "Assistendi teade · avalikust registrist ei loetud" } };
+    expect(tana({ deadlines: told })).toContain('<span class="small muted">19990001</span>');
   });
 });
 

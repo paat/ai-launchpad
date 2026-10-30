@@ -41,6 +41,8 @@ export function openDb(path: string) {
   // Backward-safe: approval card columns are added to an existing table in place.
   const approvalCols = new Set((db.prepare("PRAGMA table_info(approvals)").all() as { name: string }[]).map((c) => c.name));
   for (const col of ["kind", "report_id", "decided_at", "outcome_json"]) if (!approvalCols.has(col)) db.exec(`ALTER TABLE approvals ADD COLUMN ${col} TEXT`);
+  // Which OAuth grant last reached the MCP endpoint, so /uhenda names the client that actually made contact.
+  if (!(db.prepare("PRAGMA table_info(oauth_grants)").all() as { name: string }[]).some((c) => c.name === "last_used_at")) db.exec("ALTER TABLE oauth_grants ADD COLUMN last_used_at TEXT");
   // Friction loop (#20): owner-scoped unmet needs. Only de-identified text
   // is stored; the raw request is never kept.
   db.exec(`

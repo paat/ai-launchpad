@@ -110,7 +110,7 @@ details[open]>summary::after{transform:rotate(45deg)}
 
 /* --- Utilities --- */
 .vh{position:absolute!important;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.nb{white-space:nowrap}
+h1,h2,h3,.link-row-title,.receipt-head{overflow-wrap:anywhere}
 
 /* --- .lang-toggle --- */
 .lang-toggle{display:inline-flex;align-items:center;justify-content:center;min-width:var(--tap);min-height:var(--tap);padding:0 10px;border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface);color:var(--c-text);font-size:var(--fs-sm);font-weight:750;letter-spacing:.04em;text-decoration:none}
@@ -287,9 +287,10 @@ export const fmtWhen = (iso: string | null | undefined, l: Lang, now = new Date(
 const fmtUntil = (iso: string, l: Lang, now = new Date()) => {
   if (!valid(iso)) return "";
   const t = tr(l), d = new Date(iso), diff = dayDiff(tallinnYmd(now), tallinnYmd(d)), time = TIME[l].format(d);
-  if (diff === 0) return t(`täna kella ${time}-ni`, `${time} today`);
-  if (diff === 1) return t(`homme kella ${time}-ni`, `${time} tomorrow`);
-  return t(`${DAY.et.format(d)} kella ${time}-ni`, `${DAY.en.format(d)}, ${time}`);
+  // U+2011: "-ni" never wraps onto a line of its own.
+  if (diff === 0) return t(`täna kella ${time}\u2011ni`, `${time} today`);
+  if (diff === 1) return t(`homme kella ${time}\u2011ni`, `${time} tomorrow`);
+  return t(`${DAY.et.format(d)} kella ${time}\u2011ni`, `${DAY.en.format(d)}, ${time}`);
 };
 const timeEl = (iso: string, text: string) => `<time datetime="${esc(iso)}">${esc(text)}</time>`;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -592,7 +593,7 @@ ${approvalTech(a, v, l)}
 <div class="labels">${labelChip("owner", t("Sinu kinnitus", "You approved"))}${sampleC}</div>
 <h1 class="receipt-head" id="a-h"><span aria-hidden="true">✓ </span>${t("Kinnitatud", "Approved")} ${esc(fmtWhen(a.decided_at, l, now).replace(/^(täna|today), /, ""))}</h1>
 <p role="status"><strong>${t("Nüüd on assistendi kord.", "Now it's your assistant's turn.")}</strong> ${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}${v.amount ? ` · ${esc(v.amount)}` : ""}</p>
-<div class="notice"><p><strong>${t("Mine tagasi ChatGPT-sse või Claude'i ja kirjuta „<code>Kinnitasin</code>”.", "Go back to ChatGPT or Claude and write “<code>Kinnitasin</code>” (Approved).")}</strong></p><p class="small">${t("Assistent näeb sinu kinnitust alles siis, kui talle kirjutad.", "Your assistant only sees your approval when you write to it.")}</p></div>
+<div class="notice"><p><strong>${t("Mine tagasi ChatGPT-sse või Claude'i ja kirjuta „<code>Kinnitasin</code>”.", "Go back to ChatGPT or Claude and write “<code>Approved</code>” (“Kinnitasin” works too).")}</strong></p><p class="small">${t("Assistent näeb sinu kinnitust alles siis, kui talle kirjutad.", "Your assistant only sees your approval when you write to it.")}</p></div>
 ${stateLine(a, v, l, sample)}
 <p class="small muted">${t(`Kui assistent ei teata tulemusest ${fmtUntil(a.expires_at, l, now)}, kinnitus aegub ja ta peab uuesti küsima.`, `If your assistant does not report an outcome by ${fmtUntil(a.expires_at, l, now)}, the approval expires and it must ask again.`)}</p>
 ${approvalTech(a, v, l)}
@@ -605,7 +606,7 @@ ${back}
     return `<article class="card" aria-labelledby="a-h">
 <div class="labels">${outcomeChip(last, l, sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}${sampleC}</div>
 <h1 class="receipt-head" id="a-h">${head}</h1>
-<p>${[v.recipient.name, v.amount].filter(Boolean).map(esc).join(" · ")}${v.recipient.name || v.amount ? " · " : ""}<span class="nb">${esc(v.title)}</span></p>
+<p>${[v.recipient.name, v.amount].filter(Boolean).map(esc).join(" · ")}${v.recipient.name || v.amount ? " · " : ""}${esc(v.title)}</p>
 <p class="small"><strong>${t(`Sinu kinnitusi selles töös: ${a.decided_at ? 1 : 0}.`, `Your approvals in this job: ${a.decided_at ? 1 : 0}.`)}</strong> ${t("Töö tegi assistent; tulemus on tema teade, AI-hüppelaud seda ei kontrollinud.", "Your assistant did the work; the result is its report, not checked by AI Launchpad.")}</p>
 ${stateLine(a, v, l, sample)}
 ${content ? `<details><summary>${t("Mida sa kinnitasid", "What you approved")}</summary>${approvalFacts(v, l)}${content}</details>` : ""}
@@ -633,22 +634,22 @@ ${back}
 }
 
 /** Pending approval as a whole-row link (Täna, approvals list). */
-function approvalLinkRow(a: ApprovalRow, l: Lang, now: Date): string {
+function approvalLinkRow(a: ApprovalRow, l: Lang, now: Date, sample: boolean): string {
   const t = tr(l), v = approvalView(a, l);
   const sub = [v.amount, a.state === "pending" ? t(`kehtib kuni ${fmtUntil(a.expires_at, l, now)}`, `valid until ${fmtUntil(a.expires_at, l, now)}`) : fmtWhen(a.decided_at ?? a.created_at, l, now)].filter(Boolean).join(" · ");
   const chip = a.state === "pending" ? stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))
-    : a.state === "consumed" && v.outcome ? outcomeChip(v.outcome.outcome, l, false)
+    : a.state === "consumed" && v.outcome ? outcomeChip(v.outcome.outcome, l, sample)
     : a.state === "approved" ? stateChip("approved", t("Kinnitatud", "Approved"))
     : a.state === "declined" ? stateChip("rejected", t("Keeldusid", "Declined"))
     : stateChip("void", t("Aegunud", "Expired"));
   return `<a class="link-row" href="/approvals/${esc(encodeURIComponent(a.id))}"><span><span class="labels">${chip}</span><span class="link-row-title">${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}</span><span class="small muted">${esc(sub)}</span></span></a>`;
 }
 
-export function approvalsListBody(rows: ApprovalRow[], l: Lang, now = new Date()): string {
+export function approvalsListBody(rows: ApprovalRow[], l: Lang, sample: boolean, now = new Date()): string {
   const t = tr(l), pending = rows.filter((a) => a.state === "pending"), history = rows.filter((a) => a.state !== "pending");
   return `<h1>${t("Kinnitused", "Approvals")}</h1><p class="lede">${t("Tööd, mille jaoks sinu assistent küsis sinu kinnitust. AI-hüppelaud ise ei saada, maksa ega esita midagi.", "Work your assistant asked you to approve. AI Launchpad itself never sends, pays or files.")}</p>
-<section class="card" aria-labelledby="ap-w"><h2 id="ap-w">${t("Ootab sinult", "Needs you")} (${pending.length})</h2>${pending.map((a) => approvalLinkRow(a, l, now)).join("") || `<p class="muted">${t("Praegu ei oota sinult midagi.", "Nothing is waiting for you right now.")}</p>`}</section>
-<section class="card" aria-labelledby="ap-h"><h2 id="ap-h">${t("Ajalugu", "History")}</h2>${history.map((a) => approvalLinkRow(a, l, now)).join("") || `<p class="muted">${t("Otsustatud kinnitusi veel pole.", "No decided approvals yet.")}</p>`}</section>`;
+<section class="card" aria-labelledby="ap-w"><h2 id="ap-w">${t("Ootab sinult", "Needs you")} (${pending.length})</h2>${pending.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Praegu ei oota sinult midagi.", "Nothing is waiting for you right now.")}</p>`}</section>
+<section class="card" aria-labelledby="ap-h"><h2 id="ap-h">${t("Ajalugu", "History")}</h2>${history.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Otsustatud kinnitusi veel pole.", "No decided approvals yet.")}</p>`}</section>`;
 }
 
 export interface PublicCardViewOpts { topicId: string; locale: string; state: string; output: string | null; replayed: boolean; }
@@ -749,6 +750,11 @@ const NEED_REASON_TEXT: Record<string, [string, string]> = {
 };
 const categoryLabel = (c: string | null, l: Lang) => (l === "en" ? CATEGORY_LABELS : CATEGORY_LABELS_ET)[c as Category] ?? c ?? "";
 const blockerLabel = (b: string, l: Lang) => (l === "en" ? BLOCKER_LABELS : BLOCKER_LABELS_ET)[b as Blocker] ?? b;
+/** The local mock writes English fixture text: derive its label and spec from category and blocker in the page language. Live model output shows as written. */
+const isMock = (n: OwnerNeed) => n.classified_by === "mock" && !!n.category;
+const needLabel = (n: OwnerNeed, l: Lang) => isMock(n) ? `${categoryLabel(n.category, l)}: ${blockerLabel(n.blocker, l)}` : n.demand_label;
+const needSpec = (n: OwnerNeed, l: Lang) => isMock(n) ? tr(l)(`Näidis-liigitus, mitte mudel: teenus valdkonnas „${categoryLabel(n.category, "et")}”, mille takistus täna on: ${blockerLabel(n.blocker, "et")}.`, n.spec ?? "") : n.spec;
+const classifierName = (by: string | null, l: Lang) => by === "mock" ? tr(l)("kohalik testliigitaja (näidis, mitte mudel)", "local mock (not a model)") : classifiedByLabel(by);
 /** "AI liigitus · Meta Muse Spark Open" only for live model output; the local mock is a sample. */
 const classifiedChip = (by: string | null, l: Lang) => by === BASETEN_MODEL ? labelChip("ai", tr(l)("AI liigitus · Meta Muse Spark Open", "AI classification · Meta Muse Spark Open")) : sampleChip(l);
 
@@ -756,8 +762,8 @@ function needRow(n: OwnerNeed, l: Lang): string {
   const t = tr(l), pair = (m: Record<string, [string, string]>, k: string | null) => (k && m[k] ? t(...m[k]) : "");
   const why = [pair(NEED_STATE_TEXT, n.state), n.reason ? pair(NEED_REASON_TEXT, n.reason) || n.reason : ""].filter(Boolean).join(" ");
   return `<div class="row"><div class="labels">${stateChip(n.state === "classification_failed" ? "rejected" : n.state === "published" ? "accepted" : "drafted", pair(NEED_STATE_LABEL, n.state) || n.state)}${n.category ? labelChip("assistant", categoryLabel(n.category, l)) : ""}</div>
-<p><strong>${esc(n.demand_label ?? t("Veel liigitamata", "Not classified yet"))}</strong></p><p class="small">${esc(why)}</p><p class="small muted">„${esc(n.need_redacted)}” · ${t("Miks", "Why")}: ${esc(blockerLabel(n.blocker, l))} · ${esc(fmtWhen(n.created_at, l))}</p>
-${n.classified_by ? techDetails(l, techList([n.state === "classification_failed" ? [t("Liigitamine", "Classification"), t("liigitamise katse ebaõnnestus", "classification attempt failed")] : [t("Liigitaja", "Classified by"), classifiedByLabel(n.classified_by)]])) : ""}</div>`;
+<p><strong>${esc(needLabel(n, l) ?? t("Veel liigitamata", "Not classified yet"))}</strong></p><p class="small">${esc(why)}</p><p class="small muted">„${esc(n.need_redacted)}” · ${t("Miks", "Why")}: ${esc(blockerLabel(n.blocker, l))} · ${esc(fmtWhen(n.created_at, l))}</p>
+${n.classified_by ? techDetails(l, techList([n.state === "classification_failed" ? [t("Liigitamine", "Classification"), t("liigitamise katse ebaõnnestus", "classification attempt failed")] : [t("Liigitaja", "Classified by"), classifierName(n.classified_by, l)]])) : ""}</div>`;
 }
 
 /** Unmet-need card (Täna). Publishing sends category, label and spec only. */
@@ -772,11 +778,11 @@ export function unmetNeedsBody(opts: { csrf: string; needs: OwnerNeed[]; lang: L
 ${awaiting.map((n) => `<div class="row" id="soov-${esc(n.id)}"><div class="labels">${stateChip("waiting", t("Valikuline", "Optional"))}</div>
 <p>„${esc(n.need_redacted)}”</p>
 <dl class="facts facts--stacked"><div class="fact-row"><dt>${t("Miks:", "Why:")}</dt><dd>${esc(blockerLabel(n.blocker, l))}</dd></div><div class="fact-row"><dt>${t("Mida assistent saab teha:", "What your assistant can do:")}</dt><dd>${esc(BLOCKER_HANDOFF[n.blocker as Blocker] ? t(BLOCKER_HANDOFF[n.blocker as Blocker].et, BLOCKER_HANDOFF[n.blocker as Blocker].en) : "—")}</dd></div></dl>
-<div class="ai-block"><div class="labels">${classifiedChip(n.classified_by, l)}${labelChip("assistant", categoryLabel(n.category, l))}</div><p><strong>${esc(n.demand_label)}</strong></p><p class="small">${esc(n.spec)}</p>${n.same_as ? `<p class="small muted">${t("Sarnane soov on juba avatud soovide hulgas.", "Matches an existing open-demand item.")}</p>` : ""}</div>
+<div class="${n.classified_by === BASETEN_MODEL ? "ai-block" : "quote"}"><div class="labels">${classifiedChip(n.classified_by, l)}${labelChip("assistant", categoryLabel(n.category, l))}</div><p><strong>${esc(needLabel(n, l))}</strong></p><p class="small">${esc(needSpec(n, l))}</p>${n.same_as ? `<p class="small muted">${t("Sarnane soov on juba avatud soovide hulgas.", "Matches an existing open-demand item.")}</p>` : ""}</div>
 <p class="small">${t("Avalda anonüümse soovina (valikuline): kui piisavalt ettevõtjaid seda vajab, ehitatakse ühendus ja assistent saab selle ka sinult ära võtta.", "Publish as anonymous demand (optional): if enough owners need it, a connection gets built and your assistant can take this off you too.")}</p>
 ${decide(n, "publish", t("Avalda anonüümselt", "Publish anonymously"), "")}${decide(n, "keep_private", t("Jäta privaatseks", "Keep private"), "secondary")}
 <p class="small muted">${t("Avaldamisel jagatakse lehel ", "Publishing shares only the category, label and one-line spec on ")}<a href="/demand">${t("Avatud soovid", "Open demand")}</a>${t(" ainult liigitust, lühinime ja ühe rea kirjeldust — mitte sinu ettevõtet, kontot ega soovi teksti.", " — never your company, your account or the request text.")}</p>
-${techDetails(l, techList([[t("Liigitaja", "Classified by"), classifiedByLabel(n.classified_by)], ["ID", n.id]]))}</div>`).join("")}
+${techDetails(l, techList([[t("Liigitaja", "Classified by"), classifierName(n.classified_by, l)], ["ID", n.id]]))}</div>`).join("")}
 ${open.map((n) => needRow(n, l)).join("")}
 ${decided.length ? `<details><summary>${t("Otsustatud soovid", "Decided requests")} (${decided.length})</summary>${decided.map((n) => needRow(n, l)).join("")}</details>` : ""}
 </section>`;
@@ -786,7 +792,7 @@ ${decided.length ? `<details><summary>${t("Otsustatud soovid", "Decided requests
  * classification fields are rendered, all escaped. */
 export function demandBody(items: DemandItem[], l: Lang): string {
   const t = tr(l);
-  const by = (i: DemandItem) => [i.live ? `${classifiedByLabel(BASETEN_MODEL)} × ${i.live}` : "", i.mock ? `${classifiedByLabel("mock")} × ${i.mock}` : ""].filter(Boolean).join(" · ");
+  const by = (i: DemandItem) => [i.live ? `${classifierName(BASETEN_MODEL, l)} × ${i.live}` : "", i.mock ? `${classifierName("mock", l)} × ${i.mock}` : ""].filter(Boolean).join(" · ");
   const how = items.length === 0 ? "" : items.some((i) => i.live > 0) ? t(", liigitanud Meta avatud mudel Muse Spark Open", ", classified by Meta's open model Muse Spark Open") : t(", liigitanud kohalik testliigitaja (näidis)", ", classified by a local test classifier (sample)");
   return `<section class="card hero"><h1>${t("Avatud soovid", "Open demand")}</h1><p class="lede">${t("Mida Eesti ettevõtjad oma AI-assistendilt palusid, aga mida ükski ühendus veel teha ei oska. Anonüümne, omaniku loal", "What Estonian businesses asked their AI assistants to do that no connector can do yet. Anonymous, owner-approved")}${how}.</p>
 <p class="small muted">${t("Järjestatud soovide arvu järgi. Iga soov ütleb, kuidas see liigitati: Meta mudel või kohalik testliigitaja (mitte mudel). Arvud on omanike kinnitatud teated, mitte turu suurus.", "Sorted by number of requests. Each item says how it was classified — live by Meta's model or by the local mock (not a model). Counts are owner-approved reports, not market size.")}</p></section>
@@ -869,7 +875,7 @@ const LANDING_MSG: Record<LandingMessage, [string, string]> = {
 
 export function landingBody(o: { lang: Lang; q: string; state: LandingState; now?: Date }): string {
   const l = o.lang, t = tr(l), now = o.now ?? new Date();
-  const sampleLink = `<a href="/?q=${encodeURIComponent("Mari Disain")}">${t("Proovi näidisettevõttega: Mari Disain", "Try the sample company: Mari Disain")}</a>`;
+  const sampleLink = `<a class="tap-link" href="/?q=${encodeURIComponent("Mari Disain")}">${t("Proovi näidisettevõttega: Mari Disain", "Try the sample company: Mari Disain")}</a>`;
   const form = `<form class="search" method="get" action="/" role="search"><label>${t("Ettevõtte nimi või registrikood", "Company name or registry code")}<input name="q" value="${esc(o.q)}" maxlength="120" autocomplete="organization" placeholder="${t("nt Mari Disain või 1xxxxxxx", "e.g. Mari Disain or 1xxxxxxx")}"></label><button type="submit">${t("Näita tähtaegu", "Show deadlines")}</button></form>`;
   let result = "";
   const s = o.state;
@@ -915,36 +921,44 @@ export function tanaBody(o: TanaOpts): string {
   const l = o.lang, t = tr(l), now = o.now ?? new Date(), a = o.assessment;
   const deadlines = o.deadlines && typeof o.deadlines === "object" && "obligations" in o.deadlines ? o.deadlines : null;
   const pending = o.approvals.filter((x) => x.state === "pending");
+  // A failed or rejected outcome is not done work: it needs the owner.
+  const failed = o.approvals.filter((x) => x.state === "consumed" && ["failed", "rejected"].includes(approvalView(x, l).outcome?.outcome ?? ""));
   const qs = deadlines ? questions(deadlines, l) : [];
   const next = a?.next_action.needs_owner ? a.next_action : null;
   const optional = o.needs.filter((n) => n.state === "classified");
-  const n = pending.length + qs.length + (next ? 1 : 0);
+  const n = pending.length + failed.length + qs.length + (next ? 1 : 0);
 
   // Ootab sinult
   const askRows = [
-    ...pending.map((x) => approvalLinkRow(x, l, now)),
+    ...pending.map((x) => approvalLinkRow(x, l, now, o.sample)),
+    ...failed.map((x) => { const v = approvalView(x, l); return `<a class="link-row" href="/approvals/${esc(encodeURIComponent(x.id))}"><span><span class="labels">${stateChip("rejected", t("Ei õnnestunud — vaata üle", "Did not work — review it"))}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</span><span class="link-row-title">${esc([v.title, v.recipient.name].filter(Boolean).join(" · "))}</span><span class="small muted">${esc(fmtWhen(v.outcome?.observed_at ?? x.consumed_at, l, now))}</span></span></a>`; }),
     ...qs.map((x) => `<div class="ask-row"><strong>${t("Vasta assistendile ühele küsimusele:", "Answer one question for your assistant:")}</strong><p class="small">„${esc(x.q)}” ${esc(x.then)}</p></div>`),
-    ...(next ? [`<div class="ask-row"><strong>${t("Järgmine samm:", "Next step:")} ${esc(next.title)}</strong><p class="small">${esc(next.rationale)}</p><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(t(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale} Palun aita mul see ära teha või ütle, mida sinult vaja on.`, `Next step from my AI Launchpad assessment: "${next.title}". Why: ${next.rationale} Please help me do this, or tell me what you need from me.`))}”</p></div></div>`] : []),
+    // Rationale and any effort estimate are the assistant's words, labelled as such; never in the hero or the counts.
+    ...(next ? [`<div class="ask-row"><strong>${t("Järgmine samm:", "Next step:")} ${esc(next.title)}</strong><p class="small"><span class="muted">${t("Assistendi hinnang:", "Your assistant's estimate:")}</span> ${esc([next.rationale, next.estimated_effort_saved?.trim()].filter(Boolean).join(" "))}</p><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(t(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale} Palun aita mul see ära teha või ütle, mida sinult vaja on.`, `Next step from my AI Launchpad assessment: "${next.title}". Why: ${next.rationale} Please help me do this, or tell me what you need from me.`))}”</p></div></div>`] : []),
     // Unknowns stay in the main view (never only behind a disclosure); not counted as asks.
     ...(a && (o.coverage.unresolved || a.gaps.length) ? [`<div class="ask-row"><strong>${t("Assistent pole veel kõike hinnanud:", "Your assistant has not assessed everything yet:")}</strong><ul class="tight">${[...(o.coverage.unresolved ? [t(`${o.coverage.unresolved} kohustus(t) on veel lahtised`, `${o.coverage.unresolved} item(s) still unresolved`)] : []), ...a.gaps].map((g) => `<li class="small">${esc(g)}</li>`).join("")}</ul></div>`] : []),
-    ...optional.map((x) => `<div class="ask-row"><a href="#soov-${esc(x.id)}"><strong>${t("Valikuline:", "Optional:")}</strong> ${esc(x.demand_label ?? x.need_redacted)}</a><p class="small muted">${t("Seda ei saa assistent sinu eest teha. Võid soovi anonüümselt avaldada.", "Your assistant can't do this for you. You may publish it anonymously.")}</p></div>`),
+    ...optional.map((x) => `<div class="ask-row"><a class="tap-link" href="#soov-${esc(x.id)}"><strong>${t("Valikuline:", "Optional:")}</strong> ${esc(needLabel(x, l) ?? x.need_redacted)}</a><p class="small muted">${t("Seda ei saa assistent sinu eest teha. Võid soovi anonüümselt avaldada.", "Your assistant can't do this for you. You may publish it anonymously.")}</p></div>`),
   ];
 
-  // Assistent tegi: finished or prepared work only, never reads.
+  // Assistent tegi: finished or prepared work only, never reads. Approved work still waiting for
+  // the assistant's report is listed but not counted.
   const titleOf = (id: string) => a?.responsibilities.find((r) => r.id === id)?.label ?? id;
   const doneRows: string[] = [];
+  let doneCount = 0;
   for (const x of o.approvals) {
     const v = approvalView(x, l);
     const who = v.recipient.name ? ` · ${esc(v.recipient.name)}` : "";
-    if (x.state === "consumed" && v.outcome) {
+    if (x.state === "consumed" && v.outcome && ["sent", "paid", "submitted", "accepted"].includes(v.outcome.outcome)) {
+      doneCount++;
       doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${outcomeChip(v.outcome.outcome, l, o.sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${t("1 sinu kinnitus", "1 approval from you")} · ${timeEl(v.outcome.observed_at ?? x.consumed_at ?? x.created_at, fmtWhen(v.outcome.observed_at ?? x.consumed_at, l, now))}${v.amount ? ` · ${esc(v.amount)}` : ""}</span></div>`);
     } else if (x.state === "approved") {
-      doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${stateChip("approved", t("Kinnitatud · ootab assistendi teadet", "Approved · waiting for your assistant's report"))}</div><span class="small muted">${t("Sinu kinnitus", "You approved")} · ${esc(fmtWhen(x.decided_at, l, now))}</span></div>`);
+      doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${stateChip("approved", t("Pooleli · ootab assistendi teadet", "In progress · waiting for your assistant's report"))}</div><span class="small muted">${t("Sinu kinnitus", "You approved")} · ${esc(fmtWhen(x.decided_at, l, now))}</span></div>`);
     }
   }
   for (const p of o.progress) {
     if (p.milestone !== "draft_prepared" && p.milestone !== "external_completion_reported") continue;
     const verb = p.milestone === "draft_prepared" ? t("Valmistas ette:", "Prepared:") : t("Teatas tehtuks:", "Reported done:");
+    doneCount++;
     doneRows.push(`<div class="row"><strong>${verb} ${esc(titleOf(p.task_id))}</strong><div class="labels">${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${esc(fmtWhen(p.observed_at, l, now))}</span></div>`);
   }
   const handled = (a?.responsibilities ?? []).filter(isHandled);
@@ -955,7 +969,7 @@ export function tanaBody(o: TanaOpts): string {
   const upcoming = deadlines?.obligations.length ?? 0;
   const top = pending[0];
   const lede = n
-    ? `${[pending.length ? plural(pending.length, t("kinnitus", "approval"), t("kinnitust", "approvals")) : "", qs.length ? plural(qs.length, t("vastus", "answer"), t("vastust", "answers")) : "", next ? t("1 järgmine samm", "1 next step") : ""].filter(Boolean).join(", ").replace(/, ([^,]*)$/, t(" ja $1", " and $1"))}. ${t("Ülejäänu valmistab ette sinu assistent.", "Your assistant prepares the rest.")}`
+    ? `${[pending.length ? plural(pending.length, t("kinnitus", "approval"), t("kinnitust", "approvals")) : "", failed.length ? plural(failed.length, t("ebaõnnestunud töö", "failed job"), t("ebaõnnestunud tööd", "failed jobs")) : "", qs.length ? plural(qs.length, t("vastus", "answer"), t("vastust", "answers")) : "", next ? t("1 järgmine samm", "1 next step") : ""].filter(Boolean).join(", ").replace(/, ([^,]*)$/, t(" ja $1", " and $1"))}. ${t("Ülejäänu valmistab ette sinu assistent.", "Your assistant prepares the rest.")}`
     : open ? t("Assistent pole veel kõike hinnanud; lahtised küsimused on allpool.", "Your assistant has not assessed everything yet; the open questions are below.")
     : a || o.approvals.length || deadlines ? t("Ülejäänu valmistab ette sinu assistent. Kui midagi vajab sinu kinnitust, näed seda siin.", "Your assistant prepares the rest. When something needs your approval, you see it here.")
       : t(`Ühenda oma assistent ja küsi temalt: „${TRY_PROMPT[0]}”`, `Connect your assistant and ask it: “${TRY_PROMPT[1]}”`);
@@ -972,7 +986,7 @@ export function tanaBody(o: TanaOpts): string {
 
   const c = o.coverage;
   const how = `<details><summary>${t("Kuidas see kokku pandi", "How this was put together")}</summary>
-<p class="small">${deadlines?.company.synthetic ? t("Tähtajad: reeglistik ja näidisandmed.", "Deadlines: rules and sample data.") : t("Tähtajad: reeglistik ja avalik register.", "Deadlines: rules and the public register.")} ${t(`Assistendi teated: ${o.reportCount}, AI-hüppelaud neid ei kontrollinud. Allikast kontrollitud tulemusi: ${c.independently_verified_outcomes}.`, `Assistant reports: ${o.reportCount}, not checked by AI Launchpad. Outcomes verified at the source: ${c.independently_verified_outcomes}.`)} ${t("Säästetud aega ei ole mõõdetud, seega me seda ei näita.", "Time saved is not measured, so we don't show it.")}</p>
+<p class="small">${deadlines?.company.synthetic ? t("Tähtajad: reeglistik ja näidisandmed.", "Deadlines: rules and sample data.") : deadlines?.company.provenance === "public_register" ? t("Tähtajad: reeglistik ja avalikud avaandmed (Ärikratt).", "Deadlines: rules and public open data (Ärikratt).") : t("Tähtajad: reeglistik ja sinu assistendi teated.", "Deadlines: rules and your assistant's reports.")} ${t(`Assistendi teated: ${o.reportCount}, AI-hüppelaud neid ei kontrollinud. Allikast kontrollitud tulemusi: ${c.independently_verified_outcomes}.`, `Assistant reports: ${o.reportCount}, not checked by AI Launchpad. Outcomes verified at the source: ${c.independently_verified_outcomes}.`)} ${t("Säästetud aega ei ole mõõdetud, seega me seda ei näita.", "Time saved is not measured, so we don't show it.")}</p>
 ${a ? `<p class="small">${t(`Assistendi hinnangul on ${c.covered} kohustust ${c.denominator}-st kaardistatust korras${c.percent != null ? ` (${c.percent}%)` : ""}.`, `Your assistant assesses ${c.covered} of ${c.denominator} mapped responsibilities as handled${c.percent != null ? ` (${c.percent}%)` : ""}.`)}${o.assessedAt ? ` ${t("Hinnatud", "Assessed")} ${esc(fmtWhen(o.assessedAt, l, now))}.` : ""}</p>
 <p class="small muted">${a.company_label ? t("Ettevõtte nime andis sinu assistent", "Company label supplied by your assistant") : t("Tööruumi nimi", "Workspace label")}${a.company_registry_ref ? ` · ${t("registriviide", "registry ref")} ${esc(a.company_registry_ref)}` : ""} — ${t("seda ei ole avalikust registrist kontrollitud ja see ei tõenda volitust.", "not verified against a public register, and not a mandate.")}</p>
 <p class="small">${esc(a.conclusion)}</p>
@@ -984,17 +998,17 @@ ${o.exclusions.length ? `<p class="small muted">${t("Varasematest hinnangutest e
 <p class="company">${esc(a?.company_label ?? deadlines?.company.name ?? o.label)}</p>
 <h1 id="t-h">${esc(h1)}</h1>
 <p class="lede">${esc(lede)} <span class="small muted">${timeEl(tallinnYmd(now), TODAY[l].format(now))}</span></p>
-<nav class="today-sum" aria-label="${t("Kokkuvõte", "Summary")}"><a${n ? ' class="needs"' : ""} href="#ootab"><b>${n}</b><span>${t("ootab sinult", "need you")}</span></a><a href="#tegi"><b>${doneRows.length}</b><span>${t("assistent tegi", "done for you")}</span></a><a href="#tulekul"><b>${upcoming}</b><span>${t("tulekul", "coming up")}</span></a></nav>
+<nav class="today-sum" aria-label="${t("Kokkuvõte", "Summary")}"><a${n ? ' class="needs"' : ""} href="#ootab"><b>${n}</b><span>${t("ootab sinult", "need you")}</span></a><a href="#tegi"><b>${doneCount}</b><span>${t("assistent tegi", "done for you")}</span></a><a href="#tulekul"><b>${upcoming}</b><span>${t("tulekul", "coming up")}</span></a></nav>
 ${primary}
 </section>
 <section class="card" id="ootab" aria-labelledby="ootab-h"><h2 id="ootab-h">${t("Ootab sinult", "Needs you")} (${n})</h2>
 ${askRows.join("") || `<p class="muted">${t("Praegu ei oota sinult midagi.", "Nothing is waiting for you right now.")}</p>`}</section>
-<section class="card timeline" id="tegi" aria-labelledby="tegi-h"><h2 id="tegi-h">${t("Assistent tegi", "Done for you")} (${doneRows.length})</h2>
+<section class="card timeline" id="tegi" aria-labelledby="tegi-h"><h2 id="tegi-h">${t("Assistent tegi", "Done for you")} (${doneCount})</h2>
 ${doneRows.join("") || `<p class="muted">${t(`Veel pole midagi tehtud. Proovi assistendile öelda: „${TRY_PROMPT[0]}”`, `Nothing done yet. Try telling your assistant: “${TRY_PROMPT[1]}”`)}</p>`}
 ${handledLine}
 <a class="tap-link" href="/activity">${t("Kõik tehtud tööd", "Everything done")}</a></section>
 <section class="card" id="tulekul" aria-labelledby="tulekul-h"><h2 id="tulekul-h">${t("Tulekul", "Coming up")} (${upcoming})</h2>
-${deadlines ? `<div class="labels">${deadlines.company.synthetic ? sampleChip(l) : deadlines.company.provenance === "public_register" ? labelChip("official", t(deadlines.company.label_et, deadlines.company.label_en)) : labelChip("assistant", t(deadlines.company.label_et, deadlines.company.label_en))}<span class="small muted">${esc(deadlines.company.name ?? "")}${deadlines.company.registry_code ? ` · ${esc(deadlines.company.registry_code)}` : ""}</span></div>` : ""}
+${deadlines ? `<div class="labels">${deadlines.company.synthetic ? sampleChip(l) : deadlines.company.provenance === "public_register" ? labelChip("official", t(deadlines.company.label_et, deadlines.company.label_en)) : labelChip("assistant", t(deadlines.company.label_et, deadlines.company.label_en))}<span class="small muted">${esc([deadlines.company.name, deadlines.company.registry_code].filter(Boolean).join(" · "))}</span></div>` : ""}
 ${tulekul}
 ${deadlines ? `<p class="small muted">${t("Tähtajad arvutab reeglistik, mitte tehisaru. Kuupäevad on arvutatud, mitte esitatud ega makstud.", "Deadlines are calculated by rules, not AI. Dates are computed, not filed or paid.")}${deadlines.company.attribution && !deadlines.company.synthetic ? ` ${esc(deadlines.company.attribution)}` : ""}</p>` : ""}</section>
 ${unmetNeedsBody({ csrf: o.csrf, needs: o.needs, lang: l })}
@@ -1034,9 +1048,9 @@ ${o.owner ? `<p class="small"><a class="tap-link" href="/setup">${t("Pole veel a
 <li><h3 class="step-title">${t("Logi sisse ja vali, mida assistent tohib", "Sign in and choose what your assistant may do")}</h3><p class="small muted">${esc(t(`Märgi „Jah: ${name} valmistab ette …”, kui tahad, et ta valmistaks sulle kinnitamiseks kirju, arveid ja deklaratsioone.`, `Tick “Yes: ${name} prepares …” if you want it to prepare messages, invoices and returns for your approval.`))}</p></li></ol></section>
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
-<section class="card" aria-labelledby="phone-h"><h2 id="phone-h">${t("Jätka telefonis", "Continue on your phone")}</h2><p class="small muted">${t("Ava see aadress oma telefonis:", "Open this address on your phone:")}</p><p class="big-url">${wbr(here)}</p></section>
+${remoteReady ? `<section class="card" aria-labelledby="phone-h"><h2 id="phone-h">${t("Jätka telefonis", "Continue on your phone")}</h2><p class="small muted">${t("Ava see aadress oma telefonis:", "Open this address on your phone:")}</p><p class="big-url">${wbr(here)}</p></section>` : ""}
 ${techDetails(l, `${techList([[t("MCP-aadress", "MCP address"), endpoint], [t("Sisselogimine", "Sign-in"), "OAuth 2.1 + PKCE"], [t("Õigused", "Scopes"), "progress:read · progress:report (Jah-linnukesega)"], [t("Kliendi nimi", "Client name"), t("kliendi enda antud, kontrollimata", "supplied by the client, not verified")]])}
-<p class="small"><a href="${CHATGPT_GUIDE}" rel="noopener noreferrer">${t("OpenAI juhend", "OpenAI guide")}</a> · <a href="${CLAUDE_GUIDE}" rel="noopener noreferrer">${t("Claude'i juhend", "Claude guide")}</a>${o.owner ? ` · <a href="/connection">${t("Käsitsi võtmed", "Manual tokens")}</a>` : ""}</p>`)}
+<p class="small"><a class="tap-link" href="${CHATGPT_GUIDE}" rel="noopener noreferrer">${t("OpenAI juhend", "OpenAI guide")}</a> · <a class="tap-link" href="${CLAUDE_GUIDE}" rel="noopener noreferrer">${t("Claude'i juhend", "Claude guide")}</a>${o.owner ? ` · <a class="tap-link" href="/connection">${t("Käsitsi võtmed", "Manual tokens")}</a>` : ""}</p>`)}
 ${o.owner ? `<p><a class="tap-link" href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a></p>` : ""}`;
 }
 
@@ -1052,13 +1066,21 @@ const DONE_VERBS: Record<string, [string, string]> = {
   unmet_need_classified: ["Soov liigitati", "A request was classified"],
   demo_fixture_seeded: ["Näidisandmed laaditi", "Sample data loaded"],
 };
-export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date }): string {
+export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date; approvals?: ApprovalRow[] }): string {
   const l = opts.lang, t = tr(l), now = opts.now ?? new Date();
+  // Approval rows name their object (title · recipient): the log summary carries the approval id or digest prefix.
+  const objectOf = (summary: string) => {
+    const a = (opts.approvals ?? []).find((x) => summary.includes(x.id) || summary.includes(`digest ${x.digest.slice(0, 12)}`));
+    if (!a) return "";
+    const v = approvalView(a, l);
+    return [v.title, v.recipient.name].filter(Boolean).join(" · ");
+  };
   const done = opts.rows.flatMap((r) => {
     const verb = r.action === "approval_decided" ? (r.outcome === "approved" ? t("Sina kinnitasid", "You approved") : r.outcome === "declined" ? t("Sina keeldusid", "You declined") : null) : DONE_VERBS[r.action] ? t(...DONE_VERBS[r.action]) : null;
     if (!verb || (r.outcome !== "ok" && r.action !== "approval_decided")) return [];
     const chip = r.actor === "assistant" ? labelChip("assistant", t("Assistent teatas", "Your assistant reports")) : r.action === "approval_decided" && r.outcome === "approved" ? labelChip("owner", t("Sinu kinnitus", "You approved")) : "";
-    return [`<div class="row"><strong>${esc(verb)}</strong>${chip ? `<div class="labels">${chip}</div>` : ""}<span class="small muted">${timeEl(r.created_at, fmtWhen(r.created_at, l, now))}</span></div>`];
+    const object = objectOf(r.summary ?? "");
+    return [`<div class="row"><strong>${esc(verb)}</strong>${object ? `<br><span>${esc(object)}</span>` : ""}${chip ? `<div class="labels">${chip}</div>` : "<br>"}<span class="small muted">${timeEl(r.created_at, fmtWhen(r.created_at, l, now))}</span></div>`];
   });
   return `<h1>${t("Tehtud", "Done")}</h1><p class="lede">${t("Mida sinu assistent sinu eest tegi ja mida sina otsustasid.", "What your assistant did for you and what you decided.")}</p>
 <div class="note"><p class="small">${t("See pole täielik auditilogi: ebaõnnestunud päringud võivad puududa. Tööd, mida assistent teeb teistes teenustes, siin ei nähta — see paistab ainult assistendi teatena ja on nii ka märgitud.", "Not a complete audit trail: failed requests may be missing. Work your assistant does with other providers is not observed here — it appears only as assistant reports, labelled as such.")}</p></div>

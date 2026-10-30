@@ -99,7 +99,7 @@ describe("approval cards over MCP", () => {
     expect(visible.indexOf(req.digest)).toBeGreaterThan(visible.indexOf("Tehniline info"));
     expect(card).toMatch(/<pre[^>]*>Tere!\n\nInvoice 2026-014 \(€1,240.00\) is overdue. &lt;script&gt;alert\(1\)&lt;\/script&gt;/);
     expect(card).not.toContain("<script>alert(1)");
-    expect(card).toMatch(/Kehtib 24 tundi, kuni (homme|täna) kella \d{2}:\d{2}-ni\./);
+    expect(card).toMatch(/Kehtib 24 tundi, kuni (homme|täna) kella \d{2}:\d{2}\u2011ni\./);
     expect(card).not.toMatch(/15 minutit|UTC/);
     const list = await (await fetch(`${base}/approvals`, { headers: { cookie: o.cookie } })).text();
     expect(list).toContain(`/approvals/${req.approval_id}`);
@@ -122,7 +122,7 @@ describe("approval cards over MCP", () => {
     const decided = await (await fetch(`${base}/approvals/${req.approval_id}`, { headers: { cookie: o.cookie } })).text();
     expect(decided).not.toContain("Kinnita täpselt see"); expect(decided).toMatch(/✓ <\/span>Kinnitatud \d{2}:\d{2}/); expect(decided).toContain("Kinnitasin"); expect(decided).not.toMatch(/UTC/);
     const after = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
-    expect(after).toContain("Täna pole sinult midagi vaja"); expect(after).toContain("Kinnitatud · ootab assistendi teadet");
+    expect(after).toContain("Täna pole sinult midagi vaja"); expect(after).toContain("Pooleli · ootab assistendi teadet");
     const approved = parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: req.approval_id } }));
     expect(approved.state).toBe("approved"); expect(approved.decided_at).toBeTruthy();
 
@@ -149,6 +149,13 @@ describe("approval cards over MCP", () => {
     expect(consumedCard).not.toContain("Kinnita täpselt see"); expect(consumedCard).toContain("Assistent teatas"); expect(consumedCard).toContain("Sinu kinnitusi selles töös: 1.");
     expect(consumedCard.indexOf("receipt-head")).toBeLessThan(consumedCard.indexOf("Sinu kinnitusi selles töös"));
 
+    // Tehtud rows name their object, and the time never runs into the verb (QA D-15, D-17).
+    const tehtud = await (await fetch(`${base}/activity`, { headers: { cookie: o.cookie } })).text();
+    const main = tehtud.slice(0, tehtud.indexOf('<details class="tech-details">'));
+    for (const verb of ["Sina kinnitasid", "Assistent valmistas töö ette ja palus sinu kinnitust", "Assistent teatas, mis kinnitatud tööga juhtus"]) expect(main).toMatch(new RegExp(`<strong>${verb}</strong><br><span>Payment reminder: invoice 2026-014 · Synthetic Client OÜ</span>`));
+    expect(main).not.toMatch(/<\/strong><span class="small muted"><time/);
+    // The approvals history marks synthetic data only for a demo owner.
+    expect(await (await fetch(`${base}/approvals`, { headers: { cookie: o.cookie } })).text()).not.toContain(": demo");
     // Activity: request, decision and outcomes; export carries approvals; delete removes them.
     const actions = (db.prepare("SELECT action FROM activity WHERE owner_id='flow'").all() as { action: string }[]).map((a) => a.action);
     expect(actions).toEqual(expect.arrayContaining(["request_approval", "approval_decided", "record_action_outcome"]));

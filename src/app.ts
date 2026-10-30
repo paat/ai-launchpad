@@ -447,7 +447,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   app.get("/activity", requireOwner, (req, res) => {
     const rows = db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=? ORDER BY id DESC LIMIT 100").all(oid(req)) as Record<string, string>[];
     const receipts = db.prepare("SELECT kind,report_id,payload_json,receipt_json,created_at FROM reports WHERE owner_id=? ORDER BY created_at DESC LIMIT 20").all(oid(req)) as Record<string, string>[];
-    res.type("html").send(page(req, res, tr(langOf(res))("Tehtud", "Done"), "tehtud", activityBody({ rows, receipts, exclusions: getState(db, oid(req)).exclusions, lang: langOf(res) })));
+    res.type("html").send(page(req, res, tr(langOf(res))("Tehtud", "Done"), "tehtud", activityBody({ rows, receipts, exclusions: getState(db, oid(req)).exclusions, lang: langOf(res), approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(oid(req)) as ApprovalRow[] })));
   });
 
   app.get("/playbooks", requireOwner, (req, res) => {
@@ -533,7 +533,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   app.get("/approvals", requireOwner, (req, res) => {
     expireApprovals(db, oid(req));
     const rows = db.prepare("SELECT * FROM approvals WHERE owner_id=? ORDER BY state='pending' DESC, created_at DESC LIMIT 200").all(oid(req)) as ApprovalRow[];
-    res.type("html").send(page(req, res, tr(langOf(res))("Kinnitused", "Approvals"), "none", approvalsListBody(rows, langOf(res))));
+    res.type("html").send(page(req, res, tr(langOf(res))("Kinnitused", "Approvals"), "none", approvalsListBody(rows, langOf(res), (req as Authed).ownerKind === "demo")));
   });
   app.get("/approvals/:id", requireOwner, (req, res) => {
     const t = tr(langOf(res));
@@ -566,7 +566,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       const m = getAssistantMilestones(db, s.owner_id);
       if (m.synthetic) state = { kind: "sample" };
       else if (m.lastContact) {
-        const g = db.prepare("SELECT c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? AND g.revoked=0 ORDER BY g.rowid DESC LIMIT 1").get(s.owner_id) as { metadata: string } | undefined;
+        // The client whose grant last reached the MCP endpoint, never merely the newest consent.
+        const g = db.prepare("SELECT c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? AND g.revoked=0 AND g.last_used_at IS NOT NULL ORDER BY g.last_used_at DESC LIMIT 1").get(s.owner_id) as { metadata: string } | undefined;
         let who: string | null = null;
         try { const n = (JSON.parse(g?.metadata ?? "{}") as { client_name?: unknown }).client_name; who = typeof n === "string" && n.trim() ? n.trim().slice(0, 40) : null; } catch { who = null; }
         state = { kind: "connected", who, at: m.lastContact.at };

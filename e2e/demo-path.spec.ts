@@ -36,12 +36,13 @@ test("public landing: search a sample company → deadlines with who does what",
   await expect(page.getByText("Avaliku registri päring pole veel seadistatud — proovi näidisettevõtet „Mari Disain”.")).toBeVisible();
 });
 
-test("/uhenda: ChatGPT first, large phone URL, no overflow, sign-in chip for visitors", async ({ page }) => {
+test("/uhenda: ChatGPT first, no phone hand-off without public HTTPS, no overflow, sign-in chip for visitors", async ({ page }) => {
   await page.goto("/uhenda");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Ühenda oma assistent");
   await expect(page.getByRole("link", { name: "ChatGPT" })).toHaveAttribute("aria-current", "true");
-  await expect(page.getByRole("heading", { name: "Jätka telefonis" })).toBeVisible();
-  await expect(page.locator(".big-url")).toHaveText("http://127.0.0.1:3210/uhenda");
+  // The local server has no public HTTPS address, so the phone hand-off would not work: it is not offered (QA D-14).
+  await expect(page.getByRole("heading", { name: "Jätka telefonis" })).toHaveCount(0);
+  await expect(page.getByText("Avalik HTTPS-aadress pole selles serveris veel seadistatud", { exact: false })).toBeVisible();
   await expect(page.getByText("Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", { exact: false })).toBeVisible();
   await expect(page.locator("#connect-status")).toContainText("Logi sisse");
   expect(await page.locator('meta[http-equiv="refresh"]').count()).toBe(0);

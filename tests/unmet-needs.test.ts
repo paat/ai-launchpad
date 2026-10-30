@@ -524,7 +524,11 @@ test("publish / keep private: session + CSRF + exact Origin, owner-scoped, one d
     expect(status).toContain("Mida assistent saab teha:");
     expect(status).toContain("valmistab kõik ette; PIN-i või allkirja annad sina");
     expect(status).toContain("(valikuline)");
-    expect(status).toContain("local mock (not a model)"); // technical detail
+    expect(status).toContain("kohalik testliigitaja (näidis, mitte mudel)"); // technical detail
+    // Estonian page, Estonian copy: the mock's English fixture text is derived from category and blocker; no AI tint (QA D-12, D-21).
+    expect(status).toContain("Pank ja maksed: ühendust pole");
+    expect(status).toContain("Näidis-liigitus, mitte mudel: teenus valdkonnas „Pank ja maksed”, mille takistus täna on: ühendust pole.");
+    expect(status).not.toMatch(/Mock classification|local mock|Banking|class="ai-block"/);
     expect(status).not.toContain("AI liigitus · Meta Muse Spark Open"); // mock output is a sample, never "AI"
     expect(status).toContain("Täna pole sinult midagi vaja"); // undecided needs never count in the hero
     const decide = (o: Owner, fields: Record<string, string>, extra: { origin?: string | null } = {}) => http(s, "/unmet-needs/decide", { cookie: o.raw, fields, ...extra });
@@ -581,7 +585,7 @@ test("/demand is public, cacheable, aggregated, escaped, honest about classifier
     expect(html).not.toContain("<script>alert(origin)</script>");
     expect(html).toContain("2 soovi");
     expect(html).toContain(`Meta ${BASETEN_MODEL} (live) × 2`);
-    expect(html).toContain("local mock (not a model) × 1");
+    expect(html).toContain("Liigitaja: kohalik testliigitaja (näidis, mitte mudel) × 1");
     expect(html.indexOf("Tax portal")).toBeLessThan(html.indexOf("Bank account connector")); // sorted by count
     expect(html).toMatch(/Esimest korda [a-zõäöü]+ \d{4} · viimati [a-zõäöü]+ \d{4}/);
     // English on request (?lang=en): same aggregate, not shared-cached because it sets the lang cookie.

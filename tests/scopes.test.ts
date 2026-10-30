@@ -43,8 +43,8 @@ async function register(extra: Record<string,unknown> = {}) {
   return fetch(base+"/register", {method:"POST", headers:{"content-type":"application/json",origin:"https://assistant.example"}, body: JSON.stringify({redirect_uris:["http://127.0.0.1:45678/callback"],client_name:"Scope test assistant",token_endpoint_auth_method:"none",...extra})});
 }
 // Issue one real OAuth grant through browser login + consent, then exchange.
-async function grant(scopes: string, updates: boolean, actor = "alpha", browser?: Browser) {
-  const client = await (await register()).json();
+async function grant(scopes: string, updates: boolean, actor = "alpha", browser?: Browser, clientName?: string) {
+  const client = await (await register(clientName ? { client_name: clientName } : {})).json();
   const verifier = randomBytes(32).toString("base64url"), b = browser ?? new Browser();
   const params = { response_type:"code",client_id:client.client_id, redirect_uri:client.redirect_uris[0], resource:base+"/mcp", code_challenge:createHash("sha256").update(verifier).digest("base64url"),code_challenge_method:"S256",state:"scope-state",scope:scopes };
   const start = await b.request("/authorize?"+new URLSearchParams(params)); expect(start.headers.get("location")).toBe("/oauth/consent");
@@ -228,4 +228,19 @@ test("consent shows no owner nav or footer, and its errors render in the shell w
   const post = await b.request("/oauth/consent", { csrf: field(html, "csrf"), flow: field(html, "flow"), decision: "allow" });
   expect(post.status).toBe(400);
   expect(await post.text()).toContain('<html lang="et">');
+});
+
+test("/uhenda names the client that actually reached the MCP endpoint, not the newest consent (#21, QA D-08)", async () => {
+  const b = new Browser();
+  const chatgpt = await grant("progress:read", false, "alpha", b, "ChatGPT");
+  const c = await sdk(chatgpt.tokens.access_token);
+  try { await c.callTool({ name: "get_started", arguments: {} }); } finally { await c.close(); }
+  await grant("progress:read", false, "alpha", b, "Claude"); // consented later, never called a tool
+  const used = db.prepare("SELECT json_extract(c.metadata,'$.client_name') name, g.last_used_at FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id ORDER BY g.rowid").all() as { name: string; last_used_at: string | null }[];
+  expect(used.map((u) => [u.name, !!u.last_used_at])).toEqual([["ChatGPT", true], ["Claude", false]]);
+  // Connection status is tracked for real (non-sample) owners only.
+  db.prepare("UPDATE owners SET kind='google' WHERE subject='demo-alpha'").run();
+  const html = await (await b.request("/uhenda")).text();
+  expect(html).toContain("Ühendatud · ChatGPT jõudis kohale");
+  expect(html).not.toContain("Claude jõudis");
 });

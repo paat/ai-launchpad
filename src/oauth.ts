@@ -195,6 +195,7 @@ export class LaunchpadOAuth implements OAuthServerProvider {
     const c = this.db.prepare("SELECT * FROM oauth_credentials WHERE hash=? AND kind='access' AND expires>?").get(sha256(raw), Date.now()) as Credential | undefined;
     if (!c) throw new InvalidTokenError("Invalid access token.");
     const g = this.grant(c.grant_id);
+    this.db.prepare("UPDATE oauth_grants SET last_used_at=? WHERE id=?").run(new Date().toISOString(), g.id);
     return { token: raw, clientId: g.client_id, scopes: g.scopes.split(" "), expiresAt: Math.floor(c.expires/1000), resource: new URL(g.resource), extra: { ownerId: g.owner_id, epoch: g.epoch, grantId: g.id } };
   }
   async revokeToken(client: OAuthClientInformationFull, request: OAuthTokenRevocationRequest) {
@@ -291,7 +292,7 @@ ${report ? "" : `<p class="small muted">${t("Sinu vestlusi ega faile AI-hüppela
         this.db.transaction(() => {
           if (this.db.prepare("DELETE FROM oauth_pending WHERE id=?").run(c.p.id).changes !== 1) throw new Error("Consumed consent");
           this.db.prepare("UPDATE oauth_clients SET expires=MAX(expires,?) WHERE id=?").run(grantExpires, c.p.client_id);
-          this.db.prepare("INSERT INTO oauth_grants VALUES(?,?,?,?,?,?,0,?,?)").run(id, c.s.owner_id, c.p.epoch, c.p.client_id, scopes.join(" "), this.resource, grantExpires, c.params.redirectUri);
+          this.db.prepare("INSERT INTO oauth_grants(id,owner_id,epoch,client_id,scopes,resource,revoked,expires,redirect) VALUES(?,?,?,?,?,?,0,?,?)").run(id, c.s.owner_id, c.p.epoch, c.p.client_id, scopes.join(" "), this.resource, grantExpires, c.params.redirectUri);
           this.db.prepare("INSERT INTO oauth_codes VALUES(?,?,?,?,?)").run(sha256(code), id, c.params.codeChallenge, c.params.redirectUri, Date.now()+60_000);
           if (scopes.includes("progress:report")) this.db.prepare("UPDATE owners SET reporting_enabled=1 WHERE id=?").run(c.s.owner_id);
         })();

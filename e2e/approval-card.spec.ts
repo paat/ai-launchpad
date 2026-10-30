@@ -39,7 +39,7 @@ test("owner approves an exact-payload card at 390px through a real browser form 
     await expect(page.locator("dl.facts").getByText("Synthetic Client OÜ")).toBeVisible();
     await expect(page.getByText("1240,00\u00a0€", { exact: true })).toBeVisible();
     await expect(page.getByText("oktoober 2026", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Kehtib 24 tundi, kuni (homme|täna) kella \d{2}:\d{2}-ni\./)).toBeVisible();
+    await expect(page.getByText(/Kehtib 24 tundi, kuni (homme|täna) kella \d{2}:\d{2}\u2011ni\./)).toBeVisible();
     // The digest is technical detail: hidden until Tehniline info is opened.
     await expect(page.getByText(req.digest)).toBeHidden();
     await page.getByText("Tehniline info").click();
