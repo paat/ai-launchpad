@@ -267,6 +267,11 @@ try {
   assert.deepEqual(g1280.targets.filter((t) => t.h < 44), [], "tana-demo@1280: targets >= 44px");
   await page.screenshot({ path: path.join(T2_SHOTS, "t3-tana-1280.png"), fullPage: true });
   geometry.tana1280 = tana1280;
+  // review-design-t3-grok medium: an unbreakable company label wraps inside the Täna hero at 320 px.
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.setContent(shell({ title: "Täna", active: "tana", csrf: CSRF, sample: true, body: tana({ ...demoAssessment, company_label: "X".repeat(80) }, { handover: tanaHandover }) }));
+  const longLabel = await page.evaluate(() => ({ scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth, label: document.querySelector(".hero .company").textContent.length }));
+  assert.ok(longLabel.label === 80 && longLabel.scrollW <= longLabel.clientW, `tana long company label@320: no h-overflow ${JSON.stringify(longLabel)}`);
 
   // --- T5 „Käest ära”: the strip sits in the Täna hero; the full section on Ühendus fits 390 and lays out in two columns at 1280 ---
   await page.setViewportSize({ width: 390, height: 844 });

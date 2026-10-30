@@ -133,7 +133,7 @@ input[type=checkbox],input[type=radio]{width:22px;height:22px;min-height:0;margi
 label.check{display:flex;align-items:flex-start;gap:var(--s-3);min-height:var(--tap);padding:10px 0;font-weight:600;cursor:pointer}
 label.check input{margin-top:1px}
 .row button,.row .btn{width:auto;min-height:var(--tap);padding:8px 14px;margin:8px 0 0}
-.row,.card,.section,dd{overflow-wrap:anywhere}
+.row,.card,.section,.hero,dd{overflow-wrap:anywhere}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* --- Utilities --- */
