@@ -115,7 +115,7 @@ export function feedLimiter() {
 }
 /** Plain Estonian reason for a feed without events when the register gave no facts. */
 const REGISTER_GAP_ET: Record<string, string> = {
-  not_cached: "Avaliku registri andmed pole veel laaditud — ava AI-hüppelaud või küsi assistendilt „Mis on minu tähtajad?”",
+  not_cached: "Avaliku registri andmeid laaditakse — sündmused ilmuvad kalendri järgmisel uuendamisel",
   not_configured: "Avaliku registri päring pole selles serveris seadistatud",
   invalid_code: "Registrikood ei sobi — palu assistendil kood üle kontrollida",
   not_found: "Avalikus registris pole selle koodiga ettevõtet — palu assistendil kood üle kontrollida",
@@ -531,9 +531,10 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   });
 
   // Calendar feed (#29): the unguessable token in the path is the only
-  // credential. Cache-only (never a register call), rules only, and only
-  // rule output plus the company's public or synthetic name: no approvals,
-  // needs or assessment content.
+  // credential. Rendered from the cache only, rules only, and only rule
+  // output plus the company's public or synthetic name: no approvals, needs
+  // or assessment content. A cache miss starts Täna's background fill, so
+  // the next calendar refresh has the events.
   const feedAllowed = feedLimiter();
   app.get("/calendar/:file", async (req, res, next) => { try {
     const m = /^([A-Za-z0-9_-]{43})\.ics$/.exec(req.params.file);
@@ -548,9 +549,12 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     else {
       const r = await companyObligations(register, { registryCode: ref, months: 3, cacheOnly: true });
       const gap = !r.ok ? r.unavailable ?? "invalid_code" : r.result.company.unavailable;
+      // A remembered failed fill is "unavailable", not "loading".
+      const failed = gap === "not_cached" && fillFailure(ref) !== undefined;
+      if (gap === "not_cached") fillInBackground(ref);
       const company = r.ok && r.result.company.name ? { name: r.result.company.name, synthetic: r.result.company.synthetic } : null;
       body = gap || !r.ok
-        ? deadlinesCalendar({ ...base, company, emptyReason: `${REGISTER_GAP_ET[gap ?? ""] ?? "Avalik register pole praegu kättesaadav"}. Sündmusi ei loodud.` })
+        ? deadlinesCalendar({ ...base, company, emptyReason: `${(!failed && REGISTER_GAP_ET[gap ?? ""]) || "Avalik register pole praegu kättesaadav"}. Sündmusi ei loodud.` })
         : deadlinesCalendar({ ...base, company, obligations: r.result.obligations.filter((o) => o.effective_due !== null && o.effective_due >= r.result.window.from) });
     }
     res.type("text/calendar; charset=utf-8").send(body);

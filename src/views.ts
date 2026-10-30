@@ -1100,6 +1100,8 @@ const DONE_VERBS: Record<string, [string, string]> = {
   unmet_need_kept_private: ["Sina jätsid soovi privaatseks", "You kept a request private"],
   unmet_need_classified: ["Soov liigitati", "A request was classified"],
   demo_fixture_seeded: ["Näidisandmed laaditi", "Sample data loaded"],
+  calendar_feed_created: ["Sina lisasid tähtajad oma kalendrisse", "You added the deadlines to your calendar"],
+  calendar_feed_revoked: ["Sina lõpetasid kalendri jagamise", "You stopped sharing the calendar"],
 };
 export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date; approvals?: ApprovalRow[] }): string {
   const l = opts.lang, t = tr(l), now = opts.now ?? new Date();

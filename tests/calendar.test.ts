@@ -1,5 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Server } from "node:http";
+import express from "express";
+import { z } from "zod";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { mapCompany } from "../src/arikratt.js";
 import { createApp, feedLimiter, type Config } from "../src/app.js";
 import { openDb, sha256, newId, nowIso } from "../src/db.js";
 import { ICS_DISCLAIMER, ICS_NO_COMPANY, deadlinesCalendar, foldLine, icsText } from "../src/ics.js";
@@ -88,6 +93,25 @@ describe("ics.ts (RFC 5545)", () => {
   });
 });
 
+// Fake Ärikratt MCP with synthetic values; it answers, or fails when told to.
+const fakeCompany = (code: string, name = "Synthetic Register OÜ") => ({ snapshot_id: "20261029T054510Z", as_of: "2026-10-29", registry_code: code, profile: { name, vat_number: "EE000000000" }, report_status: { latest_year: 2025, filed: true, overdue_days: 0 }, tax: [{ year: 2026, quarter: 3, labour_taxes: 1500, employee_count: 1, turnover: 15000 }], tax_debt: { on_list: false } });
+let register: Server, registerUrl = "", registerCalls = 0, registerFails = false;
+beforeAll(async () => {
+  const a = express(); a.use(express.json());
+  a.post("/mcp", async (req, res) => {
+    if (req.body?.method === "tools/call") registerCalls++;
+    const s = new McpServer({ name: "fake-arikratt", version: "1" });
+    s.registerTool("get_company", { inputSchema: { registry_code: z.string(), sections: z.array(z.string()).optional() } }, async ({ registry_code }) =>
+      registerFails ? { isError: true, content: [{ type: "text", text: "Company not found" }] } : { content: [{ type: "text", text: JSON.stringify(fakeCompany(registry_code)) }] });
+    const t = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    res.on("close", () => { void t.close(); void s.close(); });
+    await s.connect(t); await t.handleRequest(req, res, req.body);
+  });
+  await new Promise<void>((ok) => { register = a.listen(0, "127.0.0.1", ok); });
+  registerUrl = `http://127.0.0.1:${(register.address() as { port: number }).port}/mcp`;
+});
+afterAll(() => { register.close(); });
+
 // Real HTTP: demo login, CSRF-guarded forms, the feed itself.
 let server: Server, db: ReturnType<typeof openDb>, base: string, cfg: Config;
 const originalFetch = globalThis.fetch;
@@ -99,9 +123,9 @@ async function start(extra: Partial<Config> = {}) {
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`; cfg.baseUrl = base;
 }
 beforeEach(async () => {
-  external = 0;
+  external = 0; registerCalls = 0; registerFails = false;
   vi.stubGlobal("fetch", ((url: string | URL | Request, init?: RequestInit) => {
-    if (new URL(url instanceof Request ? url.url : url).origin !== base) { external++; throw new Error("External network forbidden"); }
+    if (![base, registerUrl && new URL(registerUrl).origin].includes(new URL(url instanceof Request ? url.url : url).origin)) { external++; throw new Error("External network forbidden"); }
     return originalFetch(url, init);
   }) as typeof fetch);
 });
@@ -176,6 +200,8 @@ describe("calendar feed over HTTP", () => {
     expect([unknown.status, await unknown.text()]).toEqual([404, ""]);
     const revoke = await b.request("/calendar/feed/revoke", { csrf: await b.csrf() });
     expect([revoke.status, revoke.headers.get("location")]).toEqual([302, "/uhenda"]);
+    const tehtud = await (await b.request("/activity")).text();
+    for (const s of ["Sina lisasid tähtajad oma kalendrisse", "Sina lõpetasid kalendri jagamise"]) expect(tehtud).toContain(`<strong>${s}</strong>`);
     const gone = await feed(path);
     expect([gone.status, await gone.text()]).toEqual([404, ""]);
     expect(await (await b.request("/uhenda")).text()).toContain("Lisa tähtajad oma kalendrisse");
@@ -211,23 +237,51 @@ describe("calendar feed over HTTP", () => {
   });
 
   const realCode = () => { for (let n = 10000000; ; n++) if (validRegistryCode(String(n))) return String(n); };
-  async function realCompanyFeed() {
+  /** A real (non-sample) registry code in the owner's assessment; returns the feed path. */
+  async function realCompanyFeedPath() {
     const b = new Browser(); await b.login();
     const owner = b.ownerId(), payload = JSON.stringify({ ...DEMO_FIXTURES.alpha, company_registry_ref: realCode() });
     db.prepare("INSERT INTO assessments(id,owner_id,version,payload_json,payload_hash,created_at) VALUES(?,?,?,?,?,?)").run(newId("asmt"), owner, 99, payload, sha256(payload), nowIso());
-    return unfold(await (await feed((await b.createFeed()).path)).text());
+    return (await b.createFeed()).path;
   }
+  const realFeed = async (path: string) => unfold(await (await feed(path)).text());
   test("register not configured: the reason, no fabricated events", async () => {
     await start();
-    const ics = await realCompanyFeed();
+    const ics = await realFeed(await realCompanyFeedPath());
     expect(ics).toContain("X-WR-CALDESC:Avaliku registri päring pole selles serveris seadistatud. Sündmusi ei loodud.");
     expect(ics).not.toContain("BEGIN:VEVENT");
   });
-  test("register facts not cached: the reason, no events and no outbound call", async () => {
-    await start({ arikrattApiKey: "test-key", arikrattMcpUrl: "https://arikratt.example/mcp" });
-    const ics = await realCompanyFeed();
-    expect(ics).toContain("X-WR-CALDESC:Avaliku registri andmed pole veel laaditud");
-    expect(ics).not.toContain("BEGIN:VEVENT");
+  test("expired register cache: the fetch starts one background fill and stays honest; the next fetch has the events", async () => {
+    await start({ arikrattApiKey: "test-key", arikrattMcpUrl: registerUrl });
+    const code = realCode(), stale = JSON.stringify(mapCompany(code, fakeCompany(code, "Vana Nimi OÜ")));
+    db.prepare("INSERT INTO company_facts(registry_code,facts_json,snapshot_id,as_of,fetched_at) VALUES(?,?,?,?,?)").run(code, stale, "old", "2026-10-01", new Date(Date.now() - 25 * 3600_000).toISOString());
+    const path = await realCompanyFeedPath();
+    const first = await realFeed(path);
+    expect(first).toContain("X-WR-CALDESC:Avaliku registri andmeid laaditakse — sündmused ilmuvad kalendri järgmisel uuendamisel. Sündmusi ei loodud.");
+    expect(first).not.toContain("BEGIN:VEVENT");
+    expect(first).not.toContain("Vana Nimi"); // never the stale facts
+    await vi.waitFor(() => expect((db.prepare("SELECT snapshot_id FROM company_facts WHERE registry_code=?").get(code) as { snapshot_id: string }).snapshot_id).toBe("20261029T054510Z"));
+    const second = await realFeed(path);
+    expect(second).toContain("X-WR-CALNAME:AI-hüppelaud · Synthetic Register OÜ");
+    expect(second).toMatch(/SUMMARY:KMD ja käibemaks · /);
+    expect(registerCalls).toBe(1);
+  });
+  test("a failing register is called once across 3 feed fetches within 10 minutes, and the feed says it is unavailable", async () => {
+    await start({ arikrattApiKey: "test-key", arikrattMcpUrl: registerUrl });
+    registerFails = true;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const path = await realCompanyFeedPath();
+      expect(await realFeed(path)).toContain("X-WR-CALDESC:Avaliku registri andmeid laaditakse");
+      await vi.waitFor(() => expect(warn).toHaveBeenCalledWith("Status deadlines: register lookup failed (not_found)."));
+      for (let i = 0; i < 2; i++) {
+        const ics = await realFeed(path);
+        expect(ics).toContain("X-WR-CALDESC:Avalik register pole praegu kättesaadav. Sündmusi ei loodud.");
+        expect(ics).not.toContain("BEGIN:VEVENT");
+      }
+      await new Promise((ok) => setTimeout(ok, 200));
+      expect(registerCalls).toBe(1);
+    } finally { warn.mockRestore(); }
   });
 
   test("61st fetch of one token within an hour is refused", async () => {
