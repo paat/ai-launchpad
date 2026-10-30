@@ -104,13 +104,19 @@ const RULES: readonly [RegExp, string | ((m: string) => string)][] = [
   [/\d{5,}/gu, "[number]"],
 ];
 
+/** Every typed placeholder deidentify() writes. */
+export const PLACEHOLDERS: readonly string[] = [...new Set(RULES.flatMap(([, p]) => typeof p === "string" ? [p] : []))];
+
 /** Pure: replace e-mail addresses, URLs/domains, IBANs, phone numbers,
  * money amounts, company names with an Estonian legal form, card-like
  * digit runs, personal codes (11 digits), registry codes (8 digits) and
  * other long digit runs (also split into groups) with typed placeholders.
  * Names without a legal form are not detectable here; the tool asks the
  * assistant to omit them and the owner reviews everything before
- * publishing. */
+ * publishing. There is deliberately no "Firstname Lastname" rule: two
+ * capitalised words are also public brands and services ("Coop Pank",
+ * "Riigi Teataja", "Merit Aktiva") and Estonian sentence starts
+ * ("Palun Saada …"), so it would redact the job itself. */
 export function deidentify(text: string): string {
   let out = text;
   for (const [re, placeholder] of RULES) out = typeof placeholder === "string" ? out.replace(re, placeholder) : out.replace(re, placeholder);
@@ -180,7 +186,9 @@ const singleLine = (v: unknown, min: number, max: number): string | null => {
  * tolerated) with exactly the four keys, a fixed category, bounded
  * single-line strings and `same_as` from the given labels only. Output
  * with any digit in label or spec (the prompt contract), or that
- * de-identification would change, is rejected, never repaired. */
+ * de-identification would change, is rejected, never repaired. A typed
+ * placeholder ("[email]") survives de-identification, so output carrying
+ * one is invalid: it would publish a redacted identifier's slot. */
 export function parseClassification(text: string, existingLabels: readonly string[]): ParseResult {
   const invalid: ParseResult = { ok: false, reason: "invalid_output" };
   const body = text.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, "$1");
@@ -193,6 +201,7 @@ export function parseClassification(text: string, existingLabels: readonly strin
   const label = singleLine(o.demand_label, 3, 80);
   const spec = singleLine(o.spec, 10, 200);
   if (!label || !spec) return invalid;
+  if (PLACEHOLDERS.some((p) => `${label} ${spec}`.toLowerCase().includes(p))) return invalid;
   let sameAs: string | null = null;
   if (o.same_as !== null) {
     if (typeof o.same_as !== "string") return invalid;

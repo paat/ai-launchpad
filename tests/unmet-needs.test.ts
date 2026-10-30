@@ -11,7 +11,7 @@ import { BASETEN_MODEL, ModelQualityLedger, payloadHash, reservationMicroUsd, ty
 import { openExistingPublicLedger } from "../src/model-public-cards.js";
 import {
   MAX_EXISTING_LABELS, UNMET_NEED_NEXT, UNMET_NEED_RECHECK_MS, buildModelInput, cleanText, deidentify, liveClassifier, mockClassifier,
-  parseClassification, recordUnmetNeed, unmetNeedRequestId,
+  PLACEHOLDERS, parseClassification, recordUnmetNeed, unmetNeedRequestId,
 } from "../src/unmet-needs.js";
 import { demandBody, unmetNeedsBody } from "../src/views.js";
 
@@ -132,6 +132,15 @@ describe("strict classification output", () => {
   test("output that de-identification would change is rejected", () => {
     expect(parse({ ...ok, spec: "Pay the €1 200 VAT for the owner from the bank account." })).toEqual({ ok: false, reason: "identifiers_in_output" });
     expect(parse({ ...ok, demand_label: "Mail owner@example.ee" })).toEqual({ ok: false, reason: "identifiers_in_output" });
+  });
+  test("output carrying a typed placeholder is invalid, never published (#32 item 2)", () => {
+    expect(PLACEHOLDERS).toEqual(expect.arrayContaining(["[email]", "[url]", "[iban]", "[phone]", "[amount]", "[company]", "[card]", "[personal_code]", "[registry_code]", "[number]"]));
+    for (const p of PLACEHOLDERS) {
+      expect(parse({ ...ok, spec: `Send the reminder to ${p} through the owner's mail tool.` }), p).toEqual({ ok: false, reason: "invalid_output" });
+      expect(parse({ ...ok, demand_label: `Invoices for ${p.toUpperCase()}` }), p).toEqual({ ok: false, reason: "invalid_output" });
+    }
+    // Ordinary brackets are not placeholders.
+    expect(parse({ ...ok, spec: "Prepare the VAT return [monthly] through the tax portal." })).toMatchObject({ ok: true });
   });
   test("label and spec must contain no digits at all (prompt contract)", () => {
     expect(parse({ ...ok, spec: "Pay 1200 for the form through the tax portal." })).toEqual({ ok: false, reason: "identifiers_in_output" });
@@ -301,6 +310,18 @@ test("report_unmet_need: scope, sharing, de-identified storage, receipt, idempot
   } finally { await s.close(); }
 });
 
+test("report_unmet_need tells the assistant to keep names of people out, in the tool and in the need field (#32 item 1)", async () => {
+  const s = await start();
+  const o = makeOwner(s.db, "names", SUB);
+  const c = new Client({ name: "test", version: "1.0.0" });
+  await c.connect(new StreamableHTTPClientTransport(new URL(`${s.base}/mcp`), { requestInit: { headers: { authorization: `Bearer ${o.token}` } } }));
+  try {
+    const t = (await c.listTools()).tools.find((x) => x.name === "report_unmet_need")!;
+    const rule = "Describe the job generically; never include names of people, customers or employees.";
+    expect(t.description).toContain(rule);
+    expect((t.inputSchema.properties as Record<string, { description?: string }>).need.description).toContain(rule);
+  } finally { await c.close(); await s.close(); }
+});
 test("payload_hash covers only the de-identified fields, never the raw text; replay and conflict still hold", () => {
   const db = openDb(":memory:");
   const args = { report_id: "h-1", need: RAW_NEED, blocker: "portal_without_api" as const, job_hint: "VAT for Demo Supplier OÜ" };
