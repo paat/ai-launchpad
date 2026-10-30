@@ -122,7 +122,10 @@ function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], o
     .sort((a, b) => (a.id === "payment-reminder" ? -1 : b.id === "payment-reminder" ? 1 : (a.due ?? "9999") < (b.due ?? "9999") ? -1 : 1))[0];
   if (open) {
     const trig = PLAYBOOKS.find((p) => p.id === open.id)?.triggers ?? [];
-    return { type: "playbook", job: open, playbookId: open.id, obligation: obligations.find((x) => trig.includes(x.rule_id) && x.effective_due === open.due) ?? null };
+    // No future date: the job is there because a trigger is already past (e.g. annual-report-overdue), so use the latest such row.
+    const row = open.due ? obligations.find((x) => trig.includes(x.rule_id) && x.effective_due === open.due)
+      : obligations.filter((x) => trig.includes(x.rule_id)).sort((a, b) => ((a.effective_due ?? "") < (b.effective_due ?? "") ? 1 : -1))[0];
+    return { type: "playbook", job: open, playbookId: open.id, obligation: row ?? null };
   }
   return { type: "connector" };
 }

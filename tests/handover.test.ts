@@ -153,4 +153,17 @@ describe("„Käest ära” fix cycle 1", () => {
     }
     expect(handoverStrip(computeHandover({ assessment: null, obligations, approvals: [], rules: [], now: NOW }), "et")).not.toContain("ootab");
   });
+
+  test("an overdue annual report is the next step with its own handoff, not the generic prompt (review-design-t5-grok medium)", () => {
+    const late = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2027-07-05T10:00:00Z"), months: 2 }).obligations.find((x) => x.rule_id === "annual-report-overdue")!;
+    const overdue = { ...late, effective_due: "2026-11-11", statutory_due: "2026-11-11" } as Obligation;
+    // Reminders are already at the top rung: consumed under a live rule that has fired.
+    const approvals = [appr({ outcome: "sent", cents: 10_000 }), appr({ outcome: "sent", cents: 10_000, rule: "rule_1" })];
+    const h = computeHandover({ assessment: null, obligations: [overdue], approvals, rules: [rule()], now: NOW });
+    expect(rungs(h)).toEqual({ "payment-reminder": "done", "annual-report": "mine" });
+    expect(h.next).toMatchObject({ type: "playbook", playbookId: "annual-report", obligation: { rule_id: "annual-report-overdue" } });
+    const page = handoverSection(h, "et", "c", NOW);
+    expect(page).toContain("Koosta mulle sammud hilinenud majandusaasta aruande esitamiseks.");
+    expect(page).not.toContain("Valmista ette:");
+  });
 });
