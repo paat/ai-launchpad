@@ -504,8 +504,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     res.type("html").send(shell({ title: tr(l)("Kataloog", "Catalogue"), active: "none", csrf: s?.csrf ?? "", lang: l, toggle: toggleHref(req, l), body: catalogueBody({ lang: l, q, g, records: loadCatalog(), matched }) }));
   });
   app.get("/services", (req, res) => {
-    const q = String(req.query.q ?? "").slice(0, 120);
-    res.redirect(302, q ? `/kataloog?q=${encodeURIComponent(q)}` : "/kataloog");
+    const p = new URLSearchParams();
+    for (const k of ["lang", "g", "q"] as const) { const v = req.query[k]; if (typeof v === "string" && v) p.set(k, v.slice(0, 120)); }
+    res.redirect(302, p.size ? `/kataloog?${p}` : "/kataloog");
   });
 
   const setupPublicCards = (card: PublicCardView | null) => ({ topics: SETUP_TOPICS.map((t) => ({ id: t.id, label: t.label.en })), card });

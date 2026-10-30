@@ -125,6 +125,7 @@ h1,h2,h3,.link-row-title,.receipt-head{overflow-wrap:anywhere}
 .label-chip--assistant{background:var(--lbl-assistant-bg);color:var(--lbl-assistant-fg);border-color:var(--lbl-assistant-bd)}
 .label-chip--owner{background:var(--lbl-owner-bg);color:var(--lbl-owner-fg);border-color:var(--lbl-owner-bd)}
 .label-chip--ai{background:var(--lbl-ai-bg);color:var(--lbl-ai-fg);border-color:var(--lbl-ai-bd)}
+.label-chip--where{background:var(--c-surface);color:var(--c-text);border-color:var(--c-border)}
 .label-chip--sample{background:var(--lbl-sample-bg);color:var(--lbl-sample-fg);border:1px dashed var(--lbl-sample-bd);text-transform:uppercase;letter-spacing:.05em}
 .state-chip{border-radius:999px;padding:2px 10px 2px 8px}
 .state-chip::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:currentColor}
@@ -253,7 +254,8 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .svc-k{margin:var(--s-2) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}.svc-v{margin:0}
 .svc-facts{margin:var(--s-2) 0 0;font-size:var(--fs-sm)}.svc-facts dt{font-weight:700;color:var(--c-muted);margin-top:6px}.svc-facts dd{margin:0}
 .svc-play{margin:var(--s-2) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-primary)}
-.svc--pinned{border-color:var(--c-primary);box-shadow:inset 4px 0 0 var(--c-primary)}`;
+.svc--pinned{border-color:var(--c-primary);box-shadow:inset 4px 0 0 var(--c-primary)}
+.legend{list-style:none;margin:var(--s-2) 0 0;padding:0;font-size:var(--fs-sm)}.legend li{margin:4px 0}`;
 
 // --- Locale (issue #21): Estonian first, English on request. No framework. ---
 export type Lang = "et" | "en";
@@ -308,7 +310,7 @@ const timeEl = (iso: string, text: string) => `<time datetime="${esc(iso)}">${es
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // --- Chips: one label system (design-spec §2.2–2.3) ---
-const labelChip = (kind: "official" | "rule" | "assistant" | "owner" | "ai" | "sample", text: string) => `<span class="label-chip label-chip--${kind}">${esc(text)}</span>`;
+const labelChip = (kind: "official" | "rule" | "assistant" | "owner" | "ai" | "sample" | "where", text: string) => `<span class="label-chip label-chip--${kind}">${esc(text)}</span>`;
 const stateChip = (kind: string, text: string, demo = false) => `<span class="state-chip state-chip--${kind}${demo ? " state-chip--demo" : ""}">${esc(text)}</span>`;
 const sampleChip = (l: Lang) => labelChip("sample", tr(l)("Näidis", "Sample"));
 const techDetails = (l: Lang, inner: string) => `<details class="tech-details"><summary>${tr(l)("Tehniline info", "Technical details")}</summary>${inner}</details>`;
@@ -734,6 +736,11 @@ export const catalogueGroup = (sector: string | undefined): CatalogueGroup => CA
 /** Playbooks a connection in this group makes possible (ids from PLAYBOOKS). */
 export const GROUP_PLAYBOOKS: Partial<Record<CatalogueGroup, string[]>> = { raamatupidamine: ["vat-return-prep", "payment-reminder"], epost: ["payment-reminder"] };
 const PLAYBOOK_SHORT: Record<string, [string, string]> = { "vat-return-prep": ["KMD ettevalmistus", "VAT return prep"], "payment-reminder": ["Maksemeeldetuletus", "Payment reminder"] };
+/** Where a connection works, from its interface class: hosted MCP everywhere, local MCP on a computer, the rest needs a connector. */
+export const whereItWorks = (ic: string | undefined): [string, string] =>
+  ic === "hosted_mcp" ? ["Kõikjal · veeb, telefon, arvuti", "Anywhere · web, phone, computer"]
+  : ic === "local_mcp" || ic === "self_hosted_mcp" ? ["Ainult arvutis", "On a computer only"]
+  : ["Vajab ühendust", "Needs a connector"];
 const isCatalogueConn = (c: unknown): c is Conn => typeof c === "string" && c in CONN;
 const firstSentence = (s: string) => { const m = /^(.+?[.;])(\s|$)/.exec(s.trim()); const one = m ? m[1] : s.trim(); return one.length > 180 ? `${one.slice(0, 177).trimEnd()}…` : one; };
 const fmtYmd = (ymd: string) => /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd.split("-").reverse().join(".") : ymd;
@@ -745,7 +752,7 @@ function serviceCard(r: ServiceRecord, l: Lang): string {
   // Research text is English; mark it so screen readers switch voice on the Estonian page.
   const en = l === "en" ? "" : ' lang="en"';
   return `<article class="card svc" data-service="${esc(r.id)}"><h3>${esc(r.name)}</h3>
-<div class="labels">${labelChip("rule", t(conn[0], conn[1]))}${labelChip("assistant", r.runtime_tested ? t("Testitud", "Tested") : t("Uuritud · AI-hüppelauaga pole testitud", "Researched · not tested with AI Launchpad"))}</div>
+<div class="labels">${labelChip("rule", t(conn[0], conn[1]))}${labelChip("where", t(...whereItWorks(r.interface_class)))}${labelChip("assistant", r.runtime_tested ? t("Testitud", "Tested") : t("Uuritud · AI-hüppelauaga pole testitud", "Researched · not tested with AI Launchpad"))}</div>
 <p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v"${en}>${esc(r.jobs)}</p>
 <dl class="svc-facts"><dt>${t("Ligipääs ja hind", "Access and price")}</dt><dd${en}>${esc(r.access_and_price)}</dd><dt>${t("Peamine piirang", "Key limitation")}</dt><dd${en}>${esc(firstSentence(r.limitations ?? ""))}</dd></dl>
 ${plays.length ? `<p class="svc-play">${t("Avab töövoo", "Unlocks playbook")}: ${plays.map((id) => esc(t(...PLAYBOOK_SHORT[id]!))).join(" / ")}</p>` : ""}
@@ -768,13 +775,16 @@ export function catalogueBody(o: { lang: Lang; q: string; g: CatalogueGroup | nu
   }).join("");
   const kratt = l === "en" ? "https://arikratt.ee/en/mcp" : "https://arikratt.ee/mcp";
   return `<section class="card hero"><h1>${t("Teenused, mida sinu AI-assistent saab kasutada", "Services your AI assistant can use")}</h1>
-<p class="lede">${t(`<strong>${mcp} MCP-ühendust ja ${api} API-t</strong>, uuritud Eesti ettevõtja tööde jaoks.`, `<strong>${mcp} MCP connections and ${api} APIs</strong>, researched for the jobs of an Estonian business owner.`)}</p>
+<p class="lede">${t(`<strong>${mcp} MCP-ühendust ja ${api} API-t</strong> (kokku ${o.records.length} uuritud teenusest) Eesti ettevõtja tööde jaoks.`, `<strong>${mcp} MCP connections and ${api} APIs</strong> (out of ${o.records.length} researched services) for the jobs of an Estonian business owner.`)}</p>
+<ul class="legend" aria-label="${t("Kus ühendus töötab", "Where a connection works")}"><li><span aria-hidden="true">☁️</span> <strong>${t("Pilves", "Cloud")}</strong>: ${t("töötab kõikjal — veebis, telefonis ja arvutis.", "works from anywhere — web, phone and computer.")}</li>
+<li><span aria-hidden="true">💻</span> <strong>${t("Arvutis", "Computer")}</strong>: ${t("raskemaks tööks oma failide ja rakendustega (Claude Desktop/Cowork või ChatGPT töölauarakendus).", "for heavier work with your own files and apps (Claude Desktop/Cowork or the ChatGPT desktop app).")}</li>
+<li><span aria-hidden="true">📱</span> <strong>${t("Telefon", "Phone")}</strong>: ${t("telefonis küsid ja kinnitad.", "on your phone you ask and approve.")}</li></ul>
 <p class="small muted">${esc(t(`Iga ühendus laseb sinu assistendil teha rohkem töid sinu eest. Ühendad need oma assistendis ise; AI-hüppelaud neid ei vahenda. Allikas: avalikud dokumendid, kontrollitud ${fmtYmd(checked)}.`, `Each connection lets your assistant take more jobs off you. You connect them in your own assistant; AI Launchpad does not broker them. Source: public documentation, checked ${checked}.`))}</p></section>
 <section aria-label="${t("Kinnitatud", "Pinned")}">
-<article class="card svc svc--pinned"><h3>${t("AI-hüppelaud", "AI Launchpad")}</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("official", t("Testitud: ChatGPT ja Claude (30.10.2026)", "Tested: ChatGPT and Claude (30 Oct 2026)"))}</div>
+<article class="card svc svc--pinned"><h3>${t("AI-hüppelaud", "AI Launchpad")}</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t("Testitud: ChatGPT 28.10.2026 · Claude 30.10.2026", "Tested: ChatGPT 28 Oct 2026 · Claude 30 Oct 2026"))}</div>
 <p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v">${t("Näeb sinu ettevõtte tähtaegu koos ametliku allikaga, valmistab töid ette ja küsib enne saatmist või esitamist sinu kinnitust täpselt sellele sisule.", "Sees your company's deadlines with their official sources, prepares the work and asks you to approve the exact content before anything is sent or filed.")}</p>
 <a class="tap-link" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a></article>
-<article class="card svc svc--pinned"><h3>Ärikratt</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("official", t("AI-hüppelaud kasutab seda", "Used by AI Launchpad"))}</div>
+<article class="card svc svc--pinned"><h3>Ärikratt</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t("AI-hüppelaud kasutab seda", "Used by AI Launchpad"))}</div>
 <p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v">${t("Avalikud ettevõtteandmed äriregistrist ja maksuametist. AI-hüppelaud arvutab nende põhjal sinu tähtajad.", "Public company data from the Business Register and the Tax Board. AI Launchpad computes your deadlines from it.")}</p>
 <a class="tap-link" href="${esc(kratt)}" rel="noopener noreferrer">${t("Ärikratti avalik MCP", "Ärikratt public MCP")}: arikratt.ee</a></article></section>
 <form method="get" action="/kataloog" role="search" class="search">${o.g ? `<input type="hidden" name="g" value="${esc(o.g)}">` : ""}<label>${t("Otsi nime või töö järgi", "Search by name or job")} <input name="q" value="${esc(o.q)}" maxlength="120"></label><button type="submit">${t("Otsi", "Search")}</button></form>

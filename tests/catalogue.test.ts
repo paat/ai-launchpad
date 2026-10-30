@@ -3,7 +3,7 @@ import type { Server } from "node:http";
 import { createApp, type Config } from "../src/app.js";
 import { openDb } from "../src/db.js";
 import { PLAYBOOKS, loadCatalog, safeHttps, searchServices } from "../src/catalog.js";
-import { CATALOGUE_GROUPS, GROUP_PLAYBOOKS, catalogueGroup, connectBody } from "../src/views.js";
+import { CATALOGUE_GROUPS, GROUP_PLAYBOOKS, catalogueGroup, connectBody, whereItWorks } from "../src/views.js";
 
 // Public /kataloog over real HTTP: no login, ET first, server-side filters, zero JS.
 let server: Server, db: ReturnType<typeof openDb>, base: string;
@@ -38,7 +38,9 @@ describe("public catalogue", () => {
     const mcp = all.filter((r) => ["hosted_mcp", "local_mcp", "self_hosted_mcp"].includes(r.interface_class ?? "")).length;
     const api = all.filter((r) => r.interface_class === "ordinary_api").length;
     expect([mcp, api]).toEqual([88, 50]); // research snapshot 2026-10-28; update with the data
-    expect(await page("/kataloog")).toContain(`<strong>${mcp} MCP-ühendust ja ${api} API-t</strong>, uuritud Eesti ettevõtja tööde jaoks.`);
+    expect(all.length).toBe(181);
+    expect(await page("/kataloog")).toContain(`<strong>${mcp} MCP-ühendust ja ${api} API-t</strong> (kokku ${all.length} uuritud teenusest) Eesti ettevõtja tööde jaoks.`);
+    expect(await page("/kataloog?lang=en")).toContain(`<strong>${mcp} MCP connections and ${api} APIs</strong> (out of ${all.length} researched services)`);
   });
 
   test("every listed service has one card with the honesty chip, and only https links", async () => {
@@ -58,9 +60,33 @@ describe("public catalogue", () => {
     const pinned = html.indexOf("svc--pinned"), first = html.indexOf('data-service="');
     expect(pinned).toBeGreaterThan(0);
     expect(pinned).toBeLessThan(first);
-    expect(html).toContain("Testitud: ChatGPT ja Claude (30.10.2026)");
+    // Per-assistant dates from docs/live-pilot.md (ChatGPT 28 Oct, Claude Free 30 Oct 2026).
+    expect(html).toContain("Testitud: ChatGPT 28.10.2026 · Claude 30.10.2026");
+    expect(html).not.toContain("ChatGPT ja Claude (30.10.2026)");
     expect(html).toContain('href="https://arikratt.ee/mcp"');
     expect(html).not.toContain('data-service="arikratt"');
+  });
+
+  test("each card says where it works, from interface_class, and a legend explains it", async () => {
+    expect(whereItWorks("hosted_mcp")).toEqual(["Kõikjal · veeb, telefon, arvuti", "Anywhere · web, phone, computer"]);
+    for (const ic of ["local_mcp", "self_hosted_mcp"]) expect(whereItWorks(ic)).toEqual(["Ainult arvutis", "On a computer only"]);
+    for (const ic of ["ordinary_api", "integration_only", "unknown", undefined]) expect(whereItWorks(ic)).toEqual(["Vajab ühendust", "Needs a connector"]);
+    const html = await page("/kataloog");
+    const byId = new Map(loadCatalog().map((r) => [r.id, r]));
+    const cs = cards(html);
+    for (const c of cs) expect(c.html, c.id).toContain(`<span class="label-chip label-chip--where">${whereItWorks(byId.get(c.id)!.interface_class)[0]}</span>`);
+    // All three kinds actually appear.
+    for (const w of ["Kõikjal · veeb, telefon, arvuti", "Ainult arvutis", "Vajab ühendust"]) expect(cs.some((c) => c.html.includes(w)), w).toBe(true);
+    const legend = /<ul class="legend"[\s\S]*?<\/ul>/.exec(html)![0];
+    expect(html.indexOf(legend)).toBeLessThan(html.indexOf('class="card svc svc--pinned"'));
+    expect(legend).toContain("☁️");
+    expect(legend).toContain("töötab kõikjal");
+    expect(legend).toContain("💻");
+    expect(legend).toContain("Claude Desktop/Cowork või ChatGPT töölauarakendus");
+    expect(legend).toContain("📱");
+    expect(legend).toContain("telefonis küsid ja kinnitad");
+    expect(legend).not.toMatch(/testitud|kontrollitud|verified/i);
+    expect(await page("/kataloog?lang=en")).toContain("Anywhere · web, phone, computer");
   });
 
   test("group chips filter server-side and mark the current group", async () => {
@@ -102,6 +128,9 @@ describe("public catalogue", () => {
   test("/services redirects to /kataloog, also for a signed-in owner, who keeps the nav", async () => {
     const r = await get("/services?q=merit");
     expect([r.status, r.headers.get("location")]).toEqual([302, "/kataloog?q=merit"]);
+    const all3 = await get("/services?lang=en&g=pank&q=lhv%20pank&x=1");
+    expect([all3.status, all3.headers.get("location")]).toEqual([302, "/kataloog?lang=en&g=pank&q=lhv+pank"]);
+    expect((await get("/services")).headers.get("location")).toBe("/kataloog");
     const login = await get("/login");
     const pre = /name="preauth" value="([^"]+)"/.exec(await login.text())![1];
     const auth = await fetch(base + "/auth/demo", { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: base, cookie: login.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ") }, body: new URLSearchParams({ actor: "alpha", preauth: pre }) });
