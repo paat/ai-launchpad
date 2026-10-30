@@ -63,7 +63,8 @@ describe("public catalogue", () => {
     // Per-assistant dates from docs/live-pilot.md (ChatGPT 28 Oct, Claude Free 30 Oct 2026).
     expect(html).toContain("Testitud: ChatGPT 28.10.2026 · Claude 30.10.2026");
     expect(html).not.toContain("ChatGPT ja Claude (30.10.2026)");
-    expect(html).toContain('href="https://arikratt.ee/mcp"');
+    expect(html).toContain('href="https://arikratt.ee/et/mcp"');
+    expect(await page("/kataloog?lang=en")).toContain('href="https://arikratt.ee/en/mcp"');
     expect(html).not.toContain('data-service="arikratt"');
   });
 

@@ -767,7 +767,7 @@ export function catalogueBody(o: { lang: Lang; q: string; g: CatalogueGroup | nu
     const rows = listed.filter((r) => catalogueGroup(r.sector) === g.id);
     return rows.length ? `<section aria-labelledby="g-${g.id}"><h2 id="g-${g.id}" class="svc-group">${esc(t(g.et, g.en))} <span class="muted">${rows.length}</span></h2>${rows.map((r) => serviceCard(r, l)).join("")}</section>` : "";
   }).join("");
-  const kratt = l === "en" ? "https://arikratt.ee/en/mcp" : "https://arikratt.ee/mcp";
+  const kratt = `https://arikratt.ee/${l === "en" ? "en" : "et"}/mcp`;
   return `<section class="card hero"><h1>${t("Teenused, mida sinu AI-assistent saab kasutada", "Services your AI assistant can use")}</h1>
 <p class="lede">${t(`<strong>${mcp} MCP-ühendust ja ${api} API-t</strong> (kokku ${o.records.length} uuritud teenusest) Eesti ettevõtja tööde jaoks.`, `<strong>${mcp} MCP connections and ${api} APIs</strong> (out of ${o.records.length} researched services) for the jobs of an Estonian business owner.`)}</p>
 <ul class="legend" aria-label="${t("Kus ühendus töötab", "Where a connection works")}"><li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 8.5 4.75 4.75 0 0 1 17.5 18z"/></svg> <strong>${t(...whereItWorks("hosted_mcp"))}</strong>: ${t("töötab ka assistendi telefonirakenduses: telefonis küsid ja kinnitad liikvel olles.", "also works in the assistant's phone app: ask and approve on the go.")}</li>
