@@ -902,7 +902,7 @@ ${result}`;
 export interface TanaOpts {
   lang: Lang; csrf: string; sample: boolean; label: string;
   assessment: Assessment | null; coverage: Coverage; assessedAt: string | null; exclusions: Exclusion[];
-  /** Pending, approved and consumed approvals, newest first. */
+  /** Every pending approval, then the recent approved and consumed ones; each group newest first. */
   approvals: ApprovalRow[];
   progress: { task_id: string; milestone: string; observed_at: string }[];
   /** null: no registry code known; "not_cached": register facts are being fetched; "invalid_code": the assistant's code fails the checksum; unavailable_reason: the register lookup failed. */

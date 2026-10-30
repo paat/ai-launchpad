@@ -413,7 +413,11 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const failure = unavailable === "not_cached" ? fillFailure(ref!) : undefined;
     if (unavailable === "not_cached") fillInBackground(ref!);
     expireApprovals(db, oid(req));
-    const approvals = db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state IN ('pending','approved','consumed') ORDER BY created_at DESC LIMIT 50").all(oid(req)) as ApprovalRow[];
+    // Every pending approval (request_approval caps them at 20), then the recent approved/consumed slice.
+    const approvals = [
+      ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state='pending' ORDER BY created_at DESC LIMIT 20").all(oid(req)),
+      ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state IN ('approved','consumed') ORDER BY created_at DESC LIMIT 50").all(oid(req)),
+    ] as ApprovalRow[];
     const reportCount = (db.prepare("SELECT count(*) n FROM reports WHERE owner_id=?").get(oid(req)) as { n: number }).n;
     const l = langOf(res);
     res.type("html").send(page(req, res, tr(l)("Täna", "Today"), "tana", tanaBody({

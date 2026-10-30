@@ -331,3 +331,19 @@ test("an approval document title and recipient render escaped on Täna, Tehtud a
   const req = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "xss-a", action: reminder({ document: { title: XSS, content: "Tere!" }, recipient: { name: XSS } }) } }));
   for (const path of ["/", "/activity", "/approvals", `/approvals/${req.approval_id}`]) inert(await pageOf(o, path), path);
 });
+
+test("Täna shows a pending approval behind 60 newer consumed ones; counts and primary button use every pending one (tribunal T-003)", async () => {
+  const o = owner("many-done");
+  const ins = db.prepare("INSERT INTO approvals(id,owner_id,kind,payload_json,digest,state,expires_at,created_at,decided_at,consumed_at,outcome_json) VALUES(?,?,'send_invoice',?,?,?,?,?,?,?,?)");
+  const later = new Date(Date.now() + 3600_000).toISOString(), t0 = Date.now() - 3600_000;
+  ins.run("appr_old_pending", "many-done", JSON.stringify(reminder({ document: { title: "Oldest pending reminder", content: "Tere!" } })), "d".repeat(64), "pending", later, new Date(t0).toISOString(), null, null, null);
+  for (let i = 0; i < 60; i++) {
+    const at = new Date(t0 + (i + 1) * 1000).toISOString();
+    ins.run(`appr_done_${i}`, "many-done", JSON.stringify(reminder({ document: { title: `Done ${i}`, content: "Tere!" } })), `${i}`.padStart(64, "0"), "consumed", later, at, at, at, JSON.stringify({ outcome: "sent", observed_at: at }));
+  }
+  const html = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
+  expect(html).toContain("Oldest pending reminder");
+  expect(html).toContain('<h2 id="ootab-h">Ootab sinult (1)</h2>');
+  expect(html).toContain('<a class="needs" href="#ootab"><b>1</b>');
+  expect(html).toContain('<a class="btn" href="/approvals/appr_old_pending">Vaata kinnitust</a>');
+});
