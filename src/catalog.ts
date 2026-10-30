@@ -72,7 +72,7 @@ export const PLAYBOOKS: Playbook[] = [
     steps: [
       "Find unpaid invoices past their due date in the owner's accounting connector or in a file the owner shares.",
       "Draft a polite reminder in the owner's language with the invoice number, amount and due date as they appear on the invoice. Do not threaten late-payment interest (viivis) unless the owner asks for it.",
-      "Call request_approval with kind send_message, the recipient, amount_cents, period and the exact reminder as document.",
+      "Call request_approval with action kind send_message; recipient.name and recipient.address: the customer and their e-mail; amount_cents: the overdue amount; period: the invoice's period; document.title and document.content: the exact reminder; summary: one line for the owner.",
       "After the owner says it is approved, call get_approval. Act only if its state is approved, and send exactly that text with your own tools; Launchpad sends nothing.",
       "Call record_action_outcome with outcome sent (or failed).",
       "Advance the outcome to paid only if you see the payment, for example in the accounting connector.",
@@ -87,7 +87,8 @@ export const PLAYBOOKS: Playbook[] = [
       "Gather the period's sales and purchase invoices from the owner's accounting connector or from files the owner shares.",
       "Check that none are missing (gaps in invoice numbers, purchases without an invoice) and ask the owner about each gap.",
       "Take the VAT figures from the accounting software's own VAT report. Never calculate a tax amount yourself; if no report exists, tell the owner and stop.",
-      "Call request_approval with kind prepare_filing, the period and the report's exact figures in the document.",
+      "Call request_approval with action kind prepare_filing; recipient.name: \"EMTA (e-MTA)\"; period: the VAT month; document.title and document.content: the report's exact figures; summary: one line for the owner.",
+      "Right before the owner files, call get_approval. If it is expired, request a fresh approval for the unchanged figures or draft first. Record the outcome as soon as the owner says it is filed. Approvals are valid for 24 hours.",
       "After get_approval returns approved, tell the owner the figures to enter. The owner files the return in e-MTA with their own Smart-ID or ID-card; never automate the login, signature or submission.",
       "When the owner says it is filed, call record_action_outcome with outcome submitted.",
     ],
@@ -98,14 +99,15 @@ export const PLAYBOOKS: Playbook[] = [
     triggers: ["annual-report", "annual-report-overdue"],
     needs: ["The financial year's accounts: the owner's accounting connector (search_services, e.g. werkzeug, trivis) or files the owner shares.", "Owner facts the report asks for, such as the activity description and the number of employees."],
     steps: [
-      "Check the register status with get_obligations: an annual-report or annual-report-overdue row means the report is not listed as filed.",
+      "Check the annual-report or annual-report-overdue row in get_obligations. With applies \"yes\" (public-register facts) the report is not listed as filed. With applies \"if\" the filing state is unknown: ask the owner the facts_needed question first.",
       "Gather what the report needs: the balance sheet and income statement from the accounting software, the activity description and the owner's answers.",
       "Give the owner a checklist of what is ready and what is still missing.",
-      "Optionally call request_approval with kind prepare_filing and the exact report draft, then act only after get_approval returns approved.",
+      "Optionally call request_approval with action kind prepare_filing; recipient.name: \"Äriregister (e-äriregister)\"; period: the financial year; document.title and document.content: the exact report draft; summary: one line for the owner. Then act only after get_approval returns approved.",
+      "Right before the owner files, call get_approval. If it is expired, request a fresh approval for the unchanged figures or draft first. Record the outcome as soon as the owner says it is filed. Approvals are valid for 24 hours.",
       "The owner signs and submits the report in the e-Business Register; never automate the login, signature or submission.",
       "If you used an approval, call record_action_outcome with outcome submitted once the owner says it is submitted.",
     ],
-    approval_kind: "prepare_filing", done_when: "The owner submitted the report in the e-Business Register.", verify_with: "Public register report_status: get_obligations stops showing the row once the register lists the report as filed." },
+    approval_kind: "prepare_filing", done_when: "The owner submitted the report in the e-Business Register.", verify_with: "With applies \"yes\" (public-register facts): the register's report_status; get_obligations stops showing the row once the register lists the report as filed. With applies \"if\": the owner's e-Business Register submission confirmation." },
 ];
 export const DOMAINS = ["money", "customers", "people", "legal_sector", "operations"] as const;
 export const FRAMEWORK = {

@@ -251,7 +251,7 @@ describe("approval cards over MCP", () => {
 
     const ro = owner("readonly", "progress:read");
     const cr = await client(ro.token);
-    expect(errText(await cr.callTool({ name: "request_approval", arguments: { report_id: "r", action: reminder() } }))).toBe("The owner connected you read-only, so you cannot prepare work for their approval. Tell the owner: „Et saaksin seda sinu eest ette valmistada, ühenda mind AI-hüppelauaga uuesti ja märgi „Jah: valmistab töid ette”.” Nothing was saved.");
+    expect(errText(await cr.callTool({ name: "request_approval", arguments: { report_id: "r", action: reminder() } }))).toBe("The owner connected you read-only. Tell the owner: „Et saaksin seda sinu eest ette valmistada, ühenda mind AI-hüppelauaga uuesti ja luba nõusolekulehel töid ette valmistada.” When reconnecting, request the progress:report scope; the owner must allow it on the consent page. Nothing was saved and no approval was requested.");
     const off = owner("stopped", "progress:read,progress:report", 0);
     const cs = await client(off.token);
     expect(errText(await cs.callTool({ name: "request_approval", arguments: { report_id: "r", action: reminder() } }))).toMatch(/sharing is stopped.*Nothing was saved/s);

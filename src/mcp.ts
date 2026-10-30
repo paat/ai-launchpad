@@ -9,7 +9,7 @@ import { computeObligations, tallinnDate, type CompanyFacts, type Fact, type Fac
 import { BLOCKERS, MAX_JOB_HINT_CHARS, MAX_NEED_CHARS, recordUnmetNeed } from "./unmet-needs.js";
 
 export interface Ctx { ownerId: string; scopes: string[]; companyRef: string; label: string; reportingEnabled: boolean; baseUrl: string; }
-const READ_ONLY = "The owner connected you read-only, so you cannot prepare work for their approval. Tell the owner: „Et saaksin seda sinu eest ette valmistada, ühenda mind AI-hüppelauaga uuesti ja märgi „Jah: valmistab töid ette”.” Nothing was saved.";
+const readOnly = (nothing: string) => `The owner connected you read-only. Tell the owner: „Et saaksin seda sinu eest ette valmistada, ühenda mind AI-hüppelauaga uuesti ja luba nõusolekulehel töid ette valmistada.” When reconnecting, request the progress:report scope; the owner must allow it on the consent page. ${nothing}`;
 const json = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }], structuredContent: data as Record<string, unknown> });
 const err = (m: string) => ({ isError: true, content: [{ type: "text" as const, text: m }] });
 
@@ -294,7 +294,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     return json({ candidate_id: id, status: "pending_moderation", deduplicated: false, note: "Pending human moderation. Not published or endorsed." });
   });
 
-  const approvalGate = (nothing: string) => !need("progress:report") ? READ_ONLY : !ctx.reportingEnabled ? `Progress sharing is stopped by the owner (it is off by default). ${nothing}` : null;
+  const approvalGate = (nothing: string) => !need("progress:report") ? readOnly(nothing) : !ctx.reportingEnabled ? `Progress sharing is stopped by the owner (it is off by default). ${nothing}` : null;
 
   server.registerTool("request_approval", { description: "Ask the owner to approve one exact action (message, invoice, payment or filing) on their phone. The digest binds every field of action; any change needs a new approval. Launchpad never sends, pays or files: after get_approval returns approved, act with your own tools using exactly this content, then call record_action_outcome before expires_at. Expires 24 hours after the request, for deciding and for acting: an approved approval with no outcome recorded by then becomes expired. Idempotent by report_id; a replay returns the creation receipt plus the live current_state.", inputSchema: { report_id: s(80), action: approvalActionSchema } }, async (args) => {
     const gate = approvalGate("Nothing was saved and no approval was requested."); if (gate) return err(gate);
@@ -358,8 +358,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
   });
 
   server.registerTool("report_unmet_need", { description: "Report a job the owner asked for that you could not do (no connector, needs the owner's PIN or signature, a portal without an API, not supported yet, or unclear). Describe the need generically, in the owner's language, without names, company names, amounts, account numbers, personal or registry codes, e-mail addresses, phone numbers or other identifiers. Launchpad also replaces identifiers it detects before storing the text or showing it to any model, and keeps only that de-identified text. Launchpad then classifies it in the background (Meta's open model when live, a labelled mock locally); nothing is published unless the owner approves it on the Status page, and then only as anonymous open demand (category, short label, one-line spec). Idempotent by report_id.", inputSchema: { report_id: s(80), need: s(MAX_NEED_CHARS), blocker: z.enum(BLOCKERS), job_hint: s(MAX_JOB_HINT_CHARS).optional() } }, async (args) => {
-    if (!need("progress:report")) return err(READ_ONLY);
-    if (!ctx.reportingEnabled) return err("Progress sharing is stopped by the owner (it is off by default). Nothing was saved.");
+    const gate = approvalGate("Nothing was saved."); if (gate) return err(gate);
     const r = recordUnmetNeed(db, ctx.ownerId, args);
     if ("error" in r) return err(r.error);
     if (r.created) {
