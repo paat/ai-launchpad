@@ -39,7 +39,7 @@ describe("ics.ts (RFC 5545)", () => {
     expect(icsText("a\\b;c,d\ne\r\nf")).toBe("a\\\\b\\;c\\,d\\ne\\nf");
   });
 
-  test("CRLF only, stable UIDs, two DISPLAY alarms, NÄIDIS and Võimalik prefixes, the sentence and the source", () => {
+  test("CRLF only, stable UIDs, two DISPLAY alarms at 09:00 local 7 days and 1 day before, NÄIDIS and Võimalik prefixes, the sentence and the source", () => {
     const company = { name: "Kase Konsult OÜ", synthetic: true };
     const ics = deadlinesCalendar({ host: "launchpad.example", now: TODAY, company, obligations: rows("19990002") });
     expect(ics.endsWith("\r\n")).toBe(true);
@@ -59,8 +59,8 @@ describe("ics.ts (RFC 5545)", () => {
       expect(e).toContain("Assistent: ");
       expect(e).toContain(" / Sina: ");
       expect(e).toContain(icsText(ICS_DISCLAIMER));
-      expect(e.match(/BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-P7D\r\nDESCRIPTION:/g)?.length).toBe(1);
-      expect(e.match(/BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-P1D\r\nDESCRIPTION:/g)?.length).toBe(1);
+      expect(e.match(/BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-P6DT15H\r\nDESCRIPTION:/g)?.length).toBe(1);
+      expect(e.match(/BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15H\r\nDESCRIPTION:/g)?.length).toBe(1);
     }
     // Kase Konsult has labour taxes but no stated payouts: the TSD rows are conditional.
     const tsd = ev.find((e) => e.includes("UID:tsd-monthly-return-"))!;

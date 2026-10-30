@@ -60,7 +60,8 @@ export function deadlinesCalendar(f: FeedInput): string {
     lines.push("BEGIN:VEVENT", `UID:${o.rule_id}-${ymd(o.statutory_due ?? o.effective_due)}@${f.host}`, `DTSTAMP:${stamp(f.now)}`,
       `DTSTART;VALUE=DATE:${ymd(day)}`, `DTEND;VALUE=DATE:${ymd(nextDay(day))}`,
       `SUMMARY:${icsText(summary)}`, `DESCRIPTION:${icsText(description)}`, `URL:${o.source.url}`, "TRANSP:TRANSPARENT");
-    if (!overdue) for (const trigger of ["-P7D", "-P1D"]) lines.push("BEGIN:VALARM", "ACTION:DISPLAY", `TRIGGER:${trigger}`, `DESCRIPTION:${icsText(summary)}`, "END:VALARM");
+    // Relative to the all-day start (00:00 local): 09:00 local seven days before and the day before.
+    if (!overdue) for (const trigger of ["-P6DT15H", "-PT15H"]) lines.push("BEGIN:VALARM", "ACTION:DISPLAY", `TRIGGER:${trigger}`, `DESCRIPTION:${icsText(summary)}`, "END:VALARM");
     lines.push("END:VEVENT");
   }
   lines.push("END:VCALENDAR");
