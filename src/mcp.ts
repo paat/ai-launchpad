@@ -150,13 +150,17 @@ export const assistantFactsSchema = z.object({
 }).strict();
 export const OBLIGATIONS_DISCLAIMER = "Tähtajad arvutab reeglistik, mitte tehisaru. Kuupäevad on arvutatud, mitte esitatud, makstud ega kontrollitud. See ei ole õigus- ega maksunõu; kontrolli iga rea allikat. / Deadlines are calculated by rules, not AI. Dates are computed, not filed, paid or verified. Not legal or tax advice; check each row's source.";
 const CONFIRM_QUESTIONS: Record<string, Omit<FactNeeded, "fact">> = { vat_registered: { question_et: "Registris on KMKR number, kuid viimastel kvartalitel käivet pole deklareeritud. Kas ettevõte on endiselt käibemaksukohustuslane?", question_en: "The register shows a VAT number but no declared turnover in recent quarters. Is the company still VAT-registered?" } };
+const REGISTRY_CODE_NEEDED: FactNeeded = { fact: "registry_code", question_et: "Mis on ettevõtte 8-kohaline registrikood?", question_en: "What is the company's 8-digit registry code?" };
 export async function companyObligations(ar: Arikratt, o: { registryCode?: string; assistant?: z.infer<typeof assistantFactsSchema>; months: number; today?: Date; cacheOnly?: boolean }) {
   let code = o.registryCode;
+  let miss: { unavailable: string; unavailable_reason: string } | null = null;
   const name = o.assistant?.company_name;
   if (!code && name && ar.configured) {
     const found = await ar.search(name);
     if (found.ok && found.matches.length === 1) code = found.matches[0].registry_code;
-    else if (found.ok && found.matches.length > 1) return { ok: false as const, error: `Several companies match "${name}": ${found.matches.map((m) => `${m.name} (${m.registry_code})`).join("; ")}. Ask the owner which registry code is theirs and call again with registry_code. No deadlines were computed.` };
+    else if (!found.ok) miss = { unavailable: found.unavailable, unavailable_reason: found.reason };
+    else if (found.matches.length === 0) miss = { unavailable: "no_match", unavailable_reason: `No company in the public register matches "${name}".` };
+    else return { ok: false as const, error: `Several companies match "${name}": ${found.matches.map((m) => `${m.name} (${m.registry_code})`).join("; ")}. Ask the owner which registry code is theirs and call again with registry_code. No deadlines were computed.` };
   }
   if (!code && !o.assistant) return { ok: false as const, error: "No company is known yet. Ask the owner for the company name or 8-digit registry code, then call get_obligations with registry_code (or with facts). No deadlines were computed." };
   const lookup = code ? await ar.lookup(code, { cacheOnly: o.cacheOnly }) : null;
@@ -170,13 +174,13 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
   const confirm = lookup?.ok ? lookup.confirm.map((fact) => ({ fact, ...CONFIRM_QUESTIONS[fact] })) : [];
   const company: CompanyCard & { unavailable?: string; unavailable_reason?: string } = lookup?.ok ? lookup.company : {
     name: facts.company_name?.value ?? null, registry_code: code ?? "", synthetic: false, provenance: "assistant_supplied", label_et: "Assistendi teade · avalikust registrist ei loetud", label_en: "Your assistant says · not read from a public register",
-    snapshot_id: null, as_of: null, sources: [], attribution: "", ...(lookup && !lookup.ok ? { unavailable: lookup.unavailable, unavailable_reason: lookup.reason } : {}),
+    snapshot_id: null, as_of: null, sources: [], attribution: "", ...(lookup && !lookup.ok ? { unavailable: lookup.unavailable, unavailable_reason: lookup.reason } : miss ?? {}),
   };
   return { ok: true as const, result: {
     company, computed_by: "rules", window: r.window, obligations: r.obligations,
-    facts_needed: [...confirm, ...r.facts_needed.filter((n) => !confirm.some((c) => c.fact === n.fact))],
+    facts_needed: [...(miss ? [REGISTRY_CODE_NEEDED] : []), ...confirm, ...r.facts_needed.filter((n) => !confirm.some((c) => c.fact === n.fact))],
     data_as_of: company.as_of, disclaimer: OBLIGATIONS_DISCLAIMER,
-    assistant_instruction: "Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed.",
+    assistant_instruction: `Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed.${miss ? " Ask the owner for the 8-digit registry code." : ""}`,
   } };
 }
 

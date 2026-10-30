@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createApp, type Config } from "../src/app.js";
 import { openDb, sha256 } from "../src/db.js";
-import { assistantFactsSchema, TOOL_ARG_KEYS } from "../src/mcp.js";
+import { assistantFactsSchema, companyObligations, TOOL_ARG_KEYS } from "../src/mcp.js";
 import { arikratt, CACHE_TTL_MS, mapCompany } from "../src/arikratt.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import { computeObligations, easterSunday, publicHolidays, shiftToWorkingDay, validRegistryCode, type CompanyFacts } from "../src/obligations.js";
@@ -205,7 +205,7 @@ beforeAll(async () => {
       expect(sections).toEqual(["report_status", "tax"]);
       return { content: [{ type: "text", text: JSON.stringify(fakeCompany(registry_code)) }] };
     });
-    s.registerTool("search_companies", { inputSchema: { query: z.string(), limit: z.number().optional() } }, async () => ({ content: [{ type: "text", text: JSON.stringify({ companies: [{ name: "Synthetic Register OÜ", registry_code: FAKE_VALID, employees: 1, representatives: [{ name: PERSON, personal_code: PERSON_CODE }] }] }) }] }));
+    s.registerTool("search_companies", { inputSchema: { query: z.string(), limit: z.number().optional() } }, async ({ query }) => ({ content: [{ type: "text", text: JSON.stringify({ companies: query === "Nobody Matches" ? [] : [{ name: "Synthetic Register OÜ", registry_code: FAKE_VALID, employees: 1, representatives: [{ name: PERSON, personal_code: PERSON_CODE }] }] }) }] }));
     const t = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => { void t.close(); void s.close(); });
     await s.connect(t); await t.handleRequest(req, res, req.body);
@@ -264,6 +264,19 @@ describe("Ärikratt adapter", () => {
     await ar.lookup(FAKE_VALID); expect(toolCalls - start).toBe(1);
     db.prepare("UPDATE company_facts SET fetched_at=?").run(new Date(Date.now() - CACHE_TTL_MS - 1).toISOString());
     await ar.lookup(FAKE_VALID); expect(toolCalls - start).toBe(2);
+  });
+  test("company-name search miss or failure is reported on the card and asks for the registry code (tribunal T-003)", async () => {
+    const db = openDb(":memory:");
+    const miss = await companyObligations(arikratt(db, { apiKey: "test-key", url: fakeUrl }), { assistant: { company_name: "Nobody Matches" }, months: 1 });
+    if (!miss.ok) throw new Error(miss.error);
+    expect(miss.result.company).toMatchObject({ name: "Nobody Matches", provenance: "assistant_supplied", unavailable: "no_match", unavailable_reason: expect.stringContaining("Nobody Matches") });
+    expect(miss.result.facts_needed[0]).toMatchObject({ fact: "registry_code" });
+    expect(miss.result.assistant_instruction).toContain("Ask the owner for the 8-digit registry code.");
+    const failed = await companyObligations(arikratt(db, { apiKey: "wrong", url: fakeUrl }), { assistant: { company_name: "Synthetic Register" }, months: 1 });
+    if (!failed.ok) throw new Error(failed.error);
+    expect(failed.result.company).toMatchObject({ unavailable: "unauthorized", unavailable_reason: "The public-register service rejected Launchpad's API key." });
+    expect(failed.result.facts_needed[0]).toMatchObject({ fact: "registry_code" });
+    expect(failed.result.assistant_instruction).toContain("Ask the owner for the 8-digit registry code.");
   });
   test("honest unavailable states: timeout, not found, bad key", async () => {
     const db = openDb(":memory:");
