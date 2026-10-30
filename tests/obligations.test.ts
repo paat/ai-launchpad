@@ -496,7 +496,7 @@ describe("get_obligations tool and status card", () => {
         const html = await r.text();
         expect(r.status, q).toBe(200);
         expect(toolCalls - start, q).toBe(0);
-        expect(html, q).toContain("Sinu AI-assistent teeb kontoritöö.");
+        expect(html, q).toContain("Tegele sellega, milles oled hea.");
         expect(html, q).not.toMatch(/Mari Disain OÜ|Synthetic Register|name="q"/);
       }
     } finally { s6.close(); }
