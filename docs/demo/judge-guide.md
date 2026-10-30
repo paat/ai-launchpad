@@ -1,33 +1,39 @@
 # Judge guide: trying AI-hüppelaud / AI Launchpad
 
-Live product: `https://huppelaud.arikratt.ee`. Repo: `https://github.com/paat/ai-launchpad`. Everything you can try uses **synthetic data** (company "Mari Disain OÜ", customer "Demo Klient OÜ", `.example` addresses), labelled **NÄIDIS**.
+Live product: `https://huppelaud.arikratt.ee`. MCP address: `https://huppelaud.arikratt.ee/mcp`. Repo: `https://github.com/paat/ai-launchpad`. Everything you can try uses **synthetic data** (company "Mari Disain OÜ", customer "Demo Klient OÜ", `.example` addresses), labelled **NÄIDIS**. The live site is updated by a later deploy; screens described here as "as of the next deploy" may not be live yet.
 
 ## Which access applies
 
-- **Today:** owner-only pilot. Real workspaces sign in with an owner-only Google allowlist, so you cannot sign in. Use the demo video and the repo.
-- **Planned (after #21):** a self-serve synthetic sandbox, isolated per visitor and rate-limited, with no paid model calls and cached guidance only. The owner fills in on submission day which of the two is live: ______
+- **Public landing, no login:** open the site and search the sample company "Mari Disain". It opens on its exact name or code only.
+- **Connecting an assistant and approvals:** the live pilot is owner-only (Google allowlist), so judges cannot sign in. The public sandbox (#21 part B) is not built yet. Until it exists, use the landing page, the demo video and the repo. The owner fills in on submission day which applies: ______
 
 ## What it is
 
-Your own AI assistant (ChatGPT) becomes the interface to an Estonian small-business back office. Launchpad is one remote MCP gateway; it adds Estonian obligations, approvals and receipts. It is not a chatbot.
+AI agents take back-office work off a small-business owner so she can focus on her core work. Launchpad does not compete with her assistant; it equips it. It is one remote MCP gateway that adds Estonian obligations, playbooks, approvals and receipts to the ChatGPT she already has. Rules compute and models read: deadlines come from deterministic code with an official source, never from a model. She approves only what binds her.
+
+## Plan caveat
+
+- **ChatGPT:** approvals are write tools and need the full-MCP plan (Business, Enterprise or Edu; help.openai.com 12584461, updated 28 Oct 2026). Pro gets custom MCP with read-only tools; Plus is undocumented. On those plans the deadlines work but the approval step does not.
+- **Claude:** allows custom connectors on every plan, but it is untested with Launchpad.
 
 ## Steps
 
-1. **Open the landing page** (after #21). Type "Mari Disain" and press "Näita tähtaegu". You see November deadlines, each marked "Arvutatud reeglist" with an official source link.
-2. **Connect ChatGPT** (after #21): "Ühenda oma assistent" → copy this MCP address: `https://huppelaud.arikratt.ee/mcp` → ChatGPT settings → add a connector → paste. Sign in and approve the consent screen, which lists what the assistant can and can never do. Connecting needs a ChatGPT plan that allows custom connectors (not confirmed for all plans). Only ChatGPT has been tested; Claude has not.
+1. **Open the landing page** (no login). Type "Mari Disain" and press "Näita tähtaegu". Each deadline carries "Arvutatud reeglist", an official source link and, as of the next deploy, an "Assistent … · Sina …" line: what the assistant can do and what stays yours.
+2. **Connect ChatGPT** (owner-only pilot; needs the plan above). "Ühenda oma assistent" (`/uhenda`) → copy `https://huppelaud.arikratt.ee/mcp` → ChatGPT settings → add a connector → paste. Sign in and approve the consent screen with its one job permission: prepare work, always ask first.
 3. **Ask** in ChatGPT (add `Kasuta AI-hüppelauda: ` at the start if it doesn't call the tool):
-   - `Mis on minu ettevõtte tähtajad sel kuul?` (*What are my deadlines this month?*) → dated list with sources (after #19).
-   - `Demo Klient OÜ pole arvet nr 2026-014 maksnud — 240 eurot, maksetähtaeg oli 20. oktoober. Koosta viisakas maksemeeldetuletus ja küsi minult enne saatmist kinnitust.` → ChatGPT gives you a link to an approval card showing recipient, amount, document and period. "Kinnita täpselt see" approves exactly that payload; if anything changes the approval is void. Nothing is sent: the "sent" state is demo only.
-   - `Esita minu oktoobri käibemaksudeklaratsioon.` → ChatGPT says it can prepare but you must file. The unmet request is classified and de-identified by Meta's Muse Spark Open, and joins the public "Avatud soovid" list only if you approve (after #20).
+   - `Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?` → deadlines as offers, with sources.
+   - `Vaata mu arved üle ja tee ära, mis on vaja. Enne saatmist küsi minult kinnitust.` with `docs/demo/naidis-arved.csv` attached → "Leidsin 1 tasumata arve", a reminder draft and a link to an approval card (recipient, amount, document, period). "Kinnita täpselt see" approves exactly that payload; change anything and the approval is void. Then write "Kinnitasin" in the chat. Nothing is sent by Launchpad: the outcome reads "Saadetud: demo". Invoice 2026-015 turns overdue after 10 Nov, which changes the count.
+   - `Esita minu oktoobri käibedeklaratsioon.` → the `vat-return-prep` playbook prepares the figures from your accounting software's own report; you file in e-MTA with Smart-ID. The gap is reported as an unmet need, de-identified and classified by Meta's Muse Spark Open, and joins the public "Avatud soovid" list only if you publish it.
+4. **Täna** (as of the next deploy): "Ootab sinult · Assistent tegi · Tulekul" shows what needs you, what your assistant did and what is coming.
 
-## What you will see
+## Meta's models
 
-Deadlines computed by code with a rule id and official source (EMTA / Riigi Teataja); approval cards and receipts with honest states; AI-generated labels on model output ("Liigitas Meta Muse Spark Open"). Model use is capped at USD 10 on existing credits; the sandbox uses cached guidance only.
+Muse Spark Open (`meta-models/muse-spark-open-1026`, via Baseten) classifies unmet needs in a background job after de-identification and writes the Estonian setup guidance cards. Live output is labelled "AI liigitus · Meta Muse Spark Open"; mock output is labelled as a sample. The model never computes a deadline or an amount. Model use is capped at USD 10 on existing credits.
 
 ## What is synthetic
 
-The company, the customer, the invoice, amounts, any seeded open-demand rows and, until the owner configures an Ärikratt API key, every company. Real registry lookups are not available yet.
+The company, the customer, the invoices, amounts, any seeded open-demand rows and, until the owner configures an Ärikratt API key, every company. Real registry lookups are not available yet. No time saved is measured or claimed.
 
 ## What is never automated
 
-Smart-ID / Mobile-ID / ID-card PINs, qualified signatures, real filings to government portals and real payments. The product prepares; the owner approves; the owner files, signs and pays.
+Smart-ID / Mobile-ID / ID-card PINs, qualified signatures, real filings to government portals and real payments. The assistant prepares; the owner approves; the owner files, signs and pays.
