@@ -173,6 +173,19 @@ describe("agent-facing copy over MCP", () => {
     for (const id of ["vat-return-prep", "annual-report"]) expect(byId(id).steps, id).toContain(recheck);
   });
 
+  test("annual-report: approval of the exact draft is required, acted on only when approved, outcome recorded (tribunal T-003)", () => {
+    const p = byId("annual-report");
+    expect(p.steps.join(" ")).not.toMatch(/optional/i);
+    const approval = p.steps.findIndex((x) => x.includes("request_approval with action kind prepare_filing"));
+    expect(p.steps[approval]).toContain("document.content: the exact report draft");
+    expect(p.steps[approval]).toContain("This approval is REQUIRED before the owner signs or submits.");
+    const filing = p.steps.findIndex((x) => x.includes("owner signs and submits the report"));
+    expect(p.steps[filing]).toMatch(/^Act only after get_approval returns approved/);
+    expect(filing).toBeGreaterThan(approval);
+    expect(p.steps[filing + 1]).toBe("When the owner says it is submitted, call record_action_outcome with outcome submitted.");
+    expect(p.done_when).toBe("The owner submitted the report in the e-Business Register and record_action_outcome recorded submitted.");
+  });
+
   test("the expiry re-check only re-checks and renews; recording comes after the owner files (tribunal T-004)", () => {
     for (const id of ["vat-return-prep", "annual-report"]) {
       const steps = byId(id).steps;

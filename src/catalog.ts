@@ -102,12 +102,12 @@ export const PLAYBOOKS: Playbook[] = [
       "Check the annual-report or annual-report-overdue row in get_obligations. With applies \"yes\" (public-register facts) the report is not listed as filed. With applies \"if\" the filing state is unknown: ask the owner the facts_needed question first.",
       "Gather what the report needs: the balance sheet and income statement from the accounting software, the activity description and the owner's answers.",
       "Give the owner a checklist of what is ready and what is still missing.",
-      "Optionally call request_approval with action kind prepare_filing; recipient.name: \"Äriregister (e-äriregister)\"; period: the financial year; document.title and document.content: the exact report draft; summary: one line for the owner. Then act only after get_approval returns approved.",
+      "Call request_approval with action kind prepare_filing; recipient.name: \"Äriregister (e-äriregister)\"; period: the financial year; document.title and document.content: the exact report draft; summary: one line for the owner. This approval is REQUIRED before the owner signs or submits.",
       "Right before the owner files, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged figures or draft first. Approvals are valid for 24 hours.",
-      "The owner signs and submits the report in the e-Business Register; never automate the login, signature or submission.",
-      "If you used an approval, call record_action_outcome with outcome submitted once the owner says it is submitted.",
+      "Act only after get_approval returns approved: tell the owner the approved draft is ready. The owner signs and submits the report in the e-Business Register; never automate the login, signature or submission.",
+      "When the owner says it is submitted, call record_action_outcome with outcome submitted.",
     ],
-    approval_kind: "prepare_filing", done_when: "The owner submitted the report in the e-Business Register.", verify_with: "With applies \"yes\" (public-register facts): the register's report_status; get_obligations stops showing the row once the register lists the report as filed. With applies \"if\": the owner's e-Business Register submission confirmation." },
+    approval_kind: "prepare_filing", done_when: "The owner submitted the report in the e-Business Register and record_action_outcome recorded submitted.", verify_with: "With applies \"yes\" (public-register facts): the register's report_status; get_obligations stops showing the row once the register lists the report as filed. With applies \"if\": the owner's e-Business Register submission confirmation." },
 ];
 export const DOMAINS = ["money", "customers", "people", "legal_sector", "operations"] as const;
 export const FRAMEWORK = {
