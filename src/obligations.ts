@@ -9,6 +9,8 @@ export interface AnnualReportStatus { latest_year: number | null; filed: boolean
 export interface CompanyFacts {
   company_name?: Fact<string>; registry_code?: Fact<string>;
   vat_registered?: Fact<boolean>; labour_taxes_last_quarter?: Fact<number>; employees?: Fact<number>;
+  /** Register founding date (ISO): no annual report for a financial year that ended before it. */
+  founded?: Fact<string>;
   fy_end?: Fact<string>; annual_report?: Fact<AnnualReportStatus>; tax_debt_on_list?: Fact<boolean>;
   /** Revenue in the latest annual report (register or fixture); as_of is the report year. */
   latest_annual_revenue?: Fact<number>;
@@ -187,10 +189,21 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
   const ar = facts.annual_report;
   if (!known(ar)) need("annual_report", "Kas viimase majandusaasta aruanne on äriregistrile esitatud?", "Has the latest annual report been filed with the Business Register?");
   const [fm, fd] = fy.value.split("-").map(Number);
+  const founded = known(facts.founded) ? facts.founded.value : null;
+  const fyEnd = (y: number) => iso(utc(y, fm - 1, Math.min(fd, daysIn(y, fm - 1))));
   const fyRows = [-2, -1, 0, 1].map((k) => {
-    const y = f0.getUTCFullYear() + k, end = iso(utc(y, fm - 1, Math.min(fd, daysIn(y, fm - 1))));
+    const y = f0.getUTCFullYear() + k, end = fyEnd(y);
     return { y, end, ...dated(addMonths(end, 6)) };
-  });
+  }).filter((r) => founded === null || r.end >= founded);
+  // ÄS § 179: the first financial year (the one containing the founding date) may run up to 18 months. With an assumed FY end its
+  // report date is never definite; with a known FY end it is definite only when ending a year later (E2) would exceed 18 months.
+  let firstFyY = founded !== null && fyRows[0] && fyEnd(fyRows[0].y - 1) < founded ? fyRows[0].y : undefined;
+  let firstFy = { applies: "if" as const, condition_et: "Esimese majandusaasta lõpp sõltub põhikirjast (võib olla kuni 18 kuud).", condition_en: "The end of the first financial year depends on the articles of association (it may run up to 18 months)." };
+  if (firstFyY !== undefined && fy.provenance !== "assumption") {
+    const e1 = fyEnd(firstFyY), e2 = fyEnd(firstFyY + 1);
+    if (e2 >= addMonths(founded!, 18)) firstFyY = undefined;
+    else firstFy = { applies: "if", condition_et: `Esimene majandusaasta võib lõppeda ${etDate(e1)} või ${etDate(e2)} (kuni 18 kuud), sõltuvalt põhikirjast.`, condition_en: `The first financial year may end on ${enDate(e1)} or ${enDate(e2)} (up to 18 months), depending on the articles of association.` };
+  }
   const fyLabel = (r: { y: number; end: string }) => fy.value === "12-31" ? { et: `${r.y}. a majandusaasta aruanne`, en: `${r.y} annual report` } : { et: `Majandusaasta aruanne (majandusaasta lõppes ${etDate(r.end)})`, en: `Annual report (financial year ended ${enDate(r.end)})` };
   // Register signal: latest_year is the newest report period on file; filed refers to that period.
   const filedFor = (y: number): boolean | null => {
@@ -204,9 +217,9 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
     if (!inWindow(r.effective_due) || state === true) continue;
     const l = fyLabel(r);
     out.push({ rule_id: "annual-report", covers: ["annual-report"], kind: "deadline", title_et: "Majandusaasta aruanne", title_en: "Annual report", period_label_et: l.et, period_label_en: l.en,
-      statutory_due: r.statutory_due, effective_due: r.effective_due, shifted: r.shifted, ...(state === null ? { applies: "if" as const, ...unfiled(l) } : { applies: "yes" as const }),
+      statutory_due: r.statutory_due, effective_due: r.effective_due, shifted: r.shifted, ...(r.y === firstFyY ? firstFy : state === null ? { applies: "if" as const, ...unfiled(l) } : { applies: "yes" as const }),
       reason_et: "Kehtib igale osaühingule iga majandusaasta kohta, ka tegevuseta aasta eest.", reason_en: "Applies to every OÜ for every financial year, including inactive years.",
-      applies_because: because("fy_end", fy), source: SRC.annual, handoff: handoff("annual-report") });
+      applies_because: [...because("fy_end", fy), ...(r.y === firstFyY ? because("founded", facts.founded) : [])], source: SRC.annual, handoff: handoff("annual-report") });
   }
   const lapsed = fyRows.filter((r) => r.effective_due < from).pop();
   const overdueDays = known(ar) ? ar.value.overdue_days : null;
@@ -218,9 +231,9 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
     const risk_en = `The registrar may fine repeatedly without a warning; deletion from the register is possible from ${enDate(deletion)} once the registrar's own deadline has also passed.`;
     out.push({ rule_id: "annual-report-overdue", covers: ["annual-report-overdue"], kind: "risk", title_et: "Majandusaasta aruanne on tähtajast maas", title_en: "Annual report is overdue", period_label_et: l.et, period_label_en: l.en,
       statutory_due: lapsed.statutory_due, effective_due: lapsed.effective_due, shifted: lapsed.shifted,
-      ...(yes ? { applies: "yes" as const } : { applies: "if" as const, ...unfiled(l) }),
+      ...(lapsed.y === firstFyY ? firstFy : yes ? { applies: "yes" as const } : { applies: "if" as const, ...unfiled(l) }),
       reason_et: risk_et, reason_en: risk_en,
-      applies_because: [...because("annual_report", ar), ...because("tax_debt_on_list", facts.tax_debt_on_list)], source: SRC.overdue, handoff: handoff("annual-report-overdue") });
+      applies_because: [...because("annual_report", ar), ...because("tax_debt_on_list", facts.tax_debt_on_list), ...(lapsed.y === firstFyY ? because("founded", facts.founded) : [])], source: SRC.overdue, handoff: handoff("annual-report-overdue") });
   }
 
   // vat-registration-threshold: warning only, never a legal decision (U5).
