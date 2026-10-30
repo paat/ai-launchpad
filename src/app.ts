@@ -103,11 +103,14 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   const register = arikratt(db, { apiKey: cfg.arikrattApiKey, url: cfg.arikrattMcpUrl });
   // Status page never waits for the register: on a cache miss it starts one
   // background fill per code (errors logged once, never thrown) and moves on.
-  const filling = new Set<string>();
+  // A failed fill blocks new fills for that code for 10 minutes.
+  const FILL_RETRY_MS = 10 * 60_000;
+  const fillBlockedUntil = new Map<string, number>(); // in flight: Infinity
   const fillInBackground = (code: string) => {
-    if (filling.has(code)) return;
-    filling.add(code);
-    void register.lookup(code).then((r) => { if (!r.ok) console.warn(`Status deadlines: register lookup failed (${r.unavailable}).`); }, (e) => console.warn("Status deadlines: register lookup failed.", e)).finally(() => filling.delete(code));
+    if ((fillBlockedUntil.get(code) ?? 0) > Date.now()) return;
+    fillBlockedUntil.set(code, Infinity);
+    const failed = () => fillBlockedUntil.set(code, Date.now() + FILL_RETRY_MS);
+    void register.lookup(code).then((r) => { if (r.ok) fillBlockedUntil.delete(code); else { failed(); console.warn(`Status deadlines: register lookup failed (${r.unavailable}).`); } }, (e) => { failed(); console.warn("Status deadlines: register lookup failed.", e); });
   };
   const app = express();
   app.disable("x-powered-by");

@@ -396,6 +396,27 @@ describe("get_obligations tool and status card", () => {
       expect(JSON.stringify(r)).not.toContain(PERSON);
     } finally { s2.close(); }
   });
+  test("Status: a failed background fill is not retried for 10 minutes (tribunal T-007)", async () => {
+    const cfg4: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
+    const { app: app4, db: db4 } = createApp(cfg4, openDb(":memory:"));
+    const s4 = await new Promise<Server>((ok) => { const s = app4.listen(0, "127.0.0.1", () => ok(s)); });
+    const base4 = `http://127.0.0.1:${(s4.address() as { port: number }).port}`; cfg4.baseUrl = base4;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const now = new Date().toISOString();
+      db4.prepare("INSERT INTO owners(id,subject,kind,reporting_enabled,created_at) VALUES('o','synthetic-o','google',0,?)").run(now);
+      db4.prepare("INSERT INTO workspaces(owner_id,company_ref,label,version) VALUES('o','ws-o','Synthetic workspace',1)").run();
+      db4.prepare("INSERT INTO assessments(id,owner_id,version,payload_json,payload_hash,created_at) VALUES('a','o',1,?,'h',?)").run(JSON.stringify({ ...DEMO_FIXTURES.alpha, company_registry_ref: "10000018" }), now);
+      db4.prepare("INSERT INTO sessions(id_hash,owner_id,csrf,expires_at) VALUES(?,?,?,?)").run(sha256("sess-o"), "o", "csrf-o", new Date(Date.now() + 3600_000).toISOString());
+      const start = toolCalls;
+      const load = async () => expect((await fetch(`${base4}/`, { headers: { cookie: "lp_session=sess-o" } })).status).toBe(200);
+      await load();
+      await vi.waitFor(() => expect(warn).toHaveBeenCalledWith("Status deadlines: register lookup failed (not_found)."));
+      await load(); await load();
+      await new Promise((ok) => setTimeout(ok, 300));
+      expect(toolCalls - start).toBe(1);
+    } finally { warn.mockRestore(); s4.close(); }
+  });
   test("Status page never waits for the register: a cache miss renders a one-line hint at once", async () => {
     const cfg3: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
     const { app: app3, db: db3 } = createApp(cfg3, openDb(":memory:"));
