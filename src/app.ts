@@ -370,7 +370,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   async function landingState(req: Request, q: string): Promise<{ status: number; state: LandingState }> {
     const show = async (code: string): Promise<{ status: number; state: LandingState }> => {
       const r = await companyObligations(register, { registryCode: code, months: 2 });
-      if (!r.ok) return { status: 200, state: { kind: "message", code: "invalid_code" } };
+      if (!r.ok) return { status: 200, state: { kind: "message", code: r.unavailable === "not_found" ? "not_found" : "invalid_code" } };
       const u = (r.result.company as { unavailable?: string }).unavailable;
       if (u) return { status: 200, state: { kind: "message", code: u === "not_found" ? "not_found" : u === "not_configured" ? "not_configured" : "unavailable" } };
       return { status: 200, state: { kind: "result", result: r.result as DeadlinesView } };

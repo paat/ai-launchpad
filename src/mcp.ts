@@ -172,16 +172,17 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
   let code = o.registryCode;
   let miss: { unavailable: string; unavailable_reason: string } | null = null;
   const name = o.assistant?.company_name;
+  let matched: { name: string; registry_code: string } | null = null;
   if (!code && name && ar.configured) {
     const found = await ar.search(name);
-    if (found.ok && found.matches.length === 1) code = found.matches[0].registry_code;
+    if (found.ok && found.matches.length === 1) { matched = found.matches[0]; code = matched.registry_code; }
     else if (!found.ok) miss = { unavailable: found.unavailable, unavailable_reason: found.reason };
     else if (found.matches.length === 0) miss = { unavailable: "no_match", unavailable_reason: `No company in the public register matches "${name}".` };
     else return { ok: false as const, error: `Several companies match "${name}": ${found.matches.map((m) => `${m.name} (${m.registry_code})`).join("; ")}. Ask the owner which registry code is theirs and call again with registry_code. No deadlines were computed.` };
   }
   if (!code && !o.assistant) return { ok: false as const, error: "No company is known yet. Ask the owner for the company name or 8-digit registry code, then call get_obligations with registry_code (or with facts). No deadlines were computed." };
   const lookup = code ? await ar.lookup(code, { cacheOnly: o.cacheOnly }) : null;
-  if (lookup && !lookup.ok && lookup.unavailable === "invalid_code") return { ok: false as const, error: `${lookup.reason} Ask the owner to check the code. No deadlines were computed.` };
+  if (lookup && !lookup.ok && (lookup.unavailable === "invalid_code" || lookup.unavailable === "not_found")) return { ok: false as const, unavailable: lookup.unavailable, error: `${lookup.reason} Ask the owner to check the code. No deadlines were computed.` };
   const facts: CompanyFacts = lookup?.ok ? { ...lookup.facts } : {};
   const mine = <T>(value: T): Fact<T> => ({ value, provenance: "assistant_supplied" });
   for (const [k, v] of Object.entries({ ...o.assistant, ...(code && !lookup?.ok ? { registry_code: code } : {}) })) {
@@ -193,6 +194,9 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
   const from = tallinnDate(today);
   const next = computeObligations(facts, { today, months: 3 }).obligations.find((x) => x.effective_due !== null && x.effective_due >= from) ?? null;
   const confirm = lookup?.ok ? lookup.confirm.map((fact) => ({ fact, ...CONFIRM_QUESTIONS[fact] })) : [];
+  // A single name-search match is a guess until the owner confirms it (#30 item 4).
+  const which = matched && `${matched.name} (${matched.registry_code})`;
+  const confirmCompany: FactNeeded[] = which ? [{ fact: "confirm_company", question_et: `Kas ${which} on sinu ettevõte?`, question_en: `Is ${which} your company?` }] : [];
   const company: CompanyCard & { unavailable?: string; unavailable_reason?: string } = lookup?.ok ? lookup.company : {
     name: facts.company_name?.value ?? null, registry_code: code ?? "", synthetic: false, provenance: "assistant_supplied", label_et: "Assistendi teade · avalikust registrist ei loetud", label_en: "Your assistant says · not read from a public register",
     snapshot_id: null, as_of: null, sources: [], attribution: "", ...(lookup && !lookup.ok ? { unavailable: lookup.unavailable, unavailable_reason: lookup.reason } : miss ?? {}),
@@ -201,9 +205,9 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
     company, computed_by: "rules", window: r.window, obligations: r.obligations.map(withPlaybook),
     next_deadline: next && withPlaybook(next),
     playbooks: PLAYBOOKS.filter((p) => [...r.obligations, ...(next ? [next] : [])].some((x) => p.triggers.includes(x.rule_id))).map(({ id, title, title_et, approval_kind }) => ({ id, title, title_et, approval_kind })),
-    facts_needed: [...(miss ? [REGISTRY_CODE_NEEDED] : []), ...confirm, ...r.facts_needed.filter((n) => !confirm.some((c) => c.fact === n.fact))],
+    facts_needed: [...confirmCompany, ...(miss ? [REGISTRY_CODE_NEEDED] : []), ...confirm, ...r.facts_needed.filter((n) => !confirm.some((c) => c.fact === n.fact))],
     data_as_of: company.as_of, disclaimer: OBLIGATIONS_DISCLAIMER,
-    assistant_instruction: `Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed.${miss ? " Ask the owner for the 8-digit registry code." : ""} Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.`,
+    assistant_instruction: `${which ? `Confirm with the owner that ${which} is their company before relying on these deadlines. ` : ""}Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed.${miss ? " Ask the owner for the 8-digit registry code." : ""} Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.`,
   } };
 }
 

@@ -317,6 +317,23 @@ describe("Ärikratt adapter", () => {
     expect(failed.result.facts_needed[0]).toMatchObject({ fact: "registry_code" });
     expect(failed.result.assistant_instruction).toContain("Ask the owner for the 8-digit registry code.");
   });
+  test("a registry code the register does not know computes no deadlines, like an invalid code (#30 item 3)", async () => {
+    const r = await companyObligations(arikratt(openDb(":memory:"), { apiKey: "test-key", url: fakeUrl }), { registryCode: "10000018", months: 1 });
+    expect(r).toEqual({ ok: false, unavailable: "not_found", error: "The public register has no company with this code. Ask the owner to check the code. No deadlines were computed." });
+  });
+  test("a single name-search match asks the owner to confirm the company first (#30 item 4)", async () => {
+    const db = openDb(":memory:");
+    const r = await companyObligations(arikratt(db, { apiKey: "test-key", url: fakeUrl }), { assistant: { company_name: "Synthetic Register" }, months: 1 });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.result.company).toMatchObject({ name: "Synthetic Register OÜ", registry_code: FAKE_VALID });
+    expect(r.result.facts_needed[0]).toEqual({ fact: "confirm_company", question_et: `Kas Synthetic Register OÜ (${FAKE_VALID}) on sinu ettevõte?`, question_en: `Is Synthetic Register OÜ (${FAKE_VALID}) your company?` });
+    expect(r.result.assistant_instruction).toContain(`Confirm with the owner that Synthetic Register OÜ (${FAKE_VALID}) is their company before relying on these deadlines.`);
+    // A code the owner gave needs no confirmation.
+    const direct = await companyObligations(arikratt(db, { apiKey: "test-key", url: fakeUrl }), { registryCode: FAKE_VALID, months: 1 });
+    if (!direct.ok) throw new Error(direct.error);
+    expect(direct.result.facts_needed.map((n) => n.fact)).not.toContain("confirm_company");
+    expect(direct.result.assistant_instruction).not.toContain("Confirm with the owner that");
+  });
   test("honest unavailable states: timeout, not found, bad key", async () => {
     const db = openDb(":memory:");
     expect(await arikratt(db, { apiKey: "test-key", url: fakeUrl, timeoutMs: 100 }).lookup("12417834")).toMatchObject({ ok: false, unavailable: "timeout" });
