@@ -273,7 +273,13 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 @media (min-width:880px){.landing-hero{grid-template-columns:minmax(0,1fr) 360px;gap:56px;margin-top:var(--s-8)}.landing-hero .btn{width:auto;padding:12px 32px}}
 .teaser{position:relative;width:100%;max-width:360px;margin:0 auto}
 .teaser::before{content:"";position:absolute;inset:8% 0 4%;z-index:-1;border-radius:50%;background:radial-gradient(closest-side,#c9dcbf,transparent);opacity:.9}
-.teaser figcaption{display:flex;align-items:center;justify-content:center;gap:var(--s-2);margin-top:var(--s-3)}
+.teaser figcaption{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:var(--s-2);margin-top:var(--s-3)}
+.vh-input{position:absolute;width:1px;height:1px;margin:0;opacity:0;pointer-events:none}
+.teaser-pause{display:inline-flex;align-items:center;min-height:44px;padding:0 var(--s-3);border:1px solid var(--c-border);border-radius:var(--r-lg);background:#fff;font-size:var(--fs-sm);font-weight:650;color:var(--c-primary);cursor:pointer}
+#teaser-pause:focus-visible~figcaption .teaser-pause{outline:3px solid var(--c-focus);outline-offset:2px}
+#teaser-pause:checked~figcaption .teaser-pause{background:var(--c-primary);color:#fff}
+#teaser-pause:checked~.phone *{animation-play-state:paused!important}
+@media (prefers-reduced-motion:reduce){.teaser-pause,.vh-input{display:none}}
 .phone{height:640px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
 @media (max-width:380px){.phone{height:700px}}
 .phone-screen{display:flex;flex-direction:column;height:100%;overflow:hidden;border-radius:36px;background:var(--c-surface-2)}
@@ -1103,9 +1109,10 @@ export function landingBody(o: { lang: Lang }): string {
 <a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a></div>
 <figure class="teaser">
 <div class="vh"><p>${t("Näidisvestlus:", "Sample conversation:")}</p><ol>${transcript}</ol></div>
+<input type="checkbox" id="teaser-pause" class="vh-input">
 <div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${t("ühendatud: AI-hüppelaud", "connected: AI Launchpad")}</small></span></div>
 <div class="chat">${chat}</div></div></div>
-<figcaption>${sampleChip(l)}<span class="small muted">${t("Vestlus sinu ChatGPT-s või Claude'is", "A conversation in your ChatGPT or Claude")}</span></figcaption>
+<figcaption>${sampleChip(l)}<span class="small muted">${t("Vestlus sinu ChatGPT-s või Claude'is", "A conversation in your ChatGPT or Claude")}</span><label class="teaser-pause" for="teaser-pause">${t("Peata animatsioon", "Pause animation")}</label></figcaption>
 </figure></section>
 <section aria-labelledby="how-h"><h2 id="how-h">${t("Kuidas see töötab", "How it works")}</h2>
 <ol class="how">${steps.map((s, i) => `<li>${icon(ICONS[i])}<span>${esc(s)}</span></li>`).join("")}</ol></section>

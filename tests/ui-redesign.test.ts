@@ -250,7 +250,7 @@ describe("landing and connect", () => {
     expect(phone).not.toMatch(/<(a|button|input)\b|tabindex/);
     expect(et).toMatch(/<div class="vh"><p>Näidisvestlus:<\/p><ol><li>Sina: Mis mul sel kuul adminis ees on\?<\/li>/);
     // No search, no script, no claim we cannot back.
-    for (const html of [et, en]) expect(html).not.toMatch(/<form|<input|<script|name="q"|\bsäästa|\bsaves? \d/i);
+    for (const html of [et, en]) expect(html.replace('<input type="checkbox" id="teaser-pause" class="vh-input">', "")).not.toMatch(/<form|<input|<script|name="q"|\bsäästa|\bsaves? \d/i);
     // Step 3 names standing approvals; the state chip swaps with the button (same CSS timing), so the last frame does not contradict itself.
     expect(et).toContain("Kinnita telefonis üks kord — täpselt see saaja, summa ja dokument — või luba sarnased edaspidi automaatselt");
     expect(en).toContain("Approve once on your phone — exactly this recipient, amount and document — or allow similar ones automatically from now on");
@@ -271,6 +271,18 @@ describe("landing and connect", () => {
     // The screen-reader transcript carries the same texts.
     expect(et).toContain("Allikas: KMS § 27, § 38. 10. nov — TSD · kas oktoobris oli väljamakseid? · Allikas: TuMS § 40, § 54.");
     expect(en).toContain("VAT return (KMD) and VAT payment · Calculated by rule · Source: VAT Act § 27, § 38.");
+  });
+
+  test("landing teaser: CSS-only pause toggle, labelled, no script (tribunal T-004, WCAG 2.2.2)", () => {
+    const css = shell({ title: "x", active: "none", csrf: "", body: "" });
+    for (const [h, label] of [[landingBody({ lang: "et" }), "Peata animatsioon"], [landingBody({ lang: "en" }), "Pause animation"]]) {
+      expect(h).toContain('<input type="checkbox" id="teaser-pause" class="vh-input">');
+      expect(h).toContain(`<label class="teaser-pause" for="teaser-pause">${label}</label>`);
+      expect(h).not.toContain("<script");
+    }
+    expect(css).toContain("#teaser-pause:checked~.phone *{animation-play-state:paused!important}");
+    expect(css).toMatch(/\.teaser-pause\{[^}]*min-height:44px/);
+    expect(css).toMatch(/#teaser-pause:focus-visible~figcaption \.teaser-pause\{outline:3px/);
   });
 
   test("landing transcript: the send is credited to the assistant, not the owner (tribunal T-003)", () => {
