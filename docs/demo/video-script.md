@@ -4,7 +4,7 @@ Status: v2, 2026-10-30. Rewritten for the built product: the agent finds the wor
 
 ## 1. Story in one paragraph
 
-AI agents take back-office work off a small-business owner so she can do her core work. Mari is a synthetic one-person designer in Tallinn (Mari Disain OÜ). Launchpad does not compete with her assistant; it equips it: Estonian rules, source links, approvals and receipts behind one remote MCP gateway. Rules compute and models read. She approves only what binds her. In November 2026 she connects the ChatGPT she already has, asks what admin she has and what the assistant can do itself, and watches it find an unpaid invoice in a file, draft the reminder and ask her exact approval on her phone. The company, customer ("Demo Klient OÜ", `arved@demo-klient.example`), invoices and amounts are synthetic and labelled **NÄIDIS**. No time-saved claim is made anywhere. Recorded 1–9 Nov 2026, using only work built during the event.
+AI agents take back-office work off a small-business owner so she can do her core work. Mari is a synthetic one-person designer in Tallinn (Mari Disain OÜ). Launchpad does not compete with her assistant; it equips it: Estonian rules, source links, approvals and receipts behind one remote MCP gateway. Rules compute and models read. She approves only what binds her. In November 2026 she connects the ChatGPT she already has, asks what admin she has and what the assistant can do itself, and watches it find an unpaid invoice in a file, draft the reminder and ask her exact approval on her phone. The company, customer ("Demo Klient OÜ", `arved@demo-klient.example`), invoices and amounts are synthetic and labelled **NÄIDIS**. No time-saved claim is made anywhere. Record 1–4 Nov 2026; upload and submit by Wed 4 Nov 21:00 ET (Thu 5 Nov 04:00 Tallinn), the hard deadline. Uses only work built during the event.
 
 ## 2. Storyboard
 
@@ -13,14 +13,14 @@ Target 2:44, hard limit 3:00. Voice-over (VO) is English; Estonian UI stays visi
 | Time | Format | On screen | Voice-over | Estonian UI text visible | Criterion |
 |---|---|---|---|---|---|
 | 0:00–0:10 | Phone | Mari at her design desk, ChatGPT on her phone; title card | "Mari is a designer. Admin eats into her evenings: VAT, reminders, deadlines. She'd rather design." | AI-hüppelaud | Impact |
-| 0:10–0:25 | Phone web (390 px) | Landing: type "Mari Disain" → company card (NÄIDIS) → November rows, each with "Assistent … · Sina …", rule label and source link | "AI Launchpad reads public registers and computes her deadlines with rules. For each one it shows what her own assistant can take off her, and what stays with her." | Arvutatud reeglist · Assistent … · Sina … · Allikas · NÄIDIS | Impact, Technical |
+| 0:10–0:25 | Phone web (390 px) | Landing: type "Mari Disain" → company card (NÄIDIS) → November rows, each with "Assistent … · Sina …", rule label and source link | "AI Launchpad computes this sample company's deadlines with rules, each linked to its official source. For each one it shows what her own assistant can take off her, and what stays with her." | Arvutatud reeglist · Assistent … · Sina … · Allikas · NÄIDIS | Impact, Technical |
 | 0:25–0:42 | Split (desktop + phone) | `/uhenda` with the plan line → consent with the one job permission → connected chip | "She connects the ChatGPT she already has. One permission: prepare the work, and always ask first." | Kas lased tal töid ette valmistada? · Ühendatud | Demo, Technical |
-| 0:42–1:02 | ChatGPT desktop | Prompt 1 → deadlines, each as an offer, with source links → period-matched TSD question → "Ei" → the TSD row drops | "Deadlines come back as offers. One answer, and a whole filing drops off her list." | Allikas · Kas valmistan … ette? | Impact, Demo |
-| 1:02–1:40 | Split (ChatGPT + phone) | Prompt 2 with `naidis-arved.csv` attached (NÄIDIS) → "Leidsin 1 tasumata arve" → draft → "Kinnita telefonis" → approval card → Kinnita täpselt see → "Kinnitasin" → receipt "Saadetud: demo". 3 s tamper cut: €241.00 → void card. | "She didn't spot the unpaid invoice. Her assistant did. It drafts the reminder; she approves exactly this, on her phone. Change one euro and the approval is void." | Assistent valmistas ette · Kinnita täpselt see · Nüüd on assistendi kord · Saadetud: demo · Kehtetu | Technical, Impact |
+| 0:42–1:02 | ChatGPT desktop | Prompt 1 → deadlines, each as an offer, with source links → two period-matched questions (payouts, then employee or other trigger) → "Ei" to both → the TSD row drops. Assistant says (example, not product copy): "Kas valmistan … ette?" | "Deadlines come back as offers. One answer, and a whole filing drops off her list." | Allikas · Kas valmistan … ette? | Impact, Demo |
+| 1:02–1:40 | Split (ChatGPT + phone) | Prompt 2 with `naidis-arved.csv` attached (NÄIDIS) → Assistant says (example, not product copy; its own words may vary): „Leidsin 1 tähtaja ületanud arve” → draft → Assistant says (example, not product copy): "Kinnita telefonis" → approval card → Kinnita täpselt see → "Kinnitasin" → receipt "Saadetud: demo". 3 s cut: the assistant changes €240 → €241 and Launchpad refuses it: a new approval is needed; no void card is shown. | "She didn't spot the unpaid invoice. Her assistant did. It drafts the reminder; she approves exactly this, on her phone. Change one euro and Launchpad refuses it: a new approval is needed." | Assistent valmistas ette · Kinnita täpselt see · Nüüd on assistendi kord · Saadetud: demo | Technical, Impact |
 | 1:40–1:55 | Phone web | Täna with its three blocks | "Her day page: what needs her, what her assistant did, what is coming, and who does each." | Ootab sinult · Assistent tegi · Tulekul · Täna pole sinult midagi vaja (if nothing waits) | Impact |
-| 1:55–2:20 | ChatGPT + phone web | Prompt 3 → "Esitamine vajab sinu Smart-ID-d. Valmistan arved ette, esitad sina." (the `vat-return-prep` playbook prepares, she files) → unmet-need card with the Meta label → publish → Avatud soovid (`/demand`) | "Some steps stay hers: her Smart-ID. The assistant prepares the rest, and Meta's open-weight Muse Spark Open turns the gap into anonymous open demand, only with her OK." | AI liigitus · Meta Muse Spark Open · Avatud soovid | Meta tooling |
+| 1:55–2:20 | ChatGPT + phone web | Prompt 3 → Assistant says (example, not product copy): "Esitamine vajab sinu Smart-ID-d. Valmistan arved ette, esitad sina." (the `vat-return-prep` playbook prepares, she files) → unmet-need card with the Meta label → publish → Avatud soovid (`/demand`) | "Some steps stay hers: her Smart-ID. The assistant prepares the rest, and Meta's open-weight Muse Spark Open turns the gap into anonymous open demand, only with her OK." | AI liigitus · Meta Muse Spark Open · Avatud soovid | Meta tooling |
 | 2:20–2:34 | Diagram | ChatGPT ↔ MCP gateway → rules, approvals/receipts; Muse Spark Open → unmet-need classifier and setup cards | "Rules own every date and approval. Meta's model does the background reading and never computes a deadline or an amount." | – | Meta tooling, Technical |
-| 2:34–2:44 | Card | End card; live URL and repo link | "AI-hüppelaud. Your assistant does the back office. You approve only what binds you." | Assistent teeb kontoritöö. Sina kinnitad ainult selle, mis sind seob. · huppelaud.arikratt.ee · github.com/paat/ai-launchpad | Demo |
+| 2:34–2:44 | Card | End card; live URL and repo link | "AI-hüppelaud. Your assistant does the back office. You approve only what binds you." | Lase oma assistendil see töö enda peale võtta. Sina kinnitad ainult selle, mis sind seob. · huppelaud.arikratt.ee · github.com/paat/ai-launchpad | Demo |
 
 Total 2:44. If a segment runs long, cut the tamper cut to 2 s, then the diagram to 8 s.
 
@@ -43,8 +43,8 @@ Type these verbatim; show the English subtitle burned in.
 **Shots** (record each separately): S1 phone intro · S2 landing (scripted 390 px B-roll) · S3 `/uhenda` + consent · S4 prompt 1 · S5 prompt 2 + approval card + receipt + tamper cut · S6 Täna · S7 prompt 3 + unmet-need card + Avatud soovid · S8 diagram · S9 end card.
 
 **Dates (hard constraints)**
-- [ ] Record the prompt 1 beat between 1 and 9 Nov 2026. On 30 Oct `months:1` returned an empty window, and after the 20th "this month" holds no monthly deadlines.
-- [ ] Record the invoice beat before 10 Nov: invoice 2026-015 in `naidis-arved.csv` becomes overdue after 10 Nov, and prompt 2 would then find 2 unpaid invoices, not "1 tasumata arve".
+- [ ] Record the prompt 1 beat between 1 and 4 Nov 2026. On 30 Oct `months:1` returned an empty window, and after the 20th "this month" holds no monthly deadlines.
+- [ ] Record the invoice beat before 10 Nov (the 1–4 Nov window satisfies this): invoice 2026-015 in `naidis-arved.csv` becomes overdue after 10 Nov, and prompt 2 would then find 2 unpaid invoices, not "1 tähtaja ületanud arve".
 - [ ] Check each deadline date against EMTA that day.
 - [ ] An approval expires after 24 hours: start the take after the prompt so the card is fresh.
 
@@ -55,7 +55,7 @@ Type these verbatim; show the English subtitle burned in.
 - [ ] **H4** Does ChatGPT pass `months:1` for "sel kuul"? Settle it in one prompt-1 take on recording day.
 
 **Plan**
-- [ ] ChatGPT approvals need the full-MCP plan (Business, Enterprise or Edu). VERIFIED on help.openai.com 12584461, updated 28 Oct 2026: Pro can attach custom MCP servers with read/fetch only; Plus is undocumented. The owner's pilot account has run write tools (`docs/live-pilot.md`); its plan is not recorded, so note it before recording.
+- [ ] Plan line, as `/uhenda?a=chatgpt` renders it: „Tähtajad töötavad igas ChatGPT paketis. Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.” Source: help.openai.com 12584461, updated 28 Oct 2026. VERIFIED on help.openai.com 12584461, updated 28 Oct 2026: Pro can attach custom MCP servers with read/fetch only; Plus is undocumented. The owner's pilot account has run write tools (`docs/live-pilot.md`); its plan is not recorded, so note it before recording.
 
 **Environment**
 - [ ] Live pilot URL `https://huppelaud.arikratt.ee`; record the deployed SHA and compare it with merged `main` (a health 200 is not proof of deploy). The new screens appear only after the next deploy.
@@ -118,7 +118,7 @@ Label every fallback honestly on screen; never present a mock as live.
 | ChatGPT doesn't call the tool | Retry with `Kasuta AI-hüppelauda: …`; keep the prefix visible. |
 | Tool permission dialog appears | Re-grant permissions and retake; do not edit it out if it is the only take. |
 | Ärikratt key missing / registry lookup unavailable | Use the synthetic company only; caption "NÄIDIS · sünteetiline ettevõte". Do not claim a live registry lookup. |
-| Prompt 1 gives an empty or wrong window | Re-record between 1 and 9 Nov; do not mock the answer. |
+| Prompt 1 gives an empty or wrong window | Re-record between 1 and 4 Nov; do not mock the answer. |
 | ChatGPT cannot read the CSV (H3) | Paste the rows as text, captioned. |
 | ChatGPT cannot create a draft (H2) | Show the receipt "Valmis saatmiseks · saada oma postist"; keep "Saadetud: demo" only for the demo outcome. |
 | Approval flow fails | Show the recorded 390 px scripted run of the card pages, captioned "Salvestatud testistsenaarium / recorded scripted run". |

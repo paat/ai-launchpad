@@ -13,16 +13,16 @@ AI agents take back-office work off a small-business owner so she can focus on h
 
 ## Plan caveat
 
-- **ChatGPT:** approvals are write tools and need the full-MCP plan (Business, Enterprise or Edu; help.openai.com 12584461, updated 28 Oct 2026). Pro gets custom MCP with read-only tools; Plus is undocumented. On those plans the deadlines work but the approval step does not.
+- **ChatGPT**, as `/uhenda?a=chatgpt` renders it: „Tähtajad töötavad igas ChatGPT paketis. Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.” (Source: help.openai.com 12584461, updated 28 Oct 2026.)
 - **Claude:** allows custom connectors on every plan, but it is untested with Launchpad.
 
 ## Steps
 
 1. **Open the landing page** (no login). Type "Mari Disain" and press "Näita tähtaegu". Each deadline carries "Arvutatud reeglist", an official source link and, as of the next deploy, an "Assistent … · Sina …" line: what the assistant can do and what stays yours.
 2. **Connect ChatGPT** (owner-only pilot; needs the plan above). "Ühenda oma assistent" (`/uhenda`) → copy `https://huppelaud.arikratt.ee/mcp` → ChatGPT settings → add a connector → paste. Sign in and approve the consent screen with its one job permission: prepare work, always ask first.
-3. **Ask** in ChatGPT (add `Kasuta AI-hüppelauda: ` at the start if it doesn't call the tool):
+3. **Ask** in ChatGPT (valid as written 1–4 Nov 2026; add `Kasuta AI-hüppelauda: ` at the start if it doesn't call the tool):
    - `Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?` → deadlines as offers, with sources.
-   - `Vaata mu arved üle ja tee ära, mis on vaja. Enne saatmist küsi minult kinnitust.` with `docs/demo/naidis-arved.csv` attached → "Leidsin 1 tasumata arve", a reminder draft and a link to an approval card (recipient, amount, document, period). "Kinnita täpselt see" approves exactly that payload; change anything and the approval is void. Then write "Kinnitasin" in the chat. Nothing is sent by Launchpad: the outcome reads "Saadetud: demo". Invoice 2026-015 turns overdue after 10 Nov, which changes the count.
+   - `Vaata mu arved üle ja tee ära, mis on vaja. Enne saatmist küsi minult kinnitust.` with `docs/demo/naidis-arved.csv` attached → the assistant reports the overdue invoice (Assistant says (example, not product copy; its own words may vary): „Leidsin 1 tähtaja ületanud arve”), a reminder draft and a link to an approval card (recipient, amount, document, period). "Kinnita täpselt see" approves exactly that payload; change anything and Launchpad refuses it; a new approval is needed. Then write "Kinnitasin" in the chat. Nothing is sent by Launchpad: the outcome reads "Saadetud: demo". Invoice 2026-015 turns overdue after 10 Nov, which changes the count.
    - `Esita minu oktoobri käibedeklaratsioon.` → the `vat-return-prep` playbook prepares the figures from your accounting software's own report; you file in e-MTA with Smart-ID. The gap is reported as an unmet need, de-identified and classified by Meta's Muse Spark Open, and joins the public "Avatud soovid" list only if you publish it.
 4. **Täna** (as of the next deploy): "Ootab sinult · Assistent tegi · Tulekul" shows what needs you, what your assistant did and what is coming.
 
