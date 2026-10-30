@@ -505,7 +505,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   });
   app.get("/services", (req, res) => {
     const p = new URLSearchParams();
-    for (const k of ["lang", "g", "q"] as const) { const v = req.query[k]; if (typeof v === "string" && v) p.set(k, v.slice(0, 120)); }
+    for (const k of ["lang", "g", "q"] as const) { const v = req.query[k]; if (typeof v === "string" && v && (k !== "lang" || parseLang(v))) p.set(k, v.slice(0, 120)); }
     res.redirect(302, p.size ? `/kataloog?${p}` : "/kataloog");
   });
 

@@ -81,9 +81,16 @@ describe("public catalogue", () => {
     expect(html.indexOf(legend)).toBeLessThan(html.indexOf('class="card svc svc--pinned"'));
     expect(legend.match(/<svg class="ico"[^>]*aria-hidden="true"/g)).toHaveLength(3);
     expect(legend).not.toMatch(/\p{Extended_Pictographic}/u);
-    expect(legend).toContain("töötab kõikjal");
     expect(legend).toContain("Claude Desktop/Cowork või ChatGPT töölauarakendus");
-    expect(legend).toContain("telefonis küsid ja kinnitad");
+    expect(legend).toContain("telefonis küsid ja kinnitad liikvel olles");
+    for (const path of ["/kataloog", "/kataloog?lang=en"]) {
+      const h = await page(path);
+      const heads = [...(/<ul class="legend"[\s\S]*?<\/ul>/.exec(h)![0]).matchAll(/<strong>([^<]*)<\/strong>/g)].map((m) => m[1]);
+      const chips = new Set([...h.matchAll(/label-chip--where">([^<]*)</g)].map((m) => m[1]));
+      expect(heads, path).toHaveLength(3);
+      expect(chips.size, path).toBeGreaterThan(0);
+      for (const c of chips) expect(heads, path).toContain(c);
+    }
     expect(legend).not.toMatch(/testitud|kontrollitud|verified/i);
     expect(await page("/kataloog?lang=en")).toContain("Anywhere · web, phone, computer");
   });
@@ -130,6 +137,8 @@ describe("public catalogue", () => {
     const all3 = await get("/services?lang=en&g=pank&q=lhv%20pank&x=1");
     expect([all3.status, all3.headers.get("location")]).toEqual([302, "/kataloog?lang=en&g=pank&q=lhv+pank"]);
     expect((await get("/services")).headers.get("location")).toBe("/kataloog");
+    expect((await get("/services?lang=bogus")).headers.get("location")).toBe("/kataloog");
+    expect((await get("/services?lang=en")).headers.get("location")).toBe("/kataloog?lang=en");
     const login = await get("/login");
     const pre = /name="preauth" value="([^"]+)"/.exec(await login.text())![1];
     const auth = await fetch(base + "/auth/demo", { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: base, cookie: login.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ") }, body: new URLSearchParams({ actor: "alpha", preauth: pre }) });

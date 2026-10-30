@@ -18,8 +18,8 @@ for (const width of [320, 390, 1280]) {
     expect(small).toEqual([]);
     await page.screenshot({ path: `${SHOTS}/kataloog-${width}.png`, fullPage: width !== 390 });
     if (width === 390) await page.screenshot({ path: `${SHOTS}/kataloog-390-full.png`, fullPage: true });
-    if (width === 390) await page.screenshot({ path: `${SHOTS}/kataloog-390-v2.png` });
-    await expect(page.locator("ul.legend")).toContainText("telefonis küsid ja kinnitad");
+    if (width === 390) await page.screenshot({ path: `${SHOTS}/kataloog-390-v2.png`, fullPage: true });
+    await expect(page.locator("ul.legend")).toContainText("telefonis küsid ja kinnitad liikvel olles");
     await expect(page.locator("article.svc[data-service]").first().locator(".label-chip--where")).toHaveCount(1);
 
     await page.getByRole("link", { name: /^Raamatupidamine ja arved/ }).click();
