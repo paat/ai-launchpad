@@ -53,7 +53,47 @@ test("canonical digest binds every field with stable key order", () => {
     expect(approvalDigest(changed)).not.toBe(approvalDigest(a));
 });
 
+test("the digest differs when only the recipient address differs (#35)", () => {
+  const a = reminder();
+  expect(approvalDigest(reminder({ recipient: { ...a.recipient, address: "billing@other.example" } }))).not.toBe(approvalDigest(a));
+});
+
 describe("approval cards over MCP", () => {
+  test("send_message and send_invoice without a recipient address are rejected and nothing is saved (#35)", async () => {
+    const o = owner("no-address");
+    const c = await client(o.token);
+    const message = reminder({ kind: "send_message", amount_cents: undefined });
+    for (const [id, action] of [["m-none", { ...message, recipient: { name: "Synthetic Client OÜ" } }], ["m-blank", { ...message, recipient: { name: "Synthetic Client OÜ", address: "  " } }], ["i-none", reminder({ recipient: { name: "Synthetic Client OÜ" } })]] as const)
+      expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: id, action } })), id).toContain("recipient.address is required for send_message and send_invoice");
+    expect((db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='no-address'").get() as { n: number }).n).toBe(0);
+    expect((db.prepare("SELECT count(*) n FROM reports WHERE owner_id='no-address'").get() as { n: number }).n).toBe(0);
+    // A filing names an authority, not an address; a message keeps amount_cents optional.
+    expect(parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "f-ok", action: reminder({ kind: "prepare_filing", amount_cents: undefined, recipient: { name: "EMTA (e-MTA)" } }) } })).state).toBe("pending");
+    expect(parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "m-ok", action: message } })).state).toBe("pending");
+  });
+
+  test("a legacy send approval without an address cannot be approved, on the card or by POST (#35)", async () => {
+    const o = owner("legacy-address");
+    const { address: _drop, ...recipient } = reminder().recipient;
+    const payload = reminder({ kind: "send_message", amount_cents: undefined, recipient });
+    db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at) VALUES(?,?,?,?,?,?,'pending',?,?)")
+      .run("appr_no_address", "legacy-address", "send_message", "legacy-1", JSON.stringify(payload), approvalDigest(payload), new Date(Date.now() + 3600_000).toISOString(), new Date().toISOString());
+    const card = await (await fetch(`${base}/approvals/appr_no_address`, { headers: { cookie: o.cookie } })).text();
+    expect(card).toContain("Aadress puudub — seda kinnitust ei saa kasutada");
+    expect(card).not.toContain("Kinnita täpselt see");
+    expect(card).not.toContain('value="approve"');
+    expect(card).toContain("Keeldu");
+    const en = await (await fetch(`${base}/approvals/appr_no_address?lang=en`, { headers: { cookie: o.cookie } })).text();
+    expect(en).toContain("Address missing — this approval cannot be used");
+    const forced = await decide(o, "appr_no_address", { decision: "approve", digest: approvalDigest(payload) });
+    expect(forced.status).toBe(409);
+    expect(await forced.text()).toContain("Aadress puudub — seda kinnitust ei saa kasutada. Midagi ei kinnitatud.");
+    expect(row("appr_no_address")).toMatchObject({ state: "pending", decided_at: null });
+    // The owner can still clear it by declining.
+    expect((await decide(o, "appr_no_address", { decision: "decline", digest: approvalDigest(payload) })).status).toBe(302);
+    expect(row("appr_no_address").state).toBe("declined");
+  });
+
   test("request → owner approves exact card → outcome with identical digest; one-use lifecycle", async () => {
     const o = owner("flow");
     const c = await client(o.token);
@@ -328,7 +368,7 @@ test("report_assessment executor, label, reason, company_label and next_action r
 test("an approval document title and recipient render escaped on Täna, Tehtud and the approval pages (tribunal T-001)", async () => {
   const o = owner("xss-approval");
   const c = await client(o.token);
-  const req = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "xss-a", action: reminder({ document: { title: XSS, content: "Tere!" }, recipient: { name: XSS } }) } }));
+  const req = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "xss-a", action: reminder({ document: { title: XSS, content: "Tere!" }, recipient: { name: XSS, address: "billing@client.example" } }) } }));
   for (const path of ["/", "/activity", "/approvals", `/approvals/${req.approval_id}`]) inert(await pageOf(o, path), path);
 });
 

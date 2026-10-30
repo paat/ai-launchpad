@@ -1,6 +1,6 @@
 import type { Assessment, Coverage } from "./core.js";
 import { isHandled } from "./core.js";
-import type { ApprovalRow, AssistantMilestones, Exclusion } from "./mcp.js";
+import { approvalAddressMissing, type ApprovalRow, type AssistantMilestones, type Exclusion } from "./mcp.js";
 import type { CompanyCard, CompanyMatch } from "./arikratt.js";
 import { ET_OF, type FactNeeded, type Obligation } from "./obligations.js";
 import { BASETEN_MODEL } from "./model-quality.js";
@@ -522,7 +522,7 @@ function approvalView(a: ApprovalRow, l: Lang) {
   const recipient = typeof p.recipient === "string" ? { name: p.recipient } : p.recipient ?? {};
   const kindKey = a.kind ?? p.kind ?? "";
   const kind = KIND[kindKey] ? t(...KIND[kindKey]) : t("Varasem näidiskinnitus", "Earlier synthetic approval");
-  return { p, recipient, kindKey, kind, title: p.document?.title ?? p.document_ref ?? kind, amount: typeof p.amount_cents === "number" ? fmtEur(p.amount_cents, l) : null, outcome, history: outcome?.history ?? (outcome ? [outcome] : []) };
+  return { p, recipient, noAddress: approvalAddressMissing(a), kindKey, kind, title: p.document?.title ?? p.document_ref ?? kind, amount: typeof p.amount_cents === "number" ? fmtEur(p.amount_cents, l) : null, outcome, history: outcome?.history ?? (outcome ? [outcome] : []) };
 }
 /** Per-outcome receipt words: [state-chip kind, ET, EN]. */
 const OUTCOME: Record<string, [string, string, string]> = { sent: ["sent", "Saadetud", "Sent"], submitted: ["sent", "Esitatud", "Submitted"], accepted: ["accepted", "Vastu võetud", "Accepted"], rejected: ["rejected", "Tagasi lükatud", "Rejected"], paid: ["paid", "Makstud", "Paid"], failed: ["rejected", "Ei õnnestunud", "Failed"] };
@@ -551,10 +551,11 @@ function stateLine(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, 
   return `<ol class="state-line" aria-label="${t("Töö seis", "Where this job is")}">${steps.map((s, i) => `<li class="state-step state-step--${s.cls}"${i === current ? ' aria-current="step"' : ""}><span class="state-mark" aria-hidden="true">${s.mark}</span><span class="state-text">${esc(s.text)}${s.note ? `<span class="state-note">${esc(s.note)}</span>` : ""}</span></li>`).join("")}</ol>`;
 }
 
+const NO_ADDRESS = (l: Lang) => tr(l)("Aadress puudub — seda kinnitust ei saa kasutada", "Address missing — this approval cannot be used");
 function approvalFacts(v: ReturnType<typeof approvalView>, l: Lang): string {
   const t = tr(l);
   const row = (k: string, val: string | null | undefined, sub?: string | null, cls = "") => val ? `<div class="fact-row${cls}"><dt>${esc(k)}</dt><dd>${esc(val)}${sub ? `<span class="fact-sub">${esc(sub)}</span>` : ""}</dd></div>` : "";
-  return `<dl class="facts">${row(t("Saaja", "To"), v.recipient.name, v.recipient.address)}${row(t("Summa", "Amount"), v.amount, null, " fact-row--amount")}${row(t("Periood", "Period"), v.p.period ? fmtPeriod(v.p.period, l) : null)}</dl>`;
+  return `<dl class="facts">${row(t("Saaja", "To"), v.recipient.name, v.noAddress ? NO_ADDRESS(l) : v.recipient.address)}${row(t("Summa", "Amount"), v.amount, null, " fact-row--amount")}${row(t("Periood", "Period"), v.p.period ? fmtPeriod(v.p.period, l) : null)}</dl>`;
 }
 
 function handoffBox(kindKey: string, l: Lang): string {
@@ -581,7 +582,7 @@ ${approvalFacts(v, l)}
 ${content}
 ${handoffBox(v.kindKey, l)}
 <form method="post" action="/approvals/${esc(encodeURIComponent(a.id))}/decide"><input type="hidden" name="csrf" value="${esc(opts.csrf)}"><input type="hidden" name="digest" value="${esc(a.digest)}">
-<button name="decision" value="approve">${t("Kinnita täpselt see", "Approve exactly this")}</button><button class="secondary" name="decision" value="decline">${t("Keeldu", "Decline")}</button></form>
+${v.noAddress ? `<div class="notice" role="alert"><p><strong>${esc(NO_ADDRESS(l))}.</strong> ${t("Assistent ei märkinud, kuhu see läheb. Keeldu ja palu assistendil küsida uus kinnitus koos saaja aadressiga.", "Your assistant did not say where this goes. Decline it and ask your assistant for a new approval with the recipient's address.")}</p></div>` : `<button name="decision" value="approve">${t("Kinnita täpselt see", "Approve exactly this")}</button>`}<button class="secondary" name="decision" value="decline">${t("Keeldu", "Decline")}</button></form>
 <p class="small muted">${esc(t(`Kui assistent muudab midagi, küsib ta uue kinnituse. Kehtib 24 tundi, kuni ${fmtUntil(a.expires_at, l, now)}.`, `If your assistant changes anything, it asks again. Valid for 24 hours, until ${fmtUntil(a.expires_at, l, now)}.`))}</p>
 <p class="small muted">${t("AI-hüppelaud ise ei saada, maksa ega esita midagi; seda teeb sinu assistent oma tööriistadega ja ainult täpselt selle sisuga.", "AI Launchpad itself never sends, pays or files; your assistant does this with its own tools, and only with exactly this content.")}${sample ? ` ${t("Näidis: päriselt ei saadeta.", "Sample: nothing is really sent.")}` : ""}</p>
 ${approvalTech(a, v, l)}

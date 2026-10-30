@@ -4,7 +4,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
 import { arikratt } from "./arikratt.js";
-import { buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, logActivity, TOOL_ARG_KEYS, type ApprovalRow } from "./mcp.js";
+import { approvalAddressMissing, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, logActivity, TOOL_ARG_KEYS, type ApprovalRow } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
@@ -556,6 +556,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (a.state !== "pending") return ownerError(req, res, 409, t("Juba otsustatud", "Already decided"), t("Selle kinnituse kohta on otsus juba tehtud. Midagi ei kinnitatud ega keeldutud; vajadusel palu assistendil uus koostada.", `This approval is already ${a.state}. Nothing was approved or declined; ask your assistant for a new approval if needed.`));
     // A re-rendered card after a change can never approve a different payload.
     if (!safeEqual(String(bodyOf(req).digest ?? ""), a.digest)) return ownerError(req, res, 409, t("Kaart on vananenud", "This card is out of date"), t("Midagi muutus pärast seda, kui kaardi avasid. Midagi ei kinnitatud. Ava kinnitus uuesti.", "Something changed after you opened the card. Nothing was approved. Open the approval again."));
+    if (decision === "approve" && approvalAddressMissing(a)) return ownerError(req, res, 409, t("Aadress puudub", "Address missing"), t("Aadress puudub — seda kinnitust ei saa kasutada. Midagi ei kinnitatud. Keeldu ja palu assistendil küsida uus kinnitus koos saaja aadressiga.", "Address missing — this approval cannot be used. Nothing was approved. Decline it and ask your assistant for a new approval with the recipient's address."));
     const state = decision === "approve" ? "approved" : "declined";
     db.prepare("UPDATE approvals SET state=?,decided_at=? WHERE id=? AND owner_id=? AND state='pending'").run(state, nowIso(), a.id, oid(req));
     logActivity(db, oid(req), "owner", "approval_decided", state, `Owner ${state} ${a.kind ?? "action"} (digest ${a.digest.slice(0, 12)}). Launchpad sent, paid and filed nothing.`);

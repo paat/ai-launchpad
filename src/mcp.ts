@@ -112,15 +112,18 @@ export const canonicalJson = (v: unknown): string => Array.isArray(v) ? `[${v.ma
   : v !== null && typeof v === "object" ? `{${Object.entries(v).filter(([, x]) => x !== undefined).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, x]) => `${JSON.stringify(k)}:${canonicalJson(x)}`).join(",")}}`
   : JSON.stringify(v);
 export const approvalDigest = (action: unknown) => sha256(canonicalJson(action));
+/** Sends must lock their destination (#35): the digest then binds it. */
+export const ADDRESS_KINDS: readonly string[] = ["send_message", "send_invoice"];
+export const ADDRESS_REQUIRED = "recipient.address is required for send_message and send_invoice: the e-mail or e-invoice address the content goes to.";
 export const approvalActionSchema = z.object({
   kind: z.enum(APPROVAL_KINDS),
-  recipient: z.object({ name: s(120), address: s(120).optional() }).strict(),
+  recipient: z.object({ name: s(120), address: s(120).describe("The e-mail or e-invoice address. Required for send_message and send_invoice.").optional() }).strict(),
   amount_cents: z.number().int().min(1).max(999_999_999_999).optional(),
   currency: z.enum(["EUR"]).default("EUR"),
   period: s(40).optional(),
   document: z.object({ title: s(120), content: s(4000) }).strict(),
   summary: s(300),
-}).strict();
+}).strict().refine((a) => !ADDRESS_KINDS.includes(a.kind) || !!a.recipient.address?.trim(), { message: ADDRESS_REQUIRED, path: ["recipient", "address"] });
 const OUTCOME_FIRST: Record<string, string[]> = { send_message: ["sent", "failed"], send_invoice: ["sent", "failed"], prepare_payment: ["paid", "failed"], prepare_filing: ["submitted", "failed"] };
 const OUTCOME_NEXT: Record<string, string[]> = { sent: ["accepted", "rejected", "paid"], submitted: ["accepted", "rejected"] };
 export interface ApprovalRow { id: string; kind: string | null; report_id: string | null; payload_json: string; digest: string; state: string; expires_at: string; created_at: string; decided_at: string | null; consumed_at: string | null; outcome_json: string | null; }
@@ -128,6 +131,14 @@ export interface ApprovalRow { id: string; kind: string | null; report_id: strin
  *  approved-but-unused approval past expires_at becomes expired on read. */
 export function expireApprovals(db: Db, ownerId: string) {
   db.prepare("UPDATE approvals SET state='expired' WHERE owner_id=? AND state IN ('pending','approved') AND expires_at<=?").run(ownerId, nowIso());
+}
+/** A stored send approval without a usable address (a legacy row) can never be approved. */
+export function approvalAddressMissing(a: Pick<ApprovalRow, "kind" | "payload_json">): boolean {
+  let p: { kind?: unknown; recipient?: unknown } = {};
+  try { p = JSON.parse(a.payload_json); } catch { /* unreadable: kind decides */ }
+  if (!ADDRESS_KINDS.includes(String(a.kind ?? p.kind ?? ""))) return false;
+  const address = p.recipient && typeof p.recipient === "object" ? (p.recipient as { address?: unknown }).address : undefined;
+  return typeof address !== "string" || !address.trim();
 }
 export function getApproval(db: Db, ownerId: string, id: string) {
   expireApprovals(db, ownerId);
@@ -296,7 +307,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
 
   const approvalGate = (nothing: string) => !need("progress:report") ? readOnly(nothing) : !ctx.reportingEnabled ? `Progress sharing is stopped by the owner (it is off by default). ${nothing}` : null;
 
-  server.registerTool("request_approval", { description: "Ask the owner to approve one exact action (message, invoice, payment or filing) on their phone. The digest binds every field of action; any change needs a new approval. Launchpad never sends, pays or files: after get_approval returns approved, act with your own tools using exactly this content, then call record_action_outcome before expires_at. Expires 24 hours after the request, for deciding and for acting: an approved approval with no outcome recorded by then becomes expired. Idempotent by report_id; a replay returns the creation receipt plus the live current_state.", inputSchema: { report_id: s(80), action: approvalActionSchema } }, async (args) => {
+  server.registerTool("request_approval", { description: "Ask the owner to approve one exact action (message, invoice, payment or filing) on their phone. The digest binds every field of action; any change needs a new approval. send_message and send_invoice must name recipient.address, the exact e-mail or e-invoice address you will send to. Launchpad never sends, pays or files: after get_approval returns approved, act with your own tools using exactly this content, then call record_action_outcome before expires_at. Expires 24 hours after the request, for deciding and for acting: an approved approval with no outcome recorded by then becomes expired. Idempotent by report_id; a replay returns the creation receipt plus the live current_state.", inputSchema: { report_id: s(80), action: approvalActionSchema } }, async (args) => {
     const gate = approvalGate("Nothing was saved and no approval was requested."); if (gate) return err(gate);
     if (["send_invoice", "prepare_payment"].includes(args.action.kind) && args.action.amount_cents === undefined) return err(`amount_cents is required for ${args.action.kind}. Nothing was saved and no approval was requested.`);
     const prior = idempotent(db, ctx.ownerId, "approval", args.report_id, args);
