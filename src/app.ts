@@ -10,7 +10,8 @@ import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
 import type { FetchFn } from "./model-quality.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
-import { esc, shell, loginPage, statusBody, activityBody, connectionBody, tokenOnceBody, approvalsAttention, approvalsListBody, approvalCardBody, deadlinesCard, deadlinesHint, setupBody, servicesBody, playbooksBody } from "./views.js";
+import { esc, shell, loginPage, statusBody, activityBody, connectionBody, tokenOnceBody, approvalsAttention, approvalsListBody, approvalCardBody, deadlinesCard, deadlinesHint, setupBody, servicesBody, playbooksBody, unmetNeedsBody, demandPage } from "./views.js";
+import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; }
 // Owner-only pilot allowlist: exact opaque Google `sub` values, never emails.
@@ -92,12 +93,17 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // fails closed at startup (env and direct Config alike); it never falls
   // back to test/disabled. Disabled/test modes construct nothing here.
   let publicCards: PublicCards | null = null;
+  // Unmet-need classification: live only in this same explicit mode and
+  // on the SAME ledger handle; mock in test mode; none when disabled.
+  let needClassifier: NeedClassifier | null = cfg.modelMode === "disabled" ? null : mockClassifier;
   if (cfg.modelMode === "public_cards") {
     if (!allowedSubjects) throw new Error("MODEL_MODE=public_cards requires a nonempty Google subject allowlist (LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS); refusing to start.");
     if (cfg.modelPricingConfirmed !== true) throw new Error("MODEL_MODE=public_cards requires LAUNCHPAD_MODEL_PRICING_CONFIRMED=1 (operator confirms current published pricing/credits); refusing to start.");
     if (!cfg.basetenApiKey) throw new Error("MODEL_MODE=public_cards requires BASETEN_API_KEY; refusing to start.");
     if (!cfg.modelLedgerPath) throw new Error("MODEL_MODE=public_cards requires LAUNCHPAD_MODEL_LEDGER_PATH (the exact existing reviewed ledger); refusing to start.");
-    publicCards = new PublicCards({ ledger: openExistingPublicLedger(cfg.modelLedgerPath), apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
+    const ledger = openExistingPublicLedger(cfg.modelLedgerPath);
+    publicCards = new PublicCards({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
+    needClassifier = liveClassifier({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
   }
   // Public-register facts: with no key, lookups return not_configured without a network call.
   const register = arikratt(db, { apiKey: cfg.arikrattApiKey, url: cfg.arikrattMcpUrl });
@@ -112,6 +118,10 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const failed = () => fillBlockedUntil.set(code, Date.now() + FILL_RETRY_MS);
     void register.lookup(code).then((r) => { if (r.ok) fillBlockedUntil.delete(code); else { failed(); console.warn(`Status deadlines: register lookup failed (${r.unavailable}).`); } }, (e) => { failed(); console.warn("Status deadlines: register lookup failed.", e); });
   };
+  const unmetNeeds = new UnmetNeedQueue(db, needClassifier, (ownerId, action, outcome, summary) => logActivity(db, ownerId, "launchpad", action, outcome, summary));
+  unmetNeeds.kick(); // resume any received/interrupted needs after a restart
+  // Deferred needs (daily limit, another attempt in flight) retry without a new report or restart.
+  setInterval(() => unmetNeeds.kick(), UNMET_NEED_RECHECK_MS).unref();
   const app = express();
   app.disable("x-powered-by");
   // Forwarded addresses are trusted only when explicitly configured, and
@@ -328,8 +338,25 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
     expireApprovals(db, oid(req));
     const pendingApprovals = (db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=? AND state='pending'").get(oid(req)) as { n: number }).n;
-    res.type("html").send(page(req, "Is my admin handled?", "status", approvalsAttention(pendingApprovals) + statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1, latestProgress: (st.progress[0] as unknown as { task_id: string; milestone: string; observed_at: string } | undefined) ?? null, deadlines: !deadlines?.ok ? "" : unavailable ? deadlinesHint(unavailable === "not_cached" ? undefined : deadlines.result.company.unavailable_reason) : deadlinesCard(deadlines.result) })));
+    res.type("html").send(page(req, "Is my admin handled?", "status", approvalsAttention(pendingApprovals) + statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1, latestProgress: (st.progress[0] as unknown as { task_id: string; milestone: string; observed_at: string } | undefined) ?? null, deadlines: !deadlines?.ok ? "" : unavailable ? deadlinesHint(unavailable === "not_cached" ? undefined : deadlines.result.company.unavailable_reason) : deadlinesCard(deadlines.result) }) + unmetNeedsBody({ csrf: (req as Authed).csrf, needs: ownerNeeds(db, oid(req)) })));
   } catch (e) { next(e); } });
+  app.post("/unmet-needs/decide", requireOwner, csrfOk, (req, res) => {
+    const body = bodyOf(req);
+    const extra = Object.keys(body).filter((k) => !["csrf", "need_id", "decision"].includes(k));
+    const decision = body.decision === "publish" || body.decision === "keep_private" ? body.decision : null;
+    if (extra.length || !decision || typeof body.need_id !== "string") return res.status(400).send("Choose Publish anonymously or Keep private. Unexpected fields are rejected; nothing was changed.");
+    const r = decideNeed(db, oid(req), body.need_id, decision);
+    if (r === "not_found") return res.status(404).send("Request not found.");
+    if (r === "not_awaiting") return res.status(409).send("This request is not waiting for a decision. Nothing was changed.");
+    logActivity(db, oid(req), "owner", decision === "publish" ? "unmet_need_published" : "unmet_need_kept_private", "ok", decision === "publish" ? "Unmet need published anonymously as open demand (category, label and spec only)." : "Unmet need kept private; it is never published.");
+    res.redirect("/");
+  });
+  // Public, login-free aggregate of owner-approved demand. Never reads
+  // owner, company or request text; briefly cacheable.
+  app.get("/demand", (_req, res) => {
+    res.set("cache-control", "public, max-age=60");
+    res.type("html").send(demandPage(aggregateDemand(db)));
+  });
 
   app.get("/activity", requireOwner, (req, res) => {
     const rows = db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=? ORDER BY id DESC LIMIT 100").all(oid(req)) as Record<string, string>[];
@@ -442,7 +469,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   });
 
   app.get("/export", requireOwner, (req, res) => {
-    const data = { workspace: getState(db, oid(req)).ws, assessments: db.prepare("SELECT version,payload_json,created_at FROM assessments WHERE owner_id=?").all(oid(req)), progress: db.prepare("SELECT * FROM progress WHERE owner_id=?").all(oid(req)), candidates: db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=?").all(oid(req)), activity: db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=?").all(oid(req)), approvals: db.prepare("SELECT id,kind,report_id,payload_json,digest,state,created_at,expires_at,decided_at,consumed_at,outcome_json FROM approvals WHERE owner_id=?").all(oid(req)) };
+    const data = { workspace: getState(db, oid(req)).ws, assessments: db.prepare("SELECT version,payload_json,created_at FROM assessments WHERE owner_id=?").all(oid(req)), progress: db.prepare("SELECT * FROM progress WHERE owner_id=?").all(oid(req)), candidates: db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=?").all(oid(req)), activity: db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=?").all(oid(req)), approvals: db.prepare("SELECT id,kind,report_id,payload_json,digest,state,created_at,expires_at,decided_at,consumed_at,outcome_json FROM approvals WHERE owner_id=?").all(oid(req)), unmet_needs: db.prepare("SELECT id,report_id,need_redacted,blocker,job_hint_redacted,state,reason,category,demand_label,same_as,spec,classified_by,created_at,updated_at,decided_at FROM unmet_needs WHERE owner_id=?").all(oid(req)) };
     res.setHeader("content-disposition", "attachment; filename=launchpad-export.json");
     res.json(data);
   });
@@ -451,7 +478,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       oauth.revokeOwner(oid(req));
       db.prepare("DELETE FROM oauth_pending WHERE id=?").run(sha256(connectCookie(req)));
       db.prepare("UPDATE owners SET reporting_enabled=0 WHERE id=?").run(oid(req));
-      for (const t of ["assessments", "reports", "progress", "activity", "approvals", "candidates"]) db.prepare(`DELETE FROM ${t} WHERE owner_id=?`).run(oid(req));
+      for (const t of ["assessments", "reports", "progress", "activity", "approvals", "candidates", "unmet_needs"]) db.prepare(`DELETE FROM ${t} WHERE owner_id=?`).run(oid(req));
       db.prepare("UPDATE mcp_tokens SET revoked=1 WHERE owner_id=?").run(oid(req));
       db.prepare("UPDATE owners SET epoch=epoch+1 WHERE id=?").run(oid(req));
       db.prepare("UPDATE workspaces SET version=0 WHERE owner_id=?").run(oid(req));
@@ -497,7 +524,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       }
       const ws = db.prepare("SELECT company_ref,label FROM workspaces WHERE owner_id=?").get(token.owner_id) as { company_ref: string; label: string };
       db.prepare("UPDATE mcp_tokens SET last_used_at=? WHERE id=?").run(nowIso(), token.id);
-      const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl }, register);
+      const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl }, register, { onUnmetNeed: () => unmetNeeds.kick() });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => { void transport.close(); void server.close(); });
       await server.connect(transport);
@@ -517,6 +544,6 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const status = typeof err.status === "number" && err.status >= 400 && err.status < 500 ? err.status : 500;
     if (!res.headersSent) res.status(status).send(status === 500 ? "Something went wrong on our side. Nothing was saved. Try again." : "The request could not be processed.");
   });
-  return { app, db };
+  return { app, db, unmetNeeds };
 }
 export { esc };

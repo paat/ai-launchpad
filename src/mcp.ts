@@ -6,6 +6,7 @@ import { FRAMEWORK, PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js"
 import { assessmentSchema, assessmentRevisionError, computeCoverage, evidenceRefs, s, type Assessment } from "./core.js";
 import { arikratt, type Arikratt, type CompanyCard } from "./arikratt.js";
 import { computeObligations, type CompanyFacts, type Fact, type FactNeeded } from "./obligations.js";
+import { BLOCKERS, MAX_JOB_HINT_CHARS, MAX_NEED_CHARS, recordUnmetNeed } from "./unmet-needs.js";
 
 export interface Ctx { ownerId: string; scopes: string[]; companyRef: string; label: string; reportingEnabled: boolean; baseUrl: string; }
 const json = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }], structuredContent: data as Record<string, unknown> });
@@ -41,7 +42,7 @@ export interface AssistantMilestones {
 }
 // Tool actions that count as retained assistant contact. Grant/token issuance,
 // owner actions, demo seeding, approvals and failed/denied calls are excluded.
-const ASSISTANT_CONTACT_ACTIONS = ["get_started", "get_obligations", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate"];
+const ASSISTANT_CONTACT_ACTIONS = ["get_started", "get_obligations", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "report_unmet_need"];
 
 function validAssessmentReceipt(db: Db, ownerId: string, row: { report_id: string; receipt_json: string; created_at: string }) {
   let receipt: unknown;
@@ -184,7 +185,7 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
   } };
 }
 
-export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})) {
+export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {}), hooks: { onUnmetNeed?: () => void } = {}) {
   const server = new McpServer({ name: "ai-launchpad", version: "0.2.0" });
   const need = (scope: string) => ctx.scopes.includes(scope);
 
@@ -192,7 +193,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     logActivity(db, ctx.ownerId, "assistant", "get_started", "ok", "Assistant fetched getting-started guidance.");
     const first_step = "Start with the owner's deadlines: call get_obligations. Rules compute every date and each row has its official source; ask the owner only for the facts it lists in facts_needed.";
     const shared = { framework: FRAMEWORK, playbooks: PLAYBOOKS,
-      tools: ["get_obligations", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "request_approval", "get_approval", "record_action_outcome"],
+      tools: ["get_obligations", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "request_approval", "get_approval", "record_action_outcome", "report_unmet_need"],
       note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments only — no conversations or documents. Reporting never approves business actions.",
       approvals_note: "Before sending, invoicing, paying or filing for the owner, call request_approval with the exact content and act only after get_approval returns approved. Launchpad never sends, pays or files.",
       catalog_note: "search_services is a public research catalogue available to any authenticated connection; it never contains owner data." };
@@ -345,6 +346,18 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     return json(receipt);
   });
 
+  server.registerTool("report_unmet_need", { description: "Report a job the owner asked for that you could not do (no connector, needs the owner's PIN or signature, a portal without an API, not supported yet, or unclear). Describe the need generically, in the owner's language, without names, company names, amounts, account numbers, personal or registry codes, e-mail addresses, phone numbers or other identifiers. Launchpad also replaces identifiers it detects before storing the text or showing it to any model, and keeps only that de-identified text. Launchpad then classifies it in the background (Meta's open model when live, a labelled mock locally); nothing is published unless the owner approves it on the Status page, and then only as anonymous open demand (category, short label, one-line spec). Idempotent by report_id.", inputSchema: { report_id: s(80), need: s(MAX_NEED_CHARS), blocker: z.enum(BLOCKERS), job_hint: s(MAX_JOB_HINT_CHARS).optional() } }, async (args) => {
+    if (!need("progress:report")) return err("Missing scope progress:report.");
+    if (!ctx.reportingEnabled) return err("Progress sharing is stopped by the owner (it is off by default). Nothing was saved.");
+    const r = recordUnmetNeed(db, ctx.ownerId, args);
+    if ("error" in r) return err(r.error);
+    if (r.created) {
+      logActivity(db, ctx.ownerId, "assistant", "report_unmet_need", "ok", `Unmet need received (${args.blocker}); stored de-identified, waiting for classification.`);
+      try { hooks.onUnmetNeed?.(); } catch { /* classification is out of band; the receipt stands */ }
+    }
+    return json(r.receipt);
+  });
+
   return server;
 }
 
@@ -360,4 +373,5 @@ export const TOOL_ARG_KEYS: Record<string, string[]> = {
   request_approval: ["report_id", "action"],
   get_approval: ["approval_id"],
   record_action_outcome: ["report_id", "approval_id", "digest", "outcome", "observed_at", "evidence_refs"],
+  report_unmet_need: ["report_id", "need", "blocker", "job_hint"],
 };

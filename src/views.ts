@@ -3,6 +3,8 @@ import { isHandled } from "./core.js";
 import type { ApprovalRow, AssistantMilestones, Exclusion } from "./mcp.js";
 import type { CompanyCard } from "./arikratt.js";
 import type { FactNeeded, Obligation } from "./obligations.js";
+import { BASETEN_MODEL } from "./model-quality.js";
+import { BLOCKER_LABELS, CATEGORY_LABELS, classifiedByLabel, type Blocker, type Category, type DemandItem, type OwnerNeed } from "./unmet-needs.js";
 
 export const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 
@@ -75,7 +77,7 @@ export function shell(o: ShellOpts): string {
 <header class="top"><span class="mark" aria-hidden="true"></span><span class="brand">AI Launchpad</span><span class="badge" role="status">${esc(o.badge)}</span></header>
 <nav class="main" aria-label="Main">${nav.map(([href, label, key]) => `<a href="${href}"${o.active === key ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>
 <main>${o.body}</main>
-<footer><details><summary>Help and resources</summary><nav class="guides" aria-label="Guides"><a href="/playbooks">Playbooks</a><a href="/services">Service catalog</a><a href="/setup">Setup helper</a><a href="/approvals">Approvals</a></nav></details>
+<footer><details><summary>Help and resources</summary><nav class="guides" aria-label="Guides"><a href="/playbooks">Playbooks</a><a href="/services">Service catalog</a><a href="/setup">Setup helper</a><a href="/approvals">Approvals</a><a href="/demand">Open demand</a></nav></details>
 <form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(o.csrf)}"><button type="submit" class="secondary">Log out</button></form></footer>
 </div></body></html>`;
 }
@@ -86,6 +88,7 @@ export function loginPage(opts: { demo: boolean; google: boolean; preauth: strin
 <main><section class="card hero"><h1>Is my admin handled?</h1><p class="lede">The calm companion for the assistant you already have — what it assesses as handled, what still needs you, and your one next step.</p>
 ${opts.google ? `<p><a class="btn" href="/auth/login/google">Continue with Google</a></p><p class="small muted">Identity only (name/email identifier). No Gmail or Calendar access is requested.</p>` : `<p class="small muted" role="note">Google sign-in is not configured on this local server yet.</p>`}
 <p class="small muted">Signing in proves who you are. It does <strong>not</strong> prove you may act for a company.</p>
+<p class="small"><a href="/demand">Open demand</a>: what businesses asked their assistants for that no connector can do yet.</p>
 </section>
 ${opts.demo ? `<section class="card" aria-label="Synthetic demo"><h2>Try a synthetic business</h2><p class="muted">Made-up companies with example assessments. No real data, filings or payments.</p>${opts.companies.map((c) => `<form method="post" action="/auth/demo"><input type="hidden" name="actor" value="${esc(c.key)}"><input type="hidden" name="preauth" value="${esc(opts.preauth)}"><button type="submit" class="secondary">Open ${esc(c.label)}</button></form>`).join("")}</section>` : ""}</main>
 </div></body></html>`;
@@ -485,4 +488,74 @@ export function playbooksBody(items: { title: string; summary: string; source: s
   const shown = (frictionCards ?? []).filter((c) => c.state !== "none");
   const friction = frictionCards === undefined ? "" : `<section class="card" aria-label="Manual-work suggestions"><h2>Manual-work suggestions</h2><p class="small muted">General Meta/Baseten suggestions for common manual work. They are not an assessment of your company; opening this page never calls a model.</p>${shown.length ? shown.map((c) => `<div class="row"><strong>${esc(c.label)}</strong> <span class="pill">${esc(c.locale)}</span>${c.state === "completed" && c.output ? `<p>${esc(c.output)}</p><p class="small muted">Saved guidance. Nothing was filed, sent, paid or verified from it.</p>` : `<p class="small muted">${esc(PUBLIC_CARD_STATE_TEXT[c.state] ?? "This suggestion is unavailable.")}</p>`}</div>`).join("") : `<p class="small muted">No manual-work suggestion has been prepared yet.</p>`}</section>`;
   return `<h1>Playbooks</h1><p class="lede">Short guides, each tied to its official source. Not legal or tax advice.</p>${friction}${items.map((p) => `<section class="card"><h2>${esc(p.title)}</h2><p>${esc(p.summary)}</p><p class="small">Official source: <a href="${esc(p.source)}" rel="noopener noreferrer">${esc(p.source_label)}</a>. Always check the source for current dates and rules; this page is not legal or tax advice.</p></section>`).join("")}`;
+}
+
+const NEED_STATE_LABEL: Record<string, string> = {
+  received: "Received", classifying: "Classifying", classified: "Needs your decision",
+  classification_failed: "Classification failed", published: "Published anonymously", kept_private: "Kept private",
+};
+const NEED_STATE_TEXT: Record<string, string> = {
+  received: "Received and de-identified; waiting to be classified.",
+  classifying: "Being classified now.",
+  classification_failed: "Classification failed. It is not retried automatically and nothing was published.",
+  published: "Published anonymously on Open demand (category, label and spec only).",
+  kept_private: "Kept private. It is never published.",
+};
+const NEED_REASON_TEXT: Record<string, string> = {
+  owner_daily_limit: "Waiting: your daily classification limit (10 per day) was reached. It is classified later, when Launchpad next processes requests. No model call was made for it.",
+  attempt_in_flight: "Waiting: another model request is unresolved, so this one has not started. No model call was made for it.",
+  classification_unavailable: "Waiting: classification is not available on this server right now. Nothing was sent to a model.",
+  budget_exhausted: "The shared model budget is exhausted, so no classification can be made.",
+  suppressed_after_breach: "Model calls are suspended after a provider contract problem.",
+  provider_contract_breach: "The model provider broke its contract for this request; the answer was discarded.",
+  provider_failed: "The model provider did not return a usable answer.",
+  provider_uncertain: "The model request did not finish cleanly; its result is unknown.",
+  interrupted: "An earlier attempt was interrupted and its result is unknown.",
+  request_conflict: "The saved model record does not match this request.",
+  invalid_output: "The answer was not valid classification data, so it was discarded.",
+  identifiers_in_output: "The answer contained something that looked like an identifier, so it was discarded.",
+  input_too_large: "The request was too large to classify.",
+  unavailable: "Classification was unavailable.",
+};
+const categoryLabel = (c: string | null) => CATEGORY_LABELS[c as Category] ?? c ?? "";
+
+function needRow(n: OwnerNeed): string {
+  const why = [NEED_STATE_TEXT[n.state], n.reason ? NEED_REASON_TEXT[n.reason] ?? n.reason : ""].filter(Boolean).join(" ");
+  return `<div class="row"><strong>${esc(n.demand_label ?? "Not classified yet")}</strong> <span class="pill">${esc(NEED_STATE_LABEL[n.state] ?? n.state)}</span>${n.category ? `<span class="pill">${esc(categoryLabel(n.category))}</span>` : ""}
+<p class="small">${esc(why)}</p><p class="small muted">${esc(n.need_redacted)}<br>Blocker: ${esc(BLOCKER_LABELS[n.blocker as Blocker] ?? n.blocker)} · ${esc(fmtWhen(n.created_at) ?? n.created_at)}${n.classified_by ? n.state === "classification_failed" ? " · classification attempt failed" : ` · classified by ${esc(classifiedByLabel(n.classified_by))}` : ""}</p></div>`;
+}
+
+/** Owner review of unmet requests (Status page). Only rendered when the
+ * owner has at least one. Publishing sends category, label and spec only. */
+export function unmetNeedsBody(opts: { csrf: string; needs: OwnerNeed[] }): string {
+  if (!opts.needs.length) return "";
+  const csrf = esc(opts.csrf);
+  const awaiting = opts.needs.filter((n) => n.state === "classified");
+  const open = opts.needs.filter((n) => ["received", "classifying", "classification_failed"].includes(n.state));
+  const decided = opts.needs.filter((n) => n.state === "published" || n.state === "kept_private");
+  const decide = (n: OwnerNeed, decision: string, label: string, cls: string) => `<form method="post" action="/unmet-needs/decide"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="need_id" value="${esc(n.id)}"><input type="hidden" name="decision" value="${decision}"><button type="submit"${cls ? ` class="${cls}"` : ""}>${label}</button></form>`;
+  return `<section class="card" aria-label="Requests your assistant could not do"><h2>Requests your assistant could not do</h2>
+<p class="small muted">Stored de-identified. Publishing shares only the category, label and one-line spec on <a href="/demand">Open demand</a> — never your company, your account or the request text.</p>
+${awaiting.map((n) => `<div class="row"><p><span class="pill owner">Needs your decision</span><span class="pill">${esc(categoryLabel(n.category))}</span></p>
+<p><strong>${esc(n.demand_label)}</strong></p><p>${esc(n.spec)}</p>
+<p class="small muted">Your request (de-identified, stays private): ${esc(n.need_redacted)}</p>
+<p class="small muted">Classified by ${esc(classifiedByLabel(n.classified_by))}${n.same_as ? " · matches an existing open-demand item" : ""}</p>
+${decide(n, "publish", "Publish anonymously", "")}${decide(n, "keep_private", "Keep private", "secondary")}</div>`).join("")}
+${open.map(needRow).join("")}
+${decided.length ? `<details><summary>Decided requests (${decided.length})</summary>${decided.map(needRow).join("")}</details>` : ""}
+</section>`;
+}
+
+/** Public, login-free Open demand list. Only aggregated, owner-approved
+ * classification fields are rendered, all escaped. */
+export function demandPage(items: DemandItem[]): string {
+  const by = (i: DemandItem) => [i.live ? `${classifiedByLabel(BASETEN_MODEL)} × ${i.live}` : "", i.mock ? `${classifiedByLabel("mock")} × ${i.mock}` : ""].filter(Boolean).join(" · ");
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open demand · AI Launchpad</title><style>${CSS}</style></head><body><div class="wrap">
+<header class="top"><span class="mark" aria-hidden="true"></span><span class="brand">AI Launchpad</span></header>
+<main><section class="card hero"><h1>Open demand</h1><p class="lede">What Estonian businesses asked their AI assistants to do that no connector can do yet. Anonymous, owner-approved${items.length === 0 ? "" : items.some((i) => i.live > 0) ? ", classified by Meta's open model Muse Spark Open" : ", classified by a local test classifier (sample)"}.</p>
+<p class="small muted">Sorted by number of requests. Each item says how it was classified — live by Meta's model or by the local mock (not a model). Counts are owner-approved reports, not market size.</p></section>
+${items.length ? items.map((i) => `<section class="card"><h2>${esc(i.label)}</h2><p><span class="pill">${esc(categoryLabel(i.category))}</span><span class="pill">${i.count} ${i.count === 1 ? "request" : "requests"}</span></p>
+<p>${esc(i.spec)}</p><p class="small muted">First seen ${esc(i.firstSeen)} · last seen ${esc(i.lastSeen)}<br>Classified by ${esc(by(i))}</p></section>`).join("") : `<section class="card"><p>No published demand yet.</p></section>`}
+<p class="small"><a href="/login">AI Launchpad</a></p></main>
+</div></body></html>`;
 }

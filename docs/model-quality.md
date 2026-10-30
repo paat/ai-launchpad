@@ -16,8 +16,9 @@ quality claim.
 ## What it is
 
 - [src/model-quality.ts](../src/model-quality.ts) — a small Baseten
-  Chat Completions client for exactly two fixed purposes:
-  `setup_guidance` and `classify_friction`. Provider identity
+  Chat Completions client for exactly three fixed purposes:
+  `setup_guidance`, `classify_friction` and `classify_unmet_need` (the
+  friction loop, issue #20; see below). Provider identity
   `baseten-meta`. No caller-chosen model, endpoint, tools, background mode,
   history, URLs or files; extra caller fields are ignored.
 - [scripts/model-quality.ts](../scripts/model-quality.ts) — an operator CLI
@@ -31,8 +32,9 @@ Fixed request contract: `POST https://inference.baseten.co/v1/chat/completions`,
 exact event-key-restricted model `meta-models/muse-spark-open-1026`
 (do not substitute a general alias; there is no fallback model), exactly
 two messages (fixed `developer` instructions, then the `user` input),
-`max_tokens: 4096` (caps the whole completion, reasoning included —
-provider contract limit), `stream: false`. Input is at most 2,000
+a per-job `max_tokens` (caps the whole completion, reasoning included):
+4,096 for `setup_guidance` and `classify_friction` (the provider contract
+limit, unchanged) and 512 for `classify_unmet_need`; `stream: false`. Input is at most 2,000
 characters and 8,192 UTF-8 bytes. The whole fetch plus body read times
 out at 45 s, redirects are refused, there are no automatic retries, and
 response bodies are capped at 128 KiB while streaming (also when no
@@ -50,41 +52,57 @@ The key comes only from trusted options or the `BASETEN_API_KEY`
 environment variable. Coding-CLI configuration or credential files are
 never read.
 
-## No token preflight; conservative allocation and pinned pricing
+## No token preflight; per-attempt reservation and pinned pricing
 
 Baseten documents no input-token preflight endpoint for this route, so
-none is used and no character-based token estimate is made. Instead each
-attempt reserves a deliberately much more conservative **USD 2
-allocation** that bounds the entire context (assumptions pinned
+none is used. Instead each attempt reserves, atomically and **before any
+network call**, a conservative upper bound on what the request actually
+sent can cost (decided 2026-10-29, issue #20; assumptions pinned
 2026-10-28):
 
-- Context bound: 1,048,576 tokens total (input + output), from the
-  published 1M-token context
-  ([Baseten launch post](https://www.baseten.co/blog/muse-spark-open-launch/)).
 - Published prices ([Baseten pricing](https://www.baseten.co/pricing/)):
   input $1.25 / 1M tokens, output $4.25 / 1M tokens.
-- Even charging the full 1,048,576-token context as input **plus** 4,096
-  output tokens costs $1.310720 + $0.017408 = **$1.328128**, below the
-  USD 2 reservation. Short fixed prompts are not claimed to use the full
-  context; reported usage is expected in the hundreds of tokens.
+- Input bound: the UTF-8 byte length of the fixed instructions plus the
+  input, plus 2,048 tokens of chat-template overhead (role markers and
+  special tokens). The tokenizer is byte-level BPE, so a token covers at
+  least one byte: tokens never exceed bytes.
+- Output bound: the job's own `max_tokens`, which the provider enforces
+  for the whole completion, reasoning included.
+- Reservation = cost(input bound, output bound) × 2, with ceiling integer
+  arithmetic in micro-USD. The ×2 margin absorbs tokenizer or template
+  surprises. Example: `setup_guidance` with the 29-byte test input is
+  (ceil(2,408 × 1.25) + 4,096 × 4.25) × 2 = 40,836 micro-USD; a
+  `classify_unmet_need` on the largest valid input (2,000 three-byte
+  characters) reserves 27,392 micro-USD, and even the theoretical
+  8,192-byte ceiling stays at 32,872 (< $0.05).
+
+The reservation is stored as that attempt's `allocated_micro_usd`. It is
+a conservative reservation, **not billing**: reported usage (expected in
+the hundreds of tokens) drives a separate estimated actual cost. Rows
+written before this change keep their recorded flat $2 allocations;
+nothing is ever refunded. The earlier flat $2 per attempt bounded the
+entire 1,048,576-token context ($1.328128 even at full context plus 4,096
+output tokens) and, with the 5-attempt cap, left only one call for any
+product use.
 
 Reported `usage.prompt_tokens` / `usage.completion_tokens` must be
 non-negative integers, and `usage.total_tokens`, when present, must equal
 their sum. Estimated actual cost is computed from reported usage at the
 pinned rates with conservative uncached, ceiling integer arithmetic, and
-is recorded **separately** from the allocation. The USD 2 is an allocated
-maximum charged to the pilot cap, never labelled actual spend and **never
-refunded**. If reported usage exceeds the 1,048,576 total cap, the 4,096
-output cap, or the USD 2 allocation, the attempt is recorded as
+is recorded **separately** from the allocation. If reported usage exceeds
+the 1,048,576 total cap, the job's `max_tokens`, or the estimated cost
+exceeds **that attempt's own reservation**, the attempt is recorded as
 `provider_contract_breach`, its output is suppressed, and future calls on
 that ledger are refused. Missing/invalid usage is a terminal `uncertain`
 attempt, still fully allocated — a timeout does not prove the provider
 charged nothing, and unknown usage is never treated as free.
 
 This is not a hard guarantee against provider billing bugs or future
-price changes. Live runs therefore require `--confirm-current-pricing`:
-the operator confirms the currently published pricing and available
-credits. Inputs: [reasoning / `max_tokens` semantics](https://docs.baseten.co/inference/model-apis/reasoning),
+price changes. Live runs therefore require `--confirm-current-pricing`
+(or `LAUNCHPAD_MODEL_PRICING_CONFIRMED=1` for the app): the operator
+confirms the currently published pricing and available credits. Inputs:
+[context size](https://www.baseten.co/blog/muse-spark-open-launch/),
+[reasoning / `max_tokens` semantics](https://docs.baseten.co/inference/model-apis/reasoning),
 [OpenAI-compatible endpoint changelog](https://www.baseten.co/resources/changelog/muse-spark-open-and-nemotron-35-super-vl-available-on-baseten/).
 
 ## Ledger: deliberately conservative pilot cap
@@ -94,10 +112,11 @@ app database). The CLI takes one explicit operator-chosen private ledger path
 that is reused for all live calls; there is no configurable endpoint or
 model. Rules:
 
-- Every distinct attempt allocates exactly $2 = 2,000,000 micro-USD,
-  reserved atomically (`BEGIN IMMEDIATE`) **before any network call**.
-- Absolute all-time ceiling: $10 and at most **5 distinct attempts** on
-  the same global ledger. The operator may create a ledger with a lower
+- Every distinct attempt allocates its own reservation (above), reserved
+  atomically (`BEGIN IMMEDIATE`) **before any network call**.
+- Absolute all-time ceiling: **$10** on the same global ledger — the
+  binding limit. A backstop of at most 1,000 distinct attempts (raised
+  from 5 on 2026-10-29) also applies. The operator may create a ledger with a lower
   ceiling (including $0) but cannot raise it above $10 or change an
   existing ledger's ceiling in either direction.
 - No evasion: there is no daily reset, no deletion/reset flow, and no
@@ -176,12 +195,14 @@ $0.002265 (ET) = **$0.005588 total estimate** for these two historical
 calls. This estimate is computed from reported usage and is **not
 reconciled billing**. It is distinct from the conservative allocation:
 $2 per attempt, $4 allocated total for these two attempts, never refunded
-and never labelled actual spend. The existing operator-authorized pilot cap
-is $10 with at most 5 distinct attempts on the same ledger. Aggregate
+and never labelled actual spend. At that time the operator-authorized pilot
+cap was $10 with at most 5 distinct attempts on the same ledger. Aggregate
 owner-only pilot (see [live-pilot.md](live-pilot.md)): 4 real calls total
 including these two, $8 allocated of the $10 cap, usage estimate $0.014840
-(not billing). Sole ledger and max-5-attempts rules unchanged. No new live
-calls were made for this docs update.
+(not billing). Since 2026-10-29 the same sole ledger keeps its $10 ceiling
+and those $8 allocations, but new attempts reserve per request (above) and
+the attempt backstop is 1,000. No new live calls were made for this docs
+update.
 
 ## Public guidance cards (explicit opt-in product slice; piloted owner-only, not general availability)
 
@@ -213,8 +234,8 @@ remaining budget) and never the key, path or ledger contents.
   constructor, not a separate read-only precheck: a missing, empty,
   symlinked or unrecognized file refuses use and is never created. Prior
   allocations — including the two quality calls above — are preserved, so
-  only the remaining attempts under the same $10/5-attempt ceiling can
-  ever be allocated.
+  only the remaining headroom under the same $10 ceiling can ever be
+  allocated.
 - Setup generation is an explicit POST behind session + current
   allowlisted Google (never demo) + CSRF, checked before reservation;
   result views use the same policy and page GETs never fetch. Cards are
@@ -245,6 +266,45 @@ remaining budget) and never the key, path or ledger contents.
   `MODEL_MODE` stays disabled for legacy rollback — the private env
   file is not edited to enable `public_cards`. The honest limitation
   stands: generic public guidance, not a bespoke business assessment.
+
+## Unmet-need classification (friction loop, issue #20)
+
+[src/unmet-needs.ts](../src/unmet-needs.ts) adds the fixed job
+`classify_unmet_need` on the same harness and the same ledger handle the
+app already opens for public cards (`openExistingPublicLedger`); no
+second ledger, store or cap exists.
+
+- Input: only the de-identified need text, the blocker, and up to 30
+  already-published public demand labels (as many as fit the 2,000-char /
+  8,192-byte input bound). Identifiers (e-mail, URLs/domains, IBANs,
+  phones, amounts, company names with a legal form, card-like runs,
+  personal codes, registry codes, long digit runs) are replaced with typed
+  placeholders by deterministic code **before** storage; the raw text is
+  never stored. No owner, company, workspace or session data is sent.
+- Output: strict JSON `{category, demand_label, same_as, spec}` with a
+  fixed ten-value taxonomy, ≤80/≤200-char single-line strings and
+  `same_as` drawn only from the given labels. De-identification is re-run
+  on the output; any change rejects it. Invalid output is an honest
+  `classification_failed` state, never a fabricated classification.
+- `max_tokens` 512; reservation per the formula above (about $0.013 to $0.027).
+  On the production ledger (4 × $2 used) the remaining $2 allows at least
+  73 worst-case classifications before `budget_exhausted`.
+- Limits: the tool accepts at most 20 needs per owner per day and 200 in
+  total; at most 10 classifications per owner per day (the rest wait,
+  visibly); one in flight globally (the ledger's pending rule) and a
+  serial in-process queue that runs after the tool response and resumes
+  received or interrupted needs at startup. Request IDs are derived
+  server-side (`un1.` + SHA-256 of the need ID); a replay or restart
+  replays the ledger row and never obtains a second inference.
+- Live only when `MODEL_MODE=public_cards` is already enabled; `test`
+  mode uses a deterministic mock whose rows record `classified_by=mock`
+  and whose spec says it is a mock; `disabled` mode classifies nothing.
+- The owner publishes or keeps private each classified need on the
+  Status page (session + CSRF). The public `/demand` page shows only
+  aggregated category, label, spec, count, months and whether each item
+  was classified live by `meta-models/muse-spark-open-1026` or by the mock.
+- Tests ([tests/unmet-needs.test.ts](../tests/unmet-needs.test.ts)) are
+  fake-only with a network guard. No live classification has been run yet.
 
 ## Completion gates (harness live-tested; old adapter still disabled — public-cards path piloted owner-only)
 

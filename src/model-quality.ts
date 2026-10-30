@@ -1,23 +1,25 @@
-/** Bounded Baseten quality harness (Issue 13, first slice).
+/** Bounded Baseten quality harness (Issue 13, first slice; Issue 20).
  *
- * Controlled synthetic integration harness only. It is NOT wired into the
- * public runtime: `src/model.ts` live inference stays hard-disabled and
- * its old adapter remains unreachable live. A trusted runner must
- * explicitly open a separate SQLite ledger, explicitly confirm current
- * published pricing/credits, and supply a key (option or BASETEN_API_KEY
- * env). Costs are guarded by a deliberately much more conservative pilot
- * cap (USD 2 allocated per attempt, USD 10 / 5 attempts all-time), not a
- * general billing framework and not a hard guarantee against provider
- * billing bugs or future price changes.
+ * Controlled bounded client and the SOLE spending authority for every
+ * Launchpad model call. The old adapter in `src/model.ts` stays
+ * hard-disabled. A trusted caller must explicitly open the existing
+ * SQLite ledger, explicitly confirm current published pricing/credits,
+ * and supply a key (option or BASETEN_API_KEY env). Costs are guarded by
+ * a conservative per-attempt reservation under a pinned USD 10 all-time
+ * ledger ceiling — not a general billing framework and not a hard
+ * guarantee against provider billing bugs or future price changes.
  *
  * Baseten documents no input-token preflight endpoint for this route, so
- * none is used and no character-based token estimate is made. Instead the
- * USD 2 allocation conservatively bounds the entire 1M-token context:
- * charging the full 1,048,576-token context as input at the published
- * $1.25/1M plus 4,096 output tokens at $4.25/1M is $1.328128, below the
- * USD 2 reservation. Short fixed prompts are not claimed to use the full
- * context; reported usage (expected in the hundreds) drives a separate
- * estimated actual cost.
+ * none is used. Instead each attempt reserves, before any network call,
+ * twice the published-price cost of an upper bound on the request that
+ * is actually sent: input tokens are bounded by the UTF-8 byte length of
+ * the fixed instructions plus the input (byte-level BPE: one token covers
+ * at least one byte) plus 2,048 tokens of chat-template overhead; output
+ * tokens are bounded by the job's own `max_tokens`, which the provider
+ * enforces for the whole completion, reasoning included. The reservation
+ * is never refunded and is not billing; reported usage drives a separate
+ * estimated actual cost. Ledger rows written under the earlier flat USD 2
+ * rule keep their recorded allocation.
  */
 import Database from "better-sqlite3";
 import { createHash } from "node:crypto";
@@ -39,13 +41,23 @@ export const MAX_INPUT_CHARS = 2000;
 export const MAX_INPUT_BYTES = 8192;
 // Caps the whole completion, reasoning included (provider contract limit).
 export const MAX_OUTPUT_TOKENS = 4096;
+// Per-job `max_tokens`; existing jobs keep the full provider limit.
+export const JOB_MAX_OUTPUT_TOKENS: Record<ModelJob, number> = {
+  setup_guidance: MAX_OUTPUT_TOKENS,
+  classify_friction: MAX_OUTPUT_TOKENS,
+  classify_unmet_need: 512,
+};
 // Conservative bound on input + output tokens for the 1M-token context.
 export const MAX_CONTEXT_TOKENS = 1_048_576;
+// Chat-template overhead (role markers, special tokens) added to the
+// byte-length input bound.
+export const TEMPLATE_OVERHEAD_TOKENS = 2048;
+export const RESERVATION_MARGIN = 2;
 export const TIMEOUT_MS = 45_000; // Entire fetch + body read; no retries.
 export const MAX_RESPONSE_BYTES = 128 * 1024;
-export const ALLOCATION_MICRO_USD = 2_000_000; // USD 2 per attempt, never refunded.
 export const ABSOLUTE_CAP_MICRO_USD = 10_000_000; // USD 10 all-time per ledger.
-export const ABSOLUTE_MAX_ATTEMPTS = 5;
+// Backstop only: the USD 10 ceiling is the binding limit.
+export const ABSOLUTE_MAX_ATTEMPTS = 1000;
 
 export type AttemptStatus =
   | "pending"
@@ -61,7 +73,7 @@ export class ModelQualityError extends Error {
   }
 }
 
-const JOBS: readonly ModelJob[] = ["setup_guidance", "classify_friction"];
+const JOBS: readonly ModelJob[] = ["setup_guidance", "classify_friction", "classify_unmet_need"];
 const REQUEST_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 const COMMON =
@@ -73,11 +85,21 @@ export const FIXED_INSTRUCTIONS: Record<ModelJob, string> = {
     `You help a small-business owner choose one safe, read-only next step for setting up an assistant connector. ${COMMON}`,
   classify_friction:
     `You classify one described piece of manual business friction into a short category and suggest one read-only next step. ${COMMON}`,
+  classify_unmet_need:
+    "You turn one de-identified request that a small-business owner's AI assistant could not do into anonymous open-demand data. " +
+    "The user message is JSON with \"need\" (de-identified text; placeholders such as [email] or [amount] replace identifiers), \"blocker\" and \"existing_labels\" (demand labels already published). " +
+    "Reply with exactly one JSON object and nothing else, with exactly these keys: " +
+    "\"category\": one of tax_filings, bookkeeping, invoicing, banking_payments, payroll_hr, contracts_legal, permits_sector, customers_sales, grants_tenders, other; " +
+    "\"demand_label\": a short generic English label of at most 80 characters; " +
+    "\"same_as\": the exact existing label that describes the same need, or null; " +
+    "\"spec\": one generic English sentence of at most 200 characters saying what a connector or service would need to do. " +
+    "Never include names, company names, amounts, numbers, account numbers, codes, e-mail addresses, phone numbers, URLs or placeholders. " +
+    COMMON,
 };
 
 export function validateJob(job: unknown): ModelJob {
   if (typeof job !== "string" || !JOBS.includes(job as ModelJob)) {
-    throw new ModelQualityError("invalid_job", "Job must be setup_guidance or classify_friction.");
+    throw new ModelQualityError("invalid_job", "Job must be setup_guidance, classify_friction or classify_unmet_need.");
   }
   return job as ModelJob;
 }
@@ -113,6 +135,22 @@ export function calculateCostMicroUsd(inputTokens: number, outputTokens: number)
     return Number((n + 999_999n) / 1_000_000n);
   };
   return per(inputTokens, INPUT_PRICE_MICRO_USD_PER_MILLION) + per(outputTokens, OUTPUT_PRICE_MICRO_USD_PER_MILLION);
+}
+
+const utf8Bytes = (s: string) => new TextEncoder().encode(s).byteLength;
+
+/** Upper bound on billable input tokens for the request actually sent:
+ * byte-level BPE never yields more tokens than bytes, plus a fixed
+ * allowance for the chat template. */
+export function inputTokenBound(job: ModelJob, input: string): number {
+  return utf8Bytes(FIXED_INSTRUCTIONS[job]) + utf8Bytes(input) + TEMPLATE_OVERHEAD_TOKENS;
+}
+
+/** Per-attempt reservation: the published-price cost of the input bound
+ * plus the job's whole `max_tokens`, times the safety margin. Integer
+ * ceiling arithmetic; a conservative reservation, not billing. */
+export function reservationMicroUsd(job: ModelJob, input: string): number {
+  return calculateCostMicroUsd(inputTokenBound(job, input), JOB_MAX_OUTPUT_TOKENS[job]) * RESERVATION_MARGIN;
 }
 
 export interface StoredAttempt {
@@ -182,10 +220,14 @@ export class ModelQualityLedger {
     return this.db.prepare("SELECT * FROM mq_attempts WHERE request_id=?").get(requestId) as StoredAttempt | undefined;
   }
 
-  /** Atomic (BEGIN IMMEDIATE) reservation. Returns the stored row on exact
-   * replay, or a fresh pending row. Throws on conflict / suppression /
-   * another pending attempt / exhausted budget without inserting. */
-  reserve(requestId: string, job: ModelJob, hash: string): { row: StoredAttempt; replayed: boolean } {
+  /** Atomic (BEGIN IMMEDIATE) reservation of `allocationMicroUsd`. Returns
+   * the stored row on exact replay, or a fresh pending row. Throws on
+   * conflict / suppression / another pending attempt / exhausted budget
+   * without inserting. */
+  reserve(requestId: string, job: ModelJob, hash: string, allocationMicroUsd: number): { row: StoredAttempt; replayed: boolean } {
+    if (!Number.isSafeInteger(allocationMicroUsd) || allocationMicroUsd <= 0 || allocationMicroUsd > ABSOLUTE_CAP_MICRO_USD) {
+      throw new ModelQualityError("invalid_allocation", "Allocation must be a positive integer micro-USD value within the absolute cap.");
+    }
     const tx = this.db.transaction((): { row: StoredAttempt; replayed: boolean } => {
       const existing = this.get(requestId);
       if (existing) {
@@ -201,13 +243,13 @@ export class ModelQualityLedger {
         throw new ModelQualityError("attempt_in_flight", "Another attempt is pending (in flight or crashed); fail-closed, manual review required. No lease expiry or refund.");
       }
       const agg = this.db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(allocated_micro_usd),0) AS s FROM mq_attempts").get() as { n: number; s: number };
-      if (agg.n >= ABSOLUTE_MAX_ATTEMPTS || agg.s + ALLOCATION_MICRO_USD > this.ceilingMicroUsd || agg.s + ALLOCATION_MICRO_USD > ABSOLUTE_CAP_MICRO_USD) {
+      if (agg.n >= ABSOLUTE_MAX_ATTEMPTS || agg.s + allocationMicroUsd > this.ceilingMicroUsd || agg.s + allocationMicroUsd > ABSOLUTE_CAP_MICRO_USD) {
         throw new ModelQualityError("budget_exhausted", "Ledger cap or attempt limit reached; no allocation made.");
       }
       const now = new Date().toISOString();
       this.db.prepare(
         "INSERT INTO mq_attempts(request_id,payload_hash,job,status,allocated_micro_usd,created_at,updated_at) VALUES(?,?,?,'pending',?,?,?)",
-      ).run(requestId, hash, job, ALLOCATION_MICRO_USD, now, now);
+      ).run(requestId, hash, job, allocationMicroUsd, now, now);
       return { row: this.get(requestId)!, replayed: false };
     });
     return tx.immediate();
@@ -371,10 +413,12 @@ export async function runModelQualityAttempt(opts: ModelQualityOptions): Promise
   const timeoutMs = Math.min(Math.max(1, Math.floor(opts.timeoutMs ?? TIMEOUT_MS)), TIMEOUT_MS);
   const fetchFn = opts.fetchFn ?? fetch;
   const instructions = FIXED_INSTRUCTIONS[job];
+  const maxTokens = JOB_MAX_OUTPUT_TOKENS[job];
 
-  // Reserve (full USD 2 allocation, never refunded) BEFORE any network call.
-  // No token-count preflight: no such Baseten endpoint is documented.
-  const { row, replayed } = opts.ledger.reserve(requestId, job, payloadHash(job, input));
+  // Reserve this request's bounded allocation (never refunded) BEFORE any
+  // network call. No token-count preflight: no such Baseten endpoint is
+  // documented. A replay returns the stored row and its own allocation.
+  const { row, replayed } = opts.ledger.reserve(requestId, job, payloadHash(job, input), reservationMicroUsd(job, input));
   if (replayed) return toResult(row, true);
 
   const fail = (status: Exclude<AttemptStatus, "pending">, errorCode: string, extra: Partial<Parameters<ModelQualityLedger["finalize"]>[1]> = {}): ModelQualityResult => {
@@ -390,7 +434,7 @@ export async function runModelQualityAttempt(opts: ModelQualityOptions): Promise
         { role: "developer", content: instructions },
         { role: "user", content: input },
       ],
-      max_tokens: MAX_OUTPUT_TOKENS, stream: false,
+      max_tokens: maxTokens, stream: false,
     }, timeoutMs);
   } catch (e) {
     const code = e instanceof ModelQualityError ? e.code : "provider_failed";
@@ -416,7 +460,7 @@ export async function runModelQualityAttempt(opts: ModelQualityOptions): Promise
   const rawCompletion = rawUsage?.completion_tokens;
   const knownPrompt = validCount(rawPrompt) ? rawPrompt : null;
   const knownCompletion = validCount(rawCompletion) ? rawCompletion : null;
-  if (knownCompletion !== null && knownCompletion > MAX_OUTPUT_TOKENS) {
+  if (knownCompletion !== null && knownCompletion > maxTokens) {
     return fail("provider_contract_breach", "usage_exceeds_caps", { input_tokens: knownPrompt, output_tokens: knownCompletion });
   }
   if (knownPrompt !== null && knownPrompt > MAX_CONTEXT_TOKENS) {
@@ -429,7 +473,8 @@ export async function runModelQualityAttempt(opts: ModelQualityOptions): Promise
   if (!usage) return fail("uncertain", "missing_or_invalid_usage");
   const cost = calculateCostMicroUsd(usage.inputTokens, usage.outputTokens);
   const extra = { input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, actual_cost_micro_usd: cost };
-  if (usage.inputTokens + usage.outputTokens > MAX_CONTEXT_TOKENS || usage.outputTokens > MAX_OUTPUT_TOKENS || cost > ALLOCATION_MICRO_USD) {
+  // Compared against THIS attempt's own reservation.
+  if (usage.inputTokens + usage.outputTokens > MAX_CONTEXT_TOKENS || usage.outputTokens > maxTokens || cost > row.allocated_micro_usd) {
     return fail("provider_contract_breach", "usage_exceeds_caps", extra);
   }
   let text: string;
