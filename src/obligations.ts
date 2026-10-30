@@ -30,7 +30,10 @@ export interface Obligation {
   reason_et: string; reason_en: string;
   applies_because: { fact: string; value: unknown; provenance: Provenance; source?: string }[];
   source: Source;
+  /** Who does what (ux2 change 2): static copy per rule, never model output or amounts. */
+  handoff: Handoff;
 }
+export interface Handoff { assistant_et: string; assistant_en: string; owner_et: string; owner_en: string; prompt_et: string; prompt_en: string; }
 export interface FactNeeded { fact: string; question_et: string; question_en: string; }
 
 const RT = "https://www.riigiteataja.ee/akt/";
@@ -77,7 +80,31 @@ export const tallinnDate = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZ
 
 const ET_MONTH = ["jaanuar", "veebruar", "märts", "aprill", "mai", "juuni", "juuli", "august", "september", "oktoober", "november", "detsember"];
 const ET_IN = ["jaanuaris", "veebruaris", "märtsis", "aprillis", "mais", "juunis", "juulis", "augustis", "septembris", "oktoobris", "novembris", "detsembris"];
+/** Genitive month names for "{kuu}" in handoff copy ("oktoobri arved"). */
+export const ET_OF = ["jaanuari", "veebruari", "märtsi", "aprilli", "mai", "juuni", "juuli", "augusti", "septembri", "oktoobri", "novembri", "detsembri"];
 const EN_MONTH = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** Static who-does-what map, keyed by rule_id (TSD also by applies). {kuu}/{month} is the period month. */
+export const HANDOFF: Record<string, Handoff> = {
+  "vat-return-kmd": { assistant_et: "kogub {kuu} arved kokku ja kontrollib, et ükski pole puudu", assistant_en: "gathers {month}'s invoices and checks none are missing", owner_et: "esitad KMD e-MTA-s oma Smart-ID-ga", owner_en: "file the VAT return in e-MTA with your Smart-ID",
+    prompt_et: "Valmista {kuu} KMD jaoks arved ette ja küsi minult kinnitust enne, kui midagi saadad.", prompt_en: "Prepare the invoices for the {month} VAT return and ask me before you send anything." },
+  "tsd-monthly-return:if": { assistant_et: "küsib sinult ühe küsimuse; kui väljamakseid polnud, kaob see rida", assistant_en: "asks you one question; if there were no payouts, this row goes away", owner_et: "vastad „jah” või „ei”", owner_en: "answer yes or no",
+    prompt_et: "Küsi minult {kuu} väljamaksete kohta ja ütle, kas TSD-d on vaja.", prompt_en: "Ask me about {month}'s payouts and tell me whether a TSD is needed." },
+  "tsd-monthly-return:yes": { assistant_et: "paneb väljamaksed kokku ja valmistab TSD andmed ette", assistant_en: "collects the payouts and prepares the TSD data", owner_et: "esitad TSD e-MTA-s", owner_en: "file the TSD in e-MTA",
+    prompt_et: "Pane {kuu} väljamaksed kokku ja valmista TSD andmed ette. Küsi minult kinnitust enne, kui midagi saadad.", prompt_en: "Collect {month}'s payouts and prepare the TSD data. Ask me before you send anything." },
+  "annual-report": { assistant_et: "paneb aruande jaoks vajalikud andmed kokku", assistant_en: "gathers what the report needs", owner_et: "kinnitad ja allkirjastad e-äriregistris", owner_en: "approve and sign in the e-Business Register",
+    prompt_et: "Pane majandusaasta aruande jaoks vajalikud andmed kokku ja ütle, mida sinult veel vaja on.", prompt_en: "Gather what the annual report needs and tell me what you still need from me." },
+  "annual-report-overdue": { assistant_et: "koostab sammud aruande esitamiseks", assistant_en: "lays out the steps to file", owner_et: "esitad aruande e-äriregistris", owner_en: "file it in the e-Business Register",
+    prompt_et: "Koosta mulle sammud hilinenud majandusaasta aruande esitamiseks.", prompt_en: "Lay out the steps for me to file the overdue annual report." },
+  "vat-registration-threshold": { assistant_et: "kontrollib sinu arvetest, kas piir on lähedal, kui sa seda palud", assistant_en: "checks your invoices against the threshold when you ask", owner_et: "esitad avalduse, kui piir ületatakse", owner_en: "apply if you cross it",
+    prompt_et: "Kontrolli minu arvetest, kui lähedal on selle aasta käive käibemaksukohustuslaseks registreerimise piirile.", prompt_en: "Check my invoices for how close this year's turnover is to the VAT registration threshold." },
+  "tor-registration": { assistant_et: "valmistab TÖR-i kande andmed ette", assistant_en: "prepares the employment-register entry", owner_et: "kinnitad kande e-MTA-s", owner_en: "confirm it in e-MTA",
+    prompt_et: "Valmista TÖR-i kande andmed ette ja küsi minult kinnitust.", prompt_en: "Prepare the employment-register entry and ask me to confirm it." },
+};
+const handoff = (key: string, m0?: number): Handoff => {
+  const h = HANDOFF[key], et = (v: string) => v.replace("{kuu}", m0 === undefined ? "" : ET_OF[m0]), en = (v: string) => v.replace("{month}", m0 === undefined ? "" : EN_MONTH[m0]);
+  return { assistant_et: et(h.assistant_et), assistant_en: en(h.assistant_en), owner_et: h.owner_et, owner_en: h.owner_en, prompt_et: et(h.prompt_et), prompt_en: en(h.prompt_en) };
+};
 
 const because = (name: string, f: Fact<unknown> | undefined) => f ? [{ fact: name, value: f.value, provenance: f.provenance, ...(f.source ? { source: f.source } : {}) }] : [];
 const known = <T>(f: Fact<T> | undefined): f is Fact<T> => f !== undefined && f.value !== null && f.value !== undefined;
@@ -114,7 +141,7 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
         ...(known(vat)
           ? { applies: "yes" as const, reason_et: "Kehtib, sest oled käibemaksukohustuslane; deklaratsioon esitatakse ka tehinguteta kuu eest.", reason_en: "Applies because the company is VAT-registered; the return is due even for a month with no transactions." }
           : { applies: "if" as const, condition_et: "Kehtib, kui oled käibemaksukohustuslane.", condition_en: "Applies if the company is VAT-registered.", reason_et: "Kehtib, kui oled käibemaksukohustuslane.", reason_en: "Applies if the company is VAT-registered." }),
-        applies_because: because("vat_registered", vat), source: SRC.kmd });
+        applies_because: because("vat_registered", vat), source: SRC.kmd, handoff: handoff("vat-return-kmd", p.m0) });
     }
   }
 
@@ -143,7 +170,7 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
     if (!row) continue;
     out.push({ rule_id: "tsd-monthly-return", covers: ["tsd-monthly-return", "tsd-tax-payment", "cit-distribution"], kind: "deadline", title_et: "TSD ja maksud", title_en: "Income and social tax return (TSD) and taxes",
       period_label_et: `${ET_MONTH[p.m0]} ${p.y} väljamaksed`, period_label_en: `${EN_MONTH[p.m0]} ${p.y} payouts`, ...d, ...row,
-      applies_because: [...(isLast ? [...because("payouts_last_month", payouts), ...because("other_tsd_triggers_last_month", others)] : []), ...because("employees", facts.employees), ...because("labour_taxes_last_quarter", labour)], source: SRC.tsd });
+      applies_because: [...(isLast ? [...because("payouts_last_month", payouts), ...because("other_tsd_triggers_last_month", others)] : []), ...because("employees", facts.employees), ...because("labour_taxes_last_quarter", labour)], source: SRC.tsd, handoff: handoff(`tsd-monthly-return:${row.applies}`, p.m0) });
   }
 
   // annual-report: within 6 months of FY end (ÄS § 179 lg 4, TsÜS § 136 lg 3–4); annual-report-overdue: risk only (U9: no fine amount).
@@ -171,7 +198,7 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
     out.push({ rule_id: "annual-report", covers: ["annual-report"], kind: "deadline", title_et: "Majandusaasta aruanne", title_en: "Annual report", period_label_et: l.et, period_label_en: l.en,
       statutory_due: r.statutory_due, effective_due: r.effective_due, shifted: r.shifted, ...(state === null ? { applies: "if" as const, ...unfiled(l) } : { applies: "yes" as const }),
       reason_et: "Kehtib igale osaühingule iga majandusaasta kohta, ka tegevuseta aasta eest.", reason_en: "Applies to every OÜ for every financial year, including inactive years.",
-      applies_because: because("fy_end", fy), source: SRC.annual });
+      applies_because: because("fy_end", fy), source: SRC.annual, handoff: handoff("annual-report") });
   }
   const lapsed = fyRows.filter((r) => r.effective_due < from).pop();
   const overdueDays = known(ar) ? ar.value.overdue_days : null;
@@ -185,7 +212,7 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
       statutory_due: lapsed.statutory_due, effective_due: lapsed.effective_due, shifted: lapsed.shifted,
       ...(yes ? { applies: "yes" as const } : { applies: "if" as const, ...unfiled(l) }),
       reason_et: risk_et, reason_en: risk_en,
-      applies_because: [...because("annual_report", ar), ...because("tax_debt_on_list", facts.tax_debt_on_list)], source: SRC.overdue });
+      applies_because: [...because("annual_report", ar), ...because("tax_debt_on_list", facts.tax_debt_on_list)], source: SRC.overdue, handoff: handoff("annual-report-overdue") });
   }
 
   // vat-registration-threshold: warning only, never a legal decision (U5).
@@ -203,7 +230,7 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
         known(ytd) ? `Assistendi sõnul on selle aasta käive Eestis seni ${eur("et-EE", ytd.value)} eurot${over(ytd.value) ? ", üle piiri" : ""}.` : "", et].filter(Boolean).join(" "),
       reason_en: [known(rev) ? `Revenue in the latest annual report${year} was €${eur("en-GB", rev.value)}${over(rev.value) ? ", above the threshold: likely to cross it this year too" : ""}.` : "",
         known(ytd) ? `Your assistant reports this year's Estonian turnover so far as €${eur("en-GB", ytd.value)}${over(ytd.value) ? ", above the threshold" : ""}.` : "", en].filter(Boolean).join(" "),
-      applies_because: [...because("vat_registered", vat), ...because("latest_annual_revenue", rev), ...because("ytd_turnover_this_year", ytd)], source: SRC.vatReg });
+      applies_because: [...because("vat_registered", vat), ...because("latest_annual_revenue", rev), ...because("ytd_turnover_this_year", ytd)], source: SRC.vatReg, handoff: handoff("vat-registration-threshold") });
   }
 
   // tor-registration: informational, only when a hire or paid board fee is starting (U3).
@@ -213,7 +240,7 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
       period_label_et: "enne tööle asumist", period_label_en: "before work starts", statutory_due: null, effective_due: null, shifted: false, applies: "yes",
       reason_et: "Registreeri töötamine hiljemalt tööle asumise hetkeks; juhatuse liikme tasu puhul enne tasustatava perioodi algust ja enne esimest väljamakset.",
       reason_en: "Register the work no later than when the person starts; for a board fee, before the paid period starts and before the first payout.",
-      applies_because: because("hire_or_board_fee_starting", hire), source: SRC.tor });
+      applies_because: because("hire_or_board_fee_starting", hire), source: SRC.tor, handoff: handoff("tor-registration") });
   }
 
   out.sort((a, b) => (a.effective_due ?? "9999") < (b.effective_due ?? "9999") ? -1 : (a.effective_due ?? "9999") > (b.effective_due ?? "9999") ? 1 : 0);
