@@ -1046,7 +1046,7 @@ export function calendarOnceBody(l: Lang, url: string): string {
   return `<section class="card hero"><h1>${t("Sinu kalendri aadress", "Your calendar address")}</h1>
 <p>${t("Näidatakse <strong>üks kord</strong>. Hoia see enda teada: aadressiga näeb igaüks sinu tähtaegu.", "Shown <strong>once</strong>. Keep it to yourself: anyone with the address can see your deadlines.")}</p>
 <div class="endpoint"><code>${esc(url).replace(/\//g, "/<wbr>")}</code></div>
-<p><a class="btn" href="${esc(url.replace(/^https?:/, "webcal:"))}">${t("Ava kalendris (iPhone)", "Open in Calendar (iPhone)")}</a></p>
+<p><a class="btn" href="${esc(url.replace(/^https:/, "webcals:").replace(/^http:/, "webcal:"))}">${t("Ava kalendris (iPhone)", "Open in Calendar (iPhone)")}</a></p>
 ${calendarSetup(l)}
 <p><a class="tap-link" href="/uhenda">${t("Tagasi: Ühendus", "Back: Connection")}</a></p></section>`;
 }

@@ -10,6 +10,7 @@ import { openDb, sha256, newId, nowIso } from "../src/db.js";
 import { ICS_DISCLAIMER, ICS_NO_COMPANY, deadlinesCalendar, foldLine, icsText } from "../src/ics.js";
 import { computeObligations, validRegistryCode } from "../src/obligations.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
+import { calendarOnceBody } from "../src/views.js";
 
 // Issue #29: the owner's deadlines as a secret, read-only .ics feed.
 const TODAY = new Date("2026-10-30T10:00:00Z");
@@ -82,6 +83,12 @@ describe("ics.ts (RFC 5545)", () => {
     const ics = deadlinesCalendar({ host: "h.example", now: TODAY, company: null, obligations: rows("19990001"), emptyReason: ICS_NO_COMPANY });
     expect(unfold(ics)).toContain(`X-WR-CALDESC:${ICS_NO_COMPANY}`);
     expect(ics).not.toContain("BEGIN:VEVENT");
+  });
+
+  test("the iPhone link is webcals:// for an https address and webcal:// only for http", () => {
+    const tok = "A".repeat(43);
+    expect(calendarOnceBody("et", `https://launchpad.example/calendar/${tok}.ics`)).toContain(`href="webcals://launchpad.example/calendar/${tok}.ics"`);
+    expect(calendarOnceBody("et", `http://127.0.0.1:3000/calendar/${tok}.ics`)).toContain(`href="webcal://127.0.0.1:3000/calendar/${tok}.ics"`);
   });
 
   test("the per-token limit allows 60 fetches an hour", () => {
