@@ -118,7 +118,7 @@ const REGISTER_GAP_ET: Record<string, string> = {
   not_cached: "Avaliku registri andmeid laaditakse — sündmused ilmuvad kalendri järgmisel uuendamisel",
   not_configured: "Avaliku registri päring pole selles serveris seadistatud",
   invalid_code: "Registrikood ei sobi — palu assistendil kood üle kontrollida",
-  not_found: "Avalikus registris pole selle koodiga ettevõtet — palu assistendil kood üle kontrollida",
+  not_found: "Registrikoodiga ettevõtet registrist ei leitud — palu assistendil kood üle kontrollida",
 };
 
 export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
@@ -161,16 +161,17 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   const register = arikratt(db, { apiKey: cfg.arikrattApiKey, url: cfg.arikrattMcpUrl });
   // Status page never waits for the register: on a cache miss it starts one
   // background fill per code (errors logged once, never thrown) and moves on.
-  // A failed fill blocks new fills for that code for 10 minutes.
-  const FILL_RETRY_MS = 10 * 60_000;
-  const fillBlocked = new Map<string, { until: number; reason?: string }>(); // in flight: until Infinity, no reason
+  // A failed fill blocks new fills for that code: not_found for 24 hours, a transient failure for 10 minutes.
+  const FILL_RETRY_MS = 10 * 60_000, NOT_FOUND_RETRY_MS = 24 * 3600_000;
+  type FillFailure = { unavailable: string; reason: string };
+  const fillBlocked = new Map<string, { until: number; reason?: FillFailure }>(); // in flight: until Infinity, no reason
   const fillInBackground = (code: string) => {
     if ((fillBlocked.get(code)?.until ?? 0) > Date.now()) return;
     fillBlocked.set(code, { until: Infinity });
-    const failed = (reason: string) => fillBlocked.set(code, { until: Date.now() + FILL_RETRY_MS, reason });
-    void register.lookup(code).then((r) => { if (r.ok) fillBlocked.delete(code); else { failed(r.reason); console.warn(`Status deadlines: register lookup failed (${r.unavailable}).`); } }, (e) => { failed("The register lookup failed."); console.warn("Status deadlines: register lookup failed.", e); });
+    const failed = (reason: FillFailure) => fillBlocked.set(code, { until: Date.now() + (reason.unavailable === "not_found" ? NOT_FOUND_RETRY_MS : FILL_RETRY_MS), reason });
+    void register.lookup(code).then((r) => { if (r.ok) fillBlocked.delete(code); else { failed(r); console.warn(`Status deadlines: register lookup failed (${r.unavailable}).`); } }, (e) => { failed({ unavailable: "error", reason: "The register lookup failed." }); console.warn("Status deadlines: register lookup failed.", e); });
   };
-  /** The plain reason of a failed fill while it is remembered (10 minutes). */
+  /** Why a failed fill failed, while it is remembered. */
   const fillFailure = (code: string) => { const b = fillBlocked.get(code); return b?.reason && b.until > Date.now() ? b.reason : undefined; };
   const unmetNeeds = new UnmetNeedQueue(db, needClassifier, (ownerId, action, outcome, summary) => logActivity(db, ownerId, "launchpad", action, outcome, summary));
   unmetNeeds.kick(); // resume any received/interrupted needs after a restart
@@ -453,7 +454,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions,
       approvals, progress: st.progress as unknown as { task_id: string; milestone: string; observed_at: string }[],
       // A checksum-invalid ref is the only lookup that computes nothing: say so instead of dropping the section.
-      deadlines: !deadlines ? null : !deadlines.ok ? "invalid_code" : failure ? { unavailable_reason: failure } : unavailable === "not_cached" ? "not_cached" : unavailable ? { unavailable_reason: deadlines.result.company.unavailable_reason ?? unavailable } : deadlines.result as DeadlinesView,
+      deadlines: !deadlines ? null : !deadlines.ok ? "invalid_code" : failure?.unavailable === "not_found" ? "not_found" : failure ? { unavailable_reason: failure.reason } : unavailable === "not_cached" ? "not_cached" : unavailable ? { unavailable_reason: deadlines.result.company.unavailable_reason ?? unavailable } : deadlines.result as DeadlinesView,
       needs: ownerNeeds(db, oid(req)), reportCount,
     })));
   } catch (e) { next(e); } });
@@ -552,12 +553,12 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     else {
       const r = await companyObligations(register, { registryCode: ref, months: 3, cacheOnly: true });
       const gap = !r.ok ? r.unavailable ?? "invalid_code" : r.result.company.unavailable;
-      // A remembered failed fill is "unavailable", not "loading".
-      const failed = gap === "not_cached" && fillFailure(ref) !== undefined;
+      // A remembered failed fill gives its reason: not_found as such, anything else "unavailable", not "loading".
+      const failure = gap === "not_cached" ? fillFailure(ref) : undefined;
       if (gap === "not_cached") fillInBackground(ref);
       const company = r.ok && r.result.company.name ? { name: r.result.company.name, synthetic: r.result.company.synthetic } : null;
       body = gap || !r.ok
-        ? deadlinesCalendar({ ...base, company, emptyReason: `${(!failed && REGISTER_GAP_ET[gap ?? ""]) || "Avalik register pole praegu kättesaadav"}. Sündmusi ei loodud.` })
+        ? deadlinesCalendar({ ...base, company, emptyReason: `${(failure ? failure.unavailable === "not_found" && REGISTER_GAP_ET.not_found : REGISTER_GAP_ET[gap ?? ""]) || "Avalik register pole praegu kättesaadav"}. Sündmusi ei loodud.` })
         : deadlinesCalendar({ ...base, company, obligations: r.result.obligations.filter((o) => o.effective_due !== null && (o.kind === "risk" || o.effective_due >= r.result.window.from)) });
     }
     res.set("pragma", "no-cache").type("text/calendar; charset=utf-8").send(body);

@@ -911,8 +911,8 @@ export interface TanaOpts {
   /** Every pending approval, then the recent approved and consumed ones; each group newest first. */
   approvals: ApprovalRow[];
   progress: { task_id: string; milestone: string; observed_at: string }[];
-  /** null: no registry code known; "not_cached": register facts are being fetched; "invalid_code": the assistant's code fails the checksum; unavailable_reason: the register lookup failed. */
-  deadlines: DeadlinesView | "not_cached" | "invalid_code" | { unavailable_reason: string } | null;
+  /** null: no registry code known; "not_cached": register facts are being fetched; "invalid_code": the assistant's code fails the checksum; "not_found": the register has no company with the code; unavailable_reason: the register lookup failed. */
+  deadlines: DeadlinesView | "not_cached" | "invalid_code" | "not_found" | { unavailable_reason: string } | null;
   needs: OwnerNeed[];
   /** Count of the assistant's saved reports (real records). */
   reportCount: number;
@@ -987,6 +987,7 @@ export function tanaBody(o: TanaOpts): string {
   const tulekul = deadlines ? deadlinesList(deadlines, l, { now, prompts: true })
     : o.deadlines === "not_cached" ? `<p class="muted">${t("Registri andmeid laaditakse. Värskenda lehte hetke pärast.", "Register facts are loading. Refresh the page in a moment.")}</p>`
     : o.deadlines === "invalid_code" ? deadlinesHint(l, t("Registrikood ei ole korrektne — palu assistendil see üle kontrollida.", "The registry code is not valid — ask your assistant to check it."), l)
+    : o.deadlines === "not_found" ? deadlinesHint(l, t("Registrikoodiga ettevõtet registrist ei leitud — palu assistendil kood üle kontrollida.", "No company with this registry code in the register — ask your assistant to check the code."), l)
     : o.deadlines && "unavailable_reason" in o.deadlines ? deadlinesHint(l, o.deadlines.unavailable_reason)
     : `<p class="muted">${t(`Tähtajad ilmuvad siia, kui assistent teab sinu registrikoodi. Küsi temalt: „${TRY_PROMPT[0]}”`, `Deadlines appear here once your assistant knows your registry code. Ask it: “${TRY_PROMPT[1]}”`)}</p>`;
 

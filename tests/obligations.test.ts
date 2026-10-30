@@ -531,27 +531,57 @@ describe("get_obligations tool and status card", () => {
       expect(toolCalls - start).toBe(1);
     } finally { warn.mockRestore(); s4.close(); }
   });
-  test("Täna: a remembered failed fill shows the hint and the plain reason, not loading (#30 item 2)", async () => {
+  // One owner whose assessment carries `code`, on a fresh app with the fake register; returns a Täna page loader.
+  const tanaFor = async (code: string) => {
     const cfg5: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
     const { app: app5, db: db5 } = createApp(cfg5, openDb(":memory:"));
     const s5 = await new Promise<Server>((ok) => { const s = app5.listen(0, "127.0.0.1", () => ok(s)); });
     const base5 = `http://127.0.0.1:${(s5.address() as { port: number }).port}`; cfg5.baseUrl = base5;
+    const now = new Date().toISOString();
+    db5.prepare("INSERT INTO owners(id,subject,kind,reporting_enabled,created_at) VALUES('o','synthetic-o','google',0,?)").run(now);
+    db5.prepare("INSERT INTO workspaces(owner_id,company_ref,label,version) VALUES('o','ws-o','Synthetic workspace',1)").run();
+    db5.prepare("INSERT INTO assessments(id,owner_id,version,payload_json,payload_hash,created_at) VALUES('a','o',1,?,'h',?)").run(JSON.stringify({ ...DEMO_FIXTURES.alpha, company_registry_ref: code }), now);
+    db5.prepare("INSERT INTO sessions(id_hash,owner_id,csrf,expires_at) VALUES(?,?,?,?)").run(sha256("sess-o"), "o", "csrf-o", new Date(Date.now() + 30 * 86400_000).toISOString());
+    return { server: s5, load: async () => (await fetch(`${base5}/`, { headers: { cookie: "lp_session=sess-o" } })).text() };
+  };
+  test("Täna: a remembered not_found fill says the code is not in the register and is not retried for 2 hours (#41)", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const t0 = Date.now(); let offset = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => t0 + offset);
+    const { server, load } = await tanaFor("10000018");
     try {
-      const now = new Date().toISOString();
-      db5.prepare("INSERT INTO owners(id,subject,kind,reporting_enabled,created_at) VALUES('o','synthetic-o','google',0,?)").run(now);
-      db5.prepare("INSERT INTO workspaces(owner_id,company_ref,label,version) VALUES('o','ws-o','Synthetic workspace',1)").run();
-      db5.prepare("INSERT INTO assessments(id,owner_id,version,payload_json,payload_hash,created_at) VALUES('a','o',1,?,'h',?)").run(JSON.stringify({ ...DEMO_FIXTURES.alpha, company_registry_ref: "10000018" }), now);
-      db5.prepare("INSERT INTO sessions(id_hash,owner_id,csrf,expires_at) VALUES(?,?,?,?)").run(sha256("sess-o"), "o", "csrf-o", new Date(Date.now() + 3600_000).toISOString());
-      const load = async () => (await fetch(`${base5}/`, { headers: { cookie: "lp_session=sess-o" } })).text();
+      const start = toolCalls;
       expect(await load()).toContain("Registri andmeid laaditakse.");
       await vi.waitFor(() => expect(warn).toHaveBeenCalledWith("Status deadlines: register lookup failed (not_found)."));
-      const after = await load();
-      expect(after).not.toContain("Registri andmeid laaditakse.");
-      expect(after).toContain("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?”");
-      expect(after).toMatch(/<span class="muted" lang="en">[^<]+<\/span><\/p>/);
-      expect(after).not.toContain('<ul class="deadlines">');
-    } finally { warn.mockRestore(); s5.close(); }
+      for (offset = 0; offset <= 2 * 3600_000; offset += 15 * 60_000) {
+        const html = await load();
+        expect(html).toContain("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?” <span class=\"muted\">Registrikoodiga ettevõtet registrist ei leitud — palu assistendil kood üle kontrollida.</span>");
+        expect(html).not.toContain("Registri andmeid laaditakse.");
+        expect(html).not.toContain('<ul class="deadlines">');
+      }
+      await new Promise((ok) => setTimeout(ok, 300));
+      expect(toolCalls - start).toBe(1);
+    } finally { clock.mockRestore(); warn.mockRestore(); server.close(); }
+  });
+  test("Täna: a timed-out fill shows the plain reason and retries after 10 minutes (#41)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const t0 = Date.now(); let offset = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => t0 + offset);
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => AbortSignal.abort()); // the register never answers in time
+    const { server, load } = await tanaFor(FAKE_VALID);
+    try {
+      expect(await load()).toContain("Registri andmeid laaditakse.");
+      await vi.waitFor(() => expect(warn).toHaveBeenCalledWith("Status deadlines: register lookup failed (timeout)."));
+      const failed = await load();
+      expect(failed).toContain("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?” <span class=\"muted\" lang=\"en\">The public-register lookup did not answer within 10 s.</span>");
+      expect(failed).not.toContain("Registrikoodiga ettevõtet registrist ei leitud");
+      offset = 9 * 60_000; await load();
+      expect(warn).toHaveBeenCalledTimes(1);
+      offset = 10 * 60_000 + 1; timeout.mockRestore();
+      expect(await load()).toContain("Registri andmeid laaditakse.");
+      await vi.waitFor(() => expect(load()).resolves.toContain('<ul class="deadlines">'));
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally { timeout.mockRestore(); clock.mockRestore(); warn.mockRestore(); server.close(); }
   });
   test("Täna: a checksum-invalid assessment registry ref says so instead of dropping Tulekul (#30 item 2)", async () => {
     const html = await (await fetch(`${base}/`, { headers: { cookie: owner("badref", "19774662").cookie } })).text();
