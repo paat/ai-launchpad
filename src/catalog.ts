@@ -45,11 +45,69 @@ export function searchServices(query: string, limit: number) {
     note: "Research catalog entry, not runtime-verified by Launchpad. Connect it in your own assistant; Launchpad does not fetch or broker it.",
   }));
 }
-export const PLAYBOOKS = [
-  { id: "deadlines-check", title: "Check this month's obligations", summary: "Read-only first win: list known responsibilities and check official sources for current dates. Launchpad does not compute or fabricate tax deadlines here.", source: "https://www.emta.ee/en/business-client/taxes-and-payment", source_label: "Estonian Tax and Customs Board (EMTA)" },
-  { id: "annual-report-status", title: "Check annual report status", summary: "Confirm filing status in official registers and prepare a draft plan with your accountant. Nothing is submitted by this demo.", source: "https://www.rik.ee/en/e-business-register", source_label: "Centre of Registers and Information Systems (RIK)" },
-  { id: "counterparty-check", title: "Check a company before taking the job", summary: "Look up public registry and tax-debt information before agreeing work. Public data does not prove mandate or creditworthiness.", source: "https://www.emta.ee/en/business-client/taxes-and-payment/payment-arrears/payment-tax-liabilities-instalments", source_label: "EMTA — tax liabilities" },
-  { id: "vat-status-check", title: "Check VAT registration status", summary: "Verify VAT registration details against official guidance before invoicing. This demo gives no tax advice.", source: "https://www.riigiteataja.ee/en/akt/512062025002", source_label: "Value Added Tax Act (Riigi Teataja)" },
+export const APPROVAL_KINDS = ["send_message", "send_invoice", "prepare_payment", "prepare_filing"] as const;
+/** Executable job playbooks (#26): deterministic instructions for the owner's
+ *  own agent. Launchpad never runs the job; triggers are obligation rule_ids. */
+export interface Playbook {
+  id: string; title: string; title_et: string; summary: string; source: string; source_label: string;
+  triggers: string[]; needs: string[]; steps: string[];
+  approval_kind: (typeof APPROVAL_KINDS)[number] | null; done_when: string; verify_with: string;
+}
+export const PLAYBOOKS: Playbook[] = [
+  { id: "deadlines-check", title: "Check the owner's deadlines", title_et: "Vaata üle oma tähtajad",
+    summary: "Your assistant lists your upcoming tax and register deadlines, each with its official source. It first asks only the questions that can change the list, then offers to prepare each job.",
+    source: "https://www.emta.ee/en/business-client/taxes-and-payment", source_label: "Estonian Tax and Customs Board (EMTA)",
+    triggers: [], needs: ["The company's registry code or name (owner fact)."],
+    steps: [
+      "Call get_obligations. Rules compute every date; quote them with each row's source link and never compute a deadline yourself.",
+      "Ask the facts_needed questions first: one answer can remove a row. Call get_obligations again with the owner's answers.",
+      "For each row with a playbook_id, offer in one line to prepare it and ask whether to start. Then follow that playbook's steps.",
+    ],
+    approval_kind: null, done_when: "The owner has seen each deadline with its source and has said which jobs to prepare.", verify_with: "Each row's official source link." },
+  { id: "payment-reminder", title: "Remind a customer about an overdue invoice", title_et: "Meenuta kliendile tasumata arvet",
+    summary: "Your assistant finds unpaid invoices past their due date and drafts a polite reminder. Nothing is sent until you approve the exact text, amount and recipient.",
+    source: "https://www.riigiteataja.ee/akt/13113422?leiaKehtiv=", source_label: "Võlaõigusseadus § 113 (viivis), Riigi Teataja",
+    triggers: [],
+    needs: ["Unpaid sales invoices: the owner's accounting connector (search_services, e.g. werkzeug, trivis) or a file the owner shares.", "The owner's own email tool to send the reminder."],
+    steps: [
+      "Find unpaid invoices past their due date in the owner's accounting connector or in a file the owner shares.",
+      "Draft a polite reminder in the owner's language with the invoice number, the overdue amount and the due date as they appear on the invoice; the amount in the text is the same amount you put in amount_cents. Do not threaten late-payment interest (viivis) unless the owner asks for it.",
+      "Call request_approval with action kind send_message; recipient.name and recipient.address: the customer and their e-mail; amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000); period: the invoice's period; document.title and document.content: the exact reminder; summary: one line for the owner.",
+      "After the owner says it is approved, call get_approval. Act only if its state is approved, and send exactly that text with your own tools; Launchpad sends nothing.",
+      "Call record_action_outcome with outcome sent (or failed).",
+      "Record paid with record_action_outcome using a NEW report_id (the same report_id conflicts), and only if you see the payment, for example in the accounting connector.",
+    ],
+    approval_kind: "send_message", done_when: "The approved reminder was sent and record_action_outcome recorded sent.", verify_with: "The payment in the owner's accounting connector or bank statement; until then the outcome stays sent." },
+  { id: "vat-return-prep", title: "Prepare the monthly VAT return (KMD)", title_et: "Valmista ette käibedeklaratsioon (KMD)",
+    summary: "Your assistant gathers the month's invoices and takes the VAT figures from your accounting software's own report. You approve the exact figures, then file the return yourself in e-MTA.",
+    source: "https://www.riigiteataja.ee/akt/130062026129", source_label: "Käibemaksuseadus § 27, Riigi Teataja",
+    triggers: ["vat-return-kmd"],
+    needs: ["The month's sales and purchase invoices: the owner's accounting connector (search_services, e.g. werkzeug, trivis) or files the owner shares.", "The accounting software's own VAT report for the period."],
+    steps: [
+      "Gather the period's sales and purchase invoices from the owner's accounting connector or from files the owner shares.",
+      "Check that none are missing (gaps in invoice numbers, purchases without an invoice) and ask the owner about each gap.",
+      "Take the VAT figures from the accounting software's own VAT report. Never calculate a tax amount yourself; if no report exists, tell the owner and stop.",
+      "Call request_approval with action kind prepare_filing; recipient.name: \"EMTA (e-MTA)\"; period: the VAT month; document.title and document.content: the report's exact figures; summary: one line for the owner.",
+      "Right before the owner files, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged figures or draft first. Approvals are valid for 24 hours.",
+      "After get_approval returns approved, tell the owner the figures to enter. The owner files the return in e-MTA with their own Smart-ID or ID-card; never automate the login, signature or submission.",
+      "When the owner says it is filed, call record_action_outcome with outcome submitted.",
+    ],
+    approval_kind: "prepare_filing", done_when: "The owner filed the return in e-MTA and record_action_outcome recorded submitted.", verify_with: "The owner's e-MTA filing confirmation; the submitted outcome is the owner's or your report, not verified by Launchpad." },
+  { id: "annual-report", title: "Prepare the annual report", title_et: "Valmista ette majandusaasta aruanne",
+    summary: "Your assistant checks the register, gathers what the annual report needs and tells you what is still missing. You approve the exact draft, then sign and submit it yourself in the e-Business Register.",
+    source: "https://www.riigiteataja.ee/akt/106072023131", source_label: "Äriseadustik § 179, Riigi Teataja",
+    triggers: ["annual-report", "annual-report-overdue"],
+    needs: ["The financial year's accounts: the owner's accounting connector (search_services, e.g. werkzeug, trivis) or files the owner shares.", "Owner facts the report asks for, such as the activity description and the number of employees."],
+    steps: [
+      "Check the annual-report or annual-report-overdue row in get_obligations. With applies \"yes\" (public-register facts) the report is not listed as filed. With applies \"if\" the filing state is unknown: ask the owner the facts_needed question first.",
+      "Gather what the report needs: the balance sheet and income statement from the accounting software, the activity description and the owner's answers.",
+      "Give the owner a checklist of what is ready and what is still missing.",
+      "Call request_approval with action kind prepare_filing; recipient.name: \"Äriregister (e-äriregister)\"; period: the financial year; document.title and document.content: the exact report draft; summary: one line for the owner. This approval is REQUIRED before the owner signs or submits.",
+      "Right before the owner files, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged figures or draft first. Approvals are valid for 24 hours.",
+      "Act only after get_approval returns approved: tell the owner the approved draft is ready. The owner signs and submits the report in the e-Business Register; never automate the login, signature or submission.",
+      "When the owner says it is submitted, call record_action_outcome with outcome submitted.",
+    ],
+    approval_kind: "prepare_filing", done_when: "The owner submitted the report in the e-Business Register and record_action_outcome recorded submitted.", verify_with: "With applies \"yes\" (public-register facts): the register's report_status; get_obligations stops showing the row once the register lists the report as filed. With applies \"if\": the owner's e-Business Register submission confirmation." },
 ];
 export const DOMAINS = ["money", "customers", "people", "legal_sector", "operations"] as const;
 export const FRAMEWORK = {

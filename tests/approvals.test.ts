@@ -229,7 +229,7 @@ describe("approval cards over MCP", () => {
     const o = owner("replay");
     const c = await client(o.token);
     const first = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "r1", action: reminder() } }));
-    const note = "Creation receipt replayed; current_state is live. Call get_approval before acting.";
+    const note = "Call get_approval before acting; current_state on replays is live.";
     expect(first).toMatchObject({ state: "pending", note });
     expect(first.current_state).toBeUndefined();
     await decide(o, first.approval_id, { decision: "approve", digest: first.digest });
@@ -251,7 +251,7 @@ describe("approval cards over MCP", () => {
 
     const ro = owner("readonly", "progress:read");
     const cr = await client(ro.token);
-    expect(errText(await cr.callTool({ name: "request_approval", arguments: { report_id: "r", action: reminder() } }))).toContain("Missing scope progress:report.");
+    expect(errText(await cr.callTool({ name: "request_approval", arguments: { report_id: "r", action: reminder() } }))).toBe("The owner connected you read-only. Tell the owner: „Et saaksin seda sinu eest ette valmistada, ühenda mind AI-hüppelauaga uuesti ja luba nõusolekulehel töid ette valmistada.” When reconnecting, request the progress:report scope; the owner must allow it on the consent page. Nothing was saved and no approval was requested.");
     const off = owner("stopped", "progress:read,progress:report", 0);
     const cs = await client(off.token);
     expect(errText(await cs.callTool({ name: "request_approval", arguments: { report_id: "r", action: reminder() } }))).toMatch(/sharing is stopped.*Nothing was saved/s);

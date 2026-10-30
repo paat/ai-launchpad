@@ -2,13 +2,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Db } from "./db.js";
 import { newId, nowIso, sha256 } from "./db.js";
-import { FRAMEWORK, PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
+import { APPROVAL_KINDS, FRAMEWORK, PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { assessmentSchema, assessmentRevisionError, computeCoverage, evidenceRefs, s, type Assessment } from "./core.js";
 import { arikratt, type Arikratt, type CompanyCard } from "./arikratt.js";
-import { computeObligations, type CompanyFacts, type Fact, type FactNeeded } from "./obligations.js";
+import { computeObligations, tallinnDate, type CompanyFacts, type Fact, type FactNeeded, type Obligation } from "./obligations.js";
 import { BLOCKERS, MAX_JOB_HINT_CHARS, MAX_NEED_CHARS, recordUnmetNeed } from "./unmet-needs.js";
 
 export interface Ctx { ownerId: string; scopes: string[]; companyRef: string; label: string; reportingEnabled: boolean; baseUrl: string; }
+const readOnly = (nothing: string) => `The owner connected you read-only. Tell the owner: „Et saaksin seda sinu eest ette valmistada, ühenda mind AI-hüppelauaga uuesti ja luba nõusolekulehel töid ette valmistada.” When reconnecting, request the progress:report scope; the owner must allow it on the consent page. ${nothing}`;
 const json = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }], structuredContent: data as Record<string, unknown> });
 const err = (m: string) => ({ isError: true, content: [{ type: "text" as const, text: m }] });
 
@@ -112,7 +113,7 @@ export const canonicalJson = (v: unknown): string => Array.isArray(v) ? `[${v.ma
   : JSON.stringify(v);
 export const approvalDigest = (action: unknown) => sha256(canonicalJson(action));
 export const approvalActionSchema = z.object({
-  kind: z.enum(["send_message", "send_invoice", "prepare_payment", "prepare_filing"]),
+  kind: z.enum(APPROVAL_KINDS),
   recipient: z.object({ name: s(120), address: s(120).optional() }).strict(),
   amount_cents: z.number().int().min(1).max(999_999_999_999).optional(),
   currency: z.enum(["EUR"]).default("EUR"),
@@ -152,6 +153,10 @@ export const assistantFactsSchema = z.object({
 export const OBLIGATIONS_DISCLAIMER = "Tähtajad arvutab reeglistik, mitte tehisaru. Kuupäevad on arvutatud, mitte esitatud, makstud ega kontrollitud. See ei ole õigus- ega maksunõu; kontrolli iga rea allikat. / Deadlines are calculated by rules, not AI. Dates are computed, not filed, paid or verified. Not legal or tax advice; check each row's source.";
 const CONFIRM_QUESTIONS: Record<string, Omit<FactNeeded, "fact">> = { vat_registered: { question_et: "Registris on KMKR number, kuid viimastel kvartalitel käivet pole deklareeritud. Kas ettevõte on endiselt käibemaksukohustuslane?", question_en: "The register shows a VAT number but no declared turnover in recent quarters. Is the company still VAT-registered?" } };
 const REGISTRY_CODE_NEEDED: FactNeeded = { fact: "registry_code", question_et: "Mis on ettevõtte 8-kohaline registrikood?", question_en: "What is the company's 8-digit registry code?" };
+const withPlaybook = (o: Obligation): Obligation & { playbook_id?: string } => {
+  const p = PLAYBOOKS.find((x) => x.triggers.includes(o.rule_id));
+  return p ? { ...o, playbook_id: p.id } : o;
+};
 export async function companyObligations(ar: Arikratt, o: { registryCode?: string; assistant?: z.infer<typeof assistantFactsSchema>; months: number; today?: Date; cacheOnly?: boolean }) {
   let code = o.registryCode;
   let miss: { unavailable: string; unavailable_reason: string } | null = null;
@@ -171,17 +176,23 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
   for (const [k, v] of Object.entries({ ...o.assistant, ...(code && !lookup?.ok ? { registry_code: code } : {}) })) {
     if (v !== undefined && !(k in facts)) (facts as Record<string, Fact<unknown>>)[k] = mine(v);
   }
-  const r = computeObligations(facts, { today: o.today ?? new Date(), months: o.months });
+  const today = o.today ?? new Date();
+  const r = computeObligations(facts, { today, months: o.months });
+  // next_deadline: a late-month window can be empty, so always name the next date (3-month horizon).
+  const from = tallinnDate(today);
+  const next = computeObligations(facts, { today, months: 3 }).obligations.find((x) => x.effective_due !== null && x.effective_due >= from) ?? null;
   const confirm = lookup?.ok ? lookup.confirm.map((fact) => ({ fact, ...CONFIRM_QUESTIONS[fact] })) : [];
   const company: CompanyCard & { unavailable?: string; unavailable_reason?: string } = lookup?.ok ? lookup.company : {
     name: facts.company_name?.value ?? null, registry_code: code ?? "", synthetic: false, provenance: "assistant_supplied", label_et: "Assistendi teade · avalikust registrist ei loetud", label_en: "Your assistant says · not read from a public register",
     snapshot_id: null, as_of: null, sources: [], attribution: "", ...(lookup && !lookup.ok ? { unavailable: lookup.unavailable, unavailable_reason: lookup.reason } : miss ?? {}),
   };
   return { ok: true as const, result: {
-    company, computed_by: "rules", window: r.window, obligations: r.obligations,
+    company, computed_by: "rules", window: r.window, obligations: r.obligations.map(withPlaybook),
+    next_deadline: next && withPlaybook(next),
+    playbooks: PLAYBOOKS.filter((p) => [...r.obligations, ...(next ? [next] : [])].some((x) => p.triggers.includes(x.rule_id))).map(({ id, title, title_et, approval_kind }) => ({ id, title, title_et, approval_kind })),
     facts_needed: [...(miss ? [REGISTRY_CODE_NEEDED] : []), ...confirm, ...r.facts_needed.filter((n) => !confirm.some((c) => c.fact === n.fact))],
     data_as_of: company.as_of, disclaimer: OBLIGATIONS_DISCLAIMER,
-    assistant_instruction: `Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed.${miss ? " Ask the owner for the 8-digit registry code." : ""}`,
+    assistant_instruction: `Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed.${miss ? " Ask the owner for the 8-digit registry code." : ""} Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.`,
   } };
 }
 
@@ -189,22 +200,22 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
   const server = new McpServer({ name: "ai-launchpad", version: "0.2.0" });
   const need = (scope: string) => ctx.scopes.includes(scope);
 
-  server.registerTool("get_started", { description: "Start here. Start with the owner's deadlines (get_obligations). Public assessment framework, playbooks and reporting guidance for any authenticated connection; with progress:read it also returns this workspace's company_ref, label and sharing state.", inputSchema: {}, annotations: { readOnlyHint: true } }, async () => {
+  server.registerTool("get_started", { description: "Start here. Start with the owner's deadlines (get_obligations), then offer the matching playbook. Public assessment framework, executable job playbooks and reporting guidance for any authenticated connection; with progress:read it also returns this workspace's company_ref, label and sharing state.", inputSchema: {}, annotations: { readOnlyHint: true } }, async () => {
     logActivity(db, ctx.ownerId, "assistant", "get_started", "ok", "Assistant fetched getting-started guidance.");
-    const first_step = "Start with the owner's deadlines: call get_obligations. Rules compute every date and each row has its official source; ask the owner only for the facts it lists in facts_needed.";
+    const first_step = "Start with the owner's deadlines (get_obligations), then offer the matching playbook. Rules compute every date and each row has its official source; ask the owner only for the facts it lists in facts_needed. A row with a playbook_id has a job you can prepare: follow that playbook's steps; the owner only approves.";
     const shared = { framework: FRAMEWORK, playbooks: PLAYBOOKS,
       tools: ["get_obligations", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "request_approval", "get_approval", "record_action_outcome", "report_unmet_need"],
-      note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments only — no conversations or documents. Reporting never approves business actions.",
+      note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments; the exact text of each approval request until the owner deletes their progress; and the de-identified text of unmet needs. It stores no conversations. Reporting never approves business actions.",
       approvals_note: "Before sending, invoicing, paying or filing for the owner, call request_approval with the exact content and act only after get_approval returns approved. Launchpad never sends, pays or files.",
       catalog_note: "search_services is a public research catalogue available to any authenticated connection; it never contains owner data." };
     if (!need("progress:read")) return json({ first_step, ...shared });
     return json({ first_step, workspace: { company_ref: ctx.companyRef, label: ctx.label }, ...shared, reporting_enabled: ctx.reportingEnabled });
   });
 
-  server.registerTool("get_obligations", { description: "The owner's Estonian back-office deadlines (VAT return KMD, TSD, annual report, VAT-registration threshold, TÖR) computed by deterministic rules from public-register facts plus any facts you supply; every row carries its official source (Riigi Teataja). Uses registry_code, else the workspace's latest assessment company_registry_ref (needs progress:read). Supply only facts the owner told you; never guess. months = 1–3 calendar months from today (Europe/Tallinn).", inputSchema: { registry_code: z.string().regex(/^\d{8}$/, "registry_code is 8 digits").optional(), facts: assistantFactsSchema.optional(), months: z.number().int().min(1).max(3).optional() }, annotations: { readOnlyHint: true, openWorldHint: true } }, async (args) => {
+  server.registerTool("get_obligations", { description: "The owner's Estonian back-office deadlines (VAT return KMD, TSD, annual report, VAT-registration threshold, TÖR) computed by deterministic rules from public-register facts plus any facts you supply; every row carries its official source (Riigi Teataja). Uses registry_code, else the workspace's latest assessment company_registry_ref (needs progress:read). Supply only facts the owner told you; never guess. months = 1–3 calendar months from today (Europe/Tallinn), default 2; next_deadline always names the next date, even outside the window. Rows with a playbook_id have a job playbook (see get_started).", inputSchema: { registry_code: z.string().regex(/^\d{8}$/, "registry_code is 8 digits").optional(), facts: assistantFactsSchema.optional(), months: z.number().int().min(1).max(3).optional() }, annotations: { readOnlyHint: true, openWorldHint: true } }, async (args) => {
     let code = args.registry_code;
     if (!code && need("progress:read")) { const ref = getState(db, ctx.ownerId).assessment?.company_registry_ref?.trim(); if (ref && /^\d{8}$/.test(ref)) code = ref; }
-    const r = await companyObligations(ar, { registryCode: code, assistant: args.facts, months: args.months ?? 1 });
+    const r = await companyObligations(ar, { registryCode: code, assistant: args.facts, months: args.months ?? 2 });
     if (!r.ok) return err(r.error);
     logActivity(db, ctx.ownerId, "assistant", "get_obligations", "ok", `Deadlines computed by rules: ${r.result.obligations.length} row(s), ${r.result.facts_needed.length} fact(s) needed${r.result.company.synthetic ? " (sample company)" : ""}.`);
     return json(r.result);
@@ -283,7 +294,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     return json({ candidate_id: id, status: "pending_moderation", deduplicated: false, note: "Pending human moderation. Not published or endorsed." });
   });
 
-  const approvalGate = (nothing: string) => !need("progress:report") ? "Missing scope progress:report." : !ctx.reportingEnabled ? `Progress sharing is stopped by the owner (it is off by default). ${nothing}` : null;
+  const approvalGate = (nothing: string) => !need("progress:report") ? readOnly(nothing) : !ctx.reportingEnabled ? `Progress sharing is stopped by the owner (it is off by default). ${nothing}` : null;
 
   server.registerTool("request_approval", { description: "Ask the owner to approve one exact action (message, invoice, payment or filing) on their phone. The digest binds every field of action; any change needs a new approval. Launchpad never sends, pays or files: after get_approval returns approved, act with your own tools using exactly this content, then call record_action_outcome before expires_at. Expires 24 hours after the request, for deciding and for acting: an approved approval with no outcome recorded by then becomes expired. Idempotent by report_id; a replay returns the creation receipt plus the live current_state.", inputSchema: { report_id: s(80), action: approvalActionSchema } }, async (args) => {
     const gate = approvalGate("Nothing was saved and no approval was requested."); if (gate) return err(gate);
@@ -298,7 +309,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     if (total >= 200) return err("Approval limit reached for this workspace (200). The owner can export and delete progress to start again. Nothing was saved and no approval was requested.");
     if (pending >= 20) return err("Too many approvals are waiting for the owner (20 pending). Ask the owner to decide on those first. Nothing was saved and no approval was requested.");
     const id = newId("appr"), digest = approvalDigest(args.action), expires = new Date(Date.now() + 24 * 3600_000).toISOString();
-    const receipt = { approval_id: id, state: "pending", digest, expires_at: expires, approve_url: `${ctx.baseUrl}/approvals/${id}`, owner_instruction: "Ask the owner to open the link (or the Launchpad Status page) and approve or decline. Do not act before get_approval returns approved.", note: "Creation receipt replayed; current_state is live. Call get_approval before acting." };
+    const receipt = { approval_id: id, state: "pending", digest, expires_at: expires, approve_url: `${ctx.baseUrl}/approvals/${id}`, owner_instruction: "Ask the owner to open the link (or the Launchpad Status page) and approve or decline. Do not act before get_approval returns approved.", note: "Call get_approval before acting; current_state on replays is live." };
     db.transaction(() => {
       db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at) VALUES(?,?,?,?,?,?,'pending',?,?)").run(id, ctx.ownerId, args.action.kind, args.report_id, JSON.stringify(args.action), digest, expires, nowIso());
       saveReceipt(db, ctx.ownerId, "approval", args.report_id, args, receipt);
@@ -347,8 +358,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
   });
 
   server.registerTool("report_unmet_need", { description: "Report a job the owner asked for that you could not do (no connector, needs the owner's PIN or signature, a portal without an API, not supported yet, or unclear). Describe the need generically, in the owner's language, without names, company names, amounts, account numbers, personal or registry codes, e-mail addresses, phone numbers or other identifiers. Launchpad also replaces identifiers it detects before storing the text or showing it to any model, and keeps only that de-identified text. Launchpad then classifies it in the background (Meta's open model when live, a labelled mock locally); nothing is published unless the owner approves it on the Status page, and then only as anonymous open demand (category, short label, one-line spec). Idempotent by report_id.", inputSchema: { report_id: s(80), need: s(MAX_NEED_CHARS), blocker: z.enum(BLOCKERS), job_hint: s(MAX_JOB_HINT_CHARS).optional() } }, async (args) => {
-    if (!need("progress:report")) return err("Missing scope progress:report.");
-    if (!ctx.reportingEnabled) return err("Progress sharing is stopped by the owner (it is off by default). Nothing was saved.");
+    const gate = approvalGate("Nothing was saved."); if (gate) return err(gate);
     const r = recordUnmetNeed(db, ctx.ownerId, args);
     if ("error" in r) return err(r.error);
     if (r.created) {
