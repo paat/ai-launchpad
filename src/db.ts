@@ -46,7 +46,7 @@ export function openDb(path: string) {
   // Consumed rows record what was already sent and are left as they are.
   db.exec(`UPDATE approvals SET state='expired' WHERE state IN ('pending','approved')
     AND COALESCE(kind, CASE WHEN json_valid(payload_json) THEN json_extract(payload_json,'$.kind') END) IN ('send_message','send_invoice')
-    AND CASE WHEN json_valid(payload_json) AND json_type(payload_json,'$.recipient.address')='text' THEN trim(json_extract(payload_json,'$.recipient.address'), char(9,10,11,12,13,32,160,65279)) ELSE '' END = ''`);
+    AND CASE WHEN json_valid(payload_json) AND json_type(payload_json,'$.recipient.address')='text' THEN trim(json_extract(payload_json,'$.recipient.address'), char(9,10,11,12,13,32,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288,65279)) ELSE '' END = ''`);
   // Which OAuth grant last reached the MCP endpoint, so /uhenda names the client that actually made contact.
   if (!(db.prepare("PRAGMA table_info(oauth_grants)").all() as { name: string }[]).some((c) => c.name === "last_used_at")) db.exec("ALTER TABLE oauth_grants ADD COLUMN last_used_at TEXT");
   // Friction loop (#20): owner-scoped unmet needs. Only de-identified text

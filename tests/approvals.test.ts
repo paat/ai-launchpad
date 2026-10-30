@@ -405,6 +405,29 @@ test("startup expires a no-address send in the pre-kind schema, same on a second
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("startup expires a send whose lone address is any JS-whitespace code point, same on a second open (#35)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lp-approvals-"));
+  try {
+    const path = join(dir, "ws-set.db");
+    const cps = [9, 10, 11, 12, 13, 32, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288, 65279];
+    const seed = openDb(path);
+    const { address: _drop, ...recipient } = reminder().recipient;
+    const insert = seed.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at,consumed_at) VALUES(?,'legacy','send_message',?,?,'d','pending',?,?,NULL)");
+    const later = new Date(Date.now() + 3600_000).toISOString(), now = new Date().toISOString();
+    for (const cp of cps) {
+      expect(String.fromCodePoint(cp).trim(), String(cp)).toBe("");
+      insert.run(`appr_cp_${cp}`, `cp-${cp}`, JSON.stringify(reminder({ kind: "send_message", recipient: { ...recipient, address: String.fromCodePoint(cp) } })), later, now);
+    }
+    seed.close();
+    for (let pass = 0; pass < 2; pass++) {
+      const d = openDb(path);
+      try {
+        for (const cp of cps) expect((d.prepare("SELECT state FROM approvals WHERE id=?").get(`appr_cp_${cp}`) as { state: string }).state, `U+${cp.toString(16)} pass ${pass}`).toBe("expired");
+      } finally { d.close(); }
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 // tribunal T-001: assistant-supplied text never renders as markup on Täna, Tehtud or the approval pages.
 const XSS = "<img src=x onerror=alert(1)>";
 const pageOf = async (o: { cookie: string }, path: string) => { const r = await fetch(`${base}${path}`, { headers: { cookie: o.cookie } }); expect(r.status, path).toBe(200); return r.text(); };
