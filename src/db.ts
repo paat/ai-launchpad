@@ -27,6 +27,7 @@ export function openDb(path: string) {
   CREATE TABLE IF NOT EXISTS progress(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, task_id TEXT NOT NULL, milestone TEXT NOT NULL, evidence_label TEXT NOT NULL, evidence_refs_json TEXT NOT NULL, observed_at TEXT NOT NULL, version INTEGER NOT NULL, created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS candidates(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, norm_key TEXT NOT NULL, name TEXT NOT NULL, connection TEXT NOT NULL, jobs TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending_moderation', created_at TEXT NOT NULL, UNIQUE(owner_id, norm_key));
   CREATE TABLE IF NOT EXISTS activity(id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT, actor TEXT NOT NULL, action TEXT NOT NULL, outcome TEXT NOT NULL, summary TEXT NOT NULL, created_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS company_facts(registry_code TEXT PRIMARY KEY, facts_json TEXT NOT NULL, snapshot_id TEXT, as_of TEXT, fetched_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS approvals(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, payload_json TEXT NOT NULL, digest TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', expires_at TEXT NOT NULL, created_at TEXT NOT NULL, consumed_at TEXT);
   `);
   // Backward-safe: created on fresh and existing databases alike.

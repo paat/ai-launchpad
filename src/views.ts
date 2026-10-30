@@ -1,6 +1,8 @@
 import type { Assessment, Coverage } from "./core.js";
 import { isHandled } from "./core.js";
 import type { ApprovalRow, AssistantMilestones, Exclusion } from "./mcp.js";
+import type { CompanyCard } from "./arikratt.js";
+import type { FactNeeded, Obligation } from "./obligations.js";
 
 export const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 
@@ -117,7 +119,34 @@ function savingsLine(a: Assessment): string {
   return `${prefix}: ${raw}`;
 }
 
-export function statusBody(opts: { label: string; demo: boolean; assessment: Assessment | null; coverage: Coverage; assessedAt: string | null; exclusions: Exclusion[]; historyCount: number; reportingEnabled: boolean; latestProgress?: LatestProgress | null }): string {
+/** Calendar date in Europe/Tallinn: "20. nov, reede" / "Fri 20 Nov". */
+const fmtDue = (day: string) => {
+  const d = new Date(`${day}T12:00:00Z`), f = (l: string, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(l, { timeZone: "Europe/Tallinn", ...o }).format(d);
+  return { et: `${f("et-EE", { day: "numeric", month: "short" })}, ${f("et-EE", { weekday: "long" })}`, en: f("en-GB", { weekday: "short", day: "numeric", month: "short" }) };
+};
+/** Next deadlines: rules-computed rows, date first, each with its official source. */
+export function deadlinesCard(r: { company: CompanyCard; obligations: Obligation[]; facts_needed: FactNeeded[] }): string {
+  const c = r.company;
+  const sample = c.synthetic ? `<span class="pill owner">Näidis · Sample</span>` : "";
+  const rows = r.obligations.map((o) => {
+    const when = o.effective_due ? fmtDue(o.effective_due) : null;
+    const head = when ? (o.kind === "risk" ? `Tähtaeg oli ${when.et}` : when.et) : o.period_label_et;
+    const sub = when ? (o.kind === "risk" ? `Was due ${when.en}` : when.en) : o.period_label_en;
+    return `<div class="row"><strong>${esc(head)}</strong> <span class="small muted">${esc(sub)}</span><br><strong>${esc(o.title_et)}</strong> · ${esc(o.period_label_et)} <span class="small muted">${esc(o.title_en)}</span>
+<p class="small">${esc(o.reason_et)}</p>
+<span class="pill">Arvutatud reeglist · Calculated by rule</span>${sample} <a class="small" href="${esc(o.source.url)}" rel="noopener noreferrer">Allikas: ${esc(o.source.act_et)} ${esc(o.source.section)} ↗</a></div>`;
+  }).join("");
+  return `<section class="card" aria-label="Next deadlines"><h2>Järgmised tähtajad <span class="small muted">· Next deadlines</span></h2>
+<p class="small">${esc(c.name ?? "Ettevõte")}${c.registry_code ? ` · ${esc(c.registry_code)}` : ""} · ${c.synthetic ? sample : `<span class="pill">${esc(c.label_et)}</span>`}</p>
+${rows || `<p class="muted">Selles vahemikus tähtaegu pole. <span class="small">No deadlines in this period.</span></p>`}
+${r.facts_needed.length ? `<details><summary>Assistent küsib (${r.facts_needed.length}) · Your assistant may ask</summary><ul class="tight">${r.facts_needed.map((n) => `<li class="small">${esc(n.question_et)}</li>`).join("")}</ul></details>` : ""}
+<p class="small muted">Tähtajad arvutab reeglistik, mitte tehisaru. Calculated by rules, not AI: computed dates, not filings or payments.${c.attribution && !c.synthetic ? ` ${esc(c.attribution)}` : ""}</p></section>`;
+}
+
+/** Register facts not cached yet (the Status page does not wait for them) or unavailable (with the plain reason). */
+export const deadlinesHint = (reason?: string) => `<section class="card" aria-label="Next deadlines"><p class="small">Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?” <span class="muted">Deadlines: ask your assistant "What are my deadlines?"</span>${reason ? ` <span class="muted">${esc(reason)}</span>` : ""}</p></section>`;
+
+export function statusBody(opts: { label: string; demo: boolean; assessment: Assessment | null; coverage: Coverage; assessedAt: string | null; exclusions: Exclusion[]; historyCount: number; reportingEnabled: boolean; latestProgress?: LatestProgress | null; deadlines?: string }): string {
   const { assessment: a, coverage: c } = opts;
   if (!a) {
     return `<section class="card hero" aria-label="Status"><p class="company">${esc(opts.label)}</p><h1>Let's get your first assessment</h1>
@@ -158,6 +187,7 @@ ${a.next_action.needs_owner ? `<p><span class="pill owner">Needs you</span></p>`
 <label class="small" for="copy-next-text">Copy manually<textarea id="copy-next-text" rows="4" readonly></textarea></label></div>
 <script>(function(){var b=document.getElementById("copy-next");if(!b)return;b.addEventListener("click",function(){var t=b.getAttribute("data-prompt")||"";var ok=function(){var m=document.getElementById("copy-next-ok");var f=document.getElementById("copy-next-fallback");if(m)m.hidden=false;if(f)f.hidden=true;};var fail=function(){var m=document.getElementById("copy-next-ok");var f=document.getElementById("copy-next-fallback");var a=document.getElementById("copy-next-text");if(m)m.hidden=true;if(a)a.value=t;if(f)f.hidden=false;if(a){a.focus();a.select();}};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok,fail);}else{fail();}});})();</script>
 </section>
+${opts.deadlines ?? ""}
 <section class="card" aria-label="Coverage"><h2>Coverage</h2>
 <p>${esc(c.label)}${c.percent != null ? ` (${c.percent}%)` : ""}</p>
 ${c.percent != null ? `<progress value="${c.percent}" max="100" aria-label="${esc(c.label)}">${c.percent}%</progress>` : ""}

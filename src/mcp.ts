@@ -4,6 +4,8 @@ import type { Db } from "./db.js";
 import { newId, nowIso, sha256 } from "./db.js";
 import { FRAMEWORK, PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { assessmentSchema, assessmentRevisionError, computeCoverage, evidenceRefs, s, type Assessment } from "./core.js";
+import { arikratt, type Arikratt, type CompanyCard } from "./arikratt.js";
+import { computeObligations, type CompanyFacts, type Fact, type FactNeeded } from "./obligations.js";
 
 export interface Ctx { ownerId: string; scopes: string[]; companyRef: string; label: string; reportingEnabled: boolean; baseUrl: string; }
 const json = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }], structuredContent: data as Record<string, unknown> });
@@ -39,7 +41,7 @@ export interface AssistantMilestones {
 }
 // Tool actions that count as retained assistant contact. Grant/token issuance,
 // owner actions, demo seeding, approvals and failed/denied calls are excluded.
-const ASSISTANT_CONTACT_ACTIONS = ["get_started", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate"];
+const ASSISTANT_CONTACT_ACTIONS = ["get_started", "get_obligations", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate"];
 
 function validAssessmentReceipt(db: Db, ownerId: string, row: { report_id: string; receipt_json: string; created_at: string }) {
   let receipt: unknown;
@@ -134,22 +136,80 @@ function saveReceipt(db: Db, ownerId: string, kind: string, reportId: string, pa
   db.prepare("INSERT INTO reports(owner_id,report_id,kind,payload_hash,payload_json,receipt_json,created_at) VALUES(?,?,?,?,?,?,?)").run(ownerId, reportId, kind, sha256(JSON.stringify(payload)), JSON.stringify(payload), JSON.stringify(receipt), nowIso());
 }
 
-export function buildMcpServer(db: Db, ctx: Ctx) {
+// Deadlines (issue #19): rules compute, models read. Assistant-supplied facts
+// fill gaps only; public-register facts are never overridden by them.
+export const assistantFactsSchema = z.object({
+  company_name: s(120).optional(),
+  vat_registered: z.boolean().optional(),
+  payouts_last_month: z.boolean().optional(),
+  other_tsd_triggers_last_month: z.boolean().optional(),
+  employees: z.number().int().min(0).max(100_000).optional(),
+  fy_end: z.string().regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/).refine((v) => !Number.isNaN(Date.parse(`2000-${v}T00:00:00Z`)) && new Date(`2000-${v}T00:00:00Z`).toISOString().slice(5, 10) === v, "fy_end must be a real MM-DD date").optional(),
+  ytd_turnover_this_year: z.number().min(0).max(1e12).optional(),
+  hire_or_board_fee_starting: z.boolean().optional(),
+}).strict();
+export const OBLIGATIONS_DISCLAIMER = "Tähtajad arvutab reeglistik, mitte tehisaru. Kuupäevad on arvutatud, mitte esitatud, makstud ega kontrollitud. See ei ole õigus- ega maksunõu; kontrolli iga rea allikat. / Deadlines are calculated by rules, not AI. Dates are computed, not filed, paid or verified. Not legal or tax advice; check each row's source.";
+const CONFIRM_QUESTIONS: Record<string, Omit<FactNeeded, "fact">> = { vat_registered: { question_et: "Registris on KMKR number, kuid viimastel kvartalitel käivet pole deklareeritud. Kas ettevõte on endiselt käibemaksukohustuslane?", question_en: "The register shows a VAT number but no declared turnover in recent quarters. Is the company still VAT-registered?" } };
+const REGISTRY_CODE_NEEDED: FactNeeded = { fact: "registry_code", question_et: "Mis on ettevõtte 8-kohaline registrikood?", question_en: "What is the company's 8-digit registry code?" };
+export async function companyObligations(ar: Arikratt, o: { registryCode?: string; assistant?: z.infer<typeof assistantFactsSchema>; months: number; today?: Date; cacheOnly?: boolean }) {
+  let code = o.registryCode;
+  let miss: { unavailable: string; unavailable_reason: string } | null = null;
+  const name = o.assistant?.company_name;
+  if (!code && name && ar.configured) {
+    const found = await ar.search(name);
+    if (found.ok && found.matches.length === 1) code = found.matches[0].registry_code;
+    else if (!found.ok) miss = { unavailable: found.unavailable, unavailable_reason: found.reason };
+    else if (found.matches.length === 0) miss = { unavailable: "no_match", unavailable_reason: `No company in the public register matches "${name}".` };
+    else return { ok: false as const, error: `Several companies match "${name}": ${found.matches.map((m) => `${m.name} (${m.registry_code})`).join("; ")}. Ask the owner which registry code is theirs and call again with registry_code. No deadlines were computed.` };
+  }
+  if (!code && !o.assistant) return { ok: false as const, error: "No company is known yet. Ask the owner for the company name or 8-digit registry code, then call get_obligations with registry_code (or with facts). No deadlines were computed." };
+  const lookup = code ? await ar.lookup(code, { cacheOnly: o.cacheOnly }) : null;
+  if (lookup && !lookup.ok && lookup.unavailable === "invalid_code") return { ok: false as const, error: `${lookup.reason} Ask the owner to check the code. No deadlines were computed.` };
+  const facts: CompanyFacts = lookup?.ok ? { ...lookup.facts } : {};
+  const mine = <T>(value: T): Fact<T> => ({ value, provenance: "assistant_supplied" });
+  for (const [k, v] of Object.entries({ ...o.assistant, ...(code && !lookup?.ok ? { registry_code: code } : {}) })) {
+    if (v !== undefined && !(k in facts)) (facts as Record<string, Fact<unknown>>)[k] = mine(v);
+  }
+  const r = computeObligations(facts, { today: o.today ?? new Date(), months: o.months });
+  const confirm = lookup?.ok ? lookup.confirm.map((fact) => ({ fact, ...CONFIRM_QUESTIONS[fact] })) : [];
+  const company: CompanyCard & { unavailable?: string; unavailable_reason?: string } = lookup?.ok ? lookup.company : {
+    name: facts.company_name?.value ?? null, registry_code: code ?? "", synthetic: false, provenance: "assistant_supplied", label_et: "Assistendi teade · avalikust registrist ei loetud", label_en: "Your assistant says · not read from a public register",
+    snapshot_id: null, as_of: null, sources: [], attribution: "", ...(lookup && !lookup.ok ? { unavailable: lookup.unavailable, unavailable_reason: lookup.reason } : miss ?? {}),
+  };
+  return { ok: true as const, result: {
+    company, computed_by: "rules", window: r.window, obligations: r.obligations,
+    facts_needed: [...(miss ? [REGISTRY_CODE_NEEDED] : []), ...confirm, ...r.facts_needed.filter((n) => !confirm.some((c) => c.fact === n.fact))],
+    data_as_of: company.as_of, disclaimer: OBLIGATIONS_DISCLAIMER,
+    assistant_instruction: `Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed.${miss ? " Ask the owner for the 8-digit registry code." : ""}`,
+  } };
+}
+
+export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})) {
   const server = new McpServer({ name: "ai-launchpad", version: "0.2.0" });
   const need = (scope: string) => ctx.scopes.includes(scope);
 
-  server.registerTool("get_started", { description: "Start here. Public assessment framework, playbooks and reporting guidance for any authenticated connection; with progress:read it also returns this workspace's company_ref, label and sharing state.", inputSchema: {} }, async () => {
+  server.registerTool("get_started", { description: "Start here. Start with the owner's deadlines (get_obligations). Public assessment framework, playbooks and reporting guidance for any authenticated connection; with progress:read it also returns this workspace's company_ref, label and sharing state.", inputSchema: {}, annotations: { readOnlyHint: true } }, async () => {
     logActivity(db, ctx.ownerId, "assistant", "get_started", "ok", "Assistant fetched getting-started guidance.");
+    const first_step = "Start with the owner's deadlines: call get_obligations. Rules compute every date and each row has its official source; ask the owner only for the facts it lists in facts_needed.";
     const shared = { framework: FRAMEWORK, playbooks: PLAYBOOKS,
-      tools: ["get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "request_approval", "get_approval", "record_action_outcome"],
+      tools: ["get_obligations", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "request_approval", "get_approval", "record_action_outcome"],
       note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments only — no conversations or documents. Reporting never approves business actions.",
       approvals_note: "Before sending, invoicing, paying or filing for the owner, call request_approval with the exact content and act only after get_approval returns approved. Launchpad never sends, pays or files.",
       catalog_note: "search_services is a public research catalogue available to any authenticated connection; it never contains owner data." };
-    if (!need("progress:read")) return json(shared);
-    return json({ workspace: { company_ref: ctx.companyRef, label: ctx.label }, ...shared, reporting_enabled: ctx.reportingEnabled });
+    if (!need("progress:read")) return json({ first_step, ...shared });
+    return json({ first_step, workspace: { company_ref: ctx.companyRef, label: ctx.label }, ...shared, reporting_enabled: ctx.reportingEnabled });
   });
 
-  server.registerTool("get_progress", { description: "Get the assessment framework, latest agent assessment, agent-assessed coverage vs independently verified outcomes, revision history/exclusions, recent progress and next action.", inputSchema: {} }, async () => {
+  server.registerTool("get_obligations", { description: "The owner's Estonian back-office deadlines (VAT return KMD, TSD, annual report, VAT-registration threshold, TÖR) computed by deterministic rules from public-register facts plus any facts you supply; every row carries its official source (Riigi Teataja). Uses registry_code, else the workspace's latest assessment company_registry_ref (needs progress:read). Supply only facts the owner told you; never guess. months = 1–3 calendar months from today (Europe/Tallinn).", inputSchema: { registry_code: z.string().regex(/^\d{8}$/, "registry_code is 8 digits").optional(), facts: assistantFactsSchema.optional(), months: z.number().int().min(1).max(3).optional() }, annotations: { readOnlyHint: true, openWorldHint: true } }, async (args) => {
+    let code = args.registry_code;
+    if (!code && need("progress:read")) { const ref = getState(db, ctx.ownerId).assessment?.company_registry_ref?.trim(); if (ref && /^\d{8}$/.test(ref)) code = ref; }
+    const r = await companyObligations(ar, { registryCode: code, assistant: args.facts, months: args.months ?? 1 });
+    if (!r.ok) return err(r.error);
+    logActivity(db, ctx.ownerId, "assistant", "get_obligations", "ok", `Deadlines computed by rules: ${r.result.obligations.length} row(s), ${r.result.facts_needed.length} fact(s) needed${r.result.company.synthetic ? " (sample company)" : ""}.`);
+    return json(r.result);
+  });
+
+  server.registerTool("get_progress", { description: "Get the assessment framework, latest agent assessment, agent-assessed coverage vs independently verified outcomes, revision history/exclusions, recent progress and next action.", inputSchema: {}, annotations: { readOnlyHint: true } }, async () => {
     if (!need("progress:read")) return err("Missing scope progress:read.");
     const st = getState(db, ctx.ownerId);
     logActivity(db, ctx.ownerId, "assistant", "get_progress", "ok", "Assistant read progress.");
@@ -202,7 +262,7 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
     return json(receipt);
   });
 
-  server.registerTool("search_services", { description: `Search the ${loadCatalog().length}-record Estonian business services research catalog. Entries are documented leads with connection guidance and primary sources, NOT runtime-verified connections. Public catalogue data: available to any authenticated connection; never contains owner data.`, inputSchema: { query: z.string().max(120), limit: z.number().int().min(1).max(25).optional() } }, async (args) => {
+  server.registerTool("search_services", { description: `Search the ${loadCatalog().length}-record Estonian business services research catalog. Entries are documented leads with connection guidance and primary sources, NOT runtime-verified connections. Public catalogue data: available to any authenticated connection; never contains owner data.`, inputSchema: { query: z.string().max(120), limit: z.number().int().min(1).max(25).optional() }, annotations: { readOnlyHint: true } }, async (args) => {
     const results = searchServices(args.query, args.limit ?? 10);
     logActivity(db, ctx.ownerId, "assistant", "search_services", "ok", `Catalog search returned ${results.length}.`);
     return json({ catalog_size: loadCatalog().length, disclaimer: "Research snapshot (27 Oct 2026). None of these services were runtime-tested by Launchpad.", results });
@@ -246,7 +306,7 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
     return json(receipt);
   });
 
-  server.registerTool("get_approval", { description: "Check an approval you requested: state (pending, approved, declined, expired, consumed), digest, the exact action, decision time, expiry and any assistant-reported outcome. Act only when state is approved (it expires at expires_at if no outcome was recorded).", inputSchema: { approval_id: s(80) } }, async (args) => {
+  server.registerTool("get_approval", { description: "Check an approval you requested: state (pending, approved, declined, expired, consumed), digest, the exact action, decision time, expiry and any assistant-reported outcome. Act only when state is approved (it expires at expires_at if no outcome was recorded).", inputSchema: { approval_id: s(80) }, annotations: { readOnlyHint: true } }, async (args) => {
     const gate = approvalGate("Nothing was read."); if (gate) return err(gate);
     const a = getApproval(db, ctx.ownerId, args.approval_id);
     if (!a) return err("Unknown approval_id in this workspace. Nothing was read.");
@@ -292,6 +352,7 @@ export function buildMcpServer(db: Db, ctx: Ctx) {
  * fields before dispatch (the SDK strips unknown keys instead of rejecting). */
 export const TOOL_ARG_KEYS: Record<string, string[]> = {
   get_started: [], get_progress: [],
+  get_obligations: ["registry_code", "facts", "months"],
   report_assessment: ["report_id", "expected_version", "assessment"],
   report_progress: ["report_id", "task_id", "expected_version", "observed_at", "milestone", "evidence_refs"],
   search_services: ["query", "limit"],

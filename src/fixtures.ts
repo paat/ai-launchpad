@@ -1,4 +1,5 @@
 import { assessmentSchema, type Assessment } from "./core.js";
+import type { CompanyFacts, Fact } from "./obligations.js";
 
 /** Two unrelated SYNTHETIC demo assessments, as data only. Seeded after an
  * explicit synthetic demo login (never for real/Google workspaces) and always
@@ -11,6 +12,7 @@ export const DEMO_COMPANIES = [
 const alpha: Assessment = assessmentSchema.parse({
   assessed_domains: ["money", "customers", "people", "legal_sector", "operations"],
   company_label: "Demo Plumbing OÜ (synthetic fixture)",
+  company_registry_ref: "19990001",
   responsibilities: [
     { id: "invoicing", domain: "money", label: "Sales invoicing", applicability: "applicable", is_core: false, arrangement: "proposed", reason: "Owner writes invoices by hand after each job; no connection exists yet. (Synthetic fixture.)", evidence_refs: ["fixture:alpha-invoicing"] },
     { id: "vat-prep", domain: "money", label: "Monthly VAT return preparation", applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: "Existing external accountant (fixture)", access: "Accountant already has accounting-software access", success_criterion: "Draft VAT summary ready for owner review each month", next_checkpoint: "Next monthly close (fixture date)", reason: "Accountant already prepares the numbers; owner only reviews. Nothing is filed by Launchpad.", evidence_refs: ["fixture:alpha-vat"] },
@@ -26,6 +28,7 @@ const alpha: Assessment = assessmentSchema.parse({
 const beta: Assessment = assessmentSchema.parse({
   assessed_domains: ["money", "customers", "operations"],
   company_label: "Demo Bakery OÜ (synthetic fixture)",
+  company_registry_ref: "19990002",
   responsibilities: [
     { id: "supplier-orders", domain: "operations", label: "Weekly supplier orders", applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: "Bakery manager (fixture)", access: "Manager already orders via supplier portal", success_criterion: "Orders placed before weekly cutoff without owner input", next_checkpoint: "Next weekly order cycle (fixture)", reason: "Already delegated to a named person; assistant only assessed it. (Synthetic fixture.)", evidence_refs: ["fixture:beta-orders"] },
     { id: "bookkeeping-access", domain: "money", label: "Bookkeeping connection", applicability: "applicable", is_core: false, arrangement: "none", reason: "Fixture: the accounting connection expired, so receipts pile up with the owner.", evidence_refs: ["fixture:beta-books"] },
@@ -38,3 +41,13 @@ const beta: Assessment = assessmentSchema.parse({
 });
 
 export const DEMO_FIXTURES: Record<string, Assessment> = { alpha, beta };
+
+/** SYNTHETIC register facts for the deadlines demo. The codes deliberately FAIL
+ * the RIK checksum, so they can never match a real company. Their facts are
+ * shaped like public-register facts but always carry provenance synthetic
+ * and are labelled Näidis / Sample, never "Ametlik allikas". */
+const sample = <T>(value: T): Fact<T> => ({ value, provenance: "synthetic", source: "synthetic_fixture", as_of: "2026-10-29" });
+export const SYNTHETIC_COMPANIES: Record<string, { name: string; facts: CompanyFacts }> = {
+  "19990001": { name: "Mari Disain OÜ", facts: { company_name: sample("Mari Disain OÜ"), registry_code: sample("19990001"), vat_registered: sample(true), labour_taxes_last_quarter: sample(0), employees: sample(0), annual_report: sample({ latest_year: 2025, filed: true, overdue_days: 0 }), tax_debt_on_list: sample(false) } },
+  "19990002": { name: "Kase Konsult OÜ", facts: { company_name: sample("Kase Konsult OÜ"), registry_code: sample("19990002"), vat_registered: sample(false), labour_taxes_last_quarter: sample(1240), employees: sample(1), latest_annual_revenue: { ...sample(38_000), as_of: "2025" }, annual_report: sample({ latest_year: 2025, filed: true, overdue_days: 0 }), tax_debt_on_list: sample(false) } },
+};

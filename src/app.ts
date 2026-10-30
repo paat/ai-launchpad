@@ -3,15 +3,16 @@ import express, { type Request, type Response, type NextFunction } from "express
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
-import { buildMcpServer, expireApprovals, getApproval, getAssistantMilestones, getState, logActivity, TOOL_ARG_KEYS, type ApprovalRow } from "./mcp.js";
+import { arikratt } from "./arikratt.js";
+import { buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, logActivity, TOOL_ARG_KEYS, type ApprovalRow } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
 import type { FetchFn } from "./model-quality.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
-import { esc, shell, loginPage, statusBody, activityBody, connectionBody, tokenOnceBody, approvalsAttention, approvalsListBody, approvalCardBody, setupBody, servicesBody, playbooksBody } from "./views.js";
+import { esc, shell, loginPage, statusBody, activityBody, connectionBody, tokenOnceBody, approvalsAttention, approvalsListBody, approvalCardBody, deadlinesCard, deadlinesHint, setupBody, servicesBody, playbooksBody } from "./views.js";
 
-export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; }
+export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; }
 // Owner-only pilot allowlist: exact opaque Google `sub` values, never emails.
 // Bounded: at most 20 entries, each 1-255 chars (OIDC `sub` max), no
 // whitespace/control characters, no comma (the env separator), no '@'
@@ -51,7 +52,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
   const publicCards = modelMode === "public_cards"
     ? { modelLedgerPath: env.LAUNCHPAD_MODEL_LEDGER_PATH || undefined, modelPricingConfirmed: env.LAUNCHPAD_MODEL_PRICING_CONFIRMED === "1", basetenApiKey: env.BASETEN_API_KEY || undefined }
     : {};
-  return { demo: env.LAUNCHPAD_DEMO === "1" && !production, production, dbPath: env.LAUNCHPAD_DB_PATH ?? "./data/launchpad.db", baseUrl: env.LAUNCHPAD_BASE_URL ?? "http://localhost:3000", googleClientId: env.GOOGLE_CLIENT_ID || undefined, googleClientSecret: env.GOOGLE_CLIENT_SECRET || undefined, modelMode, allowedHosts: (env.LAUNCHPAD_ALLOWED_HOSTS ?? "localhost,127.0.0.1").split(","), releaseSha: releaseShaFromEnv(env), trustLoopbackProxy: env.LAUNCHPAD_TRUST_LOOPBACK_PROXY === "1", googleAllowedSubjects: googleAllowedSubjectsFromEnv(env, production), ...publicCards };
+  return { demo: env.LAUNCHPAD_DEMO === "1" && !production, production, dbPath: env.LAUNCHPAD_DB_PATH ?? "./data/launchpad.db", baseUrl: env.LAUNCHPAD_BASE_URL ?? "http://localhost:3000", googleClientId: env.GOOGLE_CLIENT_ID || undefined, googleClientSecret: env.GOOGLE_CLIENT_SECRET || undefined, modelMode, allowedHosts: (env.LAUNCHPAD_ALLOWED_HOSTS ?? "localhost,127.0.0.1").split(","), releaseSha: releaseShaFromEnv(env), trustLoopbackProxy: env.LAUNCHPAD_TRUST_LOOPBACK_PROXY === "1", googleAllowedSubjects: googleAllowedSubjectsFromEnv(env, production), arikrattApiKey: env.ARIKRATT_API_KEY || undefined, arikrattMcpUrl: env.ARIKRATT_MCP_URL || undefined, ...publicCards };
 }
 type Authed = Request & { ownerId: string; csrf: string; ownerKind: string };
 const oid = (req: Request) => (req as Authed).ownerId;
@@ -98,6 +99,19 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (!cfg.modelLedgerPath) throw new Error("MODEL_MODE=public_cards requires LAUNCHPAD_MODEL_LEDGER_PATH (the exact existing reviewed ledger); refusing to start.");
     publicCards = new PublicCards({ ledger: openExistingPublicLedger(cfg.modelLedgerPath), apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
   }
+  // Public-register facts: with no key, lookups return not_configured without a network call.
+  const register = arikratt(db, { apiKey: cfg.arikrattApiKey, url: cfg.arikrattMcpUrl });
+  // Status page never waits for the register: on a cache miss it starts one
+  // background fill per code (errors logged once, never thrown) and moves on.
+  // A failed fill blocks new fills for that code for 10 minutes.
+  const FILL_RETRY_MS = 10 * 60_000;
+  const fillBlockedUntil = new Map<string, number>(); // in flight: Infinity
+  const fillInBackground = (code: string) => {
+    if ((fillBlockedUntil.get(code) ?? 0) > Date.now()) return;
+    fillBlockedUntil.set(code, Infinity);
+    const failed = () => fillBlockedUntil.set(code, Date.now() + FILL_RETRY_MS);
+    void register.lookup(code).then((r) => { if (r.ok) fillBlockedUntil.delete(code); else { failed(); console.warn(`Status deadlines: register lookup failed (${r.unavailable}).`); } }, (e) => { failed(); console.warn("Status deadlines: register lookup failed.", e); });
+  };
   const app = express();
   app.disable("x-powered-by");
   // Forwarded addresses are trusted only when explicitly configured, and
@@ -303,13 +317,19 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     }
   });
 
-  app.get("/", requireOwner, (req, res) => {
+  app.get("/", requireOwner, async (req, res, next) => { try {
     const st = getState(db, oid(req));
+    // Next deadlines: only for a known registry code (assessment ref or synthetic demo company).
+    const ref = st.assessment?.company_registry_ref?.trim();
+    const deadlines = ref && /^\d{8}$/.test(ref) ? await companyObligations(register, { registryCode: ref, months: 2, cacheOnly: true }) : null;
+    // Any unavailable register lookup renders the one-line hint (with the plain reason unless only not cached yet).
+    const unavailable = deadlines?.ok ? deadlines.result.company.unavailable : undefined;
+    if (unavailable === "not_cached") fillInBackground(ref!);
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
     expireApprovals(db, oid(req));
     const pendingApprovals = (db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=? AND state='pending'").get(oid(req)) as { n: number }).n;
-    res.type("html").send(page(req, "Is my admin handled?", "status", approvalsAttention(pendingApprovals) + statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1, latestProgress: (st.progress[0] as unknown as { task_id: string; milestone: string; observed_at: string } | undefined) ?? null })));
-  });
+    res.type("html").send(page(req, "Is my admin handled?", "status", approvalsAttention(pendingApprovals) + statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1, latestProgress: (st.progress[0] as unknown as { task_id: string; milestone: string; observed_at: string } | undefined) ?? null, deadlines: !deadlines?.ok ? "" : unavailable ? deadlinesHint(unavailable === "not_cached" ? undefined : deadlines.result.company.unavailable_reason) : deadlinesCard(deadlines.result) })));
+  } catch (e) { next(e); } });
 
   app.get("/activity", requireOwner, (req, res) => {
     const rows = db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=? ORDER BY id DESC LIMIT 100").all(oid(req)) as Record<string, string>[];
@@ -477,7 +497,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       }
       const ws = db.prepare("SELECT company_ref,label FROM workspaces WHERE owner_id=?").get(token.owner_id) as { company_ref: string; label: string };
       db.prepare("UPDATE mcp_tokens SET last_used_at=? WHERE id=?").run(nowIso(), token.id);
-      const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl });
+      const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl }, register);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => { void transport.close(); void server.close(); });
       await server.connect(transport);
