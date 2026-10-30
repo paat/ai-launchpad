@@ -62,7 +62,8 @@ async function grant(scopes: string, updates: boolean, actor = "alpha", browser?
   expect(policy).toContain("progress:report");
   expect(policy).toContain("saves concise assessments, task updates and private service nominations");
   expect(policy).toContain("saves concise assessments, task updates and private service nominations. It can also ask you to approve a specific message, invoice, payment or filing; nothing happens unless you approve that exact content.");
-  expect(policy).toContain("No conversations, source documents or Google tokens are shared");
+  expect(policy).toContain("Launchpad stores the exact text of each approval request (up to 4,000 characters; it can include a customer's e-mail address, amounts and figures) until you delete your progress. No conversations, files or Google tokens are shared.");
+  expect(policy).not.toMatch(/source documents|no documents/i);
   expect(policy).toContain("never authorizes payments, filings or signatures");
   expect(policy).not.toContain("get_started");
   expect(policy).not.toContain("search_services");
@@ -220,6 +221,30 @@ test("consent copy is derived from the requested scopes and never claims we stor
   expect(location.searchParams.get("error")).toBe("access_denied");
   expect(location.searchParams.get("code")).toBeNull();
   expect(db.prepare("SELECT count(*) n FROM oauth_grants").get()).toEqual({ n: 0 });
+});
+
+test("consent, Connection and get_started agree: approval texts are stored until deletion, conversations never (#24, #36 item 6)", async () => {
+  const c = await consentPage("progress:read progress:report");
+  const consentEn = await (await c.b.request("/oauth/consent?lang=en")).text();
+  const connection = await (await c.b.request("/connection")).text();
+  await reject(c);
+  const { tokens } = await grant("progress:read", false);
+  const m = await sdk(tokens.access_token);
+  let note = "";
+  try { note = (JSON.parse(((await m.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { note: string }).note; } finally { await m.close(); }
+  const minimal = connection.slice(connection.indexOf("<h2>Your minimal data</h2>"), connection.indexOf("Export my progress"));
+  const surfaces: [string, string, RegExp, RegExp][] = [
+    ["consent", consentEn, /texts sent for your approval[^.]*until you delete them/, /never receives your conversations/],
+    ["consent technical", consentEn, /stores the exact text of each approval request[^.]*until you delete your progress/, /No conversations, files or Google tokens are shared/],
+    ["Your minimal data", minimal, /stores the exact text of every approval request[^.]*until you delete your progress/, /never receives your conversations/],
+    ["get_started note", note, /the exact text of each approval request until the owner deletes their progress/, /stores no conversations/],
+  ];
+  for (const [name, text, approvals, conversations] of surfaces) {
+    expect(text, name).toMatch(approvals);
+    expect(text, name).toMatch(conversations);
+    expect(text, name).toMatch(/nominations/);
+    expect(text, name).not.toMatch(/source documents|no documents|stores no documents|conversations or documents/i);
+  }
 });
 
 test("consent shows no owner nav or footer, and its errors render in the shell with lang and a way back (#21)", async () => {
