@@ -9,10 +9,9 @@ import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
 import type { FetchFn } from "./model-quality.js";
-import { DEMO_COMPANIES, DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "./fixtures.js";
-import { validRegistryCode } from "./obligations.js";
+import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
-import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, type Lang, type ShellOpts, type LandingState, type ConnectState, type DeadlinesView } from "./views.js";
+import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; }
@@ -77,28 +76,7 @@ function toggleHref(req: Request, l: Lang): string {
   u.searchParams.set("lang", l === "et" ? "en" : "et");
   return u.pathname + u.search;
 }
-/** Lower-case company name without the legal form, for matching synthetic fixtures by name. */
-const normName = (v: string) => v.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
 const isLoopback = (req: Request) => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? "");
-
-// Public lookup limits (per process, in memory): non-synthetic register
-// lookups only. Synthetic fixtures are never limited. The day counter
-// resets on the Europe/Tallinn date.
-const LOOKUPS_PER_IP = 30, LOOKUP_WINDOW_MS = 10 * 60_000, LOOKUPS_PER_DAY = 500;
-export function lookupLimiter() {
-  const lookupsByIp = new Map<string, number[]>();
-  let lookupDay = { day: "", n: 0 };
-  return (ip: string, now = Date.now()): "ok" | "ip_limit" | "day_limit" => {
-    const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Tallinn" }).format(now);
-    if (lookupDay.day !== day) lookupDay = { day, n: 0 };
-    const recent = (lookupsByIp.get(ip) ?? []).filter((t) => now - t < LOOKUP_WINDOW_MS);
-    if (recent.length >= LOOKUPS_PER_IP) { lookupsByIp.set(ip, recent); return "ip_limit"; }
-    if (lookupDay.n >= LOOKUPS_PER_DAY) return "day_limit";
-    if (lookupsByIp.size > 10_000) for (const [k, v] of lookupsByIp) if (!v.some((t) => now - t < LOOKUP_WINDOW_MS)) lookupsByIp.delete(k);
-    recent.push(now); lookupsByIp.set(ip, recent); lookupDay.n++;
-    return "ok";
-  };
-}
 
 // Calendar feed limit (per process, in memory): 60 fetches per token per
 // hour, so a leaked feed URL cannot be used as a lookup proxy.
@@ -401,42 +379,12 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     }
   });
 
-  const lookupAllowed = lookupLimiter();
-  const publicLookupAllowed = (req: Request) => lookupAllowed(req.ip || req.socket.remoteAddress || "?");
-  async function landingState(req: Request, q: string): Promise<{ status: number; state: LandingState }> {
-    const show = async (code: string): Promise<{ status: number; state: LandingState }> => {
-      const r = await companyObligations(register, { registryCode: code, months: 2 });
-      if (!r.ok) return { status: 200, state: { kind: "message", code: r.unavailable === "not_found" ? "not_found" : "invalid_code" } };
-      const u = (r.result.company as { unavailable?: string }).unavailable;
-      if (u) return { status: 200, state: { kind: "message", code: u === "not_found" ? "not_found" : u === "not_configured" ? "not_configured" : "unavailable" } };
-      return { status: 200, state: { kind: "result", result: r.result as DeadlinesView } };
-    };
-    if (!q) return { status: 200, state: { kind: "empty" } };
-    // A sample company matches only its code or its exact name, with or without the legal form: a substring is a real-register search.
-    const nq = normName(q), code = q.replace(/\s+/g, "");
-    const synthetic = Object.entries(SYNTHETIC_COMPANIES).find(([c0, c]) => c0 === code || nq === normName(c.name) || nq === normName(c.name).replace(/ oü$/u, ""));
-    if (synthetic) return show(synthetic[0]);
-    if (/^\d{8}$/.test(code) && !validRegistryCode(code)) return { status: 200, state: { kind: "message", code: "invalid_code" } };
-    if (!register.configured) return { status: 200, state: { kind: "message", code: "not_configured" } };
-    const allowed = publicLookupAllowed(req);
-    if (allowed !== "ok") return { status: 429, state: { kind: "message", code: allowed } };
-    if (/^\d{8}$/.test(code)) return show(code);
-    const found = await register.search(q);
-    if (!found.ok) return { status: 200, state: { kind: "message", code: found.unavailable === "not_configured" ? "not_configured" : "unavailable" } };
-    if (found.matches.length === 1) return show(found.matches[0].registry_code);
-    return { status: 200, state: found.matches.length ? { kind: "choose", matches: found.matches } : { kind: "message", code: "no_match" } };
-  }
-
   // GET /: the public landing for visitors; signed-in owners get "Täna". A
   // browser that still presents a session cookie that is no longer valid is
   // sent to sign in again (unchanged behaviour for authenticated sessions).
-  app.get("/", async (req, res, next) => {
+  app.get("/", (req, res, next) => {
     if (session(req) || cookieVal(req, "lp_session")) return next();
-    try {
-      const q = String(req.query.q ?? "").trim().slice(0, 120);
-      const { status, state } = await landingState(req, q);
-      res.status(status).type("html").send(publicPage(req, res, tr(langOf(res))("Tähtajad", "Deadlines"), landingBody({ lang: langOf(res), q, state }), { sample: state.kind === "result" && state.result.company.synthetic }));
-    } catch (e) { next(e); }
+    res.type("html").send(publicPage(req, res, tr(langOf(res))("Sinu AI-assistent teeb kontoritöö", "Your AI assistant does the back office"), landingBody({ lang: langOf(res) })));
   }, requireOwner, async (req, res, next) => { try {
     const st = getState(db, oid(req));
     // Deadlines: only for a known registry code (assessment ref or synthetic demo company).

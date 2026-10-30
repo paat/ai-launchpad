@@ -15,25 +15,15 @@ const parsed = (r: unknown) => (r as { structuredContent: Record<string, unknown
 
 test.beforeEach(async ({ page }) => { await page.setViewportSize({ width: 390, height: 844 }); });
 
-test("public landing: search a sample company → deadlines with who does what", async ({ page }) => {
+test("public landing: what the product does, then Connect leads to /uhenda", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("lang", "et");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Sinu ettevõtte tähtajad ühe otsinguga");
-  await page.getByLabel("Ettevõtte nimi või registrikood").fill("Mari Disain");
-  await page.getByRole("button", { name: "Näita tähtaegu" }).click();
-  await expect(page).toHaveURL(/\/\?q=Mari\+Disain$/);
-  const rows = page.locator(".deadline-row");
-  expect(await rows.count()).toBeGreaterThan(0);
-  await expect(rows.filter({ hasText: "Sina" }).first()).toBeVisible();
-  await expect(page.getByText("Tähtajad arvutab reeglistik, mitte tehisaru.")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Sinu AI-assistent teeb kontoritöö. Sina kinnitad ainult selle, mis sind seob.");
   await expect(page.locator("main .label-chip--sample").first()).toHaveText("Näidis");
-  await expect(page.getByText("Ametlik allikas")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Ühenda oma assistent" })).toHaveAttribute("href", "/uhenda");
   await noOverflow(page);
   await page.screenshot({ path: `${SHOTS}/landing-390.png`, fullPage: true });
-  // A real code with no register configured: an honest state, never a guess.
-  await page.goto("/?q=10000356");
-  await expect(page.getByText("Avaliku registri päring pole veel seadistatud — proovi näidisettevõtet „Mari Disain”.")).toBeVisible();
+  await page.getByRole("link", { name: "Ühenda oma assistent" }).click();
+  await expect(page).toHaveURL(/\/uhenda$/);
 });
 
 test("/uhenda: ChatGPT first, no phone hand-off without public HTTPS, no overflow, sign-in chip for visitors", async ({ page }) => {

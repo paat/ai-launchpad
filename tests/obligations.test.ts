@@ -6,7 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { createApp, lookupLimiter, type Config } from "../src/app.js";
+import { createApp, type Config } from "../src/app.js";
 import { openDb, sha256 } from "../src/db.js";
 import { assistantFactsSchema, companyObligations, TOOL_ARG_KEYS } from "../src/mcp.js";
 import { arikratt, CACHE_TTL_MS, mapCompany } from "../src/arikratt.js";
@@ -484,67 +484,22 @@ describe("get_obligations tool and status card", () => {
       expect(JSON.stringify(r)).not.toContain(PERSON);
     } finally { s2.close(); }
   });
-  test("public search: a substring goes to the register, only the exact sample name or code opens the fixture (tribunal T-002)", async () => {
+  test("the public landing has no company lookup: ?q= renders the teaser and never calls the register (owner 2026-10-30)", async () => {
     const cfg6: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
     const { app: app6 } = createApp(cfg6, openDb(":memory:"));
     const s6 = await new Promise<Server>((ok) => { const s = app6.listen(0, "127.0.0.1", () => ok(s)); });
     const base6 = `http://127.0.0.1:${(s6.address() as { port: number }).port}`; cfg6.baseUrl = base6;
     try {
-      const search = async (q: string) => { const start = toolCalls; const html = await (await fetch(`${base6}/?q=${encodeURIComponent(q)}`)).text(); return { html, calls: toolCalls - start }; };
-      const sub = await search("Mari");
-      expect(sub.calls).toBeGreaterThan(0);
-      expect(sub.html).toContain("Synthetic Register OÜ");
-      expect(sub.html).not.toContain("Mari Disain OÜ");
-      for (const q of ["Mari Disain", "mari disain oü", MARI]) {
-        const exact = await search(q);
-        expect(exact.calls, q).toBe(0);
-        expect(exact.html, q).toContain("Mari Disain OÜ");
+      for (const q of ["Mari", "Mari Disain", MARI, FAKE_VALID]) {
+        const start = toolCalls;
+        const r = await fetch(`${base6}/?q=${encodeURIComponent(q)}`);
+        const html = await r.text();
+        expect(r.status, q).toBe(200);
+        expect(toolCalls - start, q).toBe(0);
+        expect(html, q).toContain("Sinu AI-assistent teeb kontoritöö.");
+        expect(html, q).not.toMatch(/Mari Disain OÜ|Synthetic Register|name="q"/);
       }
     } finally { s6.close(); }
-  });
-  test("public search: a sample registry code typed with spaces opens the sample (#37 item 4)", async () => {
-    const cfg7: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
-    const { app: app7 } = createApp(cfg7, openDb(":memory:"));
-    const s7 = await new Promise<Server>((ok) => { const s = app7.listen(0, "127.0.0.1", () => ok(s)); });
-    const base7 = `http://127.0.0.1:${(s7.address() as { port: number }).port}`; cfg7.baseUrl = base7;
-    try {
-      for (const q of ["1999 0001", " 19990 001 "]) {
-        const start = toolCalls;
-        const html = await (await fetch(`${base7}/?q=${encodeURIComponent(q)}`)).text();
-        expect(toolCalls - start, q).toBe(0);
-        expect(html, q).toContain("Mari Disain OÜ");
-      }
-    } finally { s7.close(); }
-  });
-  test("public lookups: the 31st per IP in 10 minutes gets 429 with the honest copy; sample lookups are never limited (#37 item 5)", async () => {
-    const cfg8: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
-    const { app: app8 } = createApp(cfg8, openDb(":memory:"));
-    const s8 = await new Promise<Server>((ok) => { const s = app8.listen(0, "127.0.0.1", () => ok(s)); });
-    const base8 = `http://127.0.0.1:${(s8.address() as { port: number }).port}`; cfg8.baseUrl = base8;
-    try {
-      const get = (q: string) => fetch(`${base8}/?q=${encodeURIComponent(q)}`);
-      for (let i = 0; i < 30; i++) expect((await get(FAKE_VALID)).status, `lookup ${i + 1}`).toBe(200);
-      const limited = await get(FAKE_VALID);
-      expect(limited.status).toBe(429);
-      expect(await limited.text()).toContain("Sellelt aadressilt on viimase 10 minuti jooksul tehtud liiga palju registripäringuid (piir 30). Proovi mõne minuti pärast uuesti. Näidisettevõte „Mari Disain” töötab alati.");
-      for (let i = 0; i < 40; i++) {
-        const sample = await get(i % 2 ? MARI : "Mari Disain");
-        expect(sample.status, `sample ${i + 1}`).toBe(200);
-        expect(await sample.text()).toContain("Mari Disain OÜ");
-      }
-    } finally { s8.close(); }
-  });
-  test("public lookups: the day counter (500) resets on the Europe/Tallinn date, not the UTC date (#37 item 5)", () => {
-    const allowed = lookupLimiter();
-    // 01:30 Tallinn on 31 Oct 2026 (EET, UTC+2) is still 30 Oct in UTC.
-    const t0 = Date.parse("2026-10-30T23:30:00Z");
-    for (let i = 0; i < 500; i++) expect(allowed(`192.0.2.${i % 250}-${i}`, t0)).toBe("ok");
-    expect(allowed("198.51.100.1", t0)).toBe("day_limit");
-    // The UTC date changes, the Tallinn date does not: still limited.
-    expect(allowed("198.51.100.1", Date.parse("2026-10-31T00:30:00Z"))).toBe("day_limit");
-    expect(allowed("198.51.100.1", Date.parse("2026-10-31T21:59:59Z"))).toBe("day_limit");
-    // Midnight in Tallinn (22:00 UTC) starts a new day.
-    expect(allowed("198.51.100.1", Date.parse("2026-10-31T22:00:00Z"))).toBe("ok");
   });
   test("Status: a failed background fill is not retried for 10 minutes (tribunal T-007)", async () => {
     const cfg4: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };

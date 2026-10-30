@@ -126,7 +126,6 @@ describe("Täna", () => {
     const html = tana({ deadlines: reordered });
     expect(html).toContain("„Kas maksid oktoobris palka, juhatuse liikme tasu või dividende?” Kui ei maksnud ega olnud töötajat, kaob 10. novembri TSD rida.");
     expect(html).not.toContain("detsembri TSD");
-    expect(landingBody({ lang: "en", q: "Mari", state: { kind: "result", result: reordered }, now: NOW })).toContain("If you made no payouts and had no employee, the 10 Nov TSD row goes away.");
     // 30 Oct: September's TSD (due 12 Oct) is past, so no September question is asked at all.
     const oct30 = new Date("2026-10-30T10:00:00Z"), m = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: oct30, months: 2 });
     const page = tana({ now: oct30, deadlines: { ...mariDeadlines, obligations: m.obligations, facts_needed: m.facts_needed } });
@@ -238,21 +237,83 @@ describe("Täna", () => {
 });
 
 describe("landing and connect", () => {
-  test("landing: one search input, sample results labelled Näidis, honest not-configured state, CTA to /uhenda", () => {
-    const empty = landingBody({ lang: "et", q: "", state: { kind: "empty" } });
-    expect((empty.match(/<input /g) ?? []).length).toBe(1);
-    expect(empty).toContain("Ettevõtte nimi või registrikood");
-    const result = landingBody({ lang: "et", q: "Mari", state: { kind: "result", result: mariDeadlines }, now: NOW });
-    for (const s of ["Mari Disain OÜ", '<span class="label-chip label-chip--sample">Näidis</span>', "Tähtajad arvutab reeglistik, mitte tehisaru.", "Lase oma assistendil see töö enda peale võtta. Sina kinnitad ainult selle, mis sind seob.", 'href="/uhenda"', '<dt class="me">Sina</dt>']) expect(result, s).toContain(s);
-    expect(result).not.toContain("Ametlik allikas");
-    expect(landingBody({ lang: "et", q: "12345678", state: { kind: "message", code: "not_configured" } })).toContain("Avaliku registri päring pole veel seadistatud — proovi näidisettevõtet „Mari Disain”.");
-    expect(landingBody({ lang: "en", q: "x", state: { kind: "message", code: "ip_limit" } })).toContain("Too many register lookups");
+  test("landing: what the product does, a labelled CSS-only chat teaser, 3 steps, trust strip, no search (owner 2026-10-30)", () => {
+    const et = landingBody({ lang: "et" }), en = landingBody({ lang: "en" });
+    for (const s of ["Sinu AI-assistent teeb kontoritöö.", "Sina kinnitad ainult selle, mis sind seob.", "ilma uue äpi ja vormideta", '<a class="btn" href="/uhenda">Ühenda oma assistent</a>',
+      '<span class="label-chip label-chip--sample">Näidis</span>', "Mis mul sel kuul adminis ees on?", "<b>20. nov</b> — KMD ja käibemaks", "Arvutatud reeglist", "<b>10. nov</b> — TSD · kas oktoobris oli väljamakseid?",
+      "Saan oktoobri arved KMD jaoks ette valmistada. Kas alustan?", "Jah. Ja meenuta Demo Kliendile tasumata arvet.", "Maksemeeldetuletus", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud: demo",
+      "Kuidas see töötab", "Ühenda oma ChatGPT või Claude (2 minutit)", "Midagi ei saadeta ilma sinu loata", "Tähtajad arvutab reeglistik, mitte tehisaru", "Smart-ID ja allkiri jäävad sinu kätte", 'href="/demand"']) expect(et, s).toContain(s);
+    for (const s of ["Your AI assistant does the back office.", "Connect your assistant", ">Sample<", "<b>20 Nov</b>", fmtEur(24000, "en"), "Approve exactly this", "How it works"]) expect(en, s).toContain(s);
+    // The animation is decorative (aria-hidden, no focusable element); a visually hidden transcript carries the same conversation.
+    expect(et).toContain('<div class="phone" aria-hidden="true">');
+    const phone = et.slice(et.indexOf('<div class="phone"'), et.indexOf("<figcaption>"));
+    expect(phone).not.toMatch(/<(a|button|input)\b|tabindex/);
+    expect(et).toMatch(/<div class="vh"><p>Näidisvestlus:<\/p><ol><li>Sina: Mis mul sel kuul adminis ees on\?<\/li>/);
+    // No search, no script, no claim we cannot back.
+    for (const html of [et, en]) expect(html.replace('<input type="checkbox" id="teaser-pause" class="vh-input">', "")).not.toMatch(/<form|<input|<script|name="q"|\bsäästa|\bsaves? \d/i);
+    // Step 3 names standing approvals; the state chip swaps with the button (same CSS timing), so the last frame does not contradict itself.
+    expect(et).toContain("Kinnita telefonis üks kord — täpselt see saaja, summa ja dokument — või luba sarnased edaspidi automaatselt");
+    expect(en).toContain("Approve once on your phone — exactly this recipient, amount and document — or allow similar ones automatically from now on");
+    expect(et).toContain('<span class="mock-wait"><span class="state-chip state-chip--waiting">Ootab sinu kinnitust</span></span><span class="mock-ok"><span class="state-chip state-chip--approved">Kinnitatud</span></span>');
+  });
+
+  test("landing teaser: official source chips carry the engine's sections, no assistant chip (tribunal T-002)", () => {
+    const et = landingBody({ lang: "et" }), en = landingBody({ lang: "en" });
+    const teaser = (h: string) => h.slice(h.indexOf('<figure class="teaser">'), h.indexOf("</figure>"));
+    const chip = (k: string, text: string) => `<span class="label-chip label-chip--${k}">${text}</span>`;
+    for (const h of [et, en]) expect(teaser(h)).not.toContain("label-chip--assistant");
+    expect(teaser(et)).toContain(chip("official", "Allikas: KMS § 27, § 38"));
+    expect(teaser(et)).toContain(chip("official", "Allikas: TuMS § 40, § 54"));
+    expect(teaser(et)).toContain(chip("rule", "Arvutatud reeglist"));
+    expect(teaser(en)).toContain(chip("official", "Source: VAT Act § 27, § 38"));
+    expect(teaser(en)).toContain(chip("official", "Source: Income Tax Act § 40, § 54"));
+    expect(en).toContain("<b>20 Nov</b> — VAT return (KMD) and VAT payment");
+    // The screen-reader transcript carries the same texts.
+    expect(et).toContain("Allikas: KMS § 27, § 38. 10. nov — TSD · kas oktoobris oli väljamakseid? · Allikas: TuMS § 40, § 54.");
+    expect(en).toContain("VAT return (KMD) and VAT payment · Calculated by rule · Source: VAT Act § 27, § 38.");
+  });
+
+  test("landing teaser: CSS-only pause toggle, labelled, no script (tribunal T-004, WCAG 2.2.2)", () => {
+    const css = shell({ title: "x", active: "none", csrf: "", body: "" });
+    for (const [h, label] of [[landingBody({ lang: "et" }), "Peata animatsioon"], [landingBody({ lang: "en" }), "Pause animation"]]) {
+      expect(h).toContain('<input type="checkbox" id="teaser-pause" class="vh-input">');
+      expect(h).toContain(`<label class="teaser-pause" for="teaser-pause">${label}</label>`);
+      expect(h).not.toContain("<script");
+    }
+    expect(css).toContain("#teaser-pause:checked~.phone *{animation-play-state:paused!important}");
+    expect(css).toMatch(/\.teaser-pause\{[^}]*min-height:44px/);
+    expect(css).toMatch(/#teaser-pause:focus-visible~figcaption \.teaser-pause\{outline:3px/);
+  });
+
+  test("landing transcript: the send is credited to the assistant, not the owner (tribunal T-003)", () => {
+    expect(landingBody({ lang: "et" })).toContain("<li>Sina: Kinnitatud</li><li>Assistent: Saadetud (näidis)</li></ol>");
+    expect(landingBody({ lang: "en" })).toContain("<li>You: Approved</li><li>Assistant: Sent (sample)</li></ol>");
+  });
+
+  test("landing teaser: the dates are the engine's for November 2026 (10.11 TSD, 20.11 KMD)", () => {
+    const m = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2026-11-01T10:00:00Z"), months: 1 });
+    const due = Object.fromEntries(m.obligations.map((o) => [o.rule_id, o.effective_due]));
+    expect(due["tsd-monthly-return"]).toBe("2026-11-10");
+    expect(due["vat-return-kmd"]).toBe("2026-11-20");
+  });
+
+  test("landing teaser CSS: final frame is the base state, so reduced motion shows it statically", () => {
+    const css = shell({ title: "x", active: "none", csrf: "", body: "" });
+    expect(css).toContain("@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important");
+    expect(css).toMatch(/\.beat--typing\{max-height:0;opacity:0\}/);
+    expect(css).toMatch(/\.mock-wait,\.mock-approve\{[^}]*opacity:0;animation:lp-approve 18s infinite\}/);
+    expect(css).toMatch(/\.mock-ok\{animation:lp-done 18s infinite\}/);
+    for (const k of ["me1", "t1", "ai1", "ai2", "ai3", "me2", "t2", "card"]) expect(css, k).toContain(`.b-${k}{animation-name:lp-${k}}@keyframes lp-${k}{`);
   });
 
   test("connect: ChatGPT first, honest plan lines, phone URL without QR, technical words only under Tehniline info", () => {
     const html = connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
     expect(html).toContain('<a href="/uhenda?a=chatgpt" aria-current="true">ChatGPT</a>');
-    expect(html).toContain("Tähtajad töötavad igas ChatGPT paketis. Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.");
+    expect(html).toContain("ChatGPT Pro paketis töötavad tähtajad ja juhised (ainult lugemine). Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.");
+    expect(html).toContain("Kumba valida? Kõige lihtsam algus on Claude: ühendus ja kinnitused töötavad ka tasuta paketis (testitud 30.10.2026). ChatGPT-s vajavad kinnitused Business paketti.");
+    const htmlEn = connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
+    expect(htmlEn).toContain("Which one? The easiest start is Claude: the connection and approvals work on the free plan too (tested 30 Oct 2026). In ChatGPT, approvals need the Business plan.");
+    expect(htmlEn).toContain("On ChatGPT Pro, deadlines and guidance work (read-only). Approvals (“Approve exactly this”) need ChatGPT Business.");
     expect(html).toContain("Jätka telefonis");
     expect(html).toContain("https:/<wbr>/<wbr>launchpad.example.com/<wbr>uhenda");
     expect(html).not.toMatch(/<svg|qr-box/);
