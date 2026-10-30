@@ -692,3 +692,55 @@ describe("standing approvals (#45)", () => {
     expect(rules("std-csrf-other")).toHaveLength(0);
   });
 });
+
+describe("playbook_id on approvals („Käest ära”, #61)", () => {
+  const post = (o: { cookie: string; csrf: string }, path: string, body: Record<string, string>) =>
+    fetch(`${base}${path}`, { method: "POST", redirect: "manual", headers: { cookie: o.cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: new URLSearchParams({ csrf: o.csrf, ...body }) });
+  const page = async (o: { cookie: string }, path: string) => (await fetch(`${base}${path}`, { headers: { cookie: o.cookie } })).text();
+  const msg = (extra: Record<string, unknown> = {}) => reminder({ kind: "send_message", amount_cents: 24000, ...extra });
+
+  test("request_approval stores an optional playbook_id in both branches and get_approval echoes it; unknown or mismatched ids save nothing", async () => {
+    const o = owner("pb"), c = await client(o.token);
+    const plain = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-1", action: msg() } }));
+    expect(row(plain.approval_id).playbook_id).toBeNull();
+    expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: plain.approval_id } })).playbook_id).toBeNull();
+    const tagged = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-2", action: msg({ summary: "tagged" }), playbook_id: "payment-reminder" } }));
+    expect(row(tagged.approval_id).playbook_id).toBe("payment-reminder");
+    expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: tagged.approval_id } })).playbook_id).toBe("payment-reminder");
+    const before = (db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='pb'").get() as { n: number }).n;
+    expect((await c.callTool({ name: "request_approval", arguments: { report_id: "pb-3", action: msg(), playbook_id: "made-up" } }) as { isError?: boolean }).isError).toBe(true);
+    expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-4", action: msg(), playbook_id: "vat-return-prep" } }))).toMatch(/prepares action kind prepare_filing, not send_message\. Nothing was saved/);
+    expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-5", action: msg(), playbook_id: "deadlines-check" } }))).toMatch(/needs no approval/);
+    expect((db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='pb'").get() as { n: number }).n).toBe(before);
+    // Auto-approved under a standing rule: stored too.
+    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "any", max_eur: "2000" })).status).toBe(302);
+    const auto = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-6", action: msg({ summary: "auto" }), playbook_id: "payment-reminder" } }));
+    expect(auto.auto_approved).toBe(true);
+    expect(row(auto.approval_id).playbook_id).toBe("payment-reminder");
+  });
+
+  test("reads, logins and requests fill nothing; only a recorded done outcome fills a segment", async () => {
+    const o = owner("pb-fill"), c = await client(o.token);
+    const count = async () => (await page(o, "/uhenda")).match(/<p class="ho-sum"><span class="num">(\d+)<\/span>/)?.[1];
+    expect(await count()).toBe("0");
+    for (const [name, args] of [["get_started", {}], ["get_progress", {}], ["search_services", { query: "arve" }], ["get_obligations", { registry_code: "19990001" }]] as const) await c.callTool({ name, arguments: args });
+    const req = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "fill-1", action: msg(), playbook_id: "payment-reminder" } }));
+    expect(await count()).toBe("0");
+    const tana = await page(o, "/");
+    expect(tana).toContain('class="ho-strip" href="/uhenda#kaest-ara"');
+    expect(tana).toContain('<span class="num">0</span> tööd 1-st');
+    await decide(o, req.approval_id, { decision: "approve", digest: req.digest });
+    expect(await count()).toBe("0");
+    await c.callTool({ name: "record_action_outcome", arguments: { report_id: "fill-o", approval_id: req.approval_id, digest: req.digest, outcome: "sent", observed_at: new Date().toISOString() } });
+    expect(await count()).toBe("1");
+    const uhendus = await page(o, "/uhenda");
+    const section = uhendus.slice(uhendus.indexOf('id="kaest-ara"'), uhendus.indexOf('id="pusiload"'));
+    expect(section).not.toContain("%");
+    expect(section.match(/class="ask"/g)).toHaveLength(1);
+    expect(section.match(/<button type="submit">/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    // The offer posts to the existing endpoint and creates the rule for the approved recipient.
+    expect(section).toContain('<input type="hidden" name="kind" value="send_message">');
+    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "300" })).status).toBe(302);
+    expect(db.prepare("SELECT recipients_json, max_amount_cents FROM standing_approvals WHERE owner_id='pb-fill'").get()).toEqual({ recipients_json: JSON.stringify(["billing@client.example"]), max_amount_cents: 30000 });
+  });
+});

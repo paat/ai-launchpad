@@ -1,5 +1,6 @@
 import type { Assessment, Coverage } from "./core.js";
 import { isHandled } from "./core.js";
+import type { Handover, Job } from "./handover.js";
 import { approvalAddressMissing, normAddress, standingRecipients, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type AssistantMilestones, type Exclusion, type StandingRule } from "./mcp.js";
 import type { CompanyCard } from "./arikratt.js";
 import { ET_OF, type FactNeeded, type Obligation } from "./obligations.js";
@@ -419,7 +420,84 @@ ${TEASER_CSS}
 .trust li{display:flex;align-items:center;gap:var(--s-3);min-height:var(--tap);font-weight:700}
 .trust li::before{content:"";flex:none;width:9px;height:16px;margin:0 9px 4px 7px;border:solid #b9dbad;border-width:0 3px 3px 0;transform:rotate(45deg)}
 @media (min-width:760px){.how,.trust{grid-template-columns:repeat(3,minmax(0,1fr))}.jobs{grid-template-columns:repeat(2,minmax(0,1fr))}.how li{flex-direction:column}.trust{padding:var(--s-4) var(--s-6)}}
-.landing-foot{margin:0}`;
+.landing-foot{margin:0}
+/* --- T5 (#61) „Käest ära”: the handover bar (docs/design/progress). One segment = one job; prefix ho-. --- */
+:root{--ho-prep:#3F8A5E}
+/* Compact strip: lives in the Täna hero under the three pills. One tappable line + bar. */
+.ho-strip{display:block;margin:var(--s-3) 0 0;padding:var(--s-2) 0 var(--s-3);border-top:1px solid var(--c-divider);color:inherit;text-decoration:none}
+.ho-strip:hover .ho-line b{text-decoration:underline;text-underline-offset:.15em}
+.ho-line{display:flex;align-items:baseline;gap:var(--s-2) var(--s-3);flex-wrap:wrap;margin:0 0 var(--s-2);font-size:var(--fs-md)}
+.ho-line b{font-weight:750;color:var(--c-primary)}
+.ho-line .num{font-weight:800}
+.ho-line span{color:var(--c-muted);font-size:var(--fs-sm)}
+.ho-line .go{color:var(--c-primary);font-weight:650;font-size:var(--fs-sm)}
+/* Phones: the whole strip is the link; the „Vaata →” word goes so the first ask card stays in the first viewport. */
+@media (max-width:599px){.ho-line .go{display:none}}
+@media (min-width:600px){.ho-line .go{margin-left:auto}}
+.ho-bar{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;height:14px;margin:0;padding:0;list-style:none}
+.ho-seg{position:relative;border-radius:5px;border:2px solid var(--c-muted);background:#fff}
+.ho-seg--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
+.ho-seg--done{border-color:var(--c-primary);background:var(--c-primary)}
+.ho-seg--other{border-style:dashed;border-color:var(--c-muted);background:repeating-linear-gradient(135deg,transparent 0 4px,var(--c-divider) 4px 8px)}
+.ho-seg--wait::after{content:"";position:absolute;right:-3px;top:-6px;width:10px;height:10px;border-radius:50%;background:var(--c-att-bd);border:2px solid #fff}
+.ho-bar--lg{height:20px;gap:6px}
+.ho-bar--lg .ho-seg{border-radius:6px}
+
+/* Full section (Ühendus → Käest ära). */
+.ho h2{margin-bottom:var(--s-1)}
+.ho .ho-sum{margin:0 0 var(--s-3);font-size:var(--fs-h2);font-weight:750;line-height:1.3;letter-spacing:-.01em}
+.ho .ho-sum .num{font-size:var(--fs-h1);font-weight:800;line-height:1;letter-spacing:-.025em;color:var(--c-primary);font-variant-numeric:tabular-nums}
+.ho .ho-sum small{display:block;margin-top:var(--s-1);font-size:var(--fs-md);font-weight:400;color:var(--c-muted)}
+.ho-month{margin:var(--s-3) 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
+.ho-month b{color:var(--c-text);font-weight:750;font-variant-numeric:tabular-nums}
+.ho-legend{display:flex;flex-wrap:wrap;gap:var(--s-2) var(--s-4);margin:var(--s-3) 0 0;padding:0;list-style:none;font-size:var(--fs-xs);color:var(--c-muted)}
+.ho-legend li{display:inline-flex;align-items:center;gap:6px}
+.ho-legend i{width:14px;height:10px;border-radius:3px;border:2px solid var(--c-muted);background:#fff}
+.ho-legend i.ho-seg--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
+.ho-legend i.ho-seg--done{border-color:var(--c-primary);background:var(--c-primary)}
+.ho-legend i.ho-seg--other{border-style:dashed}
+
+.ho-jobs{list-style:none;margin:var(--s-4) 0 0;padding:0;border-top:1px solid var(--c-divider)}
+.ho-job{display:grid;grid-template-columns:28px minmax(0,1fr);gap:var(--s-2) var(--s-3);padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider);color:inherit;text-decoration:none}
+.ho-job:hover .ho-title{text-decoration:underline;text-underline-offset:.15em}
+.ho-mark{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-top:2px;border:2px solid var(--c-muted);border-radius:50%;background:#fff;color:#fff;font-style:normal;font-weight:800;font-size:.8rem;line-height:1}
+.ho-mark--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
+.ho-mark--done{border-color:var(--c-primary);background:var(--c-primary)}
+.ho-mark--other{border-style:dashed;color:var(--c-muted)}
+.ho-mark svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.ho-title{display:block;font-size:var(--fs-lg);font-weight:750;line-height:1.3}
+.ho-rung{margin:2px 0 0;font-size:var(--fs-md);font-weight:600}
+.ho-rung--done{color:var(--c-primary)}
+.ho-rung--prep{color:#2F6E49}
+.ho-rung--mine{color:var(--c-muted)}
+.ho-ev{margin:2px 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
+.ho-ev .num{font-variant-numeric:tabular-nums}
+.ho-ev .label-chip{vertical-align:1px;margin-left:4px}
+.ho-job .ho-ev .state-chip{margin-top:4px}
+
+/* The one next step: the only elevated object in the section; reuses .ask. */
+.ho-next{margin:var(--s-6) 0 0}
+.ho-next h3{margin:0 0 var(--s-3);font-size:var(--fs-h2);font-weight:750;letter-spacing:-.01em}
+.ho-next .ask{display:block;padding:var(--s-4) var(--s-4) var(--s-4) var(--s-6)}
+.ho-next .ask::before{background:var(--c-primary)}
+.ho-next .ask .ask-title{margin:0 0 var(--s-1)}
+.ho-next .ask p{margin:0 0 var(--s-2)}
+.ho-next .ask .btn{margin-top:var(--s-3)}
+.ho-next .ask .limits{font-size:var(--fs-md)}
+.ho-next .ask .limits b{font-weight:750}
+.ho-next .quote{margin:var(--s-2) 0 0;padding:var(--s-3) var(--s-4);border-left:3px solid var(--c-border);border-radius:0 var(--r-md) var(--r-md) 0;background:var(--c-surface-2);font-size:var(--fs-md)}
+.ho-next .quote span{display:block;color:var(--c-muted);font-size:var(--fs-sm);margin-bottom:2px}
+.ho-next .ask .tap-link{margin-top:var(--s-1)}
+.ho-note{margin:var(--s-4) 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
+.ho-finding{display:flex;gap:var(--s-2);align-items:flex-start;margin:var(--s-4) 0 0;padding:var(--s-3) var(--s-4);border:1px solid var(--c-att-bd);border-radius:var(--r-md);background:var(--c-att-bg);color:var(--c-att-dark);font-size:var(--fs-sm)}
+.ho-finding b{font-weight:750}
+.ho-finding a{color:inherit;font-weight:650}
+.ho-finding .tap-link{display:inline-flex;min-height:var(--tap);align-items:center;margin:-10px 0}
+
+@media (min-width:960px){
+  .ho-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--s-8) var(--s-12);align-items:start}
+  .ho-grid>.ho-next{margin-top:0;position:sticky;top:var(--s-4)}
+}`;
 
 // --- Locale (issue #21): Estonian first, English on request. No framework. ---
 export type Lang = "et" | "en";
@@ -799,6 +877,107 @@ ${rows || `<p class="muted">${t("Püsiload puuduvad: iga saatmine ootab sinu kin
 <label for="pl-max">${t("Summa ülempiir (€)", "Amount cap (€)")}</label><input id="pl-max" name="max_eur" inputmode="decimal" autocomplete="off" value="${esc(capEur(STANDING_DEFAULTS.maxAmountCents))}">
 <p class="small muted">${esc(ruleLimits(l))}</p>
 <button type="submit">${t("Lisa püsiluba", "Add standing approval")}</button></form></details></section>`;
+}
+
+// --- „Käest ära” (#61): one segment per job; fills only from stored done work or a live rule that fired. ---
+const HO_MONTH_IN = ["jaanuaris", "veebruaris", "märtsis", "aprillis", "mais", "juunis", "juulis", "augustis", "septembris", "oktoobris", "novembris", "detsembris"];
+const hoMonth = (ym: string, l: Lang) => { const m = Number(ym.slice(5, 7)) - 1; return l === "en" ? `In ${C_PERIOD.en.format(civil(`${ym}-01`)).split(" ")[0]}` : cap(HO_MONTH_IN[m] ?? ""); };
+const hoJobTitle = (j: Job, l: Lang) => (l === "en" ? j.title_en : j.title_et);
+const hoCount = (h: Handover, l: Lang) => tr(l)(`${h.off} ${h.off === 1 ? "töö" : "tööd"} ${h.total}-st`, `${h.off} of ${h.total} ${h.total === 1 ? "job" : "jobs"}`);
+/** „1 ilma sinuta, 1 sinu kinnitusega, 1 teeb keegi teine”: how the counted jobs split. */
+function hoSplit(h: Handover, l: Lang): string {
+  const t = tr(l), withYou = h.jobs.filter((j) => j.rung === "prep" || (j.rung === "done" && j.ceiling === "law")).length, other = h.jobs.filter((j) => j.rung === "other").length;
+  return [h.withoutYou ? t(`${h.withoutYou} ilma sinuta`, `${h.withoutYou} without you`) : "", withYou ? t(`${withYou} sinu kinnitusega`, `${withYou} with your approval`) : "", other ? t(`${other} teeb keegi teine`, `${other} done by someone else`) : ""].filter(Boolean).join(", ");
+}
+const hoSeg = (j: Job) => `ho-seg${j.rung === "mine" ? "" : ` ho-seg--${j.rung}`}${j.evidence.pending ? " ho-seg--wait" : ""}`;
+const HO_RUNG: Record<string, [string, string]> = { mine: ["sinu käes", "yours"], other: ["teeb keegi teine", "done by someone else"], prep: ["assistent valmistab ette, sina kinnitad", "your assistant prepares, you approve"], done: ["assistent teeb ise või lagi käes", "your assistant does it, or at its ceiling"] };
+/** Täna hero: the count and the small bar, one tap to the full section on Ühendus. Not a card. */
+export function handoverStrip(h: Handover, l: Lang): string {
+  const t = tr(l), sub = h.off ? hoSplit(h, l) : t("alusta ühest", "start with one");
+  return `<a class="ho-strip" href="/uhenda#kaest-ara" aria-label="${esc(t(`Käest ära: ${hoCount(h, l)}. ${sub}. Vaata lähemalt.`, `Off your plate: ${hoCount(h, l)}. ${sub}. See more.`))}"><p class="ho-line"><b>${t("Käest ära:", "Off your plate:")} <span class="num">${h.off}</span> ${esc(t(`${h.off === 1 ? "töö" : "tööd"} ${h.total}-st`, `of ${h.total}`))}</b><span>${esc(sub)}</span><span class="go">${t("Vaata →", "See →")}</span></p>
+<ul class="ho-bar" aria-hidden="true">${h.jobs.map((j) => `<li class="${hoSeg(j)}"></li>`).join("")}</ul></a>`;
+}
+const HO_CAN: Record<string, [string, string]> = {
+  "payment-reminder": ["Assistent oskab: leiab tasumata arved ja koostab kirja; sina kinnitad iga kirja täpselt sellisena.", "Your assistant can find unpaid invoices and draft the letter; you approve each letter exactly as it goes."],
+  "vat-return-prep": ["Lagi: esitad alati ise e-MTA-s oma Smart-ID-ga; assistent paneb numbrid valmis.", "Ceiling: you always file in e-MTA with your own Smart-ID; your assistant prepares the figures."],
+  "annual-report": ["Lagi: allkirjastad ja esitad ise e-äriregistris; assistent paneb aruande andmed valmis.", "Ceiling: you sign and submit in the e-Business Register; your assistant prepares the figures."],
+  invoicing: ["Assistent saab arve ette valmistada ja sinu kinnitusel saata.", "Your assistant can prepare an invoice and send it once you approve."],
+};
+const HO_CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>', HO_ARROW = '<svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg>';
+function handoverRow(j: Job, l: Lang, now: Date): string {
+  const t = tr(l), e = j.evidence, assessedChip = labelChip("assistant", t("Assistendi hinnang", "Your assistant's assessment"));
+  const mark = j.rung === "done" ? HO_CHECK : j.rung === "prep" ? HO_ARROW : j.rung === "other" ? "R" : "";
+  const rung = j.rung === "done" ? (j.ceiling === "rule" ? `${t("Assistent teeb ise", "Your assistant does it")} ${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}` : `${t("Assistent valmistab ette, sina esitad", "Your assistant prepares, you file")} ${labelChip("official", t("Lagi käes: seadus", "At its ceiling: the law"))}`)
+    : j.rung === "prep" ? t("Assistent valmistab ette, sina kinnitad", "Your assistant prepares, you approve")
+    : j.rung === "other" ? `${esc(t(`Teeb ${j.assessed?.executor}`, `Done by ${j.assessed?.executor}`))} ${assessedChip}` : t("Teed ise", "You do it");
+  const verb = j.ceiling === "law" ? t("esitatud", "filed") : t("saadetud", "sent");
+  const lines: string[] = [];
+  if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.auto ? t(`, neist <span class="num">${e.auto}</span> ilma sinuta`, `, <span class="num">${e.auto}</span> without you`) : ""}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
+  if (e.rule) lines.push(esc(t(`Püsiluba: ${standingRuleName(e.rule, l)} · aegub ${DAY.et.format(new Date(e.rule.expires_at))}`, `Standing approval: ${standingRuleName(e.rule, l)} · ends ${DAY.en.format(new Date(e.rule.expires_at))}`)));
+  if (j.due) lines.push(`${esc(t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}`);
+  if (j.source === "assessment" && j.rung !== "other" && j.assessed) lines.push(`„${esc(j.assessed.reason)}” ${assessedChip}`);
+  if (j.rung === "mine" && HO_CAN[j.id]) lines.push(esc(t(...HO_CAN[j.id])));
+  if (e.pending) lines.push(stateChip("waiting", t(`${e.pending} ootab sinu kinnitust`, `${e.pending} waiting for your approval`)));
+  return `<li class="ho-job"><i class="ho-mark${j.rung === "mine" ? "" : ` ho-mark--${j.rung}`}" aria-hidden="true">${mark}</i><div><span class="ho-title">${esc(hoJobTitle(j, l))}</span><p class="ho-rung ho-rung--${j.rung === "other" ? "mine" : j.rung}">${rung}</p>${lines.length ? `<p class="ho-ev">${lines.join("<br>")}</p>` : ""}</div></li>`;
+}
+const HO_CONNECTOR = (l: Lang) => `<a class="tap-link" href="/kataloog?g=raamatupidamine">${tr(l)("Raamatupidamise ühendused → Kataloog", "Accounting connectors → Catalogue")}</a>`;
+const HO_REMINDER_PROMPT: [string, string] = ["Vaata, millised minu arved on tasumata, ja koosta esimesele meeldetuletus. Küsi minult kinnitust enne saatmist.", "Check which of my invoices are unpaid and draft a reminder for the first one. Ask me to approve it before sending."];
+/** The one next step, as the section's only elevated object. A standing offer posts to the existing /standing-approvals form. */
+function handoverNext(h: Handover, l: Lang, csrf: string): string {
+  const t = tr(l), n = h.next;
+  const card = (head: string, inner: string) => `<div class="ho-next"><h3>${esc(head)}</h3><div class="ask">${inner}</div></div>`;
+  const quote = (text: string) => `<p class="quote"><span>${t("Palu assistendilt:", "Ask your assistant:")}</span>„${esc(text)}”</p>`;
+  if (n.type === "standing") {
+    const what = hoJobTitle(n.job, l).toLowerCase(), per = n.kind === "send_invoice" ? t("arve kohta", "per invoice") : t("kirja kohta", "per letter");
+    const who = n.recipients.length <= 2 ? n.recipients.map((r) => `<b>${esc(r.name)}</b>`).join(t(" ja ", " and ")) : `<b>${esc(t(`${n.recipients.length} senist saajat`, `${n.recipients.length} past recipients`))}</b>`;
+    return card(t(`Järgmine samm: anna ${what} täiesti käest ära`, `Next step: take ${what} off your plate completely`), `<span class="labels">${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}</span>
+<span class="ask-title">${esc(t(`Luba edaspidi ${what} automaatselt`, `Allow ${what} automatically from now on`))}</span>
+<p class="limits">${t("Ainult", "Only")} ${who}${n.recipients.length <= 2 ? t(" (senised saajad)", " (past recipients)") : ""}, ${t("kuni", "up to")} <b>${esc(capEur(n.capCents))} €</b> ${per}, ${t(`kuni <b>${STANDING_DEFAULTS.maxPerDay}</b> päevas, <b>${STANDING_DEFAULTS.days} päeva</b>. Lõpetad millal tahes.`, `up to <b>${STANDING_DEFAULTS.maxPerDay}</b> a day, <b>${STANDING_DEFAULTS.days} days</b>. End it any time.`)}</p>
+<p class="muted small">${esc(n.basis.maxCents ? t(`Piirid on võetud sinu ${n.basis.count} senisest kinnitusest (suurim ${fmtEur(n.basis.maxCents, l)}). Assistent saadab ise ja annab iga saatmise kohta siia teada.`, `The limits come from your ${n.basis.count} past approvals (largest ${fmtEur(n.basis.maxCents, l)}). Your assistant sends and reports each one here.`) : t(`Senistel kinnitustel summat polnud, seega ülempiir on vaikimisi ${capEur(n.capCents)} €.`, `Your past approvals had no amount, so the cap is the default ${capEur(n.capCents)} €.`))}</p>
+<form method="post" action="/standing-approvals">${csrfInput(csrf)}<input type="hidden" name="kind" value="${esc(n.kind)}">
+<button type="submit">${t("Luba automaatselt", "Allow automatically")}</button>
+<details><summary>${t("Muuda piire", "Change the limits")}</summary>
+<div role="radiogroup" aria-label="${t("Kellele", "To whom")}"><label class="check"><input type="radio" name="scope" value="approved" checked> <span>${t("Ainult senised saajad", "Only past recipients")} <span class="small muted">${esc(n.recipients.map((r) => r.address).join(", "))}</span></span></label>
+<label class="check"><input type="radio" name="scope" value="any"> <span>${t("Kõik saajad (ka uued)", "Any recipient (including new ones)")}</span></label></div>
+<label for="ho-max">${t("Summa ülempiir (€)", "Amount cap (€)")}</label><input id="ho-max" name="max_eur" inputmode="decimal" autocomplete="off" value="${esc(capEur(n.capCents))}">
+</details></form>`);
+  }
+  if (n.type === "renew") {
+    const r = n.rule;
+    return card(t("Järgmine samm: pikenda püsiluba", "Next step: renew your standing approval"), `<span class="labels">${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}</span>
+<span class="ask-title">${esc(standingRuleName(r, l))}</span>
+<p>${esc(t(`Aegub ${DAY.et.format(new Date(r.expires_at))}. Uus püsiluba kehtib ${STANDING_DEFAULTS.days} päeva samade piiridega.`, `Ends ${DAY.en.format(new Date(r.expires_at))}. A new one runs ${STANDING_DEFAULTS.days} days with the same limits.`))}</p>
+<form method="post" action="/standing-approvals">${csrfInput(csrf)}<input type="hidden" name="kind" value="${esc(r.kind)}"><input type="hidden" name="scope" value="${r.recipients_json === null ? "any" : "approved"}"><input type="hidden" name="max_eur" value="${esc(capEur(r.max_amount_cents))}">
+<button type="submit">${t("Pikenda püsiluba", "Renew standing approval")}</button></form>`);
+  }
+  if (n.type === "playbook") {
+    const reminder = n.playbookId === "payment-reminder", title = hoJobTitle(n.job, l);
+    const prompt = reminder ? t(...HO_REMINDER_PROMPT) : n.obligation ? t(n.obligation.handoff.prompt_et, n.obligation.handoff.prompt_en) : t(`Valmista ette: ${title}. Küsi minult kinnitust enne, kui midagi esitan.`, `Prepare: ${title}. Ask me to approve before I file anything.`);
+    return card(t("Järgmine samm: anna üks töö ära", "Next step: hand over one job"), `<span class="labels">${labelChip("rule", t("Mängukava", "Playbook"))}</span>
+<span class="ask-title">${esc(reminder ? t("Lase assistendil koostada esimene maksemeeldetuletus", "Let your assistant draft the first payment reminder") : t(`Lase assistendil ette valmistada: ${title}`, `Let your assistant prepare: ${title}`))}</span>
+<p class="muted">${esc(reminder ? t("Kõige kiirem võit: see on ainus igakuine töö, mille saab hiljem püsiloaga täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.", "The quickest win: the only monthly job a standing approval can later take off your plate completely. It needs your unpaid invoices: your accounting connector or a file you share with your assistant.") : t("Vajab kuu arveid: sinu raamatupidamisprogrammi ühendust või faile, mille assistendile jagad.", "It needs the period's invoices: your accounting connector or files you share with your assistant."))}</p>
+${quote(prompt)}
+${HO_CONNECTOR(l)}`);
+  }
+  return card(t("Järgmine samm: ühenda raamatupidamine", "Next step: connect your accounting"), `<span class="ask-title">${t("Ühenda oma raamatupidamisprogramm assistendiga", "Connect your accounting software to your assistant")}</span>
+<p>${t("Siis leiab assistent ise arved ja numbrid, mida tööd vajavad.", "Then your assistant finds the invoices and figures the jobs need.")}</p>
+${HO_CONNECTOR(l)}`);
+}
+/** Ühendus → Käest ära: count, bar, one row per job with its evidence, one next step, and the expired-unused finding. */
+export function handoverSection(h: Handover, l: Lang, csrf: string, now = new Date()): string {
+  const t = tr(l), split = hoSplit(h, l), ex = h.findings.expiredUnused;
+  const sub = h.off ? `${split}.${h.fromAssessment ? ` ${t(`Assistendi hinnang lisas nimekirja ${h.fromAssessment} ${h.fromAssessment === 1 ? "töö" : "tööd"}.`, `Your assistant's assessment added ${h.fromAssessment} ${h.fromAssessment === 1 ? "job" : "jobs"} to the list.`)}` : ""}` : t("Siia tulevad tööd, mille assistent on päriselt ära teinud, mitte klikid ega lubadused.", "Jobs land here only when your assistant has really done them, not clicks or promises.");
+  const month = h.month.done ? `${esc(hoMonth(h.month.ym, l))}: ${t(`<b>${h.month.done}</b> ${h.month.done === 1 ? "töö" : "tööd"} tehtud, <b>${h.month.auto}</b> ilma sinuta.`, `<b>${h.month.done}</b> done, <b>${h.month.auto}</b> without you.`)}` : `${esc(hoMonth(h.month.ym, l))}: ${t("assistent pole veel ühtegi tööd lõpetanud.", "your assistant has not finished a job yet.")}`;
+  const finding = ex.count && ex.last ? `<p class="ho-finding"><span aria-hidden="true">!</span><span><b>${esc(t(`${ex.count} ${ex.count === 1 ? "kinnitus aegus" : "kinnitust aegusid"} kasutamata`, `${ex.count} ${ex.count === 1 ? "approval" : "approvals"} expired unused`))}</b> (${esc(DAY[l].format(new Date(ex.last.expires_at)))}). ${t("Palu assistendil pärast sinu kinnitust kohe saata ja tulemus kirja panna.", "Ask your assistant to send right after you approve and record the outcome.")} <a class="tap-link" href="/approvals/${esc(encodeURIComponent(ex.last.id))}">${t("Vaata kinnitust", "See the approval")}</a></span></p>` : "";
+  return `<section class="section ho" id="kaest-ara" aria-labelledby="ho-h"><h2 id="ho-h">${t("Käest ära", "Off your plate")}</h2>
+<p class="ho-sum"><span class="num">${h.off}</span> ${esc(t(`${h.off === 1 ? "töö" : "tööd"} ${h.total}-st on sinu käest ära`, `of ${h.total} ${h.total === 1 ? "job is" : "jobs are"} off your plate`))}<small>${esc(sub)}</small></p>
+<ul class="ho-bar ho-bar--lg" aria-label="${esc(t(`${h.total} tööd`, `${h.total} jobs`))}">${h.jobs.map((j) => `<li class="${hoSeg(j)}"><span class="vh">${esc(`${hoJobTitle(j, l)}: ${t(...HO_RUNG[j.rung] as [string, string])}${j.evidence.pending ? t(`; ${j.evidence.pending} ootab praegu`, `; ${j.evidence.pending} waiting now`) : ""}`)}</span></li>`).join("")}</ul>
+<ul class="ho-legend" aria-hidden="true">${(["mine", "prep", "done", "other"] as const).map((r) => `<li><i${r === "mine" ? "" : ` class="ho-seg--${r}"`}></i>${esc(t(...HO_RUNG[r] as [string, string]))}</li>`).join("")}</ul>
+<p class="ho-month">${month}</p>
+<div class="ho-grid"><div><ul class="ho-jobs">${h.jobs.map((j) => handoverRow(j, l, now)).join("")}</ul>${finding}</div>
+${handoverNext(h, l, csrf)}</div>
+<details class="plain"><summary>${t("Kuidas see arvutatakse", "How this is calculated")}</summary><div class="boxed small"><p>${t("Üks lahter = üks töö. Lahter täitub ainult salvestatud kinnitusest, mille tulemus on saadetud, esitatud või makstud (assistendi teade, AI-hüppelaud seda ei kontrollinud), või kehtivast püsiloast, mis on juba korra töötanud. Ootel kinnitused, lugemised ja sisselogimised lahtrit ei täida. „Teeb raamatupidaja” on assistendi hinnang. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.", "One cell = one job. A cell fills only from a stored approval whose outcome is sent, filed or paid (your assistant's report, not checked by AI Launchpad), or from a live standing approval that has already worked once. Pending approvals, reads and sign-ins fill nothing. “Done by the accountant” is your assistant's assessment. No percentage and no hours saved, because we don't measure them.")}</p></div></details>
+</section>`;
 }
 
 const approvalTech = (a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang) => techDetails(l, `${techList([[tr(l)("Räsi (SHA-256)", "Digest (SHA-256)"), a.digest], [tr(l)("Liik", "Kind"), v.kindKey || "—"], ["ID", a.id], [tr(l)("Koostatud", "Created"), a.created_at], [tr(l)("Kehtib kuni", "Valid until"), a.expires_at], ...(a.decided_at ? [[tr(l)("Otsustatud", "Decided"), a.decided_at]] as [string, string][] : [])])}<pre class="tech-pre">${esc(JSON.stringify({ action: v.p, outcome: v.outcome }, null, 1))}</pre>`);
@@ -1273,6 +1452,8 @@ export interface TanaOpts {
   reportCount: number;
   /** The owner's standing approvals, to name the rule behind an auto-approved row. */
   rules?: StandingRule[];
+  /** „Käest ära” (#61): the strip under the pills. */
+  handover?: Handover;
   now?: Date;
 }
 /** The register lookup is unavailable: ask the assistant instead, with the plain reason. */
@@ -1366,6 +1547,7 @@ ${o.exclusions.length ? `<p class="small muted">${t("Varasematest hinnangutest e
 <h1 id="t-h">${esc(h1)}</h1>
 <p class="lede">${esc(lede)} <span class="small muted">${timeEl(tallinnYmd(now), TODAY[l].format(now))}</span></p>
 <nav class="today-sum" aria-label="${t("Kokkuvõte", "Summary")}"><a${n ? ' class="needs"' : ""} href="#ootab"><b>${n}</b><span>${t("ootab sinult", "need you")}</span></a><a href="#tegi"><b>${doneCount}</b><span>${t("assistent tegi", "done for you")}</span></a><a href="#tulekul"><b>${upcoming}</b><span>${t("tulekul", "coming up")}</span></a></nav>
+${o.handover ? handoverStrip(o.handover, l) : ""}
 ${primary}
 </section>
 <div class="tana-grid"><div class="col">
@@ -1415,7 +1597,7 @@ ${calendarSetup(l)}
 <p><a class="tap-link" href="/uhenda">${t("Tagasi: Ühendus", "Back: Connection")}</a></p></section>`;
 }
 
-export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; now?: Date; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] } }): string {
+export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; now?: Date; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] }; handover?: Handover }): string {
   const l = o.lang, t = tr(l), now = o.now ?? new Date();
   const base = String(o.baseUrl ?? "").replace(/\/+$/, ""), endpoint = `${base}/mcp`, here = `${base}/uhenda?a=${o.assistant}`;
   let parsed: URL | null = null;
@@ -1452,6 +1634,7 @@ ${o.owner ? `<p class="small"><a class="tap-link" href="/setup">${t("Pole veel a
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p><p><a class="tap-link" href="/kataloog?g=raamatupidamine">${t("Järgmine samm: ühenda oma raamatupidamine → Kataloog", "Next step: connect your accounting → Catalogue")}</a></p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
 ${o.calendar ? calendarSection(l, o.calendar) : ""}
+${o.standing && o.handover ? handoverSection(o.handover, l, o.standing.csrf, now) : ""}
 ${o.standing ? standingSection(l, o.standing, now) : ""}
 ${remoteReady ? `<section class="card" aria-labelledby="phone-h"><h2 id="phone-h">${t("Jätka telefonis", "Continue on your phone")}</h2><p class="small muted">${t("Ava see aadress oma telefonis:", "Open this address on your phone:")}</p><p class="big-url">${wbr(here)}</p></section>` : ""}
 ${techDetails(l, `${techList([[t("MCP-aadress", "MCP address"), endpoint], [t("Sisselogimine", "Sign-in"), "OAuth 2.1 + PKCE"], [t("Õigused", "Scopes"), "progress:read · progress:report (Jah-linnukesega)"], [t("Kliendi nimi", "Client name"), t("kliendi enda antud, kontrollimata", "supplied by the client, not verified")]])}

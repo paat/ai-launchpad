@@ -4,6 +4,7 @@ import { computeObligations } from "../src/obligations.js";
 import { SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import type { ApprovalRow } from "../src/mcp.js";
 import { assessmentSchema, computeCoverage } from "../src/core.js";
+import { computeHandover } from "../src/handover.js";
 
 // Pure view tests for the coherent mobile redesign. Browser geometry and
 // interaction live in tests/ui-redesign.browser.mjs.
@@ -518,5 +519,36 @@ describe("activity and setup", () => {
     expect(html).toContain("No live model is called");
     expect(html).toContain('<form method="post" action="/setup">');
     expect(html).toContain('name="csrf" value="csrf-x"');
+  });
+});
+
+describe("„Käest ära” (#61)", () => {
+  const consumed = approval({ id: "appr_done", state: "consumed", decided_at: "2026-11-02T09:00:00Z", consumed_at: "2026-11-02T10:00:00Z", outcome_json: JSON.stringify({ outcome: "sent", history: [] }) });
+  const h = computeHandover({ assessment, obligations: mari.obligations, approvals: [consumed, approval()], rules: [], now: NOW });
+
+  test("Täna: one strip under the pills with the count, linking to Ühendus, before the primary action; no percentage", () => {
+    const html = tana({ handover: h, approvals: [approval()] });
+    const strip = html.match(/<a class="ho-strip"[^]*?<\/a>/)![0];
+    expect(strip).toContain('href="/uhenda#kaest-ara"');
+    expect(strip).toContain(`<b>Käest ära: <span class="num">1</span> töö ${h.total}-st</b>`);
+    expect(strip).not.toContain("%");
+    expect(strip.match(/<li class="ho-seg/g)).toHaveLength(h.total);
+    expect(html.indexOf('class="today-sum"')).toBeLessThan(html.indexOf('class="ho-strip"'));
+    expect(html.indexOf('class="ho-strip"')).toBeLessThan(html.indexOf('class="btn" href="/approvals/'));
+    expect(tana()).not.toContain("ho-strip");
+  });
+
+  test("Ühendus: #kaest-ara above Püsiload, one .ask, at most one filled button, the rule explained; owner-only", () => {
+    const html = connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: "csrf-x", rules: [] }, handover: h });
+    const section = html.match(/<section class="section ho" id="kaest-ara"[^]*?<\/section>/)![0];
+    expect(html.indexOf('id="kaest-ara"')).toBeLessThan(html.indexOf('id="pusiload"'));
+    expect(section.match(/class="ask"/g)).toHaveLength(1);
+    expect((section.match(/<button type="submit">/g) ?? []).length).toBeLessThanOrEqual(1);
+    expect(section).not.toContain("%");
+    expect(section).toContain("Kuidas see arvutatakse");
+    expect(section).toContain("Assistendi hinnang");
+    const en = connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: "csrf-x", rules: [] }, handover: h });
+    expect(en).toContain(`of ${h.total} jobs are off your plate`);
+    expect(connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "anon" }, owner: false, handover: h })).not.toContain("kaest-ara");
   });
 });
