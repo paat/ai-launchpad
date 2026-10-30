@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { Server } from "node:http";
 import { createApp, type Config } from "../src/app.js";
 import { openDb } from "../src/db.js";
-import { PLAYBOOKS, loadCatalog, safeHttps, searchServices } from "../src/catalog.js";
-import { CATALOGUE_GROUPS, GROUP_PLAYBOOKS, catalogueGroup, connectBody, whereItWorks } from "../src/views.js";
+import { loadCatalog, safeHttps, searchServices } from "../src/catalog.js";
+import { CATALOGUE_GROUPS, catalogueBody, catalogueGroup, connectBody, whereItWorks } from "../src/views.js";
 
 // Public /kataloog over real HTTP: no login, ET first, server-side filters, zero JS.
 let server: Server, db: ReturnType<typeof openDb>, base: string;
@@ -69,17 +69,18 @@ describe("public catalogue", () => {
 
   test("each card says where it works, from interface_class, and a legend explains it", async () => {
     expect(whereItWorks("hosted_mcp")).toEqual(["Kõikjal · veeb, telefon, arvuti", "Anywhere · web, phone, computer"]);
-    for (const ic of ["local_mcp", "self_hosted_mcp"]) expect(whereItWorks(ic)).toEqual(["Ainult arvutis", "On a computer only"]);
+    expect(whereItWorks("local_mcp")).toEqual(["Ainult arvutis", "On a computer only"]);
+    expect(whereItWorks("self_hosted_mcp")).toEqual(["Oma serveris · veeb, telefon, arvuti", "Your own server · web, phone, computer"]);
     for (const ic of ["ordinary_api", "integration_only", "unknown", undefined]) expect(whereItWorks(ic)).toEqual(["Vajab ühendust", "Needs a connector"]);
     const html = await page("/kataloog");
     const byId = new Map(loadCatalog().map((r) => [r.id, r]));
     const cs = cards(html);
     for (const c of cs) expect(c.html, c.id).toContain(`<span class="label-chip label-chip--where">${whereItWorks(byId.get(c.id)!.interface_class)[0]}</span>`);
     // All three kinds actually appear.
-    for (const w of ["Kõikjal · veeb, telefon, arvuti", "Ainult arvutis", "Vajab ühendust"]) expect(cs.some((c) => c.html.includes(w)), w).toBe(true);
+    for (const w of ["Kõikjal · veeb, telefon, arvuti", "Oma serveris · veeb, telefon, arvuti", "Ainult arvutis", "Vajab ühendust"]) expect(cs.some((c) => c.html.includes(w)), w).toBe(true);
     const legend = /<ul class="legend"[\s\S]*?<\/ul>/.exec(html)![0];
     expect(html.indexOf(legend)).toBeLessThan(html.indexOf('class="card svc svc--pinned"'));
-    expect(legend.match(/<svg class="ico"[^>]*aria-hidden="true"/g)).toHaveLength(3);
+    expect(legend.match(/<svg class="ico"[^>]*aria-hidden="true"/g)).toHaveLength(4);
     expect(legend).not.toMatch(/\p{Extended_Pictographic}/u);
     expect(legend).toContain("Claude Desktop/Cowork või ChatGPT töölauarakendus");
     expect(legend).toContain("telefonis küsid ja kinnitad liikvel olles");
@@ -87,7 +88,7 @@ describe("public catalogue", () => {
       const h = await page(path);
       const heads = [...(/<ul class="legend"[\s\S]*?<\/ul>/.exec(h)![0]).matchAll(/<strong>([^<]*)<\/strong>/g)].map((m) => m[1]);
       const chips = new Set([...h.matchAll(/label-chip--where">([^<]*)</g)].map((m) => m[1]));
-      expect(heads, path).toHaveLength(3);
+      expect(heads, path).toHaveLength(4);
       expect(chips.size, path).toBeGreaterThan(0);
       for (const c of chips) expect(heads, path).toContain(c);
     }
@@ -122,13 +123,13 @@ describe("public catalogue", () => {
     expect(cards(none)).toEqual([]);
   });
 
-  test("playbook map uses real playbook ids and shows on accounting and email cards", async () => {
-    const ids = new Set(PLAYBOOKS.map((p) => p.id));
-    for (const list of Object.values(GROUP_PLAYBOOKS)) for (const id of list!) expect(ids.has(id), id).toBe(true);
-    const acc = cards(await page("/kataloog?g=raamatupidamine"));
-    expect(acc.every((c) => c.html.includes("Avab töövoo: KMD ettevalmistus / Maksemeeldetuletus"))).toBe(true);
-    expect(cards(await page("/kataloog?g=epost")).every((c) => c.html.includes("Avab töövoo: Maksemeeldetuletus"))).toBe(true);
-    expect(cards(await page("/kataloog?g=kullerid")).some((c) => c.html.includes("Avab töövoo"))).toBe(false);
+  test("cards carry no playbook line, show the whole limitation, and ignore inherited connection names", async () => {
+    expect(cards(await page("/kataloog")).some((c) => c.html.includes("Avab töövoo"))).toBe(false);
+    const base0 = listed.find((r) => r.interface_class === "hosted_mcp")!;
+    const rec = { ...base0, id: "two-sentences", limitations: "First limit. Second limit & more." };
+    const body = catalogueBody({ lang: "et", q: "", g: null, records: [rec, { ...base0, id: "proto", interface_class: "toString" } as typeof rec], matched: null });
+    expect(body).toContain("First limit. Second limit &amp; more.");
+    expect(body).not.toContain('data-service="proto"');
   });
 
   test("/services redirects to /kataloog, also for a signed-in owner, who keeps the nav", async () => {

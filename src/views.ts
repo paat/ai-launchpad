@@ -253,7 +253,6 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .svc h3{margin:0 0 2px;font-size:var(--fs-lg)}
 .svc-k{margin:var(--s-2) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}.svc-v{margin:0}
 .svc-facts{margin:var(--s-2) 0 0;font-size:var(--fs-sm)}.svc-facts dt{font-weight:700;color:var(--c-muted);margin-top:6px}.svc-facts dd{margin:0}
-.svc-play{margin:var(--s-2) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-primary)}
 .svc--pinned{border-color:var(--c-primary);box-shadow:inset 4px 0 0 var(--c-primary)}
 .legend{list-style:none;margin:var(--s-2) 0 0;padding:0;font-size:var(--fs-sm)}.legend li{margin:4px 0}.ico{vertical-align:-3px;flex:none}`;
 
@@ -733,29 +732,24 @@ export const CATALOGUE_GROUPS = [
 ] as const;
 export type CatalogueGroup = (typeof CATALOGUE_GROUPS)[number]["id"];
 export const catalogueGroup = (sector: string | undefined): CatalogueGroup => CATALOGUE_GROUPS.find((g) => g.match.test((sector ?? "").toLowerCase()))!.id;
-/** Playbooks a connection in this group makes possible (ids from PLAYBOOKS). */
-export const GROUP_PLAYBOOKS: Partial<Record<CatalogueGroup, string[]>> = { raamatupidamine: ["vat-return-prep", "payment-reminder"], epost: ["payment-reminder"] };
-const PLAYBOOK_SHORT: Record<string, [string, string]> = { "vat-return-prep": ["KMD ettevalmistus", "VAT return prep"], "payment-reminder": ["Maksemeeldetuletus", "Payment reminder"] };
-/** Where a connection works, from its interface class: hosted MCP everywhere, local MCP on a computer, the rest needs a connector. */
+/** Where a connection works, from its interface class: hosted MCP everywhere, local MCP on a computer, self-hosted MCP on your own server, the rest needs a connector. */
 export const whereItWorks = (ic: string | undefined): [string, string] =>
   ic === "hosted_mcp" ? ["Kõikjal · veeb, telefon, arvuti", "Anywhere · web, phone, computer"]
-  : ic === "local_mcp" || ic === "self_hosted_mcp" ? ["Ainult arvutis", "On a computer only"]
+  : ic === "self_hosted_mcp" ? ["Oma serveris · veeb, telefon, arvuti", "Your own server · web, phone, computer"]
+  : ic === "local_mcp" ? ["Ainult arvutis", "On a computer only"]
   : ["Vajab ühendust", "Needs a connector"];
-const isCatalogueConn = (c: unknown): c is Conn => typeof c === "string" && c in CONN;
-const firstSentence = (s: string) => { const m = /^(.+?[.;])(\s|$)/.exec(s.trim()); const one = m ? m[1] : s.trim(); return one.length > 180 ? `${one.slice(0, 177).trimEnd()}…` : one; };
+const isCatalogueConn = (c: unknown): c is Conn => typeof c === "string" && Object.hasOwn(CONN, c);
 const fmtYmd = (ymd: string) => /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd.split("-").reverse().join(".") : ymd;
 
 function serviceCard(r: ServiceRecord, l: Lang): string {
   const t = tr(l), conn = CONN[r.interface_class as Conn];
   const link = [...(r.sources ?? []), r.connection].map(safeHttps).find((u): u is string => !!u) ?? null;
-  const plays = GROUP_PLAYBOOKS[catalogueGroup(r.sector)] ?? [];
   // Research text is English; mark it so screen readers switch voice on the Estonian page.
   const en = l === "en" ? "" : ' lang="en"';
   return `<article class="card svc" data-service="${esc(r.id)}"><h3>${esc(r.name)}</h3>
 <div class="labels">${labelChip("rule", t(conn[0], conn[1]))}${labelChip("where", t(...whereItWorks(r.interface_class)))}${labelChip("assistant", r.runtime_tested ? t("Testitud", "Tested") : t("Uuritud · AI-hüppelauaga pole testitud", "Researched · not tested with AI Launchpad"))}</div>
 <p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v"${en}>${esc(r.jobs)}</p>
-<dl class="svc-facts"><dt>${t("Ligipääs ja hind", "Access and price")}</dt><dd${en}>${esc(r.access_and_price)}</dd><dt>${t("Peamine piirang", "Key limitation")}</dt><dd${en}>${esc(firstSentence(r.limitations ?? ""))}</dd></dl>
-${plays.length ? `<p class="svc-play">${t("Avab töövoo", "Unlocks playbook")}: ${plays.map((id) => esc(t(...PLAYBOOK_SHORT[id]!))).join(" / ")}</p>` : ""}
+<dl class="svc-facts"><dt>${t("Ligipääs ja hind", "Access and price")}</dt><dd${en}>${esc(r.access_and_price)}</dd><dt>${t("Peamine piirang", "Key limitation")}</dt><dd${en}>${esc(r.limitations ?? "")}</dd></dl>
 ${link ? `<a class="tap-link" href="${esc(link)}" rel="noopener noreferrer">${t("Teenusepakkuja leht", "Provider page")}: ${esc(new URL(link).hostname)}</a>` : ""}</article>`;
 }
 
@@ -778,6 +772,7 @@ export function catalogueBody(o: { lang: Lang; q: string; g: CatalogueGroup | nu
 <p class="lede">${t(`<strong>${mcp} MCP-ühendust ja ${api} API-t</strong> (kokku ${o.records.length} uuritud teenusest) Eesti ettevõtja tööde jaoks.`, `<strong>${mcp} MCP connections and ${api} APIs</strong> (out of ${o.records.length} researched services) for the jobs of an Estonian business owner.`)}</p>
 <ul class="legend" aria-label="${t("Kus ühendus töötab", "Where a connection works")}"><li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 8.5 4.75 4.75 0 0 1 17.5 18z"/></svg> <strong>${t(...whereItWorks("hosted_mcp"))}</strong>: ${t("töötab ka assistendi telefonirakenduses: telefonis küsid ja kinnitad liikvel olles.", "also works in the assistant's phone app: ask and approve on the go.")}</li>
 <li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 20h20"/></svg> <strong>${t(...whereItWorks("local_mcp"))}</strong>: ${t("raskemaks tööks oma failide ja rakendustega (Claude Desktop/Cowork või ChatGPT töölauarakendus).", "for heavier work with your own files and apps (Claude Desktop/Cowork or the ChatGPT desktop app).")}</li>
+<li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/></svg> <strong>${t(...whereItWorks("self_hosted_mcp"))}</strong>: ${t("teenuse paigaldad ise (või IT-partner) oma serverisse; seejärel töötab ka veebis ja telefonis, kui assistent lubab lisada MCP aadressi.", "you (or an IT partner) install it on your own server; then it also works on web and phone if your assistant lets you add an MCP address.")}</li>
 <li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4"/></svg> <strong>${t(...whereItWorks("ordinary_api"))}</strong>: ${t("teenusel on API või integratsioon, aga valmis assistendi ühendust veel pole.", "the service has an API or an integration, but no ready assistant connection yet.")}</li></ul>
 <p class="small muted">${esc(t(`Iga ühendus laseb sinu assistendil teha rohkem töid sinu eest. Ühendad need oma assistendis ise; AI-hüppelaud neid ei vahenda. Allikas: avalikud dokumendid, kontrollitud ${fmtYmd(checked)}.`, `Each connection lets your assistant take more jobs off you. You connect them in your own assistant; AI Launchpad does not broker them. Source: public documentation, checked ${checked}.`))}</p></section>
 <section aria-label="${t("Kinnitatud", "Pinned")}">
