@@ -44,6 +44,28 @@ describe("shell, locale and login", () => {
     expect(shell({ title: "C", active: "none", csrf: "c", body: "<p>English</p>", bodyLang: "en" })).toContain('<div lang="en"><p>English</p></div>');
   });
 
+  test("a sample owner page carries exactly one Näidis marker, in the bar above the content", () => {
+    const html = shell({ title: "Kinnitus", active: "none", csrf: "csrf-x", body: approvalCardBody({ csrf: "csrf-x", a: approval(), lang: "et", sample: true, now: NOW }), sample: true });
+    expect(html.match(/class="label-chip label-chip--sample"/g)).toHaveLength(1);
+    expect(html).toMatch(/<p class="sample-bar"><span class="label-chip label-chip--sample">Näidis<\/span>[^]*<\/p>\n<main>/);
+    expect(html).toContain('<a class="brand" href="/">');
+    expect(shell({ title: "Täna", active: "tana", csrf: "csrf-x", body: "<p>x</p>" })).not.toContain('class="sample-bar"');
+  });
+
+  test("direction A tokens: every text/background pair is at least 4.5:1", () => {
+    const root = shell({ title: "x", active: "none", csrf: "", body: "" }).match(/:root\{([^}]*)\}/)![1];
+    const vars = Object.fromEntries([...root.matchAll(/--([\w-]+):([^;]+)/g)].map((m) => [m[1], m[2].trim()]));
+    const hex = (v: string): string => (v.startsWith("var(--") ? hex(vars[v.slice(6, -1)]) : v);
+    const lum = (h: string) => { const c = hex(h).replace("#", ""), f = c.length === 3 ? [...c].map((x) => x + x) : c.match(/../g)!; return f.map((x) => { const s = parseInt(x, 16) / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }).reduce((a, s, i) => a + s * [0.2126, 0.7152, 0.0722][i], 0); };
+    const ratio = (fg: string, bg: string) => { const [a, b] = [lum(vars[fg]), lum(vars[bg] === "transparent" ? "#fff" : vars[bg])].sort((x, y) => y - x); return (a + 0.05) / (b + 0.05); };
+    const pairs: [string, string][] = [["c-text", "c-bg"], ["c-text", "c-surface-2"], ["c-muted", "c-bg"], ["c-muted", "c-surface-2"], ["c-on-primary", "c-primary"], ["c-primary", "c-bg"], ["c-link", "c-surface-2"],
+      ["c-on-primary", "c-deep"], ["c-mint", "c-deep"], ["c-att", "c-bg"], ["c-att-dark", "c-att-bg"], ["c-danger", "c-bg"], ["c-focus", "c-bg"],
+      ...["official", "rule", "assistant", "owner", "ai", "sample"].map((k) => [`lbl-${k}-fg`, `lbl-${k}-bg`] as [string, string]),
+      ...["drafted", "waiting", "approved", "sent", "accepted", "rejected", "paid", "void"].map((k) => [`st-${k}-fg`, `st-${k}-bg`] as [string, string])];
+    for (const [fg, bg] of pairs) expect(ratio(fg, bg), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+    expect(vars["c-bg"]).toBe("#fff");
+  });
+
   test("public shell has no nav and no logout form", () => {
     const html = shell({ title: "Tähtajad", active: "none", csrf: "", body: "<p>x</p>" });
     expect(html).not.toContain('class="main"');

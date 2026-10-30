@@ -97,7 +97,7 @@ try {
     const de = document.documentElement;
     const targets = [];
     const standAlone = (a) => ![...a.parentElement.childNodes].some((n) => n.nodeType === 3 && n.textContent.replace(/[\s·|]/g, ""));
-    const els = new Set(document.querySelectorAll("button, .btn, nav.main a, .tabs button, .choice a, .lang-toggle, .tap-link, .link-row, label.check, .today-sum a"));
+    const els = new Set(document.querySelectorAll("button, .btn, .brand, footer a, nav.main a, .tabs button, .choice a, .lang-toggle, .tap-link, .link-row, label.check, .today-sum a"));
     // Links under a closed disclosure count too: measure with every details open, then restore.
     const closed = allAnchors ? [...document.querySelectorAll("details:not([open])")] : [];
     for (const d of closed) d.open = true;
@@ -217,7 +217,7 @@ try {
   const unk = await page.evaluate(() => {
     const box = [...document.querySelectorAll("#ootab .ask-row")].find((r) => r.textContent.includes("An urgent filing remains unassessed."));
     return { exists: !!box, visible: !!box && box.getBoundingClientRect().height > 0, inDetails: !!box?.closest("details"),
-      body: document.body.textContent, sample: document.querySelector("header .label-chip--sample")?.textContent ?? "",
+      body: document.body.textContent, sample: document.querySelector(".sample-bar .label-chip--sample")?.textContent ?? "",
       headings: [...document.querySelectorAll("main h2")].map((h) => h.textContent) };
   });
   assert.ok(unk.exists && unk.visible && !unk.inDetails, "unknowns visible outside details");

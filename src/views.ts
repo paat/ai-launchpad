@@ -22,103 +22,115 @@ const TEASER_CSS = BEATS.map(([k, a, cap = "16rem"]) => `.b-${k}{animation-name:
   + "\n" + TYPING.map(([k, a, b]) => `.b-${k}{animation-name:lp-${k}}@keyframes lp-${k}{0%,${a}%{max-height:0;opacity:0}${a + 1}%,${b}%{max-height:4rem;opacity:1}${b + 1}%,100%{max-height:0;opacity:0}}`).join("\n");
 
 const CSS = `
+/* --- Tokens (design direction A „Selge leht”, docs/design/direction-a) --- */
+:root{color-scheme:light;
+--c-bg:#fff;--c-surface:#fff;--c-surface-2:#F4F6F2;--c-surface-3:var(--c-surface-2);
+--c-text:#14201A;--c-muted:#4F5B53;--c-primary:#1B5E3B;--c-on-primary:#fff;--c-link:var(--c-primary);
+--c-deep:#0F3D25;--c-mint:#A3E0B5;
+--c-att:#9A4A00;--c-att-dark:#6B4E00;--c-att-bg:#FFF4D6;--c-att-bd:#F0C36B;
+--c-border:#DCE2DA;--c-divider:#E6EAE3;--c-control:#6f7d67;--c-control-2:#4f7a4a;--c-step-todo:#7d8a76;
+--c-danger:#B42318;--c-focus:#1f5fd6;--c-pulse:#b07d00;
+--lbl-official-bg:#e1f0e3;--lbl-official-fg:#14502a;--lbl-official-bd:#B9DCC2;
+--lbl-rule-bg:#fff;--lbl-rule-fg:#1B5E3B;--lbl-rule-bd:#1B5E3B;
+--lbl-assistant-bg:#eceee9;--lbl-assistant-fg:#3d4640;--lbl-assistant-bd:#c9cec5;
+--lbl-owner-bg:#14201A;--lbl-owner-fg:#fff;--lbl-owner-bd:#14201A;
+--lbl-ai-bg:#efe9fb;--lbl-ai-fg:#4c2a85;--lbl-ai-bd:#c9b8ec;--lbl-ai-tint:#f8f5fd;
+--lbl-sample-bg:transparent;--lbl-sample-fg:#4F5B53;--lbl-sample-bd:#8A948C;
+--st-drafted-bg:#eceee9;--st-drafted-fg:#3d4640;
+--st-waiting-bg:var(--c-att-bg);--st-waiting-fg:var(--c-att-dark);--st-waiting-bd:var(--c-att-bd);
+--st-approved-bg:var(--c-primary);--st-approved-fg:#fff;
+--st-sent-bg:#e3ecf9;--st-sent-fg:#1d4580;
+--st-accepted-bg:#e1f0e3;--st-accepted-fg:#14502a;
+--st-rejected-bg:#fbe5e3;--st-rejected-fg:var(--c-danger);
+--st-paid-bg:#d9efe9;--st-paid-fg:#0f4f43;
+--st-void-bg:#fbe5e3;--st-void-fg:var(--c-danger);
+--fs-xs:.8125rem;--fs-sm:.9375rem;--fs-md:1rem;--fs-lg:1.125rem;--fs-xl:1.5rem;--fs-2xl:2rem;
+--fs-h1:clamp(1.75rem,5.5vw,2.5rem);--fs-h2:1.25rem;--fs-display:clamp(2.125rem,6.5vw,3.25rem);--fs-amount:2.75rem;
+--s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:20px;--s-6:24px;--s-8:32px;--s-12:48px;--s-16:64px;
+--r-sm:6px;--r-md:12px;--r-lg:16px;--r-xl:20px;--tap:44px;
+--ease:cubic-bezier(.2,.7,.2,1);--t-fast:160ms;--t-med:200ms}
+
+/* --- Base and shell --- */
 *{box-sizing:border-box}
-body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;background:#eceee6;color:#1a241d;line-height:1.5;-webkit-font-smoothing:antialiased}
-.wrap{max-width:680px;margin:auto;padding:14px 16px 36px}
-header.top{display:flex;align-items:center;gap:8px;min-height:32px}
-.mark{width:14px;height:14px;border-radius:4px;background:#1a4d2e;flex:none}
-.brand{font-weight:750;font-size:1.05rem;letter-spacing:-.02em;margin-right:auto}
-.badge{display:inline-block;font-size:.75rem;font-weight:650;padding:3px 9px;border-radius:999px;background:#e3e9d8;color:#33472a;border:1px solid #c3d0ab}
-.badge.amber{background:#fdf3d7;color:#6b4e00;border-color:#e3c878}
-nav.main{display:flex;gap:4px;margin:10px 0 16px;padding:4px;background:#fff;border:1px solid #d9ded2;border-radius:14px}
-nav.main a{flex:1 1 0;text-align:center;min-height:44px;display:flex;align-items:center;justify-content:center;padding:8px 6px;border-radius:10px;color:#33402f;text-decoration:none;font-weight:650;font-size:.95rem}
-nav.main a[aria-current="page"]{background:#1a4d2e;color:#fff}
-a{color:#155e33}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #2f6fed;outline-offset:2px}
-.card{background:#fff;border:1px solid #d9ded2;border-radius:16px;padding:18px;margin:12px 0;box-shadow:0 1px 2px rgba(26,36,29,.05)}
-.hero{padding:22px 18px}.hero h1{font-size:1.3rem;margin:2px 0 6px}
-.company{font-weight:700;color:#1a4d2e;margin:0}
-.next{font-size:1.55rem;font-weight:750;letter-spacing:-.02em;line-height:1.25;margin:6px 0 8px;color:#12291a}
-.lede{color:#46523f;margin:0 0 4px}
-.muted{color:#4d5a48;font-size:.94rem}.small{font-size:.86rem}
-button,.btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:12px 18px;border-radius:12px;border:1px solid #1a4d2e;background:#1a4d2e;color:#fff;font:inherit;font-weight:700;cursor:pointer;text-decoration:none;width:100%;margin:8px 0}
-button.secondary,.btn.secondary{background:#fff;color:#1a4d2e;border-color:#9db894}
-button.danger{background:#fff;color:#8f1d1d;border-color:#8f1d1d}
-input,select,textarea{font:inherit;min-height:48px;padding:10px 12px;border:1px solid #93a187;border-radius:10px;width:100%;margin:4px 0 12px;background:#fff;color:#1a241d}
+@media (max-width:480px){html{font-size:106.25%}}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;margin:0;background:var(--c-bg);color:var(--c-text);line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:640px;margin:auto;padding:var(--s-2) var(--s-4) var(--s-8)}
+header.top{display:flex;align-items:center;gap:var(--s-3);min-height:60px;padding:var(--s-2) 0}
+.brand{display:inline-flex;align-items:center;gap:10px;min-height:var(--tap);margin-right:auto;color:var(--c-text);text-decoration:none;font-weight:800;font-size:var(--fs-lg);letter-spacing:-.02em;white-space:nowrap}
+.mark{position:relative;flex:none;width:24px;height:24px;border-radius:7px;background:var(--c-deep)}
+.mark::after{content:"";position:absolute;left:8px;top:4px;width:6px;height:11px;border:solid var(--c-mint);border-width:0 3px 3px 0;transform:rotate(45deg)}
+nav.main{display:flex;gap:var(--s-2);margin:0 0 var(--s-4);border-bottom:1px solid var(--c-divider)}
+nav.main a{position:relative;flex:1 1 0;display:flex;align-items:center;justify-content:center;min-height:48px;padding:var(--s-2);color:var(--c-muted);font-weight:700;text-decoration:none;transition:color var(--t-fast) var(--ease)}
+nav.main a:hover,nav.main a[aria-current="page"]{color:var(--c-text)}
+nav.main a[aria-current="page"]::after{content:"";position:absolute;left:var(--s-2);right:var(--s-2);bottom:-1px;height:3px;border-radius:3px 3px 0 0;background:var(--c-primary)}
+@media (min-width:600px){nav.main a{flex:0 0 auto;padding:var(--s-2) var(--s-4)}}
+.sample-bar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-1) var(--s-3);margin:0 0 var(--s-6);padding:var(--s-2) var(--s-3);border:1px dashed var(--lbl-sample-bd);border-radius:var(--r-md);color:var(--c-muted);font-size:var(--fs-sm)}
+.sample-bar .label-chip--sample{padding:0;border:0;color:var(--c-text);font-weight:800}
+footer{display:flex;flex-wrap:wrap;align-items:center;gap:0 var(--s-4);margin-top:var(--s-8);padding-top:var(--s-3);border-top:1px solid var(--c-divider);font-size:var(--fs-sm)}
+.guides{display:flex;gap:0 var(--s-4);flex-wrap:wrap;margin:0}.guides a{min-height:var(--tap);display:inline-flex;align-items:center}
+footer form{margin-left:auto}
+footer form button{width:auto;min-height:var(--tap);margin:0;padding:0 var(--s-2);border-color:transparent;background:none;color:var(--c-primary);font-size:var(--fs-sm);font-weight:650}
+footer form button:hover{background:var(--c-surface-2)}
+a{color:var(--c-link);text-underline-offset:.15em}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--c-focus);outline-offset:2px}
+.badge{display:inline-block;font-size:var(--fs-xs);font-weight:650;padding:3px 9px;border-radius:999px;background:var(--c-surface-2);color:var(--c-text);border:1px solid var(--c-border)}
+.badge.amber{background:var(--c-att-bg);color:var(--c-att-dark);border-color:var(--c-att-bd)}
+
+/* --- Type, cards and blocks --- */
+h1{font-size:var(--fs-h1);font-weight:800;letter-spacing:-.025em;line-height:1.1;margin:var(--s-1) 0 var(--s-3)}
+h2{font-size:var(--fs-h2);font-weight:750;letter-spacing:-.01em;line-height:1.25;margin:var(--s-4) 0 var(--s-2)}
+h3{font-size:var(--fs-md);font-weight:750;margin:var(--s-4) 0 var(--s-2)}
+.card>h2:first-child,.card>h3:first-child{margin-top:0}
+/* The approval title still carries the kind word („Maksemeeldetuletus: …”) until the T2 ticket: keep it whole on a phone. */
+article.card h1{font-size:var(--fs-xl)}
+.card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:var(--s-4);margin:var(--s-3) 0}
+.hero{padding:var(--s-5) var(--s-4)}
+.company{font-weight:700;color:var(--c-primary);margin:0}
+.next{font-size:var(--fs-xl);font-weight:750;letter-spacing:-.02em;line-height:1.25;margin:6px 0 8px;color:var(--c-text)}
+.lede{color:var(--c-muted);font-size:var(--fs-lg);margin:0 0 var(--s-2)}
+.muted{color:var(--c-muted);font-size:var(--fs-sm)}.small{font-size:var(--fs-sm)}
+button,.btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:12px 18px;border-radius:var(--r-md);border:1px solid var(--c-primary);background:var(--c-primary);color:var(--c-on-primary);font:inherit;font-weight:700;cursor:pointer;text-decoration:none;width:100%;margin:8px 0;transition:background var(--t-fast) var(--ease),transform var(--t-fast) var(--ease)}
+button:active,.btn:active{transform:translateY(1px)}
+button.secondary,.btn.secondary{background:var(--c-surface);color:var(--c-primary);border-color:var(--c-control-2)}
+button.danger{background:var(--c-surface);color:var(--c-danger);border-color:var(--c-danger)}
+input,select,textarea{font:inherit;min-height:48px;padding:10px 12px;border:1px solid var(--c-control);border-radius:var(--r-md);width:100%;margin:4px 0 12px;background:var(--c-surface);color:var(--c-text)}
 textarea{min-height:88px}
 [hidden]{display:none!important}
 label{font-weight:650;display:block}
-details{border:1px solid #d9ded2;border-radius:12px;padding:10px 14px;margin:10px 0;background:#fff}
+details{border:1px solid var(--c-border);border-radius:var(--r-md);padding:10px 14px;margin:10px 0;background:var(--c-surface)}
 details>summary{padding:4px 0}
-h1{font-size:1.5rem;font-weight:750;letter-spacing:-.02em;line-height:1.2;margin:4px 0 8px}
-h2{font-size:1.05rem;font-weight:750;letter-spacing:-.01em;margin:16px 0 6px}h3{font-size:.98rem;font-weight:750;margin:18px 0 6px}
-.card>h2:first-child,.card>h3:first-child{margin-top:0}
-summary{cursor:pointer;font-weight:650;min-height:44px;display:flex;align-items:center}
-progress{width:100%;height:12px;accent-color:#1a4d2e}
-pre{white-space:pre-wrap;word-break:break-word;background:#eef1e7;border:1px solid #dde3d2;border-radius:10px;padding:12px;font-size:.8rem}
-code{word-break:break-all}
+summary{cursor:pointer;font-weight:650;min-height:var(--tap);display:flex;align-items:center;gap:var(--s-2);list-style:none}summary::-webkit-details-marker{display:none}
+summary::after{content:"";flex:none;width:8px;height:8px;margin:0 4px 0 auto;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform var(--t-fast) var(--ease)}
+details[open]>summary::after{transform:rotate(45deg)}
+progress{width:100%;height:12px;accent-color:var(--c-primary)}
+pre{white-space:pre-wrap;word-break:break-word;background:var(--c-surface-2);border:1px solid var(--c-divider);border-radius:var(--r-md);padding:12px;font-size:.8rem}
+code{word-break:normal;overflow-wrap:anywhere}
 pre.doc{max-height:55vh;overflow:auto;font-size:.9rem}
-dl.facts{margin:8px 0}dl.facts dt{font-size:.86rem;color:#4d5a48;margin-top:8px}dl.facts dd{margin:0;font-weight:650;overflow-wrap:anywhere}
-.endpoint{background:#eef1e7;border:1px solid #ccd6bc;border-radius:10px;padding:12px;margin:8px 0;font-size:.92rem}
+dl.facts{margin:8px 0}dl.facts dt{font-size:var(--fs-sm);color:var(--c-muted);margin-top:8px}dl.facts dd{margin:0;font-weight:650;overflow-wrap:anywhere}
+.endpoint{background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:var(--r-md);padding:12px;margin:8px 0;font-size:var(--fs-sm)}
 .endpoint code{font-weight:650}
-.quote{background:#f6f7f1;border:1px solid #dde3d2;border-radius:10px;padding:4px 12px;margin:8px 0}
-.notice{background:#fdf3d7;border:1px solid #e3c878;border-radius:12px;padding:12px 14px;margin:10px 0}
+.quote{background:var(--c-surface-2);border:1px solid var(--c-divider);border-radius:var(--r-md);padding:4px 12px;margin:8px 0}
+.notice{background:var(--c-att-bg);border:1px solid var(--c-att-bd);border-radius:var(--r-md);padding:12px 14px;margin:10px 0}
 .notice p{margin:4px 0}
-.note{background:#f6f7f1;border:1px solid #dde3d2;border-radius:10px;padding:10px 12px;margin:10px 0}.note p{margin:2px 0}
+.note{background:var(--c-surface-2);border:1px solid var(--c-divider);border-radius:var(--r-md);padding:10px 12px;margin:10px 0}.note p{margin:2px 0}
 .steps{margin:8px 0;padding-left:22px}.steps li{margin:6px 0}
-.tabs{display:flex;gap:4px;padding:4px;background:#eef1e7;border:1px solid #d9ded2;border-radius:12px;margin:10px 0}
-.tabs button{flex:1 1 0;width:auto;min-height:48px;margin:0;background:transparent;color:#33402f;border-color:transparent}
-.tabs button[aria-selected="true"]{background:#1a4d2e;color:#fff;border-color:#1a4d2e}
+.tabs{display:flex;gap:4px;padding:4px;background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:var(--r-md);margin:10px 0}
+.tabs button{flex:1 1 0;width:auto;min-height:48px;margin:0;background:transparent;color:var(--c-text);border-color:transparent}
+.tabs button[aria-selected="true"]{background:var(--c-primary);color:var(--c-on-primary);border-color:var(--c-primary)}
 .tabpanel{padding:2px 2px 6px}
-.row{padding:12px 0;border-bottom:1px solid #e7ebdd}.row:last-child{border-bottom:0}
+.row{padding:12px 0;border-bottom:1px solid var(--c-divider)}.row:last-child{border-bottom:0}
 .timeline .row{padding-left:14px;position:relative}
-.timeline .row::before{content:"";position:absolute;left:0;top:20px;width:7px;height:7px;border-radius:50%;background:#1a4d2e}
-.pill{display:inline-block;font-size:.76rem;font-weight:650;padding:2px 9px;border-radius:999px;background:#eef2e0;color:#33472a;margin:2px 4px 2px 0}
-.pill.owner{background:#fdf3d7;color:#6b4e00;border:1px solid #e3c878}
-footer{margin-top:24px}footer form button{width:auto;min-height:48px}
-.guides{display:flex;gap:8px 16px;flex-wrap:wrap;margin:8px 0}.guides a{min-height:44px;display:inline-flex;align-items:center}
+.timeline .row::before{content:"";position:absolute;left:0;top:20px;width:7px;height:7px;border-radius:50%;background:var(--c-primary)}
+.pill{display:inline-block;font-size:var(--fs-xs);font-weight:650;padding:2px 9px;border-radius:999px;background:var(--c-surface-2);color:var(--c-text);border:1px solid var(--c-divider);margin:2px 4px 2px 0}
+.pill.owner{background:var(--c-att-bg);color:var(--c-att-dark);border-color:var(--c-att-bd)}
 ul.tight{margin:6px 0;padding-left:20px}ul.tight li{margin:4px 0}
-.meta{border-top:1px solid #e7ebdd;margin-top:12px;padding-top:10px}
-@media (max-width:380px){.wrap{padding:12px 12px 32px}.hero{padding:18px 14px}.card{padding:15px 14px}.next{font-size:1.4rem}h1{font-size:1.35rem}}
-/* ===== AI-hüppelaud UI additions v1 (design-spec.md). Append to the CSS constant in src/views.ts. ===== */
-/* --- Tokens --- */
-:root{color-scheme:light;
---c-bg:#eceee6;--c-surface:#fff;--c-surface-2:#f6f7f1;--c-surface-3:#eef1e7;
---c-text:#1a241d;--c-muted:#4d5a48;--c-primary:#1a4d2e;--c-on-primary:#fff;--c-link:#155e33;
---c-border:#d9ded2;--c-divider:#e7ebdd;--c-control:#6f7d67;--c-control-2:#4f7a4a;--c-step-todo:#7d8a76;
---c-danger:#8f1d1d;--c-focus:#1f5fd6;--c-pulse:#b07d00;
---lbl-official-bg:#e1f0e3;--lbl-official-fg:#14502a;--lbl-official-bd:#a9d1b2;
---lbl-rule-bg:#fff;--lbl-rule-fg:#1a4d2e;--lbl-rule-bd:#1a4d2e;
---lbl-assistant-bg:#eceee9;--lbl-assistant-fg:#3d4640;--lbl-assistant-bd:#c9cec5;
---lbl-owner-bg:#1a4d2e;--lbl-owner-fg:#fff;--lbl-owner-bd:#1a4d2e;
---lbl-ai-bg:#efe9fb;--lbl-ai-fg:#4c2a85;--lbl-ai-bd:#c9b8ec;--lbl-ai-tint:#f8f5fd;
---lbl-sample-bg:#fdf3d7;--lbl-sample-fg:#6b4e00;--lbl-sample-bd:#b08a1e;
---st-drafted-bg:#eceee9;--st-drafted-fg:#3d4640;
---st-waiting-bg:#fdf3d7;--st-waiting-fg:#6b4e00;--st-waiting-bd:#e3c878;
---st-approved-bg:#1a4d2e;--st-approved-fg:#fff;
---st-sent-bg:#e3ecf9;--st-sent-fg:#1d4580;
---st-accepted-bg:#e1f0e3;--st-accepted-fg:#14502a;
---st-rejected-bg:#fbe5e3;--st-rejected-fg:#8f1d1d;
---st-paid-bg:#d9efe9;--st-paid-fg:#0f4f43;
---st-void-bg:#fbe5e3;--st-void-fg:#8f1d1d;
---fs-xs:.8125rem;--fs-sm:.875rem;--fs-md:1rem;--fs-lg:1.125rem;--fs-xl:1.5rem;--fs-2xl:2rem;
---s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:20px;--s-6:24px;--s-8:32px;
---r-sm:6px;--r-md:10px;--r-lg:12px;--r-xl:16px;--tap:44px}
-
-/* --- Replacements of existing rules (R1-R9) --- */
-a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--c-focus);outline-offset:2px}
-input,select,textarea{border-color:var(--c-control)}
-button.secondary,.btn.secondary{border-color:var(--c-control-2)}
+.meta{border-top:1px solid var(--c-divider);margin-top:12px;padding-top:10px}
+@media (max-width:380px){.wrap{padding:var(--s-2) var(--s-3) var(--s-8)}.hero{padding:var(--s-4) 14px}.card{padding:14px}.next{font-size:1.4rem}}
 input[type=checkbox],input[type=radio]{width:22px;height:22px;min-height:0;margin:0;padding:0;flex:none;accent-color:var(--c-primary)}
 label.check{display:flex;align-items:flex-start;gap:var(--s-3);min-height:var(--tap);padding:10px 0;font-weight:600;cursor:pointer}
 label.check input{margin-top:1px}
 .row button,.row .btn{width:auto;min-height:var(--tap);padding:8px 14px;margin:8px 0 0}
-code{word-break:normal;overflow-wrap:anywhere}
 .row,.card,dd{overflow-wrap:anywhere}
-header.top{min-height:var(--tap)}.brand{white-space:nowrap}
-.hero h1{font-size:var(--fs-xl)}h2{font-size:var(--fs-lg)}
-summary{list-style:none;gap:var(--s-2)}summary::-webkit-details-marker{display:none}
-summary::after{content:"";flex:none;width:8px;height:8px;margin:0 4px 0 auto;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg)}
-details[open]>summary::after{transform:rotate(45deg)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* --- Utilities --- */
@@ -410,15 +422,18 @@ export function shell(o: ShellOpts): string {
   const l = o.lang ?? "et", t = tr(l), other: Lang = l === "et" ? "en" : "et", owner = o.csrf !== "";
   const nav = [["/", t("Täna", "Today"), "tana"], ["/activity", t("Tehtud", "Done"), "tehtud"], ["/uhenda", t("Ühendus", "Connection"), "uhendus"]] as const;
   const toggle = `<a class="lang-toggle" href="${esc(o.toggle ?? `?lang=${other}`)}" hreflang="${other}" lang="${other}">${other.toUpperCase()}<span class="vh"> · ${other === "en" ? "in English" : "eesti keeles"}</span></a>`;
+  // The bare consent page keeps the brand as text: nothing invites leaving the flow.
+  const brand = `<span class="mark" aria-hidden="true"></span>${t("AI-hüppelaud", "AI Launchpad")}`;
   const main = o.bodyLang && o.bodyLang !== l ? `<div lang="${o.bodyLang}">${o.body}</div>` : o.body;
   const footer = o.bare ? ""
     : owner
-    ? `<footer><details><summary>${t("Abi ja lisad", "Help and resources")}</summary><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/approvals">${t("Kinnitused", "Approvals")}</a><a href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/playbooks">Playbooks</a><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/setup">${t("Abi alustamiseks", "Setup helper")}</a></nav></details>
-<form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(o.csrf)}"><button type="submit" class="secondary">${t("Logi välja", "Log out")}</button></form></footer>`
+    ? `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/approvals">${t("Kinnitused", "Approvals")}</a><a href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/playbooks">Playbooks</a><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/setup">${t("Abi alustamiseks", "Setup helper")}</a></nav>
+<form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(o.csrf)}"><button type="submit">${t("Logi välja", "Log out")}</button></form></footer>`
     : `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/login">${t("Logi sisse", "Sign in")}</a></nav></footer>`;
   return `<!doctype html><html lang="${l}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${o.head ?? ""}<title>${esc(o.title)} · ${t("AI-hüppelaud", "AI Launchpad")}</title><style>${CSS}</style></head><body><div class="wrap">
-<header class="top"><span class="mark" aria-hidden="true"></span><span class="brand">${t("AI-hüppelaud", "AI Launchpad")}</span>${o.sample ? sampleChip(l) : ""}${toggle}</header>
+<header class="top">${o.bare ? `<span class="brand">${brand}</span>` : `<a class="brand" href="/">${brand}</a>`}${toggle}</header>
 ${owner && !o.bare ? `<nav class="main" aria-label="${t("Peamenüü", "Main")}">${nav.map(([href, label, key]) => `<a href="${href}"${o.active === key ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>` : ""}
+${o.sample ? `<p class="sample-bar">${sampleChip(l)}<span>${t("päriselt midagi ei saadeta", "nothing is really sent")}</span></p>` : ""}
 <main>${main}</main>
 ${footer}
 </div></body></html>`;
@@ -703,10 +718,9 @@ export function approvalCardBody(opts: { csrf: string; a: ApprovalRow; lang: Lan
   const { a, lang: l, sample } = opts, t = tr(l), v = approvalView(a, l), now = opts.now ?? new Date(), rules = opts.rules ?? [];
   const content = v.p.document?.content ? `<h2>${esc(t(...(CONTENT_HEAD[v.kindKey] ?? CONTENT_HEAD.send_message)))}</h2><pre class="letter" tabindex="0">${esc(v.p.document.content)}</pre>` : "";
   const back = `<a class="btn secondary" href="/">${t("Tagasi: Täna", "Back: Today")}</a>`;
-  const sampleC = sample ? sampleChip(l) : "";
   if (a.state === "pending") {
     return `<article class="card" aria-labelledby="a-h">
-<div class="labels">${stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))}${labelChip("assistant", v.kind)}${sampleC}</div>
+<div class="labels">${stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))}${labelChip("assistant", v.kind)}</div>
 <p class="small muted">${t("Assistent valmistas ette", "Prepared by your assistant")} · ${timeEl(a.created_at, fmtWhen(a.created_at, l, now))}</p>
 <h1 id="a-h">${esc(v.title)}</h1>
 ${v.p.summary ? `<p><strong>${t("Miks:", "Why:")}</strong> ${esc(v.p.summary)}</p>` : ""}
@@ -723,7 +737,7 @@ ${approvalTech(a, v, l)}
   }
   if (a.state === "approved" && a.approved_by_rule) {
     return `<article class="card" aria-labelledby="a-h">
-<div class="labels">${ruleChip(l)}${sampleC}</div>
+<div class="labels">${ruleChip(l)}</div>
 <h1 class="receipt-head" id="a-h"><span aria-hidden="true">✓ </span>${t("Kinnitatud püsiloaga", "Approved by standing approval")} ${esc(fmtWhen(a.decided_at, l, now).replace(/^(täna|today), /, ""))}</h1>
 <p role="status"><strong>${t("Kinnitatud püsiloaga", "Approved by your standing approval")} „${esc(ruleTitle(a, rules, l))}”.</strong> ${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}${v.amount ? ` · ${esc(v.amount)}` : ""}</p>
 <p class="small">${t("Assistent ei pidanud sinult küsima: ta saadab selle ise ja annab siia tulemuse teada.", "Your assistant did not have to ask you: it sends this itself and reports the result here.")} <a href="/uhenda#pusiload">${t("Püsiload", "Standing approvals")}</a></p>
@@ -736,7 +750,7 @@ ${back}
   }
   if (a.state === "approved") {
     return `<article class="card" aria-labelledby="a-h">
-<div class="labels">${labelChip("owner", t("Sinu kinnitus", "You approved"))}${sampleC}</div>
+<div class="labels">${labelChip("owner", t("Sinu kinnitus", "You approved"))}</div>
 <h1 class="receipt-head" id="a-h"><span aria-hidden="true">✓ </span>${t("Kinnitatud", "Approved")} ${esc(fmtWhen(a.decided_at, l, now).replace(/^(täna|today), /, ""))}</h1>
 <p role="status"><strong>${t("Nüüd on assistendi kord.", "Now it's your assistant's turn.")}</strong> ${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}${v.amount ? ` · ${esc(v.amount)}` : ""}</p>
 <div class="notice"><p><strong>${t("Mine tagasi ChatGPT-sse või Claude'i ja kirjuta „<code>Kinnitasin</code>”.", "Go back to ChatGPT or Claude and write “<code>Approved</code>” (“Kinnitasin” works too).")}</strong></p><p class="small">${t("Assistent näeb sinu kinnitust alles siis, kui talle kirjutad.", "Your assistant only sees your approval when you write to it.")}</p></div>
@@ -751,7 +765,7 @@ ${back}
     const last = v.outcome.outcome, ok = last !== "failed" && last !== "rejected";
     const head = ok ? `<span aria-hidden="true">✓ </span>${esc(t(OUTCOME[last]?.[1] ?? last, OUTCOME[last]?.[2] ?? last))}${sample ? ": demo" : ""}` : esc(t(OUTCOME[last]?.[1] ?? last, OUTCOME[last]?.[2] ?? last));
     return `<article class="card" aria-labelledby="a-h">
-<div class="labels">${outcomeChip(last, l, sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}${a.approved_by_rule ? ruleChip(l) : ""}${sampleC}</div>
+<div class="labels">${outcomeChip(last, l, sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}${a.approved_by_rule ? ruleChip(l) : ""}</div>
 <h1 class="receipt-head" id="a-h">${head}</h1>
 <p>${[v.recipient.name, v.amount].filter(Boolean).map(esc).join(" · ")}${v.recipient.name || v.amount ? " · " : ""}${esc(v.title)}</p>
 ${a.approved_by_rule ? `<p class="small"><strong>${t("Kinnitatud püsiloaga", "Approved by your standing approval")} „${esc(ruleTitle(a, rules, l))}”.</strong></p>` : ""}
@@ -771,7 +785,7 @@ ${back}
       ? t(`Kinnitasid ${fmtWhen(a.decided_at, l, now)}, aga assistent ei teatanud tulemusest enne aegumist. Selle kinnituse alusel ei tohi midagi teha; assistent peab uuesti küsima.`, `You approved ${fmtWhen(a.decided_at, l, now)}, but your assistant reported no outcome before it expired. Nothing may be done under it; your assistant must ask again.`)
       : t(`Aegus ${fmtWhen(a.expires_at, l, now)}. Midagi ei kinnitatud ega saadetud. Palu assistendil uus koostada.`, `Expired ${fmtWhen(a.expires_at, l, now)}. Nothing was approved or sent. Ask your assistant for a new one.`);
   return `<article class="card" aria-labelledby="a-h">
-<div class="labels">${status}${labelChip("assistant", v.kind)}${sampleC}</div>
+<div class="labels">${status}${labelChip("assistant", v.kind)}</div>
 <h1 id="a-h">${esc(v.title)}</h1>
 <p role="status">${esc(line)}</p>
 ${approvalFacts(v, l)}
