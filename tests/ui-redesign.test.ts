@@ -278,7 +278,7 @@ describe("landing and connect", () => {
       "<strong>Aastaaruanne</strong>Paneb kokku, mida aruandeks vaja. Allkirjastad ise.", "<strong>Tähtajad</strong>Teab sinu ettevõtte tähtaegu ja tuletab meelde.",
       "Alusta 2 minutiga", "Ühenda oma ChatGPT või Claude", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega — või luba edaspidi automaatselt", 'href="/demand"']) expect(et, s).toContain(s);
     for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Reminders to customers who owe you, invoices for the VAT return, the annual-report checklist", "Connect your assistant", ">Sample<",
-      "Who owes me money?", `Three invoices are overdue, ${fmtEur(72000, "en")} in total.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "Allow similar ones automatically", "Standing approval: reminders up to 500\u00a0€",
+      "Who owes me money?", `Three invoices are overdue, ${fmtEur(72000, "en")} in total.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "Allow similar ones automatically", `Standing approval: reminders up to ${fmtEur(50000, "en")}`,
       "I&#39;ll send the next ones myself.", "By the way, the VAT return is due <b>20\u00a0Nov</b> — shall I prepare October&#39;s invoices?", "What your assistant takes off your plate", "Start in 2 minutes", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
     // Four jobs, three steps, three trust items in the owner's order; no TSD bubble and no deadline-led copy.
     expect(et.match(/<ul class="jobs">.*?<\/ul>/s)![0].match(/<li>/g)).toHaveLength(4);
@@ -324,7 +324,7 @@ describe("landing and connect", () => {
 
   test("landing transcript: the owner approves and allows, the assistant sends (tribunal T-003)", () => {
     expect(landingBody({ lang: "et" })).toContain("<li>Sina: Kinnitatud</li><li>Assistent: Saadetud (näidis)</li><li>Sina: Luba sarnased automaatselt</li><li>Assistent: Püsiluba: meeldetuletused kuni 500\u00a0€. Järgmised saadan ise.");
-    expect(landingBody({ lang: "en" })).toContain("<li>You: Approved</li><li>Assistant: Sent (sample)</li><li>You: Allow similar ones automatically</li><li>Assistant: Standing approval: reminders up to 500\u00a0€. I&#39;ll send the next ones myself.");
+    expect(landingBody({ lang: "en" })).toContain(`<li>You: Approved</li><li>Assistant: Sent (sample)</li><li>You: Allow similar ones automatically</li><li>Assistant: Standing approval: reminders up to ${fmtEur(50000, "en")}. I&#39;ll send the next ones myself.`);
   });
 
   test("landing teaser: the KMD date is the engine's for November 2026 (20.11)", () => {

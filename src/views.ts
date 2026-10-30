@@ -320,6 +320,9 @@ details.tech-details{margin:var(--s-2) 0 0;padding:0;border:0;background:none}
 .section{padding:var(--s-6) 0;border-top:1px solid var(--c-divider)}
 .section>h2:first-child{margin-top:0}
 .tana-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:0 var(--s-12)}
+/* T4: the three sections enter in turn (from direction C); the global reduced-motion rule turns it off and leaves the final state. */
+#ootab,#tegi,#tulekul{animation:lp-enter var(--t-med) var(--ease) both}#tegi{animation-delay:60ms}#tulekul{animation-delay:120ms}
+@keyframes lp-enter{from{opacity:0;transform:translateY(8px)}}
 .tana-grid>.col:first-child>.section:first-child{padding-top:var(--s-2);border-top:0}
 @media (min-width:960px){.tana-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.tana-grid>.col>.section:first-child{padding-top:var(--s-2);border-top:0}}
 .ask{position:relative;display:flex;align-items:center;gap:var(--s-3);min-height:var(--tap);margin:0 0 var(--s-3);padding:var(--s-4) var(--s-4) var(--s-4) var(--s-6);border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface);color:inherit;text-decoration:none;box-shadow:0 1px 2px rgba(20,32,26,.04),0 8px 24px -16px rgba(20,32,26,.25);transition:box-shadow var(--t-fast) var(--ease),transform var(--t-fast) var(--ease)}
@@ -357,12 +360,13 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .legend{list-style:none;margin:var(--s-2) 0 0;padding:0;font-size:var(--fs-sm)}.legend li{margin:4px 0}.ico{vertical-align:-3px;flex:none}
 /* ===== Landing with the chat teaser (owner request 2026-10-30) ===== */
 .wrap:has(.landing){max-width:1040px}
-.landing-hero{display:grid;gap:var(--s-8);align-items:center;margin:var(--s-5) 0 var(--s-8)}
-.landing-hero h1{margin:0 0 var(--s-4);font-size:clamp(1.85rem,7vw,3rem);font-weight:800;line-height:1.1;letter-spacing:-.035em;color:#12291a}
+.landing-hero{display:grid;grid-template-areas:"text" "phone" "jobs";gap:var(--s-8);align-items:start;margin:var(--s-5) 0 var(--s-8)}
+.landing-hero>div{grid-area:text}.landing-hero>.teaser{grid-area:phone}.landing-hero>.hero-jobs{grid-area:jobs}
+.landing-hero h1{margin:0 0 var(--s-4);font-size:var(--fs-display);font-weight:800;line-height:1.05;letter-spacing:-.03em;color:#12291a}
 .landing-hero h1 span{color:var(--c-primary);background:linear-gradient(transparent 68%,#cfe3c6 68%,#cfe3c6 92%,transparent 92%)}
 .landing-hero .lede{max-width:34rem;margin:0 0 var(--s-5);font-size:var(--fs-lg);line-height:1.5}
 .landing-hero .btn{width:100%;font-size:var(--fs-lg)}
-@media (min-width:880px){.landing-hero{grid-template-columns:minmax(0,1fr) 360px;gap:56px;margin-top:var(--s-8)}.landing-hero .btn{width:auto;padding:12px 32px}}
+@media (min-width:880px){.landing-hero{grid-template-areas:"text phone" "jobs phone";grid-template-columns:minmax(0,1fr) 360px;grid-template-rows:auto 1fr;gap:var(--s-6) 56px;margin-top:var(--s-6)}.landing-hero .btn{width:auto;padding:12px 32px}}
 .teaser{position:relative;width:100%;max-width:360px;margin:0 auto}
 .teaser::before{content:"";position:absolute;inset:8% 0 4%;z-index:-1;border-radius:50%;background:radial-gradient(closest-side,#c9dcbf,transparent);opacity:.9}
 .teaser figcaption{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:var(--s-2);margin-top:var(--s-3)}
@@ -373,7 +377,7 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 #teaser-pause:checked~.phone *{animation-play-state:paused!important}
 @media (prefers-reduced-motion:reduce){.teaser-pause,.vh-input{display:none}}
 .phone{height:640px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
-@media (max-width:380px){.phone{height:700px}}
+@media (max-width:380px){.phone{height:700px}}@media (min-width:880px){.phone{height:600px}}
 .phone-screen{display:flex;flex-direction:column;height:100%;overflow:hidden;border-radius:36px;background:var(--c-surface-2)}
 .phone-bar{display:flex;align-items:center;gap:10px;padding:22px 16px 10px;background:#fff;border-bottom:1px solid var(--c-divider)}
 .phone-ava{flex:none;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1a4d2e,#6f9c63)}
@@ -410,15 +414,17 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 ${TEASER_CSS}
 .landing h2{margin:0 0 var(--s-4);font-size:var(--fs-xl);letter-spacing:-.02em}
 .how,.jobs{display:grid;gap:var(--s-3);margin:0;padding:0;list-style:none;counter-reset:how}
-.jobs{margin-bottom:var(--s-8)}
-.how li,.jobs li{counter-increment:how;display:flex;align-items:flex-start;gap:var(--s-4);padding:var(--s-4);border:1px solid var(--c-border);border-radius:var(--r-xl);background:#fff;font-size:var(--fs-lg);font-weight:650;line-height:1.35}
-.jobs li{font-size:var(--fs-md);font-weight:500}.jobs strong{display:block;font-size:var(--fs-lg);font-weight:750}
+.how li{counter-increment:how;display:flex;align-items:flex-start;gap:var(--s-4);padding:var(--s-4);border:1px solid var(--c-border);border-radius:var(--r-xl);background:#fff;font-size:var(--fs-lg);font-weight:650;line-height:1.35}
+.jobs{gap:0 var(--s-6)}
+.jobs li{display:flex;align-items:flex-start;gap:var(--s-3);padding:var(--s-3) 0;border-top:1px solid var(--c-divider);color:var(--c-muted);font-size:var(--fs-sm);line-height:1.45}
+.jobs strong{display:block;color:var(--c-text);font-size:var(--fs-md);font-weight:750}
+.jobs .how-ico{width:40px;height:40px;border-radius:12px}.jobs .how-ico svg{width:22px;height:22px}
 .how-ico{position:relative;flex:none;display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:14px;background:var(--c-surface-3);color:var(--c-primary)}
 .how-ico svg{width:26px;height:26px}
 .how .how-ico::after{content:counter(how);position:absolute;top:-6px;right:-6px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--c-primary);color:#fff;font-size:.75rem;font-weight:800}
-.trust{display:grid;gap:var(--s-2);margin:var(--s-6) 0;padding:var(--s-4);list-style:none;border-radius:var(--r-xl);background:var(--c-primary);color:#fff}
+.trust{display:grid;gap:var(--s-2);margin:var(--s-6) 0;padding:var(--s-4);list-style:none;border-radius:var(--r-xl);background:var(--c-deep);color:#fff}
 .trust li{display:flex;align-items:center;gap:var(--s-3);min-height:var(--tap);font-weight:700}
-.trust li::before{content:"";flex:none;width:9px;height:16px;margin:0 9px 4px 7px;border:solid #b9dbad;border-width:0 3px 3px 0;transform:rotate(45deg)}
+.trust li::before{content:"";flex:none;width:9px;height:16px;margin:0 9px 4px 7px;border:solid var(--c-mint);border-width:0 3px 3px 0;transform:rotate(45deg)}
 @media (min-width:760px){.how,.trust{grid-template-columns:repeat(3,minmax(0,1fr))}.jobs{grid-template-columns:repeat(2,minmax(0,1fr))}.how li{flex-direction:column}.trust{padding:var(--s-4) var(--s-6)}}
 .landing-foot{margin:0}
 /* --- T5 (#61) „Käest ära”: the handover bar (docs/design/progress). One segment = one job; prefix ho-. --- */
@@ -1372,7 +1378,7 @@ export function landingBody(o: { lang: Lang }): string {
   const owed = t(`Kolm arvet on üle tähtaja, kokku ${total}. Koostasin igale viisaka meeldetuletuse.`, `Three invoices are overdue, ${total} in total. I drafted a polite reminder for each.`);
   const card = t("Maksemeeldetuletus · 1/3", "Payment reminder · 1/3"), client = "Demo Klient OÜ";
   const approve = t("Kinnita täpselt see", "Approve exactly this"), done = `✓ ${t("Kinnitatud", "Approved")} · ${t("Saadetud: demo", "Sent: demo")}`;
-  const allow = t("Luba sarnased automaatselt", "Allow similar ones automatically"), standing = t("Püsiluba: meeldetuletused kuni 500\u00a0€", "Standing approval: reminders up to 500\u00a0€");
+  const allow = t("Luba sarnased automaatselt", "Allow similar ones automatically"), standing = t("Püsiluba: meeldetuletused kuni 500\u00a0€", `Standing approval: reminders up to ${fmtEur(50000, l)}`);
   const kmdDue = t("20.\u00a0nov", "20\u00a0Nov");
   const next = t("Järgmised saadan ise.", "I'll send the next ones myself.");
   const kmd: [string, string] = [t("Muide,", "By the way, the VAT return is due"), t("on KMD — kas valmistan oktoobri arved ette?", "— shall I prepare October's invoices?")];
@@ -1428,9 +1434,9 @@ export function landingBody(o: { lang: Lang }): string {
 <div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${t("ühendatud: AI-hüppelaud", "connected: AI Launchpad")}</small></span></div>
 <div class="chat">${chat}</div></div></div>
 <figcaption>${sampleChip(l)}<span class="small muted">${t("Vestlus sinu ChatGPT-s või Claude'is", "A conversation in your ChatGPT or Claude")}</span><label class="teaser-pause" for="teaser-pause">${t("Peata animatsioon", "Pause animation")}</label></figcaption>
-</figure></section>
-<section aria-labelledby="jobs-h"><h2 id="jobs-h">${t("Mida assistent sinu eest ära teeb", "What your assistant takes off your plate")}</h2>
-<ul class="jobs">${jobs.map(([h, s], i) => `<li>${icon(JOB_ICONS[i])}<span><strong>${esc(h)}</strong>${esc(s)}</span></li>`).join("")}</ul></section>
+</figure>
+<section class="hero-jobs" aria-labelledby="jobs-h"><h2 id="jobs-h" class="vh">${t("Mida assistent sinu eest ära teeb", "What your assistant takes off your plate")}</h2>
+<ul class="jobs">${jobs.map(([h, s], i) => `<li>${icon(JOB_ICONS[i])}<span><strong>${esc(h)}</strong>${esc(s)}</span></li>`).join("")}</ul></section></section>
 <section aria-labelledby="how-h"><h2 id="how-h">${t("Alusta 2 minutiga", "Start in 2 minutes")}</h2>
 <ol class="how">${steps.map((s, i) => `<li>${icon(STEP_ICONS[i])}<span>${esc(s)}</span></li>`).join("")}</ol></section>
 <ul class="trust" aria-label="${t("Mida me lubame", "What we promise")}">${trust.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>

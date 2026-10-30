@@ -136,6 +136,8 @@ try {
     for (const d of closed) d.open = false;
     return out;
   }, allAnchors);
+  /** Wait for every finite animation (the T4 section entrance, the stamp); the teaser's infinite loop is left running. */
+  const settle = () => page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.effect.getTiming().iterations !== Infinity).map((a) => a.finished)));
   const boxInFirstViewport = (sel) => page.evaluate((s) => {
     const el = document.querySelector(s);
     if (!el) return null;
@@ -229,6 +231,7 @@ try {
   // --- T3 Täna: hero and the first ask card in the first phone viewport, one page ≤ 1 900 px, two columns on desktop ---
   await page.setViewportSize({ width: 390, height: 844 });
   await page.setContent(pageHtml["tana-demo"]());
+  await settle();
   const tana390 = await page.evaluate(() => {
     window.scrollTo(0, 0);
     const box = (el) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), h: Math.round(r.height) }; };
@@ -251,6 +254,7 @@ try {
   geometry.tana390 = tana390;
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.setContent(pageHtml["tana-demo"]());
+  await settle();
   const tana1280 = await page.evaluate(() => {
     window.scrollTo(0, 0);
     const r = (s) => document.querySelector(s).getBoundingClientRect();
@@ -267,6 +271,7 @@ try {
   // --- T5 „Käest ära”: the strip sits in the Täna hero; the full section on Ühendus fits 390 and lays out in two columns at 1280 ---
   await page.setViewportSize({ width: 390, height: 844 });
   await page.setContent(pageHtml["tana-demo"]());
+  await settle();
   const strip = await page.evaluate(() => { window.scrollTo(0, 0); const r = document.querySelector(".ho-strip").getBoundingClientRect(), segs = [...document.querySelectorAll(".ho-strip .ho-seg")].map((s) => Math.round(s.getBoundingClientRect().width)); return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height), inHero: !!document.querySelector(".hero .ho-strip"), segs }; });
   assert.ok(strip.inHero && strip.bottom <= 844 && strip.h >= 44, `t5 strip in the hero, first viewport, ≥ 44 px ${JSON.stringify(strip)}`);
   assert.ok(strip.segs.length === tanaHandover.total && strip.segs.every((w) => w > 20), `t5 strip: one visible segment per job ${JSON.stringify(strip.segs)}`);
@@ -289,6 +294,49 @@ try {
     await page.locator("#kaest-ara").screenshot({ path: path.join(T2_SHOTS, `t5-uhendus-${vp.width}.png`) });
     geometry[`t5uhendus${vp.width}`] = ho;
   }
+
+  // --- T4 (#59) landing fold: header, headline, button and the four jobs in the first 1280×800 viewport beside a 600 px phone
+  // whose last bubble is not clipped; at 390 the fold shows the headline, the button and the top of the phone ---
+  const landingFold = () => page.evaluate(() => {
+    document.getAnimations().forEach((a) => { a.pause(); a.currentTime = 14000; }); // the teaser's final frame
+    window.scrollTo(0, 0);
+    const box = (el) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), h: Math.round(r.height) }; };
+    const q = (s) => box(document.querySelector(s));
+    const teaser = document.querySelector(".teaser");
+    return { innerH: window.innerHeight, header: q("header"), h1: q("h1"), btn: q(".landing-hero .btn"), phone: q(".phone"), chat: q(".chat"), last: q(".b-ai3"),
+      jobs: [...document.querySelectorAll(".landing-hero .jobs li")].map(box), pause: q(".teaser-pause"),
+      transcriptFirst: teaser.firstElementChild.matches("div.vh") && teaser.firstElementChild.querySelector("ol") !== null,
+      h1Size: getComputedStyle(document.querySelector("h1")).fontSize, trustBg: getComputedStyle(document.querySelector(".trust")).backgroundColor };
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.setContent(pageHtml.landing());
+  const fold1280 = await landingFold();
+  const inFold = (b) => b.top >= 0 && b.bottom <= fold1280.innerH;
+  assert.ok([fold1280.header, fold1280.h1, fold1280.btn, ...fold1280.jobs].every(inFold) && fold1280.jobs.length === 4, `t4 landing@1280: header, headline, button, 4 jobs in 800 px ${JSON.stringify(fold1280)}`);
+  assert.ok(fold1280.phone.h === 600 && fold1280.phone.left > fold1280.h1.left + 300, `t4 landing@1280: 600 px phone beside the text ${JSON.stringify(fold1280.phone)}`);
+  assert.ok(fold1280.last.top >= fold1280.chat.top - 1 && fold1280.last.bottom <= fold1280.chat.bottom + 1, `t4 landing@1280: last bubble not clipped ${JSON.stringify(fold1280)}`);
+  assert.equal(fold1280.h1Size, "52px", "t4 landing@1280: --fs-display headline");
+  assert.equal(fold1280.trustBg, "rgb(15, 61, 37)", "t4 landing: .trust on --c-deep");
+  assert.ok(fold1280.transcriptFirst, "t4 landing: the transcript <ol> stays first in the teaser");
+  await page.screenshot({ path: path.join(T2_SHOTS, "t4-landing-1280.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setContent(pageHtml.landing());
+  const fold390 = await landingFold();
+  assert.ok(fold390.h1.top >= 0 && fold390.btn.bottom <= 844 && fold390.phone.top < 844, `t4 landing@390: headline, button, top of the phone in the fold ${JSON.stringify(fold390)}`);
+  assert.ok(fold390.pause.h >= 44, `t4 landing@390: pause control ≥ 44 px ${JSON.stringify(fold390.pause)}`);
+  await page.screenshot({ path: path.join(T2_SHOTS, "t4-landing-390-fold.png") });
+  geometry.t4landing = { 1280: fold1280, 390: fold390 };
+  // The Täna entrance: 200 ms, 60 ms stagger; reduced motion shows the final state of the sections and of the teaser.
+  await page.setContent(pageHtml["tana-demo"]());
+  const enter = await page.evaluate(() => ["ootab", "tegi", "tulekul"].map((id) => { const cs = getComputedStyle(document.getElementById(id)); return `${cs.animationName} ${cs.animationDuration} ${cs.animationDelay}`; }));
+  assert.deepEqual(enter, ["lp-enter 0.2s 0s", "lp-enter 0.2s 0.06s", "lp-enter 0.2s 0.12s"], "t4 Täna sections enter in turn");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const still = await page.evaluate(() => ["ootab", "tegi", "tulekul"].map((id) => { const cs = getComputedStyle(document.getElementById(id)); return `${cs.animationName} ${cs.opacity}`; }));
+  assert.deepEqual(still, ["none 1", "none 1", "none 1"], "t4 reduced motion: no section entrance");
+  await page.setContent(pageHtml.landing());
+  const finalFrame = await page.evaluate(() => [...document.querySelectorAll(".b-card, .mock-done, .mock-rule, .b-ai2, .b-ai3")].map((e) => getComputedStyle(e).opacity));
+  assert.deepEqual(finalFrame, ["1", "1", "1", "1", "1"], "t4 reduced motion: the teaser shows its final frame");
+  await page.emulateMedia({ reducedMotion: null });
 
   // --- Guide tabs: one panel, click + keyboard (Arrow/Home/End, roving tabindex) ---
   await page.setViewportSize({ width: 390, height: 844 });
