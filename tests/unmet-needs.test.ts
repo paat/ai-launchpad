@@ -11,7 +11,7 @@ import { BASETEN_MODEL, ModelQualityLedger, payloadHash, reservationMicroUsd, ty
 import { openExistingPublicLedger } from "../src/model-public-cards.js";
 import {
   MAX_EXISTING_LABELS, UNMET_NEED_NEXT, UNMET_NEED_RECHECK_MS, buildModelInput, cleanText, deidentify, liveClassifier, mockClassifier,
-  parseClassification, unmetNeedRequestId,
+  parseClassification, recordUnmetNeed, unmetNeedRequestId,
 } from "../src/unmet-needs.js";
 import { demandPage, unmetNeedsBody } from "../src/views.js";
 
@@ -299,6 +299,17 @@ test("report_unmet_need: scope, sharing, de-identified storage, receipt, idempot
     const acts = (s.db.prepare("SELECT actor,action,outcome FROM activity WHERE owner_id='own_a' ORDER BY id").all() as { actor: string; action: string; outcome: string }[]).map((x) => `${x.actor}:${x.action}:${x.outcome}`);
     expect(acts).toEqual(["assistant:report_unmet_need:ok", "launchpad:unmet_need_classified:ok"]);
   } finally { await s.close(); }
+});
+
+test("payload_hash covers only the de-identified fields, never the raw text; replay and conflict still hold", () => {
+  const db = openDb(":memory:");
+  const args = { report_id: "h-1", need: RAW_NEED, blocker: "portal_without_api" as const, job_hint: "VAT for Demo Supplier OÜ" };
+  const r = recordUnmetNeed(db, "own_a", args) as { receipt: { need_id: string } };
+  const row = needRow(db, r.receipt.need_id);
+  expect(row.payload_hash).toBe(sha256(JSON.stringify([args.report_id, row.need_redacted, args.blocker, row.job_hint_redacted])));
+  expect(row.payload_hash).not.toBe(sha256(JSON.stringify([args.report_id, args.need, args.blocker, args.job_hint])));
+  expect(recordUnmetNeed(db, "own_a", args)).toEqual({ receipt: r.receipt, created: false });
+  expect(recordUnmetNeed(db, "own_a", { ...args, need: "Something else" })).toEqual({ error: "Conflict: report_id already used with a different payload." });
 });
 
 test("per-owner caps: 20 needs per day, 200 total, 10 classifications per day (rest visibly waiting)", async () => {

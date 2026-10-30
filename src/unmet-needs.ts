@@ -108,7 +108,10 @@ export interface UnmetNeedArgs { report_id: string; need: string; blocker: Block
 export type IntakeResult = { receipt: Record<string, unknown>; created: boolean } | { error: string };
 
 export function recordUnmetNeed(db: Db, ownerId: string, args: UnmetNeedArgs): IntakeResult {
-  const hash = sha256(JSON.stringify([args.report_id, args.need, args.blocker, args.job_hint ?? null]));
+  const need = deidentify(cleanText(args.need));
+  const hint = args.job_hint === undefined ? null : deidentify(cleanText(args.job_hint)) || null;
+  // Over the de-identified fields only: the raw text is never stored, not even hashed.
+  const hash = sha256(JSON.stringify([args.report_id, need, args.blocker, hint]));
   const receipt = (id: string) => ({ need_id: id, state: "received", next: UNMET_NEED_NEXT });
   const prior = db.prepare("SELECT id,payload_hash FROM unmet_needs WHERE owner_id=? AND report_id=?").get(ownerId, args.report_id) as { id: string; payload_hash: string } | undefined;
   if (prior) return prior.payload_hash === hash ? { receipt: receipt(prior.id), created: false } : { error: "Conflict: report_id already used with a different payload." };
@@ -117,10 +120,8 @@ export function recordUnmetNeed(db: Db, ownerId: string, args: UnmetNeedArgs): I
   const since = new Date(Date.now() - DAY_MS).toISOString();
   const recent = (db.prepare("SELECT count(*) n FROM unmet_needs WHERE owner_id=? AND created_at>=?").get(ownerId, since) as { n: number }).n;
   if (recent >= OWNER_DAILY_NEEDS) return { error: `Unmet-need daily limit reached (${OWNER_DAILY_NEEDS} per day). Retry tomorrow with the same report_id. Nothing was saved.` };
-  const need = deidentify(cleanText(args.need));
   if (!need) return { error: "need must describe the job in words. Nothing was saved." };
   if (need.length > MAX_NEED_CHARS) return { error: `need is longer than ${MAX_NEED_CHARS} characters after identifiers were replaced. Describe it more briefly. Nothing was saved.` };
-  const hint = args.job_hint === undefined ? null : deidentify(cleanText(args.job_hint)) || null;
   if (hint && hint.length > MAX_JOB_HINT_CHARS) return { error: `job_hint is longer than ${MAX_JOB_HINT_CHARS} characters after identifiers were replaced. Nothing was saved.` };
   const id = newId("need");
   const now = nowIso();
