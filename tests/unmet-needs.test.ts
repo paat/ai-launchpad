@@ -395,7 +395,7 @@ test("disabled mode also moves an interrupted classifying row to visibly unavail
   try {
     await s.queue.idle();
     expect(needRow(db, "need_stuck")).toMatchObject({ state: "received", reason: "classification_unavailable", classified_by: null });
-    expect(await (await http(s, "/", { cookie: a.raw })).text()).toContain("classification is not available on this server");
+    expect(await (await http(s, "/", { cookie: a.raw })).text()).toContain("liigitamine pole selles serveris praegu saadaval");
   } finally { await s.close(); }
 });
 
