@@ -6,7 +6,7 @@ import type { CompanyFacts, Fact } from "./obligations.js";
  * labelled synthetic + assistant-reported, not verified. */
 export const DEMO_COMPANIES = [
   { key: "alpha", label: "Mari Disain OÜ (näidis)" },
-  { key: "beta", label: "Demo Bakery OÜ (synthetic)" },
+  { key: "beta", label: "Kase Konsult OÜ (näidis)" },
 ] as const;
 
 // One coherent demo company (ux2 change 6): the same Mari Disain OÜ as the
@@ -27,19 +27,21 @@ const alpha: Assessment = assessmentSchema.parse({
   next_action: { title: "Lase assistendil tasumata arvetele meeldetuletused koostada", rationale: "Kaotab arvete käsitsi jälgimise; sina ainult kinnitad iga kirja.", savings_basis: "unknown", uncertainty: "Näidise mahud on välja mõeldud; aega pole mõõdetud.", needs_owner: true },
 });
 
+// The second demo company matches its synthetic register facts (19990002):
+// a consultancy that is not VAT-registered and pays one employee.
 const beta: Assessment = assessmentSchema.parse({
-  assessed_domains: ["money", "customers", "operations"],
-  company_label: "Demo Bakery OÜ (synthetic fixture)",
+  assessed_domains: ["money", "people", "operations"],
+  company_label: "Kase Konsult OÜ (näidis)",
   company_registry_ref: "19990002",
   responsibilities: [
-    { id: "supplier-orders", domain: "operations", label: "Weekly supplier orders", applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: "Bakery manager (fixture)", access: "Manager already orders via supplier portal", success_criterion: "Orders placed before weekly cutoff without owner input", next_checkpoint: "Next weekly order cycle (fixture)", reason: "Already delegated to a named person; assistant only assessed it. (Synthetic fixture.)", evidence_refs: ["fixture:beta-orders"] },
-    { id: "bookkeeping-access", domain: "money", label: "Bookkeeping connection", applicability: "applicable", is_core: false, arrangement: "none", reason: "Fixture: the accounting connection expired, so receipts pile up with the owner.", evidence_refs: ["fixture:beta-books"] },
-    { id: "baking", domain: "operations", label: "Baking the products", applicability: "applicable", is_core: true, arrangement: "none", reason: "The owner's craft — core work.", evidence_refs: [] },
+    { id: "payroll", domain: "people", label: "Palgaarvestus ja TSD andmed", applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: "raamatupidaja", access: "Raamatupidajal on palgaprogrammi ligipääs (näidis)", success_criterion: "TSD andmed on iga kuu enne 10. kuupäeva valmis", next_checkpoint: "Järgmine palgapäev (näidis)", reason: "Raamatupidaja arvestab töötaja palga; omanik esitab TSD. (Näidis.)", evidence_refs: ["fixture:beta-payroll"] },
+    { id: "bookkeeping-access", domain: "money", label: "Raamatupidamise ühendus", applicability: "applicable", is_core: false, arrangement: "none", reason: "Näidis: raamatupidamisprogrammi ühendus aegus, seega kuludokumendid kogunevad omaniku kätte.", evidence_refs: ["fixture:beta-books"] },
+    { id: "consulting", domain: "operations", label: "Konsultatsioonitööd", applicability: "applicable", is_core: true, arrangement: "none", reason: "Omaniku põhitöö; see jääb talle. (Näidis.)", evidence_refs: [] },
   ],
-  gaps: ["People and legal/sector domains are not assessed in this fixture, so overall coverage is not shown."],
-  assumptions: ["Synthetic example only; no real company data was used."],
-  conclusion: "Synthetic fixture: ordering is delegated, but the bookkeeping connection lapsed and two domains are unassessed.",
-  next_action: { title: "Reconnect bookkeeping access", rationale: "Stops receipts piling up on the owner and restores the existing delegated routine — no new tool needed.", uncertainty: "Fixture only; real access steps depend on the provider.", needs_owner: true },
+  gaps: ["Kliendi- ja õigusvaldkonda selles näidises ei hinnatud, seega üldist katvust ei näidata."],
+  assumptions: ["Näidis: päris ettevõtte andmeid ei kasutatud."],
+  conclusion: "Näidis: palga teeb raamatupidaja, kuid raamatupidamise ühendus aegus ja kaks valdkonda on hindamata.",
+  next_action: { title: "Taasta raamatupidamise ühendus", rationale: "Kuludokumendid ei kogune enam sinu kätte ja raamatupidaja senine töö jätkub; uut tööriista pole vaja.", uncertainty: "Näidis; päris sammud sõltuvad teenusepakkujast.", needs_owner: true },
 });
 
 export const DEMO_FIXTURES: Record<string, Assessment> = { alpha, beta };

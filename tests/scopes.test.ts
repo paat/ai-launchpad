@@ -162,12 +162,12 @@ test("catalogue is identical across owners and revocation still kills OAuth acce
     const pa = parse(await ca.callTool({ name: "get_progress", arguments: {} }));
     const pb = parse(await cb.callTool({ name: "get_progress", arguments: {} }));
     expect(pa.workspace.label).toContain("Mari Disain");
-    expect(pb.workspace.label).toContain("Bakery");
+    expect(pb.workspace.label).toContain("Kase Konsult");
     expect(pa.assessment).not.toEqual(pb.assessment);
     const sa = parse(await ca.callTool({ name: "search_services", arguments: { query: "invoice", limit: 5 } }));
     const sb = parse(await cb.callTool({ name: "search_services", arguments: { query: "invoice", limit: 5 } }));
     expect(JSON.stringify(sa.results)).toBe(JSON.stringify(sb.results));
-    expect(JSON.stringify(sb)).not.toContain("Bakery");
+    expect(JSON.stringify(sb)).not.toContain("Kase Konsult");
     // /mcp is never anonymous.
     const anon = await fetch(base+"/mcp", { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }) });
     expect(anon.status).toBe(401);

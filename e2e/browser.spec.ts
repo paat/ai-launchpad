@@ -64,8 +64,8 @@ for (const width of [390, 320]) {
 test("second synthetic business has a different next action; English on request", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/login");
-  await page.getByRole("button", { name: /Demo Bakery/ }).click();
-  await expect(page.getByText("Reconnect bookkeeping access").first()).toBeVisible();
+  await page.getByRole("button", { name: /Kase Konsult/ }).click();
+  await expect(page.getByText("Taasta raamatupidamise ühendus").first()).toBeVisible();
   await page.getByRole("link", { name: /^EN/ }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.locator("main h2").nth(0)).toHaveText(/^Needs you/);

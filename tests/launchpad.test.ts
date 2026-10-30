@@ -191,6 +191,17 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     await fetch(`${base}/tokens/revoke`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: `csrf=${await csrf(cookie)}&token_id=${tid}` });
     expect((await fetch(`${base}/mcp`, opts({ authorization: `Bearer ${token}` }))).status).toBe(401);
   });
+  test("demo company beta is one coherent company: the hero and the deadlines name the same Kase Konsult OÜ (#21, QA D-24)", async () => {
+    const html = await (await fetch(`${base}/`, { headers: { cookie: await login("beta") } })).text();
+    const hero = /<p class="company">([^<]+)<\/p>/.exec(html)![1];
+    const deadlines = /<section class="card" id="tulekul"[\s\S]*?<span class="small muted">([^<]+) · 19990002<\/span>/.exec(html)![1];
+    expect(hero).toBe("Kase Konsult OÜ (näidis)");
+    expect(hero.replace(" (näidis)", "")).toBe(deadlines);
+    expect(html).not.toMatch(/Bakery|synthetic fixture/i);
+    const loginPage = await (await fetch(`${base}/login`)).text();
+    expect(loginPage).toContain("Ava Kase Konsult OÜ (näidis)");
+    expect(loginPage).not.toContain("(synthetic)");
+  });
   test("sharing is off by default and the stop covers assessments, progress AND nominations", async () => {
     const cookie = await login("beta");
     // default-off even before any explicit stop
@@ -198,16 +209,16 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     const c = await mcpClient(raw);
     const before = parse(await c.callTool({ name: "get_progress", arguments: {} }));
     const v = before.version as number;
-    expect(((await c.callTool({ name: "report_progress", arguments: { report_id: "off1", task_id: "supplier-orders", expected_version: v, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBe(true);
+    expect(((await c.callTool({ name: "report_progress", arguments: { report_id: "off1", task_id: "payroll", expected_version: v, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBe(true);
     await grantSharing(cookie);
     const granted = await mcpClient(await issueToken(cookie));
-    expect(((await granted.callTool({ name: "report_progress", arguments: { report_id: "on1", task_id: "supplier-orders", expected_version: v, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBeUndefined();
+    expect(((await granted.callTool({ name: "report_progress", arguments: { report_id: "on1", task_id: "payroll", expected_version: v, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBeUndefined();
     await fetch(`${base}/reporting`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: `csrf=${await csrf(cookie)}&enabled=0` });
     const stopped = await mcpClient(await issueToken(cookie));
     const sv = (parse(await stopped.callTool({ name: "get_progress", arguments: {} })).version) as number;
     const writes = [
       await stopped.callTool({ name: "report_assessment", arguments: { report_id: "off2", expected_version: sv, assessment: fullAssessment } }),
-      await stopped.callTool({ name: "report_progress", arguments: { report_id: "off3", task_id: "supplier-orders", expected_version: sv, observed_at: new Date().toISOString(), milestone: "started" } }),
+      await stopped.callTool({ name: "report_progress", arguments: { report_id: "off3", task_id: "payroll", expected_version: sv, observed_at: new Date().toISOString(), milestone: "started" } }),
       await stopped.callTool({ name: "submit_service_candidate", arguments: { name: "Stopped Service", connection: "https://example.invalid/mcp", jobs: "job" } }),
     ] as { isError?: boolean }[];
     expect(writes.map((w) => !!w.isError)).toEqual([true, true, true]);
@@ -227,7 +238,7 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     const b0 = parse(await cB.callTool({ name: "get_progress", arguments: {} }));
     expect(a0.assessment).not.toBeNull(); expect(b0.assessment).not.toBeNull();
     expect(a0.coverage.next_action).not.toBe(b0.coverage.next_action);
-    expect(b0.workspace.label).toContain("Bakery");
+    expect(b0.workspace.label).toContain("Kase Konsult");
     const revised = { ...fullAssessment, responsibilities: [...fullAssessment.responsibilities, ...DEMO_FIXTURES.alpha.responsibilities.filter(r => !fullAssessment.responsibilities.some(x => x.id === r.id)).map(r => ({ ...r, applicability: "not_applicable", reason: "Synthetic revised scope: this business has no VAT registration or employees." }))] };
     const args = { report_id: "r1", expected_version: a0.version, assessment: revised };
     const r1 = parse(await cA.callTool({ name: "report_assessment", arguments: args }));
