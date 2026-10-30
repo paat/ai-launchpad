@@ -948,14 +948,6 @@ function handoverNext(h: Handover, l: Lang, csrf: string): string {
 <label for="ho-max">${t("Summa ülempiir (€)", "Amount cap (€)")}</label><input id="ho-max" name="max_eur" inputmode="decimal" autocomplete="off" value="${esc(capEur(n.capCents))}">
 </details></form>`);
   }
-  if (n.type === "renew") {
-    const r = n.rule;
-    return card(t("Järgmine samm: pikenda püsiluba", "Next step: renew your standing approval"), `<span class="labels">${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}</span>
-<span class="ask-title">${esc(standingRuleName(r, l))}</span>
-<p>${esc(t(`Aegub ${DAY.et.format(new Date(r.expires_at))}. Uus püsiluba kehtib ${STANDING_DEFAULTS.days} päeva samade piiridega.`, `Ends ${DAY.en.format(new Date(r.expires_at))}. A new one runs ${STANDING_DEFAULTS.days} days with the same limits.`))}</p>
-<form method="post" action="/standing-approvals">${csrfInput(csrf)}<input type="hidden" name="kind" value="${esc(r.kind)}"><input type="hidden" name="scope" value="${r.recipients_json === null ? "any" : "approved"}"><input type="hidden" name="max_eur" value="${esc(capEur(r.max_amount_cents))}">
-<button type="submit">${t("Pikenda püsiluba", "Renew standing approval")}</button></form>`);
-  }
   if (n.type === "playbook") {
     const reminder = n.playbookId === "payment-reminder", title = hoJobTitle(n.job, l);
     const prompt = reminder ? t(...HO_REMINDER_PROMPT) : n.obligation ? t(n.obligation.handoff.prompt_et, n.obligation.handoff.prompt_en) : t(`Valmista ette: ${title}. Küsi minult kinnitust enne, kui midagi esitan.`, `Prepare: ${title}. Ask me to approve before I file anything.`);

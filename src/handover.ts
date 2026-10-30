@@ -19,7 +19,6 @@ export interface Job {
 }
 export type NextStep =
   | { type: "standing"; job: Job; kind: string; recipients: { name: string; address: string }[]; capCents: number; basis: { count: number; maxCents: number } }
-  | { type: "renew"; job: Job | null; rule: StandingRule }
   | { type: "playbook"; job: Job; playbookId: string; obligation: Obligation | null }
   | { type: "connector" };
 export interface Handover {
@@ -99,14 +98,14 @@ export function computeHandover(o: { assessment: Assessment | null; obligations:
     jobs, off: jobs.filter((j) => j.rung !== "mine").length, total: jobs.length,
     withoutYou: jobs.filter((j) => j.rung === "done" && j.ceiling === "rule").length,
     month: { ym, done: monthDone.length, auto: monthDone.filter((a) => a.approved_by_rule).length },
-    next: nextStep(jobs, live, o.approvals, o.obligations, o.now),
+    next: nextStep(jobs, live, o.approvals, o.obligations),
     findings: { expiredUnused: { count: expired.length, last: expired[0] ?? null } },
     fromAssessment: jobs.filter((j) => j.source === "assessment").length,
   };
 }
 
-/** One next step, first match wins: standing offer → renew → playbook prompt → connector. */
-function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], obligations: Obligation[], now: Date): NextStep {
+/** One next step, first match wins: standing offer → playbook prompt → connector. */
+function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], obligations: Obligation[]): NextStep {
   for (const j of jobs) {
     if (j.rung !== "prep" || !j.kind || !STANDING_KINDS.includes(j.kind) || live.some((r) => r.kind === j.kind)) continue;
     // The same sends POST /standing-approvals (scope "approved") draws its recipients from: owner-decided, not declined, not by a rule.
@@ -118,8 +117,6 @@ function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], o
     const capCents = maxCents ? Math.ceil(maxCents / 10_000) * 10_000 : STANDING_DEFAULTS.maxAmountCents;
     return { type: "standing", job: j, kind: j.kind, recipients: [...recipients].map(([address, name]) => ({ name, address })), capCents, basis: { count: basis.length, maxCents } };
   }
-  const soon = live.filter((r) => Date.parse(r.expires_at) - now.getTime() < 14 * 86_400_000).sort((a, b) => (a.expires_at < b.expires_at ? -1 : 1))[0];
-  if (soon) return { type: "renew", job: jobs.find((j) => j.kind === soon.kind) ?? null, rule: soon };
   // Reminders first (they can reach the top rung), then filings by the soonest rule-computed date.
   const open = jobs.filter((j) => j.rung === "mine" && j.source === "playbook")
     .sort((a, b) => (a.id === "payment-reminder" ? -1 : b.id === "payment-reminder" ? 1 : (a.due ?? "9999") < (b.due ?? "9999") ? -1 : 1))[0];

@@ -133,3 +133,15 @@ describe("„Käest ära” honesty rules", () => {
     expect(jobOfApproval(appr({ kind: "prepare_payment" }))).toBeNull();
   });
 });
+
+describe("„Käest ära” fix cycle 1", () => {
+  test("a live rule ending in 3 days is never offered as a renewal (review-design-t5-grok high)", () => {
+    const soon = rule({ expires_at: new Date(NOW.getTime() + 3 * 86_400_000).toISOString() });
+    const approvals = [appr({ outcome: "sent", cents: 10_000 }), appr({ outcome: "sent", cents: 10_000, rule: "rule_1" })];
+    for (const a of [[], approvals]) {
+      const h = computeHandover({ assessment: null, obligations, approvals: a, rules: [soon], now: NOW });
+      expect(["standing", "playbook", "connector"]).toContain(h.next.type);
+      expect(html(h)).not.toContain("Pikenda püsiluba");
+    }
+  });
+});
