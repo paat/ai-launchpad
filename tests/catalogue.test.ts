@@ -79,11 +79,10 @@ describe("public catalogue", () => {
     for (const w of ["Kõikjal · veeb, telefon, arvuti", "Ainult arvutis", "Vajab ühendust"]) expect(cs.some((c) => c.html.includes(w)), w).toBe(true);
     const legend = /<ul class="legend"[\s\S]*?<\/ul>/.exec(html)![0];
     expect(html.indexOf(legend)).toBeLessThan(html.indexOf('class="card svc svc--pinned"'));
-    expect(legend).toContain("☁️");
+    expect(legend.match(/<svg class="ico"[^>]*aria-hidden="true"/g)).toHaveLength(3);
+    expect(legend).not.toMatch(/\p{Extended_Pictographic}/u);
     expect(legend).toContain("töötab kõikjal");
-    expect(legend).toContain("💻");
     expect(legend).toContain("Claude Desktop/Cowork või ChatGPT töölauarakendus");
-    expect(legend).toContain("📱");
     expect(legend).toContain("telefonis küsid ja kinnitad");
     expect(legend).not.toMatch(/testitud|kontrollitud|verified/i);
     expect(await page("/kataloog?lang=en")).toContain("Anywhere · web, phone, computer");
