@@ -268,6 +268,12 @@ describe("landing and connect", () => {
     expect(ok).toContain("Proovi kohe: „Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?”");
   });
 
+  test("connect: the phone hand-off URL keeps the selected assistant (tribunal T-005)", () => {
+    const phone = (assistant: "chatgpt" | "claude") => connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant, state: { kind: "anon" }, owner: false }).match(/<p class="big-url">(.*?)<\/p>/)?.[1];
+    expect(phone("claude")).toBe("https:/<wbr>/<wbr>launchpad.example.com/<wbr>uhenda?a=claude");
+    expect(phone("chatgpt")).toBe("https:/<wbr>/<wbr>launchpad.example.com/<wbr>uhenda?a=chatgpt");
+  });
+
   test("approval card: H1 is the document, why, period, 24 h validity, decided states hand the turn back", () => {
     const pending = approvalCardBody({ csrf: "c", a: approval(), lang: "et", sample: true, now: NOW });
     expect(pending).toContain('<h1 id="a-h">Maksemeeldetuletus: arve 2026-014</h1>');

@@ -1023,7 +1023,7 @@ ${how}`;
 export type ConnectState = { kind: "anon" } | { kind: "sample" } | { kind: "waiting" } | { kind: "connected"; who: string | null; at: string };
 export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; now?: Date }): string {
   const l = o.lang, t = tr(l), now = o.now ?? new Date();
-  const base = String(o.baseUrl ?? "").replace(/\/+$/, ""), endpoint = `${base}/mcp`, here = `${base}/uhenda`;
+  const base = String(o.baseUrl ?? "").replace(/\/+$/, ""), endpoint = `${base}/mcp`, here = `${base}/uhenda?a=${o.assistant}`;
   let parsed: URL | null = null;
   try { parsed = new URL(base); } catch { parsed = null; }
   const remoteReady = parsed !== null && parsed.protocol === "https:" && !isLocalOrPrivateHost(parsed.hostname);
