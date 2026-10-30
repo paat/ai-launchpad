@@ -585,7 +585,7 @@ function standingOffer(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: La
 <p class="small">${t("Siis ei pea assistent sinult iga kord küsima. Deklaratsioone ja makseid kinnitad alati ise.", "Then your assistant does not have to ask you every time. You always confirm filings and payments yourself.")}</p>
 <form method="post" action="/standing-approvals">${csrfInput(csrf)}<input type="hidden" name="approval_id" value="${esc(a.id)}">
 <div role="radiogroup" aria-label="${t("Kellele", "To whom")}"><label class="check"><input type="radio" name="scope" value="recipient" checked> <span>${esc(t(`Ainult ${v.recipient.name ?? address}`, `Only ${v.recipient.name ?? address}`))} <span class="small muted">${esc(v.recipient.address)}</span></span></label>
-<label class="check"><input type="radio" name="scope" value="any"> <span>${t("Kõik minu kliendid", "All my customers")}</span></label></div>
+<label class="check"><input type="radio" name="scope" value="any"> <span>${t("Kõik saajad (ka uued)", "Any recipient (including new ones)")}</span></label></div>
 <label for="so-max">${t("Summa ülempiir (€)", "Amount cap (€)")}</label><input id="so-max" name="max_eur" inputmode="decimal" autocomplete="off" value="${esc(capEur(cap))}">
 <p class="small muted">${esc(ruleLimits(l))}</p>
 <button type="submit">${t("Luba automaatselt", "Allow automatically")}</button></form></section>`;
@@ -601,7 +601,7 @@ ${rows || `<p class="muted">${t("Püsiload puuduvad: iga saatmine ootab sinu kin
 <details><summary>${t("Lisa püsiluba", "Add a standing approval")}</summary><form method="post" action="/standing-approvals">${csrfInput(o.csrf)}
 <label for="pl-kind">${t("Mida", "What")}</label><select id="pl-kind" name="kind"><option value="send_message">${t("Sõnumid (nt maksemeeldetuletused)", "Messages (e.g. payment reminders)")}</option><option value="send_invoice">${t("Arved", "Invoices")}</option></select>
 <div role="radiogroup" aria-label="${t("Kellele", "To whom")}"><label class="check"><input type="radio" name="scope" value="approved" checked> <span>${t("Ainult saajad, kellele oled juba kinnitanud", "Only recipients you have already approved")}</span></label>
-<label class="check"><input type="radio" name="scope" value="any"> <span>${t("Kõik minu kliendid", "All my customers")}</span></label></div>
+<label class="check"><input type="radio" name="scope" value="any"> <span>${t("Kõik saajad (ka uued)", "Any recipient (including new ones)")}</span></label></div>
 <label for="pl-max">${t("Summa ülempiir (€)", "Amount cap (€)")}</label><input id="pl-max" name="max_eur" inputmode="decimal" autocomplete="off" value="${esc(capEur(STANDING_DEFAULTS.maxAmountCents))}">
 <p class="small muted">${esc(ruleLimits(l))}</p>
 <button type="submit">${t("Lisa püsiluba", "Add standing approval")}</button></form></details></section>`;

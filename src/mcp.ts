@@ -138,7 +138,7 @@ export function standingRecipients(r: Pick<StandingRule, "recipients_json">): st
 const ruleEur = (cents: number, l: "et" | "en") => new Intl.NumberFormat(l === "en" ? "en-GB" : "et-EE", { style: "currency", currency: "EUR", minimumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100);
 export function standingRuleName(r: Pick<StandingRule, "kind" | "recipients_json" | "max_amount_cents">, l: "et" | "en" = "et"): string {
   const list = standingRecipients(r);
-  const who = list === null ? (l === "en" ? "all my customers" : "kõik minu kliendid") : `${list.slice(0, 2).join(", ")}${list.length > 2 ? ` +${list.length - 2}` : ""}`;
+  const who = list === null ? (l === "en" ? "any recipient (including new ones)" : "kõik saajad (ka uued)") : `${list.slice(0, 2).join(", ")}${list.length > 2 ? ` +${list.length - 2}` : ""}`;
   const what = r.kind === "send_invoice" ? (l === "en" ? "Invoices" : "Arved") : (l === "en" ? "Messages" : "Sõnumid");
   return l === "en" ? `${what} to ${who}, up to ${ruleEur(r.max_amount_cents, l)}` : `${what}: ${who}, kuni ${ruleEur(r.max_amount_cents, l)}`;
 }

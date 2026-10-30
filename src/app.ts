@@ -670,7 +670,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
         // The recipients the owner has already approved once for this kind.
         const rows = db.prepare("SELECT payload_json FROM approvals WHERE owner_id=? AND kind=? AND decided_at IS NOT NULL AND state!='declined' AND approved_by_rule IS NULL").all(oid(req), kind) as { payload_json: string }[];
         recipients = [...new Set(rows.flatMap((r) => { try { const x = (JSON.parse(r.payload_json) as { recipient?: { address?: unknown } }).recipient?.address; return typeof x === "string" && x.trim() ? [normAddress(x)] : []; } catch { return []; } }))];
-        if (!recipients.length) return bad(409, t("Sa pole sellist saatmist veel kinnitanud. Vali „Kõik minu kliendid” või kinnita enne üks saatmine.", "You have not approved such a send yet. Choose “All my customers” or approve one send first."));
+        if (!recipients.length) return bad(409, t("Sa pole sellist saatmist veel kinnitanud. Vali „Kõik saajad (ka uued)” või kinnita enne üks saatmine.", "You have not approved such a send yet. Choose “Any recipient (including new ones)” or approve one send first."));
       } else return bad(400, t("Vali, kellele püsiluba kehtib.", "Choose who the standing approval covers."));
       back = "/uhenda#pusiload";
     }

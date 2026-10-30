@@ -609,7 +609,7 @@ describe("standing approvals (#45)", () => {
     expect(await html(o, "/activity")).toContain("Sina lõpetasid püsiloa");
   });
 
-  test("an 'all my customers' rule covers new recipients but never filings or payments, even a forged rule row", async () => {
+  test("an 'any recipient' rule covers new recipients but never filings or payments, even a forged rule row", async () => {
     const { o, c } = await ruleFromCard("std-any", "any", "5000");
     expect(rules("std-any")[0]).toMatchObject({ recipients_json: null, max_amount_cents: 500_000 });
     expect((await ask(c, reminder({ recipient: { name: "New Client OÜ", address: "ap@new.example" } }))).auto_approved).toBe(true);
