@@ -376,8 +376,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       return { status: 200, state: { kind: "result", result: r.result as DeadlinesView } };
     };
     if (!q) return { status: 200, state: { kind: "empty" } };
+    // A sample company matches only its code or its exact name, with or without the legal form: a substring is a real-register search.
     const nq = normName(q);
-    const synthetic = Object.entries(SYNTHETIC_COMPANIES).find(([code, c]) => code === q || (nq.length >= 3 && normName(c.name).includes(nq)));
+    const synthetic = Object.entries(SYNTHETIC_COMPANIES).find(([code, c]) => code === q || nq === normName(c.name) || nq === normName(c.name).replace(/ oü$/u, ""));
     if (synthetic) return show(synthetic[0]);
     const code = q.replace(/\s+/g, "");
     if (/^\d{8}$/.test(code) && !validRegistryCode(code)) return { status: 200, state: { kind: "message", code: "invalid_code" } };

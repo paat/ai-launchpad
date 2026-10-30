@@ -431,6 +431,24 @@ describe("get_obligations tool and status card", () => {
       expect(JSON.stringify(r)).not.toContain(PERSON);
     } finally { s2.close(); }
   });
+  test("public search: a substring goes to the register, only the exact sample name or code opens the fixture (tribunal T-002)", async () => {
+    const cfg6: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
+    const { app: app6 } = createApp(cfg6, openDb(":memory:"));
+    const s6 = await new Promise<Server>((ok) => { const s = app6.listen(0, "127.0.0.1", () => ok(s)); });
+    const base6 = `http://127.0.0.1:${(s6.address() as { port: number }).port}`; cfg6.baseUrl = base6;
+    try {
+      const search = async (q: string) => { const start = toolCalls; const html = await (await fetch(`${base6}/?q=${encodeURIComponent(q)}`)).text(); return { html, calls: toolCalls - start }; };
+      const sub = await search("Mari");
+      expect(sub.calls).toBeGreaterThan(0);
+      expect(sub.html).toContain("Synthetic Register OÜ");
+      expect(sub.html).not.toContain("Mari Disain OÜ");
+      for (const q of ["Mari Disain", "mari disain oü", MARI]) {
+        const exact = await search(q);
+        expect(exact.calls, q).toBe(0);
+        expect(exact.html, q).toContain("Mari Disain OÜ");
+      }
+    } finally { s6.close(); }
+  });
   test("Status: a failed background fill is not retried for 10 minutes (tribunal T-007)", async () => {
     const cfg4: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
     const { app: app4, db: db4 } = createApp(cfg4, openDb(":memory:"));
