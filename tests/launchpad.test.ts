@@ -441,6 +441,32 @@ describe("Google OIDC through mock transport (no external network)", () => {
     expect(signed.status).toBe(302); expect(signed.headers.get("location")).toBe("/");
     expect(signed.headers.getSetCookie().some(c => c.startsWith("lp_connect="))).toBe(false);
   });
+  test.each([
+    ["expires", (id: string) => g.db.prepare("UPDATE oauth_pending SET expires=? WHERE id=?").run(Date.now() - 1, id)],
+    ["is deleted or consumed", (id: string) => g.db.prepare("DELETE FROM oauth_pending WHERE id=?").run(id)],
+  ])("a pending request that %s between Google-login start and callback lands on / without consent", async (_, gone) => {
+    const { connection } = await unauthenticatedAuthorize();
+    const { cookie, cb } = await begin(connection, "?return_to=%2Foauth%2Fconsent");
+    gone(sha256(connection.slice("lp_connect=".length)));
+    const signed = await callback(cb, cookie);
+    expect(signed.status).toBe(302); expect(signed.headers.get("location")).toBe("/");
+    const set = signed.headers.getSetCookie();
+    expect(set.some(c => c.startsWith("lp_connect="))).toBe(false);
+    const browserSession = set.find(c => c.startsWith("lp_session="))!.split(";")[0];
+    const consent = await fetch(`${gBase}/oauth/consent`, { headers: { cookie: `${browserSession}; ${connection}` }, redirect: "manual" });
+    expect(consent.status).toBe(400);
+  });
+  test("another browser's lp_oidc cannot finish a Google login that carries this browser's pending request", async () => {
+    const { connection } = await unauthenticatedAuthorize();
+    const a = await begin(connection, "?return_to=%2Foauth%2Fconsent");
+    const b = await begin();
+    const r = await callback(a.cb, b.cookie);
+    expect(r.status).toBe(400);
+    const set = r.headers.getSetCookie();
+    expect(set.some(c => c.startsWith("lp_session="))).toBe(false);
+    expect(set.some(c => c.startsWith("lp_connect="))).toBe(false);
+    expect(g.db.prepare("SELECT owner_id FROM oauth_pending WHERE id=?").get(sha256(connection.slice("lp_connect=".length)))).toEqual({ owner_id: null });
+  });
   test("a login without a pending authorize lands on / even with a valid return_to", async () => {
     const { cookie, cb } = await begin("", "?return_to=%2Foauth%2Fconsent");
     expect((await callback(cb, cookie)).headers.get("location")).toBe("/");

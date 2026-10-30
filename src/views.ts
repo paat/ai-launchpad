@@ -1077,7 +1077,7 @@ ${o.owner ? `<p class="small"><a class="tap-link" href="/setup">${t("Pole veel a
 <section class="card" aria-labelledby="steps-h"><h2 id="steps-h">${t("Kolm sammu", "Three steps")}</h2>
 <ol class="steps-big">${o.assistant === "claude"
     // Claude steps follow the tested Free-plan run (docs/live-pilot.md, 30 Oct 2026).
-    ? `<li><h3 class="step-title">${t("Ava Claude'is Seaded → Connectors → Add custom connector", "In Claude, open Settings → Connectors → Add custom connector")}</h3></li>
+    ? `<li><h3 class="step-title">${t("Ava Claude'is Customize → Connectors → Add custom connector", "In Claude open Customize → Connectors → Add custom connector")}</h3></li>
 <li><h3 class="step-title">${t("Nimi: AI-hüppelaud, aadress:", "Name: AI Launchpad, address:")}</h3>${address}<p><strong>${t("→ Continue → Add. Ära muuda midagi muud.", "→ Continue → Add. Change nothing else.")}</strong></p></li>
 <li><h3 class="step-title">${t("Vajuta Connect, logi sisse ja kinnita. Kui Claude küsib tööriista luba, vajuta Allow.", "Press Connect, sign in and confirm. If Claude asks for tool permission, press Allow.")}</h3><p class="small muted">`
     : `<li><h3 class="step-title">${t("Kopeeri aadress", "Copy the address")}</h3>${address}</li>
