@@ -12,12 +12,12 @@ export const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({
 // Landing teaser timeline (18 s loop, pure CSS): each beat grows in at its
 // percentage and the whole chat fades out at the end. Without animation
 // (prefers-reduced-motion) the base styles are the final frame.
-const BEATS: [string, number][] = [["me1", 3], ["ai1", 19], ["card", 26], ["allow", 43], ["ai2", 69]];
+const BEATS: [string, number, string?][] = [["me1", 3], ["ai1", 19], ["card", 26, "48rem"], ["allow", 43], ["ai2", 69], ["ai3", 74]];
 const TYPING: [string, number, number][] = [["t1", 7, 19], ["t2", 59, 69]];
 // The card's two taps: the button swaps for its result at this percentage, the tap ring leads it.
 const TAPS: [string, number][] = [["approve", 38], ["allow", 54]];
-const HIDE = "max-height:0;opacity:0;transform:translateY(12px)", SHOW = "max-height:16rem;opacity:1;transform:none";
-const TEASER_CSS = BEATS.map(([k, a]) => `.b-${k}{animation-name:lp-${k}}@keyframes lp-${k}{0%,${a}%{${HIDE}}${a + 2}%,94%{${SHOW}}98%{max-height:16rem;opacity:0}100%{max-height:0;opacity:0}}`).join("\n")
+const HIDE = "max-height:0;opacity:0;transform:translateY(12px)";
+const TEASER_CSS = BEATS.map(([k, a, cap = "16rem"]) => `.b-${k}{animation-name:lp-${k}}@keyframes lp-${k}{0%,${a}%{${HIDE}}${a + 2}%,94%{max-height:${cap};opacity:1;transform:none}98%{max-height:${cap};opacity:0}100%{max-height:0;opacity:0}}`).join("\n")
   + "\n" + TAPS.map(([k, a]) => `@keyframes lp-${k}-out{0%,${a}%{opacity:1}${a + 1}%,100%{opacity:0}}@keyframes lp-${k}-in{0%,${a}%{opacity:0;transform:scale(.96)}${a + 2}%,100%{opacity:1;transform:none}}@keyframes lp-${k}-tap{0%,${a - 8}%{opacity:0;transform:scale(.3)}${a - 5}%{opacity:1;transform:scale(1)}${a}%,100%{opacity:0;transform:scale(2.4)}}`).join("\n")
   + "\n" + TYPING.map(([k, a, b]) => `.b-${k}{animation-name:lp-${k}}@keyframes lp-${k}{0%,${a}%{max-height:0;opacity:0}${a + 1}%,${b}%{max-height:4rem;opacity:1}${b + 1}%,100%{max-height:0;opacity:0}}`).join("\n");
 
@@ -1073,15 +1073,16 @@ const STEP_ICONS = [
 ];
 
 export function landingBody(o: { lang: Lang }): string {
-  const l = o.lang, t = tr(l), amount = fmtEur(24000, l);
+  const l = o.lang, t = tr(l), amount = fmtEur(24000, l), total = fmtEur(186000, l);
   // One conversation, used for the animation and the screen-reader transcript. It leads with money; the deadline is one offer at the end.
   const ask = t("Kes mulle võlgu on?", "Who owes me money?");
-  const owed = t("Kolm arvet on üle tähtaja, kokku 1\u00a0860\u00a0€. Koostasin igale viisaka meeldetuletuse.", "Three invoices are overdue, 1,860\u00a0€ in total. I drafted a polite reminder for each.");
-  const card = t("Maksemeeldetuletus", "Payment reminder"), client = "Demo Klient OÜ";
+  const owed = t(`Kolm arvet on üle tähtaja, kokku ${total}. Koostasin igale viisaka meeldetuletuse.`, `Three invoices are overdue, ${total} in total. I drafted a polite reminder for each.`);
+  const card = t("Maksemeeldetuletus · 1/3", "Payment reminder · 1/3"), client = "Demo Klient OÜ";
   const approve = t("Kinnita täpselt see", "Approve exactly this"), done = `✓ ${t("Kinnitatud", "Approved")} · ${t("Saadetud: demo", "Sent: demo")}`;
   const allow = t("Luba sarnased automaatselt", "Allow similar ones automatically"), standing = t("Püsiluba: meeldetuletused kuni 500\u00a0€", "Standing approval: reminders up to 500\u00a0€");
   const kmdDue = t("20.\u00a0nov", "20\u00a0Nov");
-  const next: [string, string] = [t("Järgmised saadan ise. Muide,", "I'll send the next ones myself. By the way, the VAT return is due"), t("on KMD — kas valmistan oktoobri arved ette?", "— shall I prepare October's invoices?")];
+  const next = t("Järgmised saadan ise.", "I'll send the next ones myself.");
+  const kmd: [string, string] = [t("Muide,", "By the way, the VAT return is due"), t("on KMD — kas valmistan oktoobri arved ette?", "— shall I prepare October's invoices?")];
   const rule = t("Arvutatud reeglist", "Calculated by rule"), kmdSource = `${t("Allikas", "Source")}: ${t("KMS", "VAT Act")} § 27, § 38`;
   const me = (k: string, text: string) => `<div class="beat beat--me b-${k}"><p class="bubble">${esc(text)}</p></div>`;
   const ai = (k: string, inner: string) => `<div class="beat beat--ai b-${k}"><div class="bubble">${inner}</div></div>`;
@@ -1094,7 +1095,8 @@ export function landingBody(o: { lang: Lang }): string {
 <div class="mock-btn"><span class="mock-approve">${esc(approve)}</span><span class="mock-done">${esc(done)}</span><span class="mock-tap"></span></div>
 <div class="beat b-allow"><div class="mock-btn"><span class="mock-allow">${esc(allow)}</span><span class="mock-rule">${esc(standing)}</span><span class="mock-tap"></span></div></div></div></div>`,
     typing("t2"),
-    ai("ai2", `${esc(next[0])} <b>${esc(kmdDue)}</b> ${esc(next[1])}<span class="labels">${labelChip("rule", rule)}${labelChip("official", kmdSource)}</span>`),
+    ai("ai2", esc(next)),
+    ai("ai3", `${esc(kmd[0])} <b>${esc(kmdDue)}</b> ${esc(kmd[1])}<span class="labels">${labelChip("rule", rule)}${labelChip("official", kmdSource)}</span>`),
   ].join("\n");
   const transcript = [
     [t("Sina", "You"), ask],
@@ -1103,7 +1105,8 @@ export function landingBody(o: { lang: Lang }): string {
     [t("Sina", "You"), t("Kinnitatud", "Approved")],
     [t("Assistent", "Assistant"), t("Saadetud (näidis)", "Sent (sample)")],
     [t("Sina", "You"), allow],
-    [t("Assistent", "Assistant"), `${standing}. ${next[0]} ${kmdDue} ${next[1]} · ${rule} · ${kmdSource}`],
+    [t("Assistent", "Assistant"), `${standing}. ${next}`],
+    [t("Assistent", "Assistant"), `${kmd[0]} ${kmdDue} ${kmd[1]} · ${rule} · ${kmdSource}`],
   ].map(([who, text]) => `<li>${esc(who)}: ${esc(text)}</li>`).join("");
   const jobs: [string, string][] = [
     [t("Võlgnikud", "Unpaid invoices"), t("Leiab tasumata arved ja saadab meeldetuletused.", "Finds unpaid invoices and sends reminders.")],

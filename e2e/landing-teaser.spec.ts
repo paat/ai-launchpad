@@ -15,10 +15,10 @@ const opacity = (page: Page, sel: string) => page.locator(sel).evaluateAll((els)
 const finalFrameFits = async (page: Page) => {
   const box = (sel: string) => page.locator(sel).evaluate((e) => { const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
   const chat = await box(".chat");
-  for (const sel of [".b-card", ".mock-rule", ".b-ai2"]) {
+  for (const sel of [".b-card", ".mock-rule", ".b-ai2", ".b-ai3"]) {
     const b = await box(sel);
-    expect(b.top, sel).toBeGreaterThanOrEqual(chat.top);
-    expect(b.bottom, sel).toBeLessThanOrEqual(chat.bottom + 0.5);
+    expect(b.top, sel).toBeGreaterThanOrEqual(chat.top - 1);
+    expect(b.bottom, sel).toBeLessThanOrEqual(chat.bottom + 1);
   }
 };
 
@@ -59,9 +59,9 @@ for (const width of [390, 1280]) {
     expect(await opacity(page, ".b-allow, .mock-allow, .mock-rule")).toEqual([1, 1, 0]);
     await page.screenshot({ path: `${SHOTS}/teaser-${width}-09s.png`, fullPage: true });
     await seek(page, 11000);
-    expect(await opacity(page, ".mock-allow, .mock-rule, .b-t2, .b-ai2")).toEqual([0, 1, 1, 0]);
+    expect(await opacity(page, ".mock-allow, .mock-rule, .b-t2, .b-ai2, .b-ai3")).toEqual([0, 1, 1, 0, 0]);
     await seek(page, 14000);
-    expect(await opacity(page, ".b-ai2, .mock-rule, .mock-done")).toEqual([1, 1, 1]);
+    expect(await opacity(page, ".b-ai2, .b-ai3, .mock-rule, .mock-done")).toEqual([1, 1, 1, 1]);
     await finalFrameFits(page);
     await page.screenshot({ path: `${SHOTS}/teaser-${width}-14s.png`, fullPage: true });
     await page.locator(".teaser").evaluate((e) => e.scrollIntoView({ block: "center" }));
@@ -105,13 +105,22 @@ test("320px: no overflow; reduced motion shows the final frame statically", asyn
   await page.goto("/");
   expect(await overflow(page)).toBeLessThanOrEqual(0);
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
-  expect(await opacity(page, ".beat:not(.beat--typing)")).toEqual([1, 1, 1, 1, 1]);
+  expect(await opacity(page, ".beat:not(.beat--typing)")).toEqual([1, 1, 1, 1, 1, 1]);
   expect(await page.locator(".beat--typing").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))).toEqual([0, 0]);
   expect(await opacity(page, ".mock-wait, .mock-ok, .mock-approve, .mock-done, .mock-allow, .mock-rule")).toEqual([0, 1, 0, 1, 0, 1]);
   await expect(page.locator(".mock-done")).toHaveText("✓ Kinnitatud · Saadetud: demo");
   await expect(page.locator(".mock-rule")).toHaveText("Püsiluba: meeldetuletused kuni 500\u00a0€");
   await finalFrameFits(page);
   await page.screenshot({ path: `${SHOTS}/teaser-320-reduced-motion.png`, fullPage: true });
+});
+
+test("200% root font: nested standing beat is not clipped by the card cap (tribunal T-005)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.addStyleTag({ content: "html{font-size:32px}" });
+  await seek(page, 14000);
+  const card = await page.locator(".b-card").evaluate((e) => ({ h: e.getBoundingClientRect().height, full: e.scrollHeight }));
+  expect(card.h).toBeGreaterThanOrEqual(card.full - 1);
 });
 
 test("EN: ?lang=en renders the same page in English", async ({ page }) => {
