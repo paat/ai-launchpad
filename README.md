@@ -6,8 +6,9 @@ Turn the AI assistant an Estonian small-business owner already has — or is abo
 
 ## End goal
 
-AI agents take the back-office load off small-business owners and their employees, so people spend their time on their core work. AI Launchpad does not compete with personal assistants. It equips the person's own assistant with Estonian facts, rules, playbooks and approvals so it can do that work safely; the person approves only what binds them. Measures (time saved, reliable outcomes, remaining manual work): [R-001](docs/requirements/R-001-next-best-action.md).
-Eesmärk: tehisaru-agendid võtavad väikeettevõtja ja tema töötajate õlult kontoritöö, et inimesed saaksid keskenduda oma põhitööle.
+AI agents take the back-office load off small-business owners and their employees, so people spend their time on their core work. Measures: time saved, reliable outcomes and remaining manual work ([R-001](docs/requirements/R-001-next-best-action.md)).
+
+Eesmärk: tehisaru-agendid võtavad väikeettevõtja ja tema töötajate õlult ära kontoritööd, et inimesed saaksid keskenduda oma põhitööle.
 
 > **Status:** owner-only HTTPS pilot at https://huppelaud.arikratt.ee. One owner ChatGPT plus Meta/Baseten path tested; Claude untested, so this is not broad compatibility or production ready. See [docs/live-pilot.md](docs/live-pilot.md) for dated evidence, cost, and recovery limits. Local demo and tests remain mock ($0); see [docs/local-demo.md](docs/local-demo.md).
 
