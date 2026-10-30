@@ -126,7 +126,6 @@ describe("Täna", () => {
     const html = tana({ deadlines: reordered });
     expect(html).toContain("„Kas maksid oktoobris palka, juhatuse liikme tasu või dividende?” Kui ei maksnud ega olnud töötajat, kaob 10. novembri TSD rida.");
     expect(html).not.toContain("detsembri TSD");
-    expect(landingBody({ lang: "en", q: "Mari", state: { kind: "result", result: reordered }, now: NOW })).toContain("If you made no payouts and had no employee, the 10 Nov TSD row goes away.");
     // 30 Oct: September's TSD (due 12 Oct) is past, so no September question is asked at all.
     const oct30 = new Date("2026-10-30T10:00:00Z"), m = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: oct30, months: 2 });
     const page = tana({ now: oct30, deadlines: { ...mariDeadlines, obligations: m.obligations, facts_needed: m.facts_needed } });
@@ -238,15 +237,36 @@ describe("Täna", () => {
 });
 
 describe("landing and connect", () => {
-  test("landing: one search input, sample results labelled Näidis, honest not-configured state, CTA to /uhenda", () => {
-    const empty = landingBody({ lang: "et", q: "", state: { kind: "empty" } });
-    expect((empty.match(/<input /g) ?? []).length).toBe(1);
-    expect(empty).toContain("Ettevõtte nimi või registrikood");
-    const result = landingBody({ lang: "et", q: "Mari", state: { kind: "result", result: mariDeadlines }, now: NOW });
-    for (const s of ["Mari Disain OÜ", '<span class="label-chip label-chip--sample">Näidis</span>', "Tähtajad arvutab reeglistik, mitte tehisaru.", "Lase oma assistendil see töö enda peale võtta. Sina kinnitad ainult selle, mis sind seob.", 'href="/uhenda"', '<dt class="me">Sina</dt>']) expect(result, s).toContain(s);
-    expect(result).not.toContain("Ametlik allikas");
-    expect(landingBody({ lang: "et", q: "12345678", state: { kind: "message", code: "not_configured" } })).toContain("Avaliku registri päring pole veel seadistatud — proovi näidisettevõtet „Mari Disain”.");
-    expect(landingBody({ lang: "en", q: "x", state: { kind: "message", code: "ip_limit" } })).toContain("Too many register lookups");
+  test("landing: what the product does, a labelled CSS-only chat teaser, 3 steps, trust strip, no search (owner 2026-10-30)", () => {
+    const et = landingBody({ lang: "et" }), en = landingBody({ lang: "en" });
+    for (const s of ["Sinu AI-assistent teeb kontoritöö.", "Sina kinnitad ainult selle, mis sind seob.", "ilma uue äpi ja vormideta", '<a class="btn" href="/uhenda">Ühenda oma assistent</a>',
+      '<span class="label-chip label-chip--sample">Näidis</span>', "Mis mul sel kuul adminis ees on?", "<b>20. nov</b> — KMD ja käibemaks", "Arvutatud reeglist", "Allikas: KMS § 27", "<b>10. nov</b> — TSD · kas oktoobris oli väljamakseid?",
+      "Saan oktoobri arved KMD jaoks ette valmistada. Kas alustan?", "Jah. Ja meenuta Demo Kliendile tasumata arvet.", "Maksemeeldetuletus", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud: demo",
+      "Kuidas see töötab", "Ühenda oma ChatGPT või Claude (2 minutit)", "Midagi ei saadeta ilma sinu loata", "Tähtajad arvutab reeglistik, mitte tehisaru", "Smart-ID ja allkiri jäävad sinu kätte", 'href="/demand"']) expect(et, s).toContain(s);
+    for (const s of ["Your AI assistant does the back office.", "Connect your assistant", ">Sample<", "<b>20 Nov</b>", fmtEur(24000, "en"), "Approve exactly this", "How it works"]) expect(en, s).toContain(s);
+    // The animation is decorative (aria-hidden, no focusable element); a visually hidden transcript carries the same conversation.
+    expect(et).toContain('<div class="phone" aria-hidden="true">');
+    const phone = et.slice(et.indexOf('<div class="phone"'), et.indexOf("<figcaption>"));
+    expect(phone).not.toMatch(/<(a|button|input)\b|tabindex/);
+    expect(et).toMatch(/<div class="vh"><p>Näidisvestlus:<\/p><ol><li>Sina: Mis mul sel kuul adminis ees on\?<\/li>/);
+    // No search, no script, no claim we cannot back.
+    for (const html of [et, en]) expect(html).not.toMatch(/<form|<input|<script|name="q"|\bsäästa|\bsaves? \d/i);
+    expect(et).not.toContain("automaatselt");
+  });
+
+  test("landing teaser: the dates are the engine's for November 2026 (10.11 TSD, 20.11 KMD)", () => {
+    const m = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2026-11-01T10:00:00Z"), months: 1 });
+    const due = Object.fromEntries(m.obligations.map((o) => [o.rule_id, o.effective_due]));
+    expect(due["tsd-monthly-return"]).toBe("2026-11-10");
+    expect(due["vat-return-kmd"]).toBe("2026-11-20");
+  });
+
+  test("landing teaser CSS: final frame is the base state, so reduced motion shows it statically", () => {
+    const css = shell({ title: "x", active: "none", csrf: "", body: "" });
+    expect(css).toContain("@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important");
+    expect(css).toMatch(/\.beat--typing\{max-height:0;opacity:0\}/);
+    expect(css).toMatch(/\.mock-approve\{[^}]*opacity:0;animation:lp-approve 18s infinite\}/);
+    for (const k of ["me1", "t1", "ai1", "ai2", "ai3", "me2", "t2", "card"]) expect(css, k).toContain(`.b-${k}{animation-name:lp-${k}}@keyframes lp-${k}{`);
   });
 
   test("connect: ChatGPT first, honest plan lines, phone URL without QR, technical words only under Tehniline info", () => {

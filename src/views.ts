@@ -1,13 +1,22 @@
 import type { Assessment, Coverage } from "./core.js";
 import { isHandled } from "./core.js";
 import { approvalAddressMissing, normAddress, standingRecipients, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type AssistantMilestones, type Exclusion, type StandingRule } from "./mcp.js";
-import type { CompanyCard, CompanyMatch } from "./arikratt.js";
+import type { CompanyCard } from "./arikratt.js";
 import { ET_OF, type FactNeeded, type Obligation } from "./obligations.js";
 import { BASETEN_MODEL } from "./model-quality.js";
 import { safeHttps, type ServiceRecord } from "./catalog.js";
 import { BLOCKER_HANDOFF, BLOCKER_LABELS, BLOCKER_LABELS_ET, CATEGORY_LABELS, CATEGORY_LABELS_ET, classifiedByLabel, type Blocker, type Category, type DemandItem, type OwnerNeed } from "./unmet-needs.js";
 
 export const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+
+// Landing teaser timeline (18 s loop, pure CSS): each beat grows in at its
+// percentage and the whole chat fades out at the end. Without animation
+// (prefers-reduced-motion) the base styles are the final frame.
+const BEATS: [string, number][] = [["me1", 3], ["ai1", 19], ["ai2", 24], ["ai3", 29], ["me2", 37], ["card", 50]];
+const TYPING: [string, number, number][] = [["t1", 7, 19], ["t2", 42, 50]];
+const HIDE = "max-height:0;opacity:0;transform:translateY(12px)", SHOW = "max-height:16rem;opacity:1;transform:none";
+const TEASER_CSS = BEATS.map(([k, a]) => `.b-${k}{animation-name:lp-${k}}@keyframes lp-${k}{0%,${a}%{${HIDE}}${a + 2}%,94%{${SHOW}}98%{max-height:16rem;opacity:0}100%{max-height:0;opacity:0}}`).join("\n")
+  + "\n" + TYPING.map(([k, a, b]) => `.b-${k}{animation-name:lp-${k}}@keyframes lp-${k}{0%,${a}%{max-height:0;opacity:0}${a + 1}%,${b}%{max-height:4rem;opacity:1}${b + 1}%,100%{max-height:0;opacity:0}}`).join("\n");
 
 const CSS = `
 *{box-sizing:border-box}
@@ -241,7 +250,6 @@ details.tech-details{margin:var(--s-2) 0 0;padding:0;border:0;background:none}
 pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(--c-surface-2);border-color:var(--c-divider);font:inherit;font-size:var(--fs-md);white-space:pre-wrap;overflow-wrap:anywhere}
 .big-url{margin:var(--s-2) 0;font-size:var(--fs-lg);font-weight:750;overflow-wrap:anywhere}
 .big-url a{color:var(--c-text);text-decoration:none}
-.search{display:flex;flex-wrap:wrap;gap:0 8px;align-items:flex-end}.search label{flex:1 1 220px}.search button{flex:1 1 140px;width:auto;margin:4px 0 12px}
 .status-chip a{color:inherit}
 .tech-list dd{overflow-wrap:anywhere}
 /* ===== Kataloog ===== */
@@ -254,7 +262,61 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .svc-k{margin:var(--s-2) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}.svc-v{margin:0}
 .svc-facts{margin:var(--s-2) 0 0;font-size:var(--fs-sm)}.svc-facts dt{font-weight:700;color:var(--c-muted);margin-top:6px}.svc-facts dd{margin:0}
 .svc--pinned{border-color:var(--c-primary);box-shadow:inset 4px 0 0 var(--c-primary)}
-.legend{list-style:none;margin:var(--s-2) 0 0;padding:0;font-size:var(--fs-sm)}.legend li{margin:4px 0}.ico{vertical-align:-3px;flex:none}`;
+.legend{list-style:none;margin:var(--s-2) 0 0;padding:0;font-size:var(--fs-sm)}.legend li{margin:4px 0}.ico{vertical-align:-3px;flex:none}
+/* ===== Landing with the chat teaser (owner request 2026-10-30) ===== */
+.wrap:has(.landing){max-width:1040px}
+.landing-hero{display:grid;gap:var(--s-8);align-items:center;margin:var(--s-5) 0 var(--s-8)}
+.landing-hero h1{margin:0 0 var(--s-4);font-size:clamp(1.85rem,7vw,3rem);font-weight:800;line-height:1.1;letter-spacing:-.035em;color:#12291a}
+.landing-hero h1 span{color:var(--c-primary);background:linear-gradient(transparent 68%,#cfe3c6 68%,#cfe3c6 92%,transparent 92%)}
+.landing-hero .lede{max-width:34rem;margin:0 0 var(--s-5);font-size:var(--fs-lg);line-height:1.5}
+.landing-hero .btn{width:100%;font-size:var(--fs-lg)}
+@media (min-width:880px){.landing-hero{grid-template-columns:minmax(0,1fr) 360px;gap:56px;margin-top:var(--s-8)}.landing-hero .btn{width:auto;padding:12px 32px}}
+.teaser{position:relative;width:100%;max-width:360px;margin:0 auto}
+.teaser::before{content:"";position:absolute;inset:8% 0 4%;z-index:-1;border-radius:50%;background:radial-gradient(closest-side,#c9dcbf,transparent);opacity:.9}
+@media (min-width:880px){.teaser::before{inset:8% -12% 4%}}
+.teaser figcaption{display:flex;align-items:center;justify-content:center;gap:var(--s-2);margin-top:var(--s-3)}
+.phone{height:640px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
+@media (max-width:380px){.phone{height:700px}}
+.phone-screen{display:flex;flex-direction:column;height:100%;overflow:hidden;border-radius:36px;background:var(--c-surface-2)}
+.phone-bar{display:flex;align-items:center;gap:10px;padding:22px 16px 10px;background:#fff;border-bottom:1px solid var(--c-divider)}
+.phone-ava{flex:none;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1a4d2e,#6f9c63)}
+.phone-who{line-height:1.25}.phone-who b{display:block;font-size:var(--fs-sm)}.phone-who small{color:var(--c-muted);font-size:.75rem}
+.chat{display:flex;flex:1;flex-direction:column;justify-content:flex-end;min-height:0;overflow:hidden;padding:4px 12px 14px;font-size:.875rem;line-height:1.4}
+.beat{display:flex;flex:none;flex-direction:column;overflow:hidden;animation-duration:18s;animation-timing-function:ease-out;animation-iteration-count:infinite}
+.beat>*{margin:10px 0 0}.beat--ai+.beat--ai>*{margin-top:4px}
+.bubble{max-width:88%;padding:8px 12px;border-radius:18px}
+.beat--me .bubble{align-self:flex-end;border-bottom-right-radius:6px;background:var(--c-primary);color:#fff}
+.beat--ai .bubble{align-self:flex-start;border:1px solid var(--c-border);border-bottom-left-radius:6px;background:#fff}
+.bubble b{color:var(--c-primary)}.bubble .labels{gap:4px;margin:4px 0 0}
+.beat--typing{max-height:0;opacity:0}
+.typing{display:flex;gap:4px;align-self:flex-start;padding:12px 14px;border:1px solid var(--c-border);border-radius:18px;border-bottom-left-radius:6px;background:#fff}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--c-muted);animation:lp-dot 1s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes lp-dot{0%,60%,100%{opacity:.35;transform:none}30%{opacity:1;transform:translateY(-3px)}}
+.mock-card{padding:12px;border:1px solid var(--c-border);border-radius:var(--r-xl);background:#fff;box-shadow:0 6px 16px -8px rgba(26,36,29,.25)}
+.mock-card .labels{margin:0}
+.mock-title{margin:8px 0 2px;font-size:var(--fs-md);font-weight:750}
+.mock-facts{display:flex;margin:0;flex-wrap:wrap;justify-content:space-between;gap:0 8px;color:var(--c-muted)}.mock-facts b{color:var(--c-text);font-variant-numeric:tabular-nums}
+.mock-btn{position:relative;display:grid;margin-top:10px}
+.mock-btn>span{grid-area:1/1;display:flex;align-items:center;justify-content:center;min-height:var(--tap);padding:0 10px;border-radius:var(--r-lg);font-weight:750;text-align:center}
+.mock-approve{background:var(--c-primary);color:#fff;opacity:0;animation:lp-approve 18s infinite}
+.mock-done{border:1px dashed var(--st-accepted-fg);background:var(--st-accepted-bg);color:var(--st-accepted-fg);animation:lp-done 18s infinite}
+.mock-btn>.mock-tap{position:absolute;top:50%;left:50%;width:46px;height:46px;min-height:0;margin:-23px 0 0 -23px;padding:0;border-radius:50%;background:rgba(255,255,255,.6);box-shadow:0 0 0 3px rgba(255,255,255,.35);opacity:0;animation:lp-tap 18s infinite}
+@keyframes lp-approve{0%,71%{opacity:1}72%,100%{opacity:0}}
+@keyframes lp-done{0%,71%{opacity:0;transform:scale(.96)}73%,100%{opacity:1;transform:none}}
+@keyframes lp-tap{0%,63%{opacity:0;transform:scale(.3)}66%{opacity:1;transform:scale(1)}71%,100%{opacity:0;transform:scale(2.4)}}
+${TEASER_CSS}
+.landing h2{margin:0 0 var(--s-4);font-size:var(--fs-xl);letter-spacing:-.02em}
+.how{display:grid;gap:var(--s-3);margin:0;padding:0;list-style:none;counter-reset:how}
+.how li{counter-increment:how;display:flex;align-items:flex-start;gap:var(--s-4);padding:var(--s-4);border:1px solid var(--c-border);border-radius:var(--r-xl);background:#fff;font-size:var(--fs-lg);font-weight:650;line-height:1.35}
+.how-ico{position:relative;flex:none;display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:14px;background:var(--c-surface-3);color:var(--c-primary)}
+.how-ico svg{width:26px;height:26px}
+.how-ico::after{content:counter(how);position:absolute;top:-6px;right:-6px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--c-primary);color:#fff;font-size:.75rem;font-weight:800}
+.trust{display:grid;gap:var(--s-2);margin:var(--s-6) 0;padding:var(--s-4);list-style:none;border-radius:var(--r-xl);background:var(--c-primary);color:#fff}
+.trust li{display:flex;align-items:center;gap:var(--s-3);min-height:var(--tap);font-weight:700}
+.trust li::before{content:"";flex:none;width:9px;height:16px;margin:0 9px 4px 7px;border:solid #b9dbad;border-width:0 3px 3px 0;transform:rotate(45deg)}
+@media (min-width:760px){.how,.trust{grid-template-columns:repeat(3,minmax(0,1fr))}.how li{flex-direction:column}.trust{padding:var(--s-4) var(--s-6)}}
+.landing-foot{margin:0}`;
 
 // --- Locale (issue #21): Estonian first, English on request. No framework. ---
 export type Lang = "et" | "en";
@@ -981,54 +1043,71 @@ function questions(r: DeadlinesView, l: Lang): { q: string; then: string }[] {
   });
 }
 
-function companyCard(c: DeadlinesView["company"], l: Lang): string {
-  const t = tr(l);
-  const chip = c.synthetic ? `${sampleChip(l)}<span class="small muted">${t("väljamõeldud ettevõte", "made-up company")}</span>` : c.provenance === "public_register" ? labelChip("official", t(c.label_et, c.label_en)) : labelChip("assistant", t(c.label_et, c.label_en));
-  return `<section class="card" aria-labelledby="co-h"><h2 id="co-h">${esc(c.name ?? t("Ettevõte", "Company"))}</h2>
-<dl class="facts facts--stacked"><div class="fact-row"><dt>${t("Registrikood", "Registry code")}</dt><dd>${esc(c.registry_code)}</dd></div></dl>
-<div class="labels">${chip}</div>${c.attribution && !c.synthetic ? `<p class="small muted">${esc(c.attribution)}</p>` : ""}</section>`;
-}
+// --- Public landing: what the product does, with a pure-CSS chat teaser (owner request 2026-10-30) ---
+const ICONS = [
+  '<rect x="8" y="2.5" width="8" height="5" rx="1"/><path d="M10 2.5V1M14 2.5V1M6.5 7.5h11V11a5.5 5.5 0 0 1-11 0zM12 16.5V23"/>',
+  '<path d="M4 4.5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z"/><path d="M7.5 9h9M7.5 12.5h6"/>',
+  '<rect x="6.5" y="1.5" width="11" height="21" rx="2.5"/><path d="M9 12l2.2 2.2L15.5 10M10.5 19.5h3"/>',
+];
+const icon = (d: string) => `<span class="how-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg></span>`;
 
-// --- Public landing (spec screen 1, ux2 change 2) ---
-export type LandingState =
-  | { kind: "empty" }
-  | { kind: "result"; result: DeadlinesView }
-  | { kind: "choose"; matches: CompanyMatch[] }
-  | { kind: "message"; code: LandingMessage };
-export type LandingMessage = "not_configured" | "invalid_code" | "not_found" | "unavailable" | "no_match" | "ip_limit" | "day_limit";
-const LANDING_MSG: Record<LandingMessage, [string, string]> = {
-  not_configured: ["Avaliku registri päring pole veel seadistatud — proovi näidisettevõtet „Mari Disain”.", "Public-register lookup is not configured yet — try the sample company “Mari Disain”."],
-  invalid_code: ["See ei ole kehtiv Eesti registrikood (8 numbrit, õige kontrollnumbriga). Kontrolli koodi.", "This is not a valid Estonian registry code (8 digits with a valid check digit). Check the code."],
-  not_found: ["Avalikus registris sellise koodiga ettevõtet ei ole.", "The public register has no company with this code."],
-  unavailable: ["Avalik register ei vastanud. Proovi hiljem uuesti. Midagi ei arvutatud.", "The public register did not answer. Try again later. Nothing was calculated."],
-  no_match: ["Ei leidnud. Proovi registrikoodiga.", "Not found. Try the registry code."],
-  ip_limit: ["Sellelt aadressilt on viimase 10 minuti jooksul tehtud liiga palju registripäringuid (piir 30). Proovi mõne minuti pärast uuesti. Näidisettevõte „Mari Disain” töötab alati.", "Too many register lookups from this address in the last 10 minutes (limit 30). Try again in a few minutes. The sample company “Mari Disain” always works."],
-  day_limit: ["Tänane avalike registripäringute piir (500) on täis. Proovi homme uuesti. Näidisettevõte „Mari Disain” töötab alati.", "Today's limit of public register lookups (500) is used up. Try again tomorrow. The sample company “Mari Disain” always works."],
-};
-
-export function landingBody(o: { lang: Lang; q: string; state: LandingState; now?: Date }): string {
-  const l = o.lang, t = tr(l), now = o.now ?? new Date();
-  const sampleLink = `<a class="tap-link" href="/?q=${encodeURIComponent("Mari Disain")}">${t("Proovi näidisettevõttega: Mari Disain", "Try the sample company: Mari Disain")}</a>`;
-  const form = `<form class="search" method="get" action="/" role="search"><label>${t("Ettevõtte nimi või registrikood", "Company name or registry code")}<input name="q" value="${esc(o.q)}" maxlength="120" autocomplete="organization" placeholder="${t("nt Mari Disain või 1xxxxxxx", "e.g. Mari Disain or 1xxxxxxx")}"></label><button type="submit">${t("Näita tähtaegu", "Show deadlines")}</button></form>`;
-  let result = "";
-  const s = o.state;
-  if (s.kind === "message") result = `<section class="card" role="status"><p>${esc(t(...LANDING_MSG[s.code]))}</p>${s.code === "not_configured" || s.code === "ip_limit" || s.code === "day_limit" ? `<p>${sampleLink}</p>` : ""}</section>`;
-  else if (s.kind === "choose") result = `<section class="card" aria-labelledby="ch-h"><h2 id="ch-h">${t("Vali ettevõte", "Choose the company")}</h2>${s.matches.map((m) => `<a class="link-row" href="/?q=${esc(encodeURIComponent(m.registry_code))}"><span><span class="link-row-title">${esc(m.name)}</span><span class="small muted">${esc(m.registry_code)}</span></span></a>`).join("")}</section>`;
-  else if (s.kind === "result") {
-    const qs = questions(s.result, l);
-    result = `${companyCard(s.result.company, l)}
-<section class="card" aria-labelledby="dl-h"><h2 id="dl-h">${t("Järgmised tähtajad", "Upcoming deadlines")}</h2>
-${deadlinesList(s.result, l, { now })}
-${qs.length ? `<h3>${t("Assistent küsiks sinult", "Your assistant would ask you")}</h3><ul class="tight">${qs.map((x) => `<li class="small">„${esc(x.q)}” ${esc(x.then)}</li>`).join("")}</ul>` : ""}
-<p class="small"><strong>${t("Tähtajad arvutab reeglistik, mitte tehisaru.", "Deadlines are calculated by rules, not AI.")}</strong> ${t("Kuupäevad on arvutatud, mitte esitatud ega makstud. See ei ole õigus- ega maksunõu; kontrolli iga rea allikat.", "Dates are computed, not filed or paid. Not legal or tax advice; check each row's source.")}</p></section>
-<section class="card" aria-labelledby="cta-h"><h2 id="cta-h">${t("Lase oma assistendil see töö enda peale võtta. Sina kinnitad ainult selle, mis sind seob.", "Let your assistant take this work on. You approve only what binds you.")}</h2>
-<a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a>
-<p class="small muted">${t("Midagi ei esitata, maksta ega saadeta ilma sinu kinnituseta.", "Nothing is filed, paid or sent without your approval.")}</p></section>`;
-  }
-  return `<section class="card hero"><h1>${t("Sinu ettevõtte tähtajad ühe otsinguga", "Your company's deadlines in one search")}</h1>
-<p class="lede">${t("Ei parooli, isikukoodi ega vormi. Loeme ainult avalikke registreid.", "No password, ID code or forms. We read public registers only.")}</p>
-${form}${s.kind === "empty" ? `<p class="small">${sampleLink}</p>` : ""}</section>
-${result}`;
+export function landingBody(o: { lang: Lang }): string {
+  const l = o.lang, t = tr(l), amount = fmtEur(24000, l);
+  // One conversation, used for the animation and the screen-reader transcript.
+  const ask1 = t("Mis mul sel kuul adminis ees on?", "What admin do I have this month?");
+  const kmd: [string, string] = [t("20. nov", "20 Nov"), t("KMD ja käibemaks", "VAT return (KMD) and VAT")];
+  const tsd: [string, string] = [t("10. nov", "10 Nov"), t("TSD · kas oktoobris oli väljamakseid?", "TSD · were there any payouts in October?")];
+  const rule = t("Arvutatud reeglist", "Calculated by rule"), source = `${t("Allikas", "Source")}: KMS § 27`;
+  const offer = t("Saan oktoobri arved KMD jaoks ette valmistada. Kas alustan?", "I can prepare October's invoices for the VAT return. Shall I start?");
+  const ask2 = t("Jah. Ja meenuta Demo Kliendile tasumata arvet.", "Yes. And remind Demo Klient about the unpaid invoice.");
+  const card = t("Maksemeeldetuletus", "Payment reminder"), client = "Demo Klient OÜ";
+  const approve = t("Kinnita täpselt see", "Approve exactly this"), done = `✓ ${t("Kinnitatud", "Approved")} · ${t("Saadetud: demo", "Sent: demo")}`;
+  const me = (k: string, text: string) => `<div class="beat beat--me b-${k}"><p class="bubble">${esc(text)}</p></div>`;
+  const ai = (k: string, inner: string) => `<div class="beat beat--ai b-${k}"><div class="bubble">${inner}</div></div>`;
+  const typing = (k: string) => `<div class="beat beat--typing b-${k}"><span class="typing"><i></i><i></i><i></i></span></div>`;
+  const chat = [
+    me("me1", ask1), typing("t1"),
+    ai("ai1", `<b>${esc(kmd[0])}</b> — ${esc(kmd[1])}<span class="labels">${labelChip("rule", rule)}${labelChip("assistant", source)}</span>`),
+    ai("ai2", `<b>${esc(tsd[0])}</b> — ${esc(tsd[1])}`),
+    ai("ai3", esc(offer)),
+    me("me2", ask2), typing("t2"),
+    `<div class="beat b-card"><div class="mock-card"><div class="labels">${stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))}</div>
+<p class="mock-title">${esc(card)}</p><p class="mock-facts"><span>${esc(client)}</span><b>${esc(amount)}</b></p>
+<div class="mock-btn"><span class="mock-approve">${esc(approve)}</span><span class="mock-done">${esc(done)}</span><span class="mock-tap"></span></div></div></div>`,
+  ].join("\n");
+  const transcript = [
+    [t("Sina", "You"), ask1],
+    [t("Assistent", "Assistant"), `${kmd[0]} — ${kmd[1]} · ${rule} · ${source}. ${tsd[0]} — ${tsd[1]} ${offer}`],
+    [t("Sina", "You"), ask2],
+    [t("Assistent", "Assistant"), `${t("Kinnitus", "Approval")}: ${card} · ${client} · ${amount}. „${approve}”`],
+    [t("Sina", "You"), done.replace("✓ ", "")],
+  ].map(([who, text]) => `<li>${esc(who)}: ${esc(text)}</li>`).join("");
+  const steps = [
+    t("Ühenda oma ChatGPT või Claude (2 minutit)", "Connect your ChatGPT or Claude (2 minutes)"),
+    t("Küsi nagu tavaliselt: assistent teab sinu tähtaegu ja oskab tööd ette valmistada", "Ask as usual: your assistant knows your deadlines and can prepare the work"),
+    t("Kinnita telefonis üks kord — täpselt see saaja, summa ja dokument", "Approve once on your phone — exactly this recipient, amount and document"),
+  ];
+  const trust = [
+    t("Midagi ei saadeta ilma sinu loata", "Nothing is sent without your permission"),
+    t("Tähtajad arvutab reeglistik, mitte tehisaru", "Deadlines are calculated by rules, not AI"),
+    t("Smart-ID ja allkiri jäävad sinu kätte", "Smart-ID and signatures stay with you"),
+  ];
+  return `<div class="landing">
+<section class="landing-hero" aria-labelledby="hero-h"><div>
+<h1 id="hero-h">${t("Sinu AI-assistent teeb kontoritöö.", "Your AI assistant does the back office.")} <span>${t("Sina kinnitad ainult selle, mis sind seob.", "You approve only what binds you.")}</span></h1>
+<p class="lede">${t("AI-hüppelaud annab sinu ChatGPT-le või Claude'ile Eesti tähtajad, valmis töövood ja turvalise kinnituse — ilma uue äpi ja vormideta.", "AI Launchpad gives your ChatGPT or Claude Estonian deadlines, ready-made workflows and a safe approval — no new app and no forms.")}</p>
+<a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a></div>
+<figure class="teaser">
+<div class="vh"><p>${t("Näidisvestlus:", "Sample conversation:")}</p><ol>${transcript}</ol></div>
+<div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${t("ühendatud: AI-hüppelaud", "connected: AI Launchpad")}</small></span></div>
+<div class="chat">${chat}</div></div></div>
+<figcaption>${sampleChip(l)}<span class="small muted">${t("Vestlus sinu ChatGPT-s või Claude'is", "A conversation in your ChatGPT or Claude")}</span></figcaption>
+</figure></section>
+<section aria-labelledby="how-h"><h2 id="how-h">${t("Kuidas see töötab", "How it works")}</h2>
+<ol class="how">${steps.map((s, i) => `<li>${icon(ICONS[i])}<span>${esc(s)}</span></li>`).join("")}</ol></section>
+<ul class="trust" aria-label="${t("Mida me lubame", "What we promise")}">${trust.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+<p class="small muted landing-foot"><a class="tap-link" href="/demand">${t("Meta Muse Spark Open liigitab anonüümselt, mida ettevõtjad veel vajavad", "Meta Muse Spark Open anonymously classifies what businesses still need")}</a></p>
+</div>`;
 }
 
 // --- Täna (ux2 change 1): who does the work. Ootab sinult · Assistent tegi · Tulekul. ---

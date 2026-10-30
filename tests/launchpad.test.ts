@@ -128,7 +128,7 @@ describe("HTTP security basics", () => {
     const landing = await fetch(`${base}/`, { redirect: "manual" });
     expect(landing.status).toBe(200);
     const landingHtml = await landing.text();
-    expect(landingHtml).toContain("Sinu ettevõtte tähtajad ühe otsinguga");
+    expect(landingHtml).toContain("Sinu AI-assistent teeb kontoritöö.");
     expect(landingHtml).not.toContain('action="/auth/logout"');
     for (const path of ["/activity", "/approvals", "/connection"]) {
       const r = await fetch(`${base}${path}`, { redirect: "manual" });

@@ -55,9 +55,9 @@ const pageHtml = {
   login: () =>
     shell({ title: "Logi sisse", active: "none", csrf: "", body: loginBody({ lang: "et", demo: true, google: true, preauth: "pre-1", companies: [{ key: "alpha", label: "Mari Disain OÜ (näidis)" }] }) }),
   landing: () =>
-    shell({ title: "Tähtajad", active: "none", csrf: "", sample: true, body: landingBody({ lang: "et", q: "Mari Disain", state: { kind: "result", result: mariDeadlines }, now: NOW }) }),
-  "landing-empty": () =>
-    shell({ title: "Tähtajad", active: "none", csrf: "", body: landingBody({ lang: "et", q: "", state: { kind: "empty" }, now: NOW }) }),
+    shell({ title: "Sinu AI-assistent teeb kontoritöö", active: "none", csrf: "", body: landingBody({ lang: "et" }) }),
+  "landing-en": () =>
+    shell({ title: "Your AI assistant does the back office", active: "none", csrf: "", lang: "en", body: landingBody({ lang: "en" }) }),
   uhenda: () =>
     shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true }) }),
   "uhenda-local": () =>
@@ -92,7 +92,7 @@ try {
 
   // New pages: every visible stand-alone a[href] is a tap target too. A link inside running text (its parent
   // has its own words besides separators) is exempt; the redesign's legacy English pages are not in scope.
-  const NEW_PAGES = new Set(["status-assessed", "status-unassessed", "activity", "login", "landing", "landing-empty", "uhenda", "uhenda-local", "approval-receipt-long", "approvals"]);
+  const NEW_PAGES = new Set(["status-assessed", "status-unassessed", "activity", "login", "landing", "landing-en", "uhenda", "uhenda-local", "approval-receipt-long", "approvals"]);
   const overflowAndTargets = (allAnchors) => page.evaluate((allAnchors) => {
     const de = document.documentElement;
     const targets = [];
@@ -208,7 +208,7 @@ try {
     }
   }
   // Täna is zero-JS: no inline script; the prompts are visible text.
-  for (const name of ["status-assessed", "status-unassessed", "landing", "landing-empty", "uhenda", "activity", "login"]) {
+  for (const name of ["status-assessed", "status-unassessed", "landing", "landing-en", "uhenda", "activity", "login"]) {
     assert.ok(!pageHtml[name]().includes("<script"), `${name}: zero inline JS`);
   }
 

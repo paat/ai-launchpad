@@ -4,7 +4,7 @@ Live product: `https://huppelaud.arikratt.ee`. MCP address: `https://huppelaud.a
 
 ## Which access applies
 
-- **Public landing, no login:** open the site and search the sample company "Mari Disain". It opens on its exact name or code only.
+- **Public landing, no login:** open the site to see what the product does, with an animated sample conversation (labelled NÄIDIS).
 - **Connecting an assistant and approvals:** the live pilot is owner-only (Google allowlist), so judges cannot sign in. The public sandbox (#21 part B) is not built yet. Until it exists, use the landing page, the demo video and the repo. The owner fills in on submission day which applies: ______
 
 ## What it is
@@ -18,7 +18,7 @@ AI agents take back-office work off a small-business owner so she can focus on h
 
 ## Steps
 
-1. **Open the landing page** (no login). Type "Mari Disain" and press "Näita tähtaegu". Each deadline carries "Arvutatud reeglist", an official source link and, as of the next deploy, an "Assistent … · Sina …" line: what the assistant can do and what stays yours.
+1. **Open the landing page** (no login). It says what the product does and plays a sample conversation (NÄIDIS): the assistant lists the November deadlines with "Arvutatud reeglist" and a source, then a payment-reminder approval card that the owner approves with "Kinnita täpselt see". In the real product each deadline row links its official source.
 2. **Connect ChatGPT** (owner-only pilot; needs the plan above). "Ühenda oma assistent" (`/uhenda`) → copy `https://huppelaud.arikratt.ee/mcp` → ChatGPT settings → add a connector → paste. Sign in and approve the consent screen with its one job permission: prepare work, always ask first.
 3. **Ask** in ChatGPT (valid as written 1–4 Nov 2026; add `Kasuta AI-hüppelauda: ` at the start if it doesn't call the tool):
    - `Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?` → deadlines as offers, with sources.
