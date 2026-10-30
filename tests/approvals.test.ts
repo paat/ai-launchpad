@@ -95,6 +95,22 @@ describe("approval cards over MCP", () => {
     expect(row("appr_no_address").state).toBe("declined");
   });
 
+  test("an already-approved legacy send without an address is not usable and takes no outcome (#35)", async () => {
+    const o = owner("legacy-approved");
+    const c = await client(o.token);
+    const { address: _drop, ...recipient } = reminder().recipient;
+    const payload = reminder({ kind: "send_message", amount_cents: undefined, recipient });
+    const digest = approvalDigest(payload);
+    const now = new Date().toISOString();
+    db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at,decided_at) VALUES(?,?,?,?,?,?,'approved',?,?,?)")
+      .run("appr_approved_no_address", "legacy-approved", "send_message", "legacy-2", JSON.stringify(payload), digest, new Date(Date.now() + 3600_000).toISOString(), now, now);
+    const got = parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: "appr_approved_no_address" } }));
+    expect(got).toMatchObject({ state: "approved", usable: false, reason: "Address missing: request a new approval that includes the recipient address" });
+    for (const outcome of ["sent", "failed"])
+      expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: `la-${outcome}`, approval_id: "appr_approved_no_address", digest, outcome, observed_at: now } }))).toBe("Address missing: request a new approval that includes the recipient address. Nothing was recorded.");
+    expect(row("appr_approved_no_address")).toMatchObject({ state: "approved", outcome_json: null, consumed_at: null });
+  });
+
   test("request → owner approves exact card → outcome with identical digest; one-use lifecycle", async () => {
     const o = owner("flow");
     const c = await client(o.token);

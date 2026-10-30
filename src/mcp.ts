@@ -132,7 +132,8 @@ export interface ApprovalRow { id: string; kind: string | null; report_id: strin
 export function expireApprovals(db: Db, ownerId: string) {
   db.prepare("UPDATE approvals SET state='expired' WHERE owner_id=? AND state IN ('pending','approved') AND expires_at<=?").run(ownerId, nowIso());
 }
-/** A stored send approval without a usable address (a legacy row) can never be approved. */
+const ADDRESS_MISSING = "Address missing: request a new approval that includes the recipient address";
+/** A stored send approval without a usable address (a legacy row) can never be approved or acted on. */
 export function approvalAddressMissing(a: Pick<ApprovalRow, "kind" | "payload_json">): boolean {
   let p: { kind?: unknown; recipient?: unknown } = {};
   try { p = JSON.parse(a.payload_json); } catch { /* unreadable: kind decides */ }
@@ -330,11 +331,12 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     return json(receipt);
   });
 
-  server.registerTool("get_approval", { description: "Check an approval you requested: state (pending, approved, declined, expired, consumed), digest, the exact action, decision time, expiry and any assistant-reported outcome. Act only when state is approved (it expires at expires_at if no outcome was recorded).", inputSchema: { approval_id: s(80) }, annotations: { readOnlyHint: true } }, async (args) => {
+  server.registerTool("get_approval", { description: "Check an approval you requested: state (pending, approved, declined, expired, consumed), digest, the exact action, decision time, expiry and any assistant-reported outcome. Act only when state is approved and usable is not false (it expires at expires_at if no outcome was recorded). An approved send_message/send_invoice stored without recipient.address returns usable: false with a reason: do not act on it; request a new approval that includes the address.", inputSchema: { approval_id: s(80) }, annotations: { readOnlyHint: true } }, async (args) => {
     const gate = sharingGate("Nothing was read."); if (gate) return err(gate);
     const a = getApproval(db, ctx.ownerId, args.approval_id);
     if (!a) return err("Unknown approval_id in this workspace. Nothing was read.");
-    return json({ approval_id: a.id, state: a.state, digest: a.digest, action: JSON.parse(a.payload_json), created_at: a.created_at, decided_at: a.decided_at, expires_at: a.expires_at, outcome: a.outcome_json ? JSON.parse(a.outcome_json) : null });
+    const unusable = a.state === "approved" && approvalAddressMissing(a) ? { usable: false, reason: ADDRESS_MISSING } : {};
+    return json({ approval_id: a.id, state: a.state, ...unusable, digest: a.digest, action: JSON.parse(a.payload_json), created_at: a.created_at, decided_at: a.decided_at, expires_at: a.expires_at, outcome: a.outcome_json ? JSON.parse(a.outcome_json) : null });
   });
 
   server.registerTool("record_action_outcome", { description: "Record what happened after you acted on an approved action with your own tools. Requires the approval's exact digest; a changed payload needs a new approval. The first outcome must be recorded before expires_at, must fit the kind (send_message/send_invoice: sent or failed; prepare_payment: paid or failed; prepare_filing: submitted or failed) and consumes the approval (one use); later outcomes, also after expiry, may only advance it (sent → accepted/rejected/paid, submitted → accepted/rejected). Outcomes are labelled assistant_reported, never verified. Idempotent by report_id.", inputSchema: { report_id: s(80), approval_id: s(80), digest: s(64), outcome: z.enum(["sent", "submitted", "accepted", "rejected", "paid", "failed"]), observed_at: s(40), evidence_refs: evidenceRefs.optional() } }, async (args) => {
@@ -351,6 +353,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     const prev = a.outcome_json ? JSON.parse(a.outcome_json) as { outcome: string; history: unknown[] } : null;
     if (a.state === "pending") return err("The owner has not approved this yet. Do not act. Nothing was recorded.");
     if (a.state === "expired") return err("This approval expired before an outcome was recorded; request a new approval. Nothing was recorded.");
+    if (a.state === "approved" && approvalAddressMissing(a)) return err(`${ADDRESS_MISSING}. Nothing was recorded.`);
     const first = OUTCOME_FIRST[a.kind ?? ""] ?? [];
     if (a.state === "approved" && !first.includes(args.outcome)) return err(`A ${a.kind} approval's first outcome must be ${first.join(" or ")}. Nothing was recorded.`);
     if (a.state === "consumed" ? !OUTCOME_NEXT[prev?.outcome ?? ""]?.includes(args.outcome) : a.state !== "approved") {
