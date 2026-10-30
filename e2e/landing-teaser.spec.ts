@@ -48,6 +48,14 @@ for (const width of [390, 1280]) {
   });
 }
 
+for (const width of [880, 960, 1024, 1094, 1200]) {
+  test(`no horizontal overflow at ${width}px (tribunal T-001)`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/");
+    expect(await overflow(page)).toBeLessThanOrEqual(0);
+  });
+}
+
 test("320px: no overflow; reduced motion shows the final frame statically", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 740 });
   await page.emulateMedia({ reducedMotion: "reduce" });
