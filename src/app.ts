@@ -683,8 +683,12 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   });
   app.post("/standing-approvals/revoke", requireOwner, csrfOk, (req, res) => {
     const id = String(bodyOf(req).rule_id ?? "");
-    const r = db.prepare("UPDATE standing_approvals SET revoked_at=? WHERE id=? AND owner_id=? AND revoked_at IS NULL").run(nowIso(), id, oid(req));
-    if (r.changes) logActivity(db, oid(req), "owner", "standing_rule_revoked", "ok", `Standing approval ${id} ended; it approves nothing from now on.`);
+    // Ending a rule also cancels what it approved but the assistant has not yet acted on (state approved = no outcome recorded).
+    const ended = db.transaction(() => {
+      const r = db.prepare("UPDATE standing_approvals SET revoked_at=? WHERE id=? AND owner_id=? AND revoked_at IS NULL").run(nowIso(), id, oid(req));
+      return r.changes ? db.prepare("UPDATE approvals SET state='expired' WHERE owner_id=? AND approved_by_rule=? AND state='approved'").run(oid(req), id).changes : null;
+    })();
+    if (ended !== null) logActivity(db, oid(req), "owner", "standing_rule_revoked", "ok", `Standing approval ${id} ended; it approves nothing from now on. ${ended} approved, unused approval expired.`);
     res.redirect("/uhenda#pusiload");
   });
 

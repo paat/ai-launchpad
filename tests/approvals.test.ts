@@ -585,6 +585,18 @@ describe("standing approvals (#45)", () => {
     expect(replay.owner_instruction).toBeUndefined();
   });
 
+  test("revoking a rule expires its approved, unused approvals; a recorded outcome stays (tribunal T-002)", async () => {
+    const { o, c, rule } = await ruleFromCard("std-revoke-open");
+    const open = await ask(c, reminder({ summary: "still unsent" }));
+    const done = await ask(c, reminder({ summary: "already sent" }));
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "std-revoke-out", approval_id: done.approval_id, digest: done.digest, outcome: "sent", observed_at: new Date().toISOString() } })).state).toBe("consumed");
+    expect((await post(o, "/standing-approvals/revoke", { rule_id: String(rule.id) })).status).toBe(302);
+    expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: open.approval_id } })).state).toBe("expired");
+    expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "std-revoke-late", approval_id: open.approval_id, digest: open.digest, outcome: "sent", observed_at: new Date().toISOString() } }))).toContain("expired");
+    expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: done.approval_id } })).state).toBe("consumed");
+    expect(db.prepare("SELECT summary FROM activity WHERE owner_id=? AND action='standing_rule_revoked'").get("std-revoke-open")).toMatchObject({ summary: expect.stringContaining("1 approved, unused approval expired") });
+  });
+
   test("over the cap, a new recipient (scoped rule), the daily limit, expiry and revocation each fall back to a pending card", async () => {
     const { o, c, rule } = await ruleFromCard("std-limits");
     // Cap: one cent over waits for the owner; exactly the cap passes.
