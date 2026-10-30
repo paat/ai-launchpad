@@ -143,8 +143,8 @@ ${r.facts_needed.length ? `<details><summary>Assistent küsib (${r.facts_needed.
 <p class="small muted">Tähtajad arvutab reeglistik, mitte tehisaru. Calculated by rules, not AI: computed dates, not filings or payments.${c.attribution && !c.synthetic ? ` ${esc(c.attribution)}` : ""}</p></section>`;
 }
 
-/** Register facts not cached yet: the Status page does not wait for them. */
-export const deadlinesHint = () => `<section class="card" aria-label="Next deadlines"><p class="small">Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?” <span class="muted">Deadlines: ask your assistant "What are my deadlines?"</span></p></section>`;
+/** Register facts not cached yet (the Status page does not wait for them) or unavailable (with the plain reason). */
+export const deadlinesHint = (reason?: string) => `<section class="card" aria-label="Next deadlines"><p class="small">Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?” <span class="muted">Deadlines: ask your assistant "What are my deadlines?"</span>${reason ? ` <span class="muted">${esc(reason)}</span>` : ""}</p></section>`;
 
 export function statusBody(opts: { label: string; demo: boolean; assessment: Assessment | null; coverage: Coverage; assessedAt: string | null; exclusions: Exclusion[]; historyCount: number; reportingEnabled: boolean; latestProgress?: LatestProgress | null; deadlines?: string }): string {
   const { assessment: a, coverage: c } = opts;

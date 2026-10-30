@@ -319,12 +319,13 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     // Next deadlines: only for a known registry code (assessment ref or synthetic demo company).
     const ref = st.assessment?.company_registry_ref?.trim();
     const deadlines = ref && /^\d{8}$/.test(ref) ? await companyObligations(register, { registryCode: ref, months: 2, cacheOnly: true }) : null;
-    const notCached = deadlines?.ok && deadlines.result.company.unavailable === "not_cached";
-    if (notCached) fillInBackground(ref!);
+    // Any unavailable register lookup renders the one-line hint (with the plain reason unless only not cached yet).
+    const unavailable = deadlines?.ok ? deadlines.result.company.unavailable : undefined;
+    if (unavailable === "not_cached") fillInBackground(ref!);
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
     expireApprovals(db, oid(req));
     const pendingApprovals = (db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=? AND state='pending'").get(oid(req)) as { n: number }).n;
-    res.type("html").send(page(req, "Is my admin handled?", "status", approvalsAttention(pendingApprovals) + statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1, latestProgress: (st.progress[0] as unknown as { task_id: string; milestone: string; observed_at: string } | undefined) ?? null, deadlines: notCached ? deadlinesHint() : deadlines?.ok ? deadlinesCard(deadlines.result) : "" })));
+    res.type("html").send(page(req, "Is my admin handled?", "status", approvalsAttention(pendingApprovals) + statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1, latestProgress: (st.progress[0] as unknown as { task_id: string; milestone: string; observed_at: string } | undefined) ?? null, deadlines: !deadlines?.ok ? "" : unavailable ? deadlinesHint(unavailable === "not_cached" ? undefined : deadlines.result.company.unavailable_reason) : deadlinesCard(deadlines.result) })));
   } catch (e) { next(e); } });
 
   app.get("/activity", requireOwner, (req, res) => {

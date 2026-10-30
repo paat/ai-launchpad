@@ -372,6 +372,12 @@ describe("get_obligations tool and status card", () => {
     const plain = await (await fetch(`${base}/`, { headers: { cookie: owner("plain").cookie } })).text();
     expect(plain).not.toContain("Järgmised tähtajad");
   });
+  test("Status: an unavailable register lookup renders the hint and the plain reason, never a deadlines card (tribunal T-006)", async () => {
+    const html = await (await fetch(`${base}/`, { headers: { cookie: owner("nokeyref", FAKE_VALID).cookie } })).text();
+    expect(html).toContain("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?”");
+    expect(html).toContain("Public-register lookup is not configured on this server.");
+    expect(html).not.toContain("Järgmised tähtajad");
+  });
   test("a configured lookup labels real public-register facts as official open data, never an official source", async () => {
     const cfg2: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
     const { app: app2, db: db2 } = createApp(cfg2, openDb(":memory:"));
