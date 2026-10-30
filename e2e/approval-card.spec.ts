@@ -35,7 +35,7 @@ test("owner approves an exact-payload card at 390px through a real browser form 
     await page.getByRole("link", { name: "Vaata kinnitust" }).click();
     expect(page.url()).toBe(req.approve_url);
 
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Payment reminder: invoice 2026-014");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Invoice 2026-014 · Synthetic Client OÜ");
     await expect(page.locator("dl.facts").getByText("Synthetic Client OÜ")).toBeVisible();
     await expect(page.getByText("1240,00\u00a0€", { exact: true })).toBeVisible();
     await expect(page.getByText("oktoober 2026", { exact: true })).toBeVisible();
@@ -54,7 +54,7 @@ test("owner approves an exact-payload card at 390px through a real browser form 
     await page.getByRole("button", { name: "Kinnita täpselt see" }).click();
     await expect(page).toHaveURL(req.approve_url);
     await expect(page.locator("main [role=status]")).toContainText("Nüüd on assistendi kord.");
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/✓ Kinnitatud \d{2}:\d{2}/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Kinnitatud \d{2}:\d{2}$/);
     await expect(page.getByRole("button", { name: "Kinnita täpselt see" })).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/approval-approved-390.png`, fullPage: true });
 

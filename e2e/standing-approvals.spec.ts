@@ -36,6 +36,9 @@ test("owner approves a card, allows similar ones automatically, and the next rem
     // The offer: this recipient by default, cap max(2 000 €, this amount), up to 10 a day, 90 days.
     const offer = page.locator("section.standing-offer");
     await expect(offer.getByRole("heading", { name: "Luba edaspidi sarnased automaatselt" })).toBeVisible();
+    // The scope radios and the cap sit under „Muuda piire”; the sentence above already names them.
+    await expect(offer.getByRole("heading", { name: "Luba edaspidi sarnased automaatselt: ainult Synthetic Client OÜ, kuni 2000\u00a0€" })).toBeVisible();
+    await offer.getByText("Muuda piire").click();
     await expect(offer.getByRole("radio", { name: /Ainult Synthetic Client OÜ/ })).toBeChecked();
     await expect(offer.getByLabel("Summa ülempiir (€)")).toHaveValue("2000");
     await expect(offer.getByText("Kuni 10 päevas · kehtib 90 päeva")).toBeVisible();

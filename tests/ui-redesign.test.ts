@@ -60,7 +60,7 @@ describe("shell, locale and login", () => {
     const ratio = (fg: string, bg: string) => { const [a, b] = [lum(vars[fg]), lum(vars[bg] === "transparent" ? "#fff" : vars[bg])].sort((x, y) => y - x); return (a + 0.05) / (b + 0.05); };
     const pairs: [string, string][] = [["c-text", "c-bg"], ["c-text", "c-surface-2"], ["c-muted", "c-bg"], ["c-muted", "c-surface-2"], ["c-on-primary", "c-primary"], ["c-primary", "c-bg"], ["c-link", "c-surface-2"],
       ["c-on-primary", "c-deep"], ["c-mint", "c-deep"], ["c-att", "c-bg"], ["c-att-dark", "c-att-bg"], ["c-danger", "c-bg"], ["c-focus", "c-bg"],
-      ...["official", "rule", "assistant", "owner", "ai", "sample"].map((k) => [`lbl-${k}-fg`, `lbl-${k}-bg`] as [string, string]),
+      ...["official", "rule", "assistant", "owner", "ai", "sample", "where"].map((k) => [`lbl-${k}-fg`, `lbl-${k}-bg`] as [string, string]),
       ...["drafted", "waiting", "approved", "sent", "accepted", "rejected", "paid", "void"].map((k) => [`st-${k}-fg`, `st-${k}-bg`] as [string, string])];
     for (const [fg, bg] of pairs) expect(ratio(fg, bg), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
     expect(vars["c-bg"]).toBe("#fff");
@@ -376,7 +376,15 @@ describe("landing and connect", () => {
 
   test("approval card: H1 is the document, why, period, 24 h validity, decided states hand the turn back", () => {
     const pending = approvalCardBody({ csrf: "c", a: approval(), lang: "et", sample: true, now: NOW });
-    expect(pending).toContain('<h1 id="a-h">Maksemeeldetuletus: arve 2026-014</h1>');
+    // T2 ticket: the request type sits on the kind line, the h1 holds the object; the amount is the hero figure.
+    expect(pending).toContain('<p class="kind">Sõnum · Maksemeeldetuletus<small>');
+    expect(pending).toContain('<h1 id="a-h">Arve 2026-014 · Demo Klient OÜ</h1>');
+    expect(pending).toMatch(/<div class="amount"><b>240,00\u00a0€<\/b><span>oktoober 2026<\/span><\/div>/);
+    // One decision form, pinned as the .decide bar: approve, then decline as a text button.
+    expect(pending.match(/name="decision"/g)).toHaveLength(2);
+    expect(pending).toMatch(/<form class="decide" method="post" action="\/approvals\/appr_1\/decide">.*<button name="decision" value="approve">Kinnita täpselt see<\/button><button class="text danger" name="decision" value="decline">Keeldu<\/button><\/form>/);
+    expect(pending.indexOf('<dl class="facts">')).toBeLessThan(pending.indexOf('<pre class="letter" tabindex="0">'));
+    expect(pending.indexOf('<pre class="letter" tabindex="0">')).toBeLessThan(pending.indexOf('value="approve"'));
     expect(pending).toContain("<strong>Miks:</strong> Demo Klient OÜ pole arvet tasunud.");
     expect(pending).toContain("oktoober 2026");
     expect(pending).toContain("Kiri, täpselt sellisena");
@@ -385,7 +393,12 @@ describe("landing and connect", () => {
     expect(pending).not.toContain("14:31-ni");
     expect(pending).not.toContain("15 minutit");
     const approved = approvalCardBody({ csrf: "c", a: approval({ state: "approved", decided_at: "2026-11-03T12:36:00Z" }), lang: "et", sample: true, now: NOW });
-    expect(approved).toContain("Kinnitatud 14:36");
+    expect(approved).toContain('<div class="strip strip--ok"><span class="stamp" aria-hidden="true"><svg');
+    expect(approved).toContain('<h1 class="receipt-head" id="a-h">Kinnitatud 14:36</h1>');
+    expect(approved).toContain('<p class="turn" role="status"><strong>Nüüd on assistendi kord.</strong>');
+    // Standing offer: one sentence + one primary; the scope radios and cap sit under „Muuda piire”, same fields and endpoint.
+    expect(approved).toContain('<h2 id="so-h">Luba edaspidi sarnased automaatselt: ainult Demo Klient OÜ, kuni 2000\u00a0€</h2>');
+    expect(approved).toMatch(/<form method="post" action="\/standing-approvals">[^]*<button type="submit">Luba automaatselt<\/button>\n<details><summary>Muuda piire<\/summary>[^]*name="scope" value="recipient" checked[^]*name="max_eur"[^]*<\/details><\/form>/);
     expect(approved).toContain("Nüüd on assistendi kord.");
     expect(approved).toContain("Kinnitasin");
     expect(approved).toContain("Saadetud: ootab assistendi teadet");

@@ -38,6 +38,12 @@ const LONG_TITLE = "Maksemeeldetuletus: arve 2026-011 Kase Konsult OÜ tellitud 
 const longApproval = { id: "appr_long", kind: "send_message", report_id: "r1", digest: "d".repeat(64), state: "consumed", created_at: "2026-11-03T09:00:00Z", expires_at: "2026-11-04T09:00:00Z", decided_at: "2026-11-03T09:05:00Z", consumed_at: "2026-11-03T09:10:00Z",
   outcome_json: JSON.stringify({ outcome: "sent", observed_at: "2026-11-03T09:10:00Z", history: [{ outcome: "sent", observed_at: "2026-11-03T09:10:00Z" }] }),
   payload_json: JSON.stringify({ kind: "send_message", recipient: { name: "Demo Klient OÜ", address: "arved@demo-klient.example" }, amount_cents: 24000, period: "2026-10", document: { title: LONG_TITLE, content: "Tere!" }, summary: "Tasumata arve." }) };
+// T2 ticket: a pending reminder with a real-length letter, and the same reminder approved.
+const reminder = { kind: "send_message", recipient: { name: "Demo Klient OÜ", address: "arved@demo-klient.example" }, amount_cents: 24000, period: "2026-10",
+  document: { title: "Maksemeeldetuletus: arve 2026-014", content: "Tere!\n\nMeie arve nr 2026-014 (20.10.2026) summas 240,00 € on veel tasumata; maksetähtaeg oli 20. oktoober. Palun tasuge see lähiajal. Kui olete juba maksnud, pidage see kiri tühjaks.\n\nAitäh,\nMari" },
+  summary: "Demo Klient OÜ pole arvet tasunud; maksetähtaeg oli 20. oktoober." };
+const pendingApproval = { id: "appr_t2", kind: "send_message", report_id: "r2", digest: "e".repeat(64), state: "pending", created_at: "2026-11-03T11:50:00Z", expires_at: "2026-11-04T11:50:00Z", decided_at: null, consumed_at: null, outcome_json: null, payload_json: JSON.stringify(reminder) };
+const approvedApproval = { ...pendingApproval, state: "approved", decided_at: "2026-11-03T11:55:00Z" };
 const pageHtml = {
   "connection-https": () =>
     shell({ title: "Connection", active: "none", csrf: CSRF, sample: true, bodyLang: "en",
@@ -64,6 +70,10 @@ const pageHtml = {
     shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "chatgpt", state: { kind: "anon" }, owner: false }) }),
   "approval-receipt-long": () =>
     shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: longApproval, lang: "et", sample: true, now: NOW }) }),
+  "approval-pending": () =>
+    shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: pendingApproval, lang: "et", sample: true, now: NOW }) }),
+  "approval-approved": () =>
+    shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: approvedApproval, lang: "et", sample: true, now: NOW }) }),
   approvals: () =>
     shell({ title: "Kinnitused", active: "none", csrf: CSRF, sample: true, body: approvalsListBody([longApproval], "et", true, NOW) }),
   setup: () =>
@@ -92,7 +102,7 @@ try {
 
   // New pages: every visible stand-alone a[href] is a tap target too. A link inside running text (its parent
   // has its own words besides separators) is exempt; the redesign's legacy English pages are not in scope.
-  const NEW_PAGES = new Set(["status-assessed", "status-unassessed", "activity", "login", "landing", "landing-en", "uhenda", "uhenda-local", "approval-receipt-long", "approvals"]);
+  const NEW_PAGES = new Set(["status-assessed", "status-unassessed", "activity", "login", "landing", "landing-en", "uhenda", "uhenda-local", "approval-receipt-long", "approval-pending", "approval-approved", "approvals"]);
   const overflowAndTargets = (allAnchors) => page.evaluate((allAnchors) => {
     const de = document.documentElement;
     const targets = [];
@@ -139,7 +149,67 @@ try {
     const linkBox = await boxInFirstViewport('a.btn[href="/uhenda"]');
     assert.ok(linkBox?.visible, `status-unassessed@${vp.width}: connection link in first viewport ${JSON.stringify(linkBox)}`);
     geometry[`unassessed-connection-link@${vp.width}`] = linkBox;
+    // T2: the decision is pinned to the thumb — „Kinnita täpselt see” is in the first viewport of the pending card.
+    await page.setContent(pageHtml["approval-pending"]());
+    const approveBox = await boxInFirstViewport("button[value=approve]");
+    assert.ok(approveBox?.visible, `approval-pending@${vp.width}: approve button in first viewport ${JSON.stringify(approveBox)}`);
+    geometry[`approve-button@${vp.width}`] = approveBox;
   }
+
+  // --- T2 ticket: sticky decision bar, sizes, focus order, amount hero, stamp and reduced motion ---
+  const T2_SHOTS = process.env.SHOT_DIR ? path.resolve(process.env.SHOT_DIR) : SHOTS;
+  await mkdir(T2_SHOTS, { recursive: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setContent(pageHtml["approval-pending"]());
+  const ticket = await page.evaluate(() => {
+    const ap = document.querySelector("button[value=approve]"), de = document.querySelector("button[value=decline]"), bar = document.querySelector("form.decide");
+    const amount = document.querySelector(".amount b"), amountPx = parseFloat(getComputedStyle(amount).fontSize);
+    const larger = [...document.querySelectorAll("main *")].filter((el) => el !== amount && el.textContent.trim() && parseFloat(getComputedStyle(el).fontSize) >= amountPx).map((el) => el.tagName + "." + el.className);
+    const letter = document.querySelector("pre.letter");
+    return { approveH: ap.getBoundingClientRect().height, declineH: de.getBoundingClientRect().height, declineCls: de.className, position: getComputedStyle(bar).position,
+      decisionOutsideForm: [...document.querySelectorAll('[name="decision"]')].filter((el) => !el.closest("form.decide")).length,
+      larger, letterTab: letter.getAttribute("tabindex"), letterClipped: letter.scrollHeight > letter.clientHeight + 1, scrollPad: getComputedStyle(document.documentElement).scrollPaddingBottom };
+  });
+  assert.equal(ticket.position, "sticky", "decide bar sticky at 390");
+  assert.ok(ticket.approveH >= 56, `approve button >= 56px (${ticket.approveH})`);
+  assert.ok(ticket.declineH >= 44, `decline button >= 44px (${ticket.declineH})`);
+  assert.equal(ticket.declineCls, "text danger", "decline is a text danger button");
+  assert.equal(ticket.decisionOutsideForm, 0, "name=decision only inside the one decision form");
+  assert.deepEqual(ticket.larger, [], "the amount is the largest figure");
+  assert.equal(ticket.letterTab, "0", "letter keeps tabindex=0");
+  assert.equal(ticket.letterClipped, false, "letter shows its full text");
+  assert.equal(ticket.scrollPad, "88px", "focused elements are not hidden under the bar");
+  await page.screenshot({ path: path.join(T2_SHOTS, "t2-approval-pending-390-fold.png") });
+  // Focus order unchanged: letter → approve → decline.
+  await page.locator("pre.letter").focus();
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement.value), "approve", "Tab from the letter reaches approve");
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement.value), "decline", "then decline");
+  geometry.ticket = ticket;
+
+  await page.setContent(pageHtml["approval-approved"]());
+  const approvedState = await page.evaluate(() => ({ status: [...document.querySelectorAll("main [role=status]")].map((el) => el.textContent.slice(0, 24)),
+    draw: getComputedStyle(document.querySelector(".stamp path")).animationName }));
+  assert.deepEqual(approvedState.status, ["Nüüd on assistendi kord."], "one role=status on the approved line");
+  assert.equal(approvedState.draw, "lp-draw", "stamp draws its check");
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+  await page.screenshot({ path: path.join(T2_SHOTS, "t2-approval-approved-390.png"), fullPage: true });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setContent(pageHtml["approval-approved"]());
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".stamp path")).animationName), "none", "reduced motion: no stamp draw");
+  await page.emulateMedia({ reducedMotion: null });
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  for (const name of ["approval-pending", "approval-approved"]) {
+    await page.setContent(pageHtml[name]());
+    const g = await overflowAndTargets(true);
+    assert.ok(g.scrollW <= g.clientW + 1, `${name}@1280: no h-overflow ${g.scrollW}>${g.clientW}`);
+    assert.deepEqual(g.targets.filter((t) => t.h < 44), [], `${name}@1280: targets >= 44px`);
+  }
+  await page.setContent(pageHtml["approval-pending"]());
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("form.decide")).position), "static", "decide bar is static on desktop");
+  await page.screenshot({ path: path.join(T2_SHOTS, "t2-approval-1280.png"), fullPage: true });
 
   // --- Guide tabs: one panel, click + keyboard (Arrow/Home/End, roving tabindex) ---
   await page.setViewportSize({ width: 390, height: 844 });

@@ -150,7 +150,7 @@ describe("approval cards over MCP", () => {
     expect(status).toContain('href="/approvals"');
     // The card: document title as H1, kind chip, recipient, EUR amount, period, escaped full content, digest (technical), the promise line.
     const card = await (await fetch(`${base}/approvals/${req.approval_id}`, { headers: { cookie: o.cookie } })).text();
-    for (const s of ["Arve", "Synthetic Client OÜ", "billing@client.example", "1240,00\u00a0€", "oktoober 2026", "<h1 id=\"a-h\">Payment reminder: invoice 2026-014</h1>", "Reminder for overdue invoice 2026-014", req.digest, "Kinnita täpselt see", "Keeldu", "Assistent valmistas ette",
+    for (const s of ["Arve", "Synthetic Client OÜ", "billing@client.example", "1240,00\u00a0€", "oktoober 2026", "Payment reminder", "<h1 id=\"a-h\">Invoice 2026-014 · Synthetic Client OÜ</h1>", "Reminder for overdue invoice 2026-014", req.digest, "Kinnita täpselt see", "Keeldu", "Assistent valmistas ette",
       "AI-hüppelaud ise ei saada, maksa ega esita midagi; seda teeb sinu assistent oma tööriistadega ja ainult täpselt selle sisuga."]) expect(card).toContain(s);
     // Besides the hidden form binding, the digest is shown only under Tehniline info.
     const visible = card.replace(`name="digest" value="${req.digest}"`, "");
@@ -178,7 +178,7 @@ describe("approval cards over MCP", () => {
     expect(row(req.approval_id).state).toBe("approved");
     expect((await decide(o, req.approval_id, { decision: "decline", digest: req.digest })).status).toBe(409);
     const decided = await (await fetch(`${base}/approvals/${req.approval_id}`, { headers: { cookie: o.cookie } })).text();
-    expect(decided).not.toContain("Kinnita täpselt see"); expect(decided).toMatch(/✓ <\/span>Kinnitatud \d{2}:\d{2}/); expect(decided).toContain("Kinnitasin"); expect(decided).not.toMatch(/UTC/);
+    expect(decided).not.toContain("Kinnita täpselt see"); expect(decided).toMatch(/<span class="stamp" aria-hidden="true">.*<\/span><h1 class="receipt-head" id="a-h">Kinnitatud \d{2}:\d{2}<\/h1>/); expect(decided).toContain("Kinnitasin"); expect(decided).not.toMatch(/UTC/);
     const after = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
     expect(after).toContain("Täna pole sinult midagi vaja"); expect(after).toContain("Pooleli · ootab assistendi teadet");
     const approved = parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: req.approval_id } }));
