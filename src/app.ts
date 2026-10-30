@@ -558,7 +558,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       const company = r.ok && r.result.company.name ? { name: r.result.company.name, synthetic: r.result.company.synthetic } : null;
       body = gap || !r.ok
         ? deadlinesCalendar({ ...base, company, emptyReason: `${(!failed && REGISTER_GAP_ET[gap ?? ""]) || "Avalik register pole praegu kättesaadav"}. Sündmusi ei loodud.` })
-        : deadlinesCalendar({ ...base, company, obligations: r.result.obligations.filter((o) => o.effective_due !== null && o.effective_due >= r.result.window.from) });
+        : deadlinesCalendar({ ...base, company, obligations: r.result.obligations.filter((o) => o.effective_due !== null && (o.kind === "risk" || o.effective_due >= r.result.window.from)) });
     }
     res.set("pragma", "no-cache").type("text/calendar; charset=utf-8").send(body);
   } catch (e) { next(e); } });

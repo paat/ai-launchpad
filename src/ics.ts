@@ -1,7 +1,7 @@
 /** Read-only iCalendar feed of the owner's computed deadlines (issue #29).
  * Pure: no I/O, no model. RFC 5545 text rules: CRLF line endings, lines
  * folded at 75 octets without splitting a UTF-8 character, TEXT escaping. */
-import type { Obligation } from "./obligations.js";
+import { tallinnDate, type Obligation } from "./obligations.js";
 
 /** RFC 5545 § 3.3.11 TEXT: backslash, semicolon, comma and newlines are escaped. */
 export const icsText = (s: string) => s.replace(/[\\;,]/g, (c) => `\\${c}`).replace(/\r\n|\r|\n/g, "\\n");
@@ -42,9 +42,13 @@ export function deadlinesCalendar(f: FeedInput): string {
     `X-WR-CALNAME:${icsText(label ? `AI-hüppelaud · ${label}` : "AI-hüppelaud")}`,
     `X-WR-CALDESC:${icsText(f.emptyReason ?? "Tähtajad on arvutatud reeglitest. Kalender uueneb mõne tunni jooksul; kinnitada saab ainult assistendi kaudu.")}`,
     "REFRESH-INTERVAL;VALUE=DURATION:PT12H", "X-PUBLISHED-TTL:PT12H"];
+  const today = tallinnDate(f.now);
   if (!f.emptyReason) for (const o of f.obligations) {
     if (!o.effective_due) continue;
-    const summary = `${f.company?.synthetic ? "NÄIDIS · " : ""}${o.applies === "if" ? "Võimalik: " : ""}${o.title_et} · ${o.period_label_et}`;
+    // A risk row outlives its date (e.g. an overdue annual report): it shows on today's date, without alarms.
+    const overdue = o.kind === "risk" && o.effective_due < today, day = overdue ? today : o.effective_due;
+    const prefix = overdue ? (o.applies === "if" ? "Võimalik: tähtaeg möödas: " : "Tähtaeg möödas: ") : o.applies === "if" ? "Võimalik: " : "";
+    const summary = `${f.company?.synthetic ? "NÄIDIS · " : ""}${prefix}${o.title_et} · ${o.period_label_et}`;
     const description = [
       ...(o.applies === "if" && o.condition_et ? [`Tingimus: ${o.condition_et}`] : []),
       `Assistent: ${o.handoff.assistant_et} / Sina: ${o.handoff.owner_et}`,
@@ -54,9 +58,9 @@ export function deadlinesCalendar(f: FeedInput): string {
     ].join("\n");
     // The period key is the statutory due date: fixed per rule and period, unaffected by holiday shifts.
     lines.push("BEGIN:VEVENT", `UID:${o.rule_id}-${ymd(o.statutory_due ?? o.effective_due)}@${f.host}`, `DTSTAMP:${stamp(f.now)}`,
-      `DTSTART;VALUE=DATE:${ymd(o.effective_due)}`, `DTEND;VALUE=DATE:${ymd(nextDay(o.effective_due))}`,
+      `DTSTART;VALUE=DATE:${ymd(day)}`, `DTEND;VALUE=DATE:${ymd(nextDay(day))}`,
       `SUMMARY:${icsText(summary)}`, `DESCRIPTION:${icsText(description)}`, `URL:${o.source.url}`, "TRANSP:TRANSPARENT");
-    for (const trigger of ["-P7D", "-P1D"]) lines.push("BEGIN:VALARM", "ACTION:DISPLAY", `TRIGGER:${trigger}`, `DESCRIPTION:${icsText(summary)}`, "END:VALARM");
+    if (!overdue) for (const trigger of ["-P7D", "-P1D"]) lines.push("BEGIN:VALARM", "ACTION:DISPLAY", `TRIGGER:${trigger}`, `DESCRIPTION:${icsText(summary)}`, "END:VALARM");
     lines.push("END:VEVENT");
   }
   lines.push("END:VCALENDAR");

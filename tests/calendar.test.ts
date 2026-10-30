@@ -8,7 +8,7 @@ import { mapCompany } from "../src/arikratt.js";
 import { createApp, feedLimiter, type Config } from "../src/app.js";
 import { openDb, sha256, newId, nowIso } from "../src/db.js";
 import { ICS_DISCLAIMER, ICS_NO_COMPANY, deadlinesCalendar, foldLine, icsText } from "../src/ics.js";
-import { computeObligations, validRegistryCode } from "../src/obligations.js";
+import { computeObligations, tallinnDate, validRegistryCode } from "../src/obligations.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import { calendarOnceBody } from "../src/views.js";
 
@@ -101,7 +101,8 @@ describe("ics.ts (RFC 5545)", () => {
 });
 
 // Fake Ärikratt MCP with synthetic values; it answers, or fails when told to.
-const fakeCompany = (code: string, name = "Synthetic Register OÜ") => ({ snapshot_id: "20261029T054510Z", as_of: "2026-10-29", registry_code: code, profile: { name, vat_number: "EE000000000" }, report_status: { latest_year: 2025, filed: true, overdue_days: 0 }, tax: [{ year: 2026, quarter: 3, labour_taxes: 1500, employee_count: 1, turnover: 15000 }], tax_debt: { on_list: false } });
+let registerReport = { latest_year: 2025, filed: true, overdue_days: 0 };
+const fakeCompany = (code: string, name = "Synthetic Register OÜ") => ({ snapshot_id: "20261029T054510Z", as_of: "2026-10-29", registry_code: code, profile: { name, vat_number: "EE000000000" }, report_status: registerReport, tax: [{ year: 2026, quarter: 3, labour_taxes: 1500, employee_count: 1, turnover: 15000 }], tax_debt: { on_list: false } });
 let register: Server, registerUrl = "", registerCalls = 0, registerFails = false;
 beforeAll(async () => {
   const a = express(); a.use(express.json());
@@ -130,7 +131,7 @@ async function start(extra: Partial<Config> = {}) {
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`; cfg.baseUrl = base;
 }
 beforeEach(async () => {
-  external = 0; registerCalls = 0; registerFails = false;
+  external = 0; registerCalls = 0; registerFails = false; registerReport = { latest_year: 2025, filed: true, overdue_days: 0 };
   vi.stubGlobal("fetch", ((url: string | URL | Request, init?: RequestInit) => {
     if (![base, registerUrl && new URL(registerUrl).origin].includes(new URL(url instanceof Request ? url.url : url).origin)) { external++; throw new Error("External network forbidden"); }
     return originalFetch(url, init);
@@ -304,6 +305,32 @@ describe("calendar feed over HTTP", () => {
     for (let i = 0; i < 59; i++) await feed(path);
     const limited = await feed(path);
     expect([limited.status, limited.headers.get("cache-control")]).toEqual([429, "private, no-store"]);
+  });
+
+  test("an overdue annual report is dated today as „Tähtaeg möödas”, with its description and no alarms", async () => {
+    const facts = SYNTHETIC_COMPANIES["19990001"].facts, ar = facts.annual_report!;
+    const overdueRow = (value: typeof ar.value) => {
+      const obligations = computeObligations({ ...facts, annual_report: { ...ar, value } }, { today: TODAY, months: 3 }).obligations;
+      expect(obligations.find((o) => o.rule_id === "annual-report-overdue")!.effective_due! < "2026-10-30").toBe(true);
+      return events(deadlinesCalendar({ host: "h.example", now: TODAY, company: { name: "Päris OÜ", synthetic: false }, obligations })).find((e) => e.includes("UID:annual-report-overdue-"))!;
+    };
+    const yes = overdueRow({ latest_year: 2024, filed: true, overdue_days: 120 });
+    expect(yes).toContain("\r\nDTSTART;VALUE=DATE:20261030\r\nDTEND;VALUE=DATE:20261031\r\n");
+    expect(yes).toContain("\r\nSUMMARY:Tähtaeg möödas: Majandusaasta aruanne on tähtajast maas · 2025. a majandusaasta aruanne\r\n");
+    for (const s of ["Assistent: ", " / Sina: ", "Ütle oma assistendile: „", "Allikas: ", icsText(ICS_DISCLAIMER)]) expect(yes).toContain(s);
+    expect(yes).not.toContain("BEGIN:VALARM");
+    const maybe = overdueRow({ latest_year: null, filed: null, overdue_days: null });
+    expect(maybe).toContain("\r\nSUMMARY:Võimalik: tähtaeg möödas: Majandusaasta aruanne on tähtajast maas · ");
+    expect(maybe).toContain("Tingimus: Kehtib\\, kui 2025. a majandusaasta aruanne on esitamata.");
+    // Over HTTP the feed keeps the risk row although its date is before the window.
+    await start({ arikrattApiKey: "test-key", arikrattMcpUrl: registerUrl });
+    registerReport = { latest_year: 2000, filed: true, overdue_days: 200 };
+    const path = await realCompanyFeedPath();
+    await realFeed(path); // starts the background fill
+    await vi.waitFor(async () => expect(await realFeed(path)).toContain("X-WR-CALNAME:AI-hüppelaud · Synthetic Register OÜ"));
+    const live = events(await (await feed(path)).text()).find((e) => e.includes("UID:annual-report-overdue-"))!;
+    expect(live).toContain(`\r\nDTSTART;VALUE=DATE:${tallinnDate(new Date()).replace(/-/g, "")}\r\n`);
+    expect(live).toContain("\r\nSUMMARY:Tähtaeg möödas: Majandusaasta aruanne on tähtajast maas · ");
   });
 
   test("61st fetch of one token within an hour is refused", async () => {
