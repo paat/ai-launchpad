@@ -768,7 +768,7 @@ export function catalogueBody(o: { lang: Lang; q: string; g: CatalogueGroup | nu
   const listed = all.filter((r) => r.id !== "arikratt" && (!o.matched || o.matched.has(r.id)));
   const href = (g: string | null) => { const p = new URLSearchParams(); if (g) p.set("g", g); if (o.q) p.set("q", o.q); const s = p.toString(); return s ? `/kataloog?${s}` : "/kataloog"; };
   const counts = new Map<string, number>(); for (const r of listed) { const g = catalogueGroup(r.sector); counts.set(g, (counts.get(g) ?? 0) + 1); }
-  const chips = `<nav class="chips" aria-label="${t("Tööde rühmad", "Job groups")}"><a href="${esc(href(null))}"${o.g ? "" : ' aria-current="page"'}>${t("Kõik", "All")} <span>${listed.length}</span></a>${CATALOGUE_GROUPS.map((g) => `<a href="${esc(href(g.id))}"${o.g === g.id ? ' aria-current="page"' : ""}>${esc(t(g.et, g.en))} <span>${counts.get(g.id) ?? 0}</span></a>`).join("")}</nav>`;
+  const chips = `<nav class="chips" aria-label="${t("Tööde rühmad", "Job groups")}"><a href="${esc(href(null))}"${o.g ? "" : ' aria-current="page"'}>${t("Kõik", "All")}</a>${CATALOGUE_GROUPS.map((g) => `<a href="${esc(href(g.id))}"${o.g === g.id ? ' aria-current="page"' : ""}>${esc(t(g.et, g.en))} <span>${counts.get(g.id) ?? 0}</span></a>`).join("")}</nav>`;
   const sections = CATALOGUE_GROUPS.filter((g) => !o.g || o.g === g.id).map((g) => {
     const rows = listed.filter((r) => catalogueGroup(r.sector) === g.id);
     return rows.length ? `<section aria-labelledby="g-${g.id}"><h2 id="g-${g.id}" class="svc-group">${esc(t(g.et, g.en))} <span class="muted">${rows.length}</span></h2>${rows.map((r) => serviceCard(r, l)).join("")}</section>` : "";

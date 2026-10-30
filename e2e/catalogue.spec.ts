@@ -22,6 +22,8 @@ for (const width of [320, 390, 1280]) {
     await expect(page.locator("ul.legend")).toContainText("telefonis küsid ja kinnitad liikvel olles");
     await expect(page.locator("article.svc[data-service]").first().locator(".label-chip--where")).toHaveCount(1);
 
+    await expect(page.locator("nav.chips a").first()).toHaveText(/^Kõik$/);
+
     await page.getByRole("link", { name: /^Raamatupidamine ja arved/ }).click();
     await expect(page).toHaveURL(/\/kataloog\?g=raamatupidamine$/);
     await expect(page.locator("article.svc[data-service]").first()).toContainText("Avab töövoo: KMD ettevalmistus / Maksemeeldetuletus");
