@@ -1061,11 +1061,8 @@ export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgp
   const name = o.assistant === "claude" ? "Claude" : "ChatGPT";
   const wbr = (u: string) => esc(u).replace(/\//g, "/<wbr>");
   const plan = o.assistant === "claude"
-    ? t("Claude lubab kohandatud ühendusi igas paketis (tasuta paketis üks ühendus). AI-hüppelauaga pole seda veel testitud.", "Claude allows custom connectors on every plan (Free: one connector). It has not been tested with AI Launchpad yet.")
+    ? t("Claude lubab kohandatud ühendusi igas paketis (tasuta paketis üks ühendus). Testitud Claude'i tasuta paketis (30.10.2026).", "Claude allows custom connectors on every plan (Free: one connector). Tested on Claude's Free plan (30 Oct 2026).")
     : t("Tähtajad töötavad igas ChatGPT paketis. Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", "Deadlines work on every ChatGPT plan. Approvals (“Approve exactly this”) need ChatGPT Business.");
-  const addStep = o.assistant === "claude"
-    ? t("Ava Claude'is Seaded → Connectors → Add custom connector ja kleebi sinna aadress.", "In Claude, open Settings → Connectors → Add custom connector and paste the address.")
-    : t("Ava ChatGPT seadetes ühendused, lisa uus ühendus ja kleebi sinna aadress.", "In ChatGPT settings, open connectors, add a new connector and paste the address.");
   const address = remoteReady ? `<div class="endpoint"><code>${wbr(endpoint)}</code></div><p class="small muted">${t("Vali aadress ja kopeeri see.", "Select the address and copy it.")}</p>`
     : `<div class="notice"><p class="small">${t("Avalik HTTPS-aadress pole selles serveris veel seadistatud, seega pilves töötav assistent ei saa veel ühenduda.", "A public HTTPS address is not configured on this server yet, so a cloud assistant cannot connect yet.")}</p></div>`;
   const s = o.state;
@@ -1078,9 +1075,14 @@ export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgp
 <p class="small">${esc(plan)}</p>
 ${o.owner ? `<p class="small"><a class="tap-link" href="/setup">${t("Pole veel assistenti? Aitame valida", "No assistant yet? We'll help you choose")}</a></p>` : ""}
 <section class="card" aria-labelledby="steps-h"><h2 id="steps-h">${t("Kolm sammu", "Three steps")}</h2>
-<ol class="steps-big"><li><h3 class="step-title">${t("Kopeeri aadress", "Copy the address")}</h3>${address}</li>
-<li><h3 class="step-title">${esc(addStep)}</h3></li>
-<li><h3 class="step-title">${t("Logi sisse ja vali, mida assistent tohib", "Sign in and choose what your assistant may do")}</h3><p class="small muted">${esc(t(`Märgi „Jah: ${name} valmistab ette …”, kui tahad, et ta valmistaks sulle kinnitamiseks kirju, arveid ja deklaratsioone.`, `Tick “Yes: ${name} prepares …” if you want it to prepare messages, invoices and returns for your approval.`))}</p></li></ol></section>
+<ol class="steps-big">${o.assistant === "claude"
+    // Claude steps follow the tested Free-plan run (docs/live-pilot.md, 30 Oct 2026).
+    ? `<li><h3 class="step-title">${t("Ava Claude'is Seaded → Connectors → Add custom connector", "In Claude, open Settings → Connectors → Add custom connector")}</h3></li>
+<li><h3 class="step-title">${t("Nimi: AI-hüppelaud, aadress:", "Name: AI Launchpad, address:")}</h3>${address}<p><strong>${t("→ Continue → Add. Ära muuda midagi muud.", "→ Continue → Add. Change nothing else.")}</strong></p></li>
+<li><h3 class="step-title">${t("Vajuta Connect, logi sisse ja kinnita. Kui Claude küsib tööriista luba, vajuta Allow.", "Press Connect, sign in and confirm. If Claude asks for tool permission, press Allow.")}</h3><p class="small muted">`
+    : `<li><h3 class="step-title">${t("Kopeeri aadress", "Copy the address")}</h3>${address}</li>
+<li><h3 class="step-title">${t("Ava ChatGPT seadetes ühendused, lisa uus ühendus ja kleebi sinna aadress.", "In ChatGPT settings, open connectors, add a new connector and paste the address.")}</h3></li>
+<li><h3 class="step-title">${t("Logi sisse ja vali, mida assistent tohib", "Sign in and choose what your assistant may do")}</h3><p class="small muted">`}${esc(t(`Märgi „Jah: ${name} valmistab ette …”, kui tahad, et ta valmistaks sulle kinnitamiseks kirju, arveid ja deklaratsioone.`, `Tick “Yes: ${name} prepares …” if you want it to prepare messages, invoices and returns for your approval.`))}</p></li></ol></section>
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
 ${o.calendar ? calendarSection(l, o.calendar) : ""}

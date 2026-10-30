@@ -66,7 +66,7 @@ Type these verbatim; show the English subtitle burned in.
 **ChatGPT**
 - [ ] Grant tool permissions once before takes so "Allow?" dialogs do not interrupt.
 - [ ] 3 takes of every ChatGPT answer; keep the take number in the file name.
-- [ ] Say "ChatGPT" only. Claude is untested with Launchpad (`docs/live-pilot.md`); add it only after a real Claude run.
+- [ ] Say "ChatGPT" only. Claude was tested once on the Free plan with synthetic data (30 Oct 2026, `docs/live-pilot.md`) but is not in these takes.
 - [ ] Verify the connector menu path on the pilot account and capture it.
 
 **Picture and sound**
