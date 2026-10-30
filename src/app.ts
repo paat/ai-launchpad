@@ -12,7 +12,7 @@ import type { FetchFn } from "./model-quality.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "./fixtures.js";
 import { validRegistryCode } from "./obligations.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
-import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, servicesBody, playbooksBody, demandBody, type Lang, type ShellOpts, type LandingState, type ConnectState, type DeadlinesView } from "./views.js";
+import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, type Lang, type ShellOpts, type LandingState, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; }
@@ -495,9 +495,17 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const friction = publicCards ? publicCards.readFrictionCards().map((c) => ({ ...c, label: findTopic(FRICTION_TOPICS, c.topicId)!.label[c.locale] })) : undefined;
     res.type("html").send(page(req, res, "Playbooks", "none", playbooksBody(PLAYBOOKS, friction), { bodyLang: "en" }));
   });
-  app.get("/services", requireOwner, (req, res) => {
+  // Public research catalogue (ET first). Signed-in owners keep their nav; never cached (the shell carries their CSRF).
+  app.get("/kataloog", (req, res) => {
+    const s = session(req), l = langOf(res);
+    const q = String(req.query.q ?? "").trim().slice(0, 120);
+    const g = CATALOGUE_GROUPS.find((x) => x.id === req.query.g)?.id ?? null;
+    const matched = q ? new Set(searchServices(q, Infinity).map((r) => r.id)) : null;
+    res.type("html").send(shell({ title: tr(l)("Kataloog", "Catalogue"), active: "none", csrf: s?.csrf ?? "", lang: l, toggle: toggleHref(req, l), body: catalogueBody({ lang: l, q, g, records: loadCatalog(), matched }) }));
+  });
+  app.get("/services", (req, res) => {
     const q = String(req.query.q ?? "").slice(0, 120);
-    res.type("html").send(page(req, res, "Service catalog", "none", servicesBody({ q, total: loadCatalog().length, results: q ? searchServices(q, 10) : [] }), { bodyLang: "en" }));
+    res.redirect(302, q ? `/kataloog?q=${encodeURIComponent(q)}` : "/kataloog");
   });
 
   const setupPublicCards = (card: PublicCardView | null) => ({ topics: SETUP_TOPICS.map((t) => ({ id: t.id, label: t.label.en })), card });

@@ -4,6 +4,7 @@ import { approvalAddressMissing, type ApprovalRow, type AssistantMilestones, typ
 import type { CompanyCard, CompanyMatch } from "./arikratt.js";
 import { ET_OF, type FactNeeded, type Obligation } from "./obligations.js";
 import { BASETEN_MODEL } from "./model-quality.js";
+import { safeHttps, type ServiceRecord } from "./catalog.js";
 import { BLOCKER_HANDOFF, BLOCKER_LABELS, BLOCKER_LABELS_ET, CATEGORY_LABELS, CATEGORY_LABELS_ET, classifiedByLabel, type Blocker, type Category, type DemandItem, type OwnerNeed } from "./unmet-needs.js";
 
 export const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -241,7 +242,18 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .big-url a{color:var(--c-text);text-decoration:none}
 .search{display:flex;flex-wrap:wrap;gap:0 8px;align-items:flex-end}.search label{flex:1 1 220px}.search button{flex:1 1 140px;width:auto;margin:4px 0 12px}
 .status-chip a{color:inherit}
-.tech-list dd{overflow-wrap:anywhere}`;
+.tech-list dd{overflow-wrap:anywhere}
+/* ===== Kataloog ===== */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:var(--s-2) 0 var(--s-3)}
+.chips a{display:inline-flex;align-items:center;gap:6px;min-height:var(--tap);padding:6px 14px;border:1px solid var(--c-border);border-radius:999px;background:var(--c-surface);color:var(--c-text);font-size:var(--fs-sm);font-weight:650;text-decoration:none}
+.chips a span{color:var(--c-muted);font-variant-numeric:tabular-nums}
+.chips a[aria-current="page"]{background:var(--c-primary);border-color:var(--c-primary);color:var(--c-on-primary)}.chips a[aria-current="page"] span{color:inherit}
+.svc-group{margin:var(--s-6) 0 var(--s-1)}
+.svc h3{margin:0 0 2px;font-size:var(--fs-lg)}
+.svc-k{margin:var(--s-2) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}.svc-v{margin:0}
+.svc-facts{margin:var(--s-2) 0 0;font-size:var(--fs-sm)}.svc-facts dt{font-weight:700;color:var(--c-muted);margin-top:6px}.svc-facts dd{margin:0}
+.svc-play{margin:var(--s-2) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-primary)}
+.svc--pinned{border-color:var(--c-primary);box-shadow:inset 4px 0 0 var(--c-primary)}`;
 
 // --- Locale (issue #21): Estonian first, English on request. No framework. ---
 export type Lang = "et" | "en";
@@ -323,9 +335,9 @@ export function shell(o: ShellOpts): string {
   const main = o.bodyLang && o.bodyLang !== l ? `<div lang="${o.bodyLang}">${o.body}</div>` : o.body;
   const footer = o.bare ? ""
     : owner
-    ? `<footer><details><summary>${t("Abi ja lisad", "Help and resources")}</summary><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/approvals">${t("Kinnitused", "Approvals")}</a><a href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/playbooks">Playbooks</a><a href="/services">${t("Teenuste kataloog", "Service catalog")}</a><a href="/setup">${t("Abi alustamiseks", "Setup helper")}</a></nav></details>
+    ? `<footer><details><summary>${t("Abi ja lisad", "Help and resources")}</summary><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/approvals">${t("Kinnitused", "Approvals")}</a><a href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/playbooks">Playbooks</a><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/setup">${t("Abi alustamiseks", "Setup helper")}</a></nav></details>
 <form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(o.csrf)}"><button type="submit" class="secondary">${t("Logi välja", "Log out")}</button></form></footer>`
-    : `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/login">${t("Logi sisse", "Sign in")}</a></nav></footer>`;
+    : `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/login">${t("Logi sisse", "Sign in")}</a></nav></footer>`;
   return `<!doctype html><html lang="${l}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${o.head ?? ""}<title>${esc(o.title)} · ${t("AI-hüppelaud", "AI Launchpad")}</title><style>${CSS}</style></head><body><div class="wrap">
 <header class="top"><span class="mark" aria-hidden="true"></span><span class="brand">${t("AI-hüppelaud", "AI Launchpad")}</span>${o.sample ? sampleChip(l) : ""}${toggle}</header>
 ${owner && !o.bare ? `<nav class="main" aria-label="${t("Peamenüü", "Main")}">${nav.map(([href, label, key]) => `<a href="${href}"${o.active === key ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>` : ""}
@@ -703,17 +715,71 @@ ${pc.card ? publicCardBlock(pc.card) : ""}</section>`;
 ${opts.result ? `<section class="card" role="status"><p>${esc(opts.result)}</p></section>` : ""}</section>`;
 }
 
-export interface ServiceView { name: string; jobs: string; interface_class: string; evidence_status: string; limitations: string; connection: string; connection_url: string | null; access_and_price: string; checked_on: string; sources: string[]; }
-export function servicesBody(opts: { q: string; total: number; results: ServiceView[] }): string {
-  return `<h1>Service catalog</h1>
-<p class="lede">${opts.total} researched records. Connect a service inside your own assistant — Launchpad does not fetch or broker these connections.</p>
-<div class="note"><p class="small"><strong>None were runtime-tested by Launchpad;</strong> treat them as documented leads and check each entry's checked date.</p></div>
-<form method="get" role="search"><label>Search <input name="q" value="${esc(opts.q)}" maxlength="120"></label><button type="submit">Search</button></form>
-${opts.results.map((r) => `<section class="card"><h2>${esc(r.name)}</h2><p>${esc(r.jobs)}</p>
-<p class="small">Interface: ${esc(r.interface_class)} · Evidence: ${esc(r.evidence_status)} · Checked: ${esc(r.checked_on)} · Runtime verified: no</p>
-<p class="small">Connection: ${r.connection_url ? `<a href="${esc(r.connection_url)}" rel="noopener noreferrer">${esc(r.connection)}</a>` : esc(r.connection)}${r.access_and_price ? `<br>Access &amp; price: ${esc(r.access_and_price)}` : ""}</p>
-${r.sources.length ? `<p class="small">Primary sources: ${r.sources.map((s) => `<a href="${esc(s)}" rel="noopener noreferrer">${esc(s)}</a>`).join(" · ")}</p>` : ""}
-<p class="small muted">${esc(r.limitations)}</p></section>`).join("")}`;
+// --- Kataloog (/kataloog): public research catalogue, ET first, zero JS. ---
+type Conn = "hosted_mcp" | "local_mcp" | "self_hosted_mcp" | "ordinary_api";
+const CONN: Record<Conn, [string, string]> = { hosted_mcp: ["MCP · pilves", "MCP · cloud"], local_mcp: ["MCP · sinu arvutis", "MCP · on your computer"], self_hosted_mcp: ["MCP · ise majutatud", "MCP · self-hosted"], ordinary_api: ["API", "API"] };
+/** Job groups in display order; `sector` (free text in the research data) maps to the first match. */
+export const CATALOGUE_GROUPS = [
+  { id: "raamatupidamine", et: "Raamatupidamine ja arved", en: "Accounting and invoices", match: /accounting|invoic|payroll/ },
+  { id: "pank", et: "Pank ja maksed", en: "Bank and payments", match: /bank|payment/ },
+  { id: "epost", et: "E-post ja kalender", en: "Email and calendar", match: /email|calendar|scheduling/ },
+  { id: "kullerid", et: "Kullerid", en: "Couriers", match: /courier|logistics|shipping/ },
+  { id: "andmed", et: "Avalikud ja äriandmed", en: "Public and business data", match: /public|business data|government|statistics|^procurement$|tax/ },
+  { id: "oigus", et: "Õigus", en: "Legal", match: /legal|contract/ },
+  { id: "brauser", et: "Brauser ja automaatika", en: "Browser and automation", match: /browser/ },
+  { id: "muu", et: "Muu", en: "Other", match: /(?:)/ },
+] as const;
+export type CatalogueGroup = (typeof CATALOGUE_GROUPS)[number]["id"];
+export const catalogueGroup = (sector: string | undefined): CatalogueGroup => CATALOGUE_GROUPS.find((g) => g.match.test((sector ?? "").toLowerCase()))!.id;
+/** Playbooks a connection in this group makes possible (ids from PLAYBOOKS). */
+export const GROUP_PLAYBOOKS: Partial<Record<CatalogueGroup, string[]>> = { raamatupidamine: ["vat-return-prep", "payment-reminder"], epost: ["payment-reminder"] };
+const PLAYBOOK_SHORT: Record<string, [string, string]> = { "vat-return-prep": ["KMD ettevalmistus", "VAT return prep"], "payment-reminder": ["Maksemeeldetuletus", "Payment reminder"] };
+const isCatalogueConn = (c: unknown): c is Conn => typeof c === "string" && c in CONN;
+const firstSentence = (s: string) => { const m = /^(.+?[.;])(\s|$)/.exec(s.trim()); const one = m ? m[1] : s.trim(); return one.length > 180 ? `${one.slice(0, 177).trimEnd()}…` : one; };
+const fmtYmd = (ymd: string) => /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd.split("-").reverse().join(".") : ymd;
+
+function serviceCard(r: ServiceRecord, l: Lang): string {
+  const t = tr(l), conn = CONN[r.interface_class as Conn];
+  const link = [...(r.sources ?? []), r.connection].map(safeHttps).find((u): u is string => !!u) ?? null;
+  const plays = GROUP_PLAYBOOKS[catalogueGroup(r.sector)] ?? [];
+  // Research text is English; mark it so screen readers switch voice on the Estonian page.
+  const en = l === "en" ? "" : ' lang="en"';
+  return `<article class="card svc" data-service="${esc(r.id)}"><h3>${esc(r.name)}</h3>
+<div class="labels">${labelChip("rule", t(conn[0], conn[1]))}${labelChip("assistant", r.runtime_tested ? t("Testitud", "Tested") : t("Uuritud · AI-hüppelauaga pole testitud", "Researched · not tested with AI Launchpad"))}</div>
+<p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v"${en}>${esc(r.jobs)}</p>
+<dl class="svc-facts"><dt>${t("Ligipääs ja hind", "Access and price")}</dt><dd${en}>${esc(r.access_and_price)}</dd><dt>${t("Peamine piirang", "Key limitation")}</dt><dd${en}>${esc(firstSentence(r.limitations ?? ""))}</dd></dl>
+${plays.length ? `<p class="svc-play">${t("Avab töövoo", "Unlocks playbook")}: ${plays.map((id) => esc(t(...PLAYBOOK_SHORT[id]!))).join(" / ")}</p>` : ""}
+${link ? `<a class="tap-link" href="${esc(link)}" rel="noopener noreferrer">${t("Teenusepakkuja leht", "Provider page")}: ${esc(new URL(link).hostname)}</a>` : ""}</article>`;
+}
+
+export function catalogueBody(o: { lang: Lang; q: string; g: CatalogueGroup | null; records: ServiceRecord[]; matched: Set<string> | null }): string {
+  const l = o.lang, t = tr(l);
+  const all = o.records.filter((r) => isCatalogueConn(r.interface_class));
+  const mcp = all.filter((r) => r.interface_class !== "ordinary_api").length, api = all.length - mcp;
+  const checked = o.records.map((r) => r.checked_on ?? "").filter(Boolean).sort().at(-1) ?? "";
+  // Ärikratt is pinned above with what Launchpad actually does with it.
+  const listed = all.filter((r) => r.id !== "arikratt" && (!o.matched || o.matched.has(r.id)));
+  const href = (g: string | null) => { const p = new URLSearchParams(); if (g) p.set("g", g); if (o.q) p.set("q", o.q); const s = p.toString(); return s ? `/kataloog?${s}` : "/kataloog"; };
+  const counts = new Map<string, number>(); for (const r of listed) { const g = catalogueGroup(r.sector); counts.set(g, (counts.get(g) ?? 0) + 1); }
+  const chips = `<nav class="chips" aria-label="${t("Tööde rühmad", "Job groups")}"><a href="${esc(href(null))}"${o.g ? "" : ' aria-current="page"'}>${t("Kõik", "All")} <span>${listed.length}</span></a>${CATALOGUE_GROUPS.map((g) => `<a href="${esc(href(g.id))}"${o.g === g.id ? ' aria-current="page"' : ""}>${esc(t(g.et, g.en))} <span>${counts.get(g.id) ?? 0}</span></a>`).join("")}</nav>`;
+  const sections = CATALOGUE_GROUPS.filter((g) => !o.g || o.g === g.id).map((g) => {
+    const rows = listed.filter((r) => catalogueGroup(r.sector) === g.id);
+    return rows.length ? `<section aria-labelledby="g-${g.id}"><h2 id="g-${g.id}" class="svc-group">${esc(t(g.et, g.en))} <span class="muted">${rows.length}</span></h2>${rows.map((r) => serviceCard(r, l)).join("")}</section>` : "";
+  }).join("");
+  const kratt = l === "en" ? "https://arikratt.ee/en/mcp" : "https://arikratt.ee/mcp";
+  return `<section class="card hero"><h1>${t("Teenused, mida sinu AI-assistent saab kasutada", "Services your AI assistant can use")}</h1>
+<p class="lede">${t(`<strong>${mcp} MCP-ühendust ja ${api} API-t</strong>, uuritud Eesti ettevõtja tööde jaoks.`, `<strong>${mcp} MCP connections and ${api} APIs</strong>, researched for the jobs of an Estonian business owner.`)}</p>
+<p class="small muted">${esc(t(`Iga ühendus laseb sinu assistendil teha rohkem töid sinu eest. Ühendad need oma assistendis ise; AI-hüppelaud neid ei vahenda. Allikas: avalikud dokumendid, kontrollitud ${fmtYmd(checked)}.`, `Each connection lets your assistant take more jobs off you. You connect them in your own assistant; AI Launchpad does not broker them. Source: public documentation, checked ${checked}.`))}</p></section>
+<section aria-label="${t("Kinnitatud", "Pinned")}">
+<article class="card svc svc--pinned"><h3>${t("AI-hüppelaud", "AI Launchpad")}</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("official", t("Testitud: ChatGPT ja Claude (30.10.2026)", "Tested: ChatGPT and Claude (30 Oct 2026)"))}</div>
+<p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v">${t("Näeb sinu ettevõtte tähtaegu koos ametliku allikaga, valmistab töid ette ja küsib enne saatmist või esitamist sinu kinnitust täpselt sellele sisule.", "Sees your company's deadlines with their official sources, prepares the work and asks you to approve the exact content before anything is sent or filed.")}</p>
+<a class="tap-link" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a></article>
+<article class="card svc svc--pinned"><h3>Ärikratt</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("official", t("AI-hüppelaud kasutab seda", "Used by AI Launchpad"))}</div>
+<p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v">${t("Avalikud ettevõtteandmed äriregistrist ja maksuametist. AI-hüppelaud arvutab nende põhjal sinu tähtajad.", "Public company data from the Business Register and the Tax Board. AI Launchpad computes your deadlines from it.")}</p>
+<a class="tap-link" href="${esc(kratt)}" rel="noopener noreferrer">${t("Ärikratti avalik MCP", "Ärikratt public MCP")}: arikratt.ee</a></article></section>
+<form method="get" action="/kataloog" role="search" class="search">${o.g ? `<input type="hidden" name="g" value="${esc(o.g)}">` : ""}<label>${t("Otsi nime või töö järgi", "Search by name or job")} <input name="q" value="${esc(o.q)}" maxlength="120"></label><button type="submit">${t("Otsi", "Search")}</button></form>
+${chips}
+${sections || `<p class="card">${o.q ? esc(t(`„${o.q}” kohta ei leidnud midagi.`, `Nothing found for “${o.q}”.`)) : t("Selles rühmas pole teenuseid.", "No services in this group.")} <a class="tap-link" href="/kataloog">${t("Näita kõiki", "Show all")}</a></p>`}`;
 }
 
 export function playbooksBody(items: { title: string; summary: string; source: string; source_label: string }[], frictionCards?: (PublicCardViewOpts & { label: string })[]): string {
@@ -1084,7 +1150,7 @@ ${o.owner ? `<p class="small"><a class="tap-link" href="/setup">${t("Pole veel a
 <li><h3 class="step-title">${t("Ava ChatGPT seadetes ühendused, lisa uus ühendus ja kleebi sinna aadress.", "In ChatGPT settings, open connectors, add a new connector and paste the address.")}</h3></li>
 <li><h3 class="step-title">${t("Logi sisse ja vali, mida assistent tohib", "Sign in and choose what your assistant may do")}</h3><p class="small muted">`}${esc(t(`Märgi „Jah: ${name} valmistab ette …”, kui tahad, et ta valmistaks sulle kinnitamiseks kirju, arveid ja deklaratsioone.`, `Tick “Yes: ${name} prepares …” if you want it to prepare messages, invoices and returns for your approval.`))}</p></li></ol></section>
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
-${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
+${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p><p><a class="tap-link" href="/kataloog?g=raamatupidamine">${t("Järgmine samm: ühenda oma raamatupidamine → Kataloog", "Next step: connect your accounting → Catalogue")}</a></p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
 ${o.calendar ? calendarSection(l, o.calendar) : ""}
 ${remoteReady ? `<section class="card" aria-labelledby="phone-h"><h2 id="phone-h">${t("Jätka telefonis", "Continue on your phone")}</h2><p class="small muted">${t("Ava see aadress oma telefonis:", "Open this address on your phone:")}</p><p class="big-url">${wbr(here)}</p></section>` : ""}
 ${techDetails(l, `${techList([[t("MCP-aadress", "MCP address"), endpoint], [t("Sisselogimine", "Sign-in"), "OAuth 2.1 + PKCE"], [t("Õigused", "Scopes"), "progress:read · progress:report (Jah-linnukesega)"], [t("Kliendi nimi", "Client name"), t("kliendi enda antud, kontrollimata", "supplied by the client, not verified")]])}
