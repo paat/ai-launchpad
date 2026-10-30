@@ -284,6 +284,21 @@ describe("calendar feed over HTTP", () => {
     } finally { warn.mockRestore(); }
   });
 
+  test("the feed, its 404 and 429 and the one-time page are private, no-store", async () => {
+    await start();
+    const b = new Browser(); await b.login();
+    const once = await b.request("/calendar/feed", { csrf: await b.csrf() });
+    expect(once.headers.get("cache-control")).toBe("private, no-store");
+    const path = /\/calendar\/[A-Za-z0-9_-]{43}\.ics/.exec((await once.text()).replace(/<wbr>/g, ""))![0];
+    const ok = await feed(path);
+    expect([ok.status, ok.headers.get("cache-control"), ok.headers.get("pragma")]).toEqual([200, "private, no-store", "no-cache"]);
+    const unknown = await feed(`/calendar/${"A".repeat(43)}.ics`);
+    expect([unknown.status, unknown.headers.get("cache-control")]).toEqual([404, "private, no-store"]);
+    for (let i = 0; i < 59; i++) await feed(path);
+    const limited = await feed(path);
+    expect([limited.status, limited.headers.get("cache-control")]).toEqual([429, "private, no-store"]);
+  });
+
   test("61st fetch of one token within an hour is refused", async () => {
     await start();
     const b = new Browser(); await b.login();

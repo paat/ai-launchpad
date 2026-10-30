@@ -536,7 +536,10 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // or assessment content. A cache miss starts Täna's background fill, so
   // the next calendar refresh has the events.
   const feedAllowed = feedLimiter();
+  // The token is in the URL: no shared cache may keep the feed, its refusals or the one-time page.
+  const privateNoStore = { "cache-control": "private, no-store" };
   app.get("/calendar/:file", async (req, res, next) => { try {
+    res.set(privateNoStore);
     const m = /^([A-Za-z0-9_-]{43})\.ics$/.exec(req.params.file);
     const hash = m ? sha256(m[1]) : "";
     const feed = m ? db.prepare("SELECT owner_id FROM calendar_feeds WHERE token_hash=?").get(hash) as { owner_id: string } | undefined : undefined;
@@ -557,7 +560,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
         ? deadlinesCalendar({ ...base, company, emptyReason: `${(!failed && REGISTER_GAP_ET[gap ?? ""]) || "Avalik register pole praegu kättesaadav"}. Sündmusi ei loodud.` })
         : deadlinesCalendar({ ...base, company, obligations: r.result.obligations.filter((o) => o.effective_due !== null && o.effective_due >= r.result.window.from) });
     }
-    res.type("text/calendar; charset=utf-8").send(body);
+    res.set("pragma", "no-cache").type("text/calendar; charset=utf-8").send(body);
   } catch (e) { next(e); } });
   app.post("/calendar/feed", requireOwner, csrfOk, (req, res) => {
     const raw = randomBytes(32).toString("base64url");
@@ -565,7 +568,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     logActivity(db, oid(req), "owner", "calendar_feed_created", "ok", "Calendar feed created (one per owner; a new one replaces the old address).");
     // One-time display in this POST response, like manual tokens.
     const l = langOf(res);
-    res.type("html").send(page(req, res, tr(l)("Kalendri aadress", "Calendar address"), "uhendus", calendarOnceBody(l, `${cfg.baseUrl.replace(/\/+$/, "")}/calendar/${raw}.ics`)));
+    res.set(privateNoStore).type("html").send(page(req, res, tr(l)("Kalendri aadress", "Calendar address"), "uhendus", calendarOnceBody(l, `${cfg.baseUrl.replace(/\/+$/, "")}/calendar/${raw}.ics`)));
   });
   app.post("/calendar/feed/revoke", requireOwner, csrfOk, (req, res) => {
     db.prepare("DELETE FROM calendar_feeds WHERE owner_id=?").run(oid(req));
