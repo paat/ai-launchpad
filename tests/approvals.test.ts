@@ -309,7 +309,7 @@ describe("approval cards over MCP", () => {
     expect(first.current_state).toBeUndefined();
     await decide(o, first.approval_id, { decision: "approve", digest: first.digest });
     const replay = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "r1", action: reminder() } }));
-    expect(replay).toEqual({ ...first, current_state: "approved", note });
+    expect(replay).toEqual({ ...first, state: "approved", current_state: "approved", note });
   });
 
   test("caps, scope and the sharing stop switch refuse with nothing saved", async () => {
@@ -571,6 +571,18 @@ describe("standing approvals (#45)", () => {
     expect(await html(o, "/activity?lang=en")).toContain("Your assistant sent under a standing approval:");
     // A replay returns the same auto-approved receipt with the live state.
     expect(parsed(await c.callTool({ name: "request_approval", arguments: { report_id: `std-${n}`, action: next } }))).toMatchObject({ approval_id: r.approval_id, auto_approved: true, current_state: "consumed" });
+  });
+
+  test("a replay after the outcome is recorded is no longer approved and says do not send (tribunal T-001)", async () => {
+    const { c } = await ruleFromCard("std-replay");
+    const action = reminder({ summary: "replay once sent" });
+    const r = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "std-replay-1", action } }));
+    expect(r).toMatchObject({ state: "approved", auto_approved: true });
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "std-replay-out", approval_id: r.approval_id, digest: r.digest, outcome: "sent", observed_at: new Date().toISOString() } })).state).toBe("consumed");
+    const replay = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "std-replay-1", action } }));
+    expect(replay).toMatchObject({ approval_id: r.approval_id, state: "consumed", current_state: "consumed" });
+    expect(replay.assistant_instruction).toBe("This approval is consumed. Do not send, pay or file anything for it. If the owner still wants this done, make a new request_approval with a new report_id.");
+    expect(replay.owner_instruction).toBeUndefined();
   });
 
   test("over the cap, a new recipient (scoped rule), the daily limit, expiry and revocation each fall back to a pending card", async () => {
