@@ -1080,7 +1080,7 @@ export function landingBody(o: { lang: Lang }): string {
   const card = t("Maksemeeldetuletus", "Payment reminder"), client = "Demo Klient OÜ";
   const approve = t("Kinnita täpselt see", "Approve exactly this"), done = `✓ ${t("Kinnitatud", "Approved")} · ${t("Saadetud: demo", "Sent: demo")}`;
   const allow = t("Luba sarnased automaatselt", "Allow similar ones automatically"), standing = t("Püsiluba: meeldetuletused kuni 500\u00a0€", "Standing approval: reminders up to 500\u00a0€");
-  const kmdDue = t("20. nov", "20 Nov");
+  const kmdDue = t("20.\u00a0nov", "20\u00a0Nov");
   const next: [string, string] = [t("Järgmised saadan ise. Muide,", "I'll send the next ones myself. By the way, the VAT return is due"), t("on KMD — kas valmistan oktoobri arved ette?", "— shall I prepare October's invoices?")];
   const rule = t("Arvutatud reeglist", "Calculated by rule"), kmdSource = `${t("Allikas", "Source")}: ${t("KMS", "VAT Act")} § 27, § 38`;
   const me = (k: string, text: string) => `<div class="beat beat--me b-${k}"><p class="bubble">${esc(text)}</p></div>`;

@@ -242,13 +242,13 @@ describe("landing and connect", () => {
     for (const s of ["Tegele sellega, milles oled hea. <span>Kontoritöö teeb sinu AI-assistent.</span>", "Meeldetuletused võlgnikele, arved KMD jaoks, aastaaruande kontroll — assistent valmistab ette, sina kinnitad ühe puudutusega. Töötab sinu oma ChatGPT või Claude&#39;iga.",
       '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "Kes mulle võlgu on?", "Kolm arvet on üle tähtaja, kokku 1\u00a0860\u00a0€. Koostasin igale viisaka meeldetuletuse.",
       "Maksemeeldetuletus", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud: demo", '<span class="mock-allow">Luba sarnased automaatselt</span><span class="mock-rule">Püsiluba: meeldetuletused kuni 500\u00a0€</span>',
-      "Järgmised saadan ise. Muide, <b>20. nov</b> on KMD — kas valmistan oktoobri arved ette?",
+      "Järgmised saadan ise. Muide, <b>20.\u00a0nov</b> on KMD — kas valmistan oktoobri arved ette?",
       "Mida assistent sinu eest ära teeb", "<strong>Võlgnikud</strong>Leiab tasumata arved ja saadab meeldetuletused.", "<strong>KMD</strong>Kogub kuu arved ja paneb deklaratsiooni valmis. Esitad ise.",
       "<strong>Aastaaruanne</strong>Paneb kokku, mida aruandeks vaja. Allkirjastad ise.", "<strong>Tähtajad</strong>Teab sinu ettevõtte tähtaegu ja tuletab meelde.",
       "Alusta 2 minutiga", "Ühenda oma ChatGPT või Claude", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega — või luba edaspidi automaatselt", 'href="/demand"']) expect(et, s).toContain(s);
     for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Reminders to customers who owe you, invoices for the VAT return, the annual-report checklist", "Connect your assistant", ">Sample<",
       "Who owes me money?", "Three invoices are overdue, 1,860\u00a0€ in total.", fmtEur(24000, "en"), "Approve exactly this", "Allow similar ones automatically", "Standing approval: reminders up to 500\u00a0€",
-      "I&#39;ll send the next ones myself. By the way, the VAT return is due <b>20 Nov</b> — shall I prepare October&#39;s invoices?", "What your assistant takes off your plate", "Start in 2 minutes", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
+      "I&#39;ll send the next ones myself. By the way, the VAT return is due <b>20\u00a0Nov</b> — shall I prepare October&#39;s invoices?", "What your assistant takes off your plate", "Start in 2 minutes", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
     // Four jobs, three steps, three trust items in the owner's order; no TSD bubble and no deadline-led copy.
     expect(et.match(/<ul class="jobs">.*?<\/ul>/s)![0].match(/<li>/g)).toHaveLength(4);
     expect(et.match(/<ol class="how">.*?<\/ol>/s)![0].match(/<li>/g)).toHaveLength(3);
@@ -271,12 +271,12 @@ describe("landing and connect", () => {
     const teaser = (h: string) => h.slice(h.indexOf('<figure class="teaser">'), h.indexOf("</figure>"));
     const chip = (k: string, text: string) => `<span class="label-chip label-chip--${k}">${text}</span>`;
     for (const h of [et, en]) expect(teaser(h)).not.toContain("label-chip--assistant");
-    expect(teaser(et)).toContain(`<div class="beat beat--ai b-ai2"><div class="bubble">Järgmised saadan ise. Muide, <b>20. nov</b> on KMD — kas valmistan oktoobri arved ette?<span class="labels">${chip("rule", "Arvutatud reeglist")}${chip("official", "Allikas: KMS § 27, § 38")}</span></div></div>`);
+    expect(teaser(et)).toContain(`<div class="beat beat--ai b-ai2"><div class="bubble">Järgmised saadan ise. Muide, <b>20.\u00a0nov</b> on KMD — kas valmistan oktoobri arved ette?<span class="labels">${chip("rule", "Arvutatud reeglist")}${chip("official", "Allikas: KMS § 27, § 38")}</span></div></div>`);
     expect(teaser(en)).toContain(`${chip("rule", "Calculated by rule")}${chip("official", "Source: VAT Act § 27, § 38")}`);
     for (const h of [et, en]) expect(teaser(h).match(/label-chip--(rule|official)/g)).toHaveLength(2);
     // The screen-reader transcript carries the same texts.
-    expect(et).toContain("Järgmised saadan ise. Muide, 20. nov on KMD — kas valmistan oktoobri arved ette? · Arvutatud reeglist · Allikas: KMS § 27, § 38</li></ol>");
-    expect(en).toContain("the VAT return is due 20 Nov — shall I prepare October&#39;s invoices? · Calculated by rule · Source: VAT Act § 27, § 38</li></ol>");
+    expect(et).toContain("Järgmised saadan ise. Muide, 20.\u00a0nov on KMD — kas valmistan oktoobri arved ette? · Arvutatud reeglist · Allikas: KMS § 27, § 38</li></ol>");
+    expect(en).toContain("the VAT return is due 20\u00a0Nov — shall I prepare October&#39;s invoices? · Calculated by rule · Source: VAT Act § 27, § 38</li></ol>");
   });
 
   test("landing teaser: CSS-only pause toggle, labelled, no script (tribunal T-004, WCAG 2.2.2)", () => {
