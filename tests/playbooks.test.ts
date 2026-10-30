@@ -76,6 +76,12 @@ describe("executable job playbooks (#26)", () => {
     expect(july.result.obligations.find((o) => o.rule_id === "annual-report-overdue")?.playbook_id).toBe("annual-report");
   });
 
+  test("assistant_instruction: a conditional next_deadline is presented as conditional, its question first (tribunal T-006)", async () => {
+    const r = await companyObligations(ar(), { registryCode: MARI, months: 1, today: at("2026-10-30") });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.result.assistant_instruction.endsWith(" If next_deadline.applies is 'if', present it as conditional and ask its facts_needed question first.")).toBe(true);
+  });
+
   test("next_deadline is present when the window is empty (30 Oct, months 1, VAT-registered sample)", async () => {
     const r = await companyObligations(ar(), { registryCode: MARI, months: 1, today: at("2026-10-30") });
     if (!r.ok) throw new Error(r.error);
