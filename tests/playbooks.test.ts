@@ -169,8 +169,14 @@ describe("agent-facing copy over MCP", () => {
     db.prepare("UPDATE approvals SET state='approved',decided_at=?,expires_at=? WHERE id=?").run(new Date().toISOString(), "2000-01-01T00:00:00.000Z", req.approval_id);
     expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "kmd-o", approval_id: req.approval_id, digest: req.digest, outcome: "submitted", observed_at: new Date().toISOString() } })))
       .toBe("This approval expired before an outcome was recorded; request a new approval. Nothing was recorded.");
-    const recheck = "Right before the owner files, call get_approval. If it is expired, request a fresh approval for the unchanged figures or draft first. Record the outcome as soon as the owner says it is filed. Approvals are valid for 24 hours.";
+    const recheck = "Right before the owner files, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged figures or draft first. Record the outcome as soon as the owner says it is filed. Approvals are valid for 24 hours.";
     for (const id of ["vat-return-prep", "annual-report"]) expect(byId(id).steps, id).toContain(recheck);
+  });
+
+  test("every expired-approval renewal asks for a NEW report_id (tribunal T-002)", () => {
+    const renewals = PLAYBOOKS.flatMap((p) => p.steps.filter((x) => /expired/.test(x)).map((x) => [p.id, x] as const));
+    expect(renewals.map(([id]) => id)).toEqual(["vat-return-prep", "annual-report"]);
+    for (const [id, x] of renewals) expect(x, id).toContain("request a fresh approval with a NEW report_id (the same report_id returns the expired receipt)");
   });
   const body = (r: unknown) => JSON.parse((r as { content: { text: string }[] }).content[0].text);
   const errText = (r: unknown) => { const x = r as { isError?: boolean; content: { text: string }[] }; expect(x.isError).toBe(true); return x.content[0].text; };
