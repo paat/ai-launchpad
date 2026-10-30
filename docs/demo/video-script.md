@@ -55,7 +55,7 @@ Type these verbatim; show the English subtitle burned in.
 - [ ] **H4** Does ChatGPT pass `months:1` for "sel kuul"? Settle it in one prompt-1 take on recording day.
 
 **Plan**
-- [ ] Plan line, as `/uhenda?a=chatgpt` renders it: „Tähtajad töötavad igas ChatGPT paketis. Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.” Source: help.openai.com 12584461, updated 28 Oct 2026. VERIFIED on help.openai.com 12584461, updated 28 Oct 2026: Pro can attach custom MCP servers with read/fetch only; Plus is undocumented. The owner's pilot account has run write tools (`docs/live-pilot.md`); its plan is not recorded, so note it before recording.
+- [ ] Plan line, as `/uhenda?a=chatgpt` renders it: „ChatGPT Pro paketis töötavad tähtajad ja juhised (ainult lugemine). Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.” Source: help.openai.com 12584461, updated 28 Oct 2026. VERIFIED on help.openai.com 12584461, updated 28 Oct 2026: Pro can attach custom MCP servers with read/fetch only; Plus is undocumented. The owner's pilot account has run write tools (`docs/live-pilot.md`); its plan is not recorded, so note it before recording.
 
 **Environment**
 - [ ] Live pilot URL `https://huppelaud.arikratt.ee`; record the deployed SHA and compare it with merged `main` (a health 200 is not proof of deploy). The new screens appear only after the next deploy.

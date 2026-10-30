@@ -251,7 +251,10 @@ describe("landing and connect", () => {
     expect(et).toMatch(/<div class="vh"><p>Näidisvestlus:<\/p><ol><li>Sina: Mis mul sel kuul adminis ees on\?<\/li>/);
     // No search, no script, no claim we cannot back.
     for (const html of [et, en]) expect(html).not.toMatch(/<form|<input|<script|name="q"|\bsäästa|\bsaves? \d/i);
-    expect(et).not.toContain("automaatselt");
+    // Step 3 names standing approvals; the state chip swaps with the button (same CSS timing), so the last frame does not contradict itself.
+    expect(et).toContain("Kinnita telefonis üks kord — täpselt see saaja, summa ja dokument — või luba sarnased edaspidi automaatselt");
+    expect(en).toContain("Approve once on your phone — exactly this recipient, amount and document — or allow similar ones automatically from now on");
+    expect(et).toContain('<span class="mock-wait"><span class="state-chip state-chip--waiting">Ootab sinu kinnitust</span></span><span class="mock-ok"><span class="state-chip state-chip--approved">Kinnitatud</span></span>');
   });
 
   test("landing teaser: the dates are the engine's for November 2026 (10.11 TSD, 20.11 KMD)", () => {
@@ -265,14 +268,19 @@ describe("landing and connect", () => {
     const css = shell({ title: "x", active: "none", csrf: "", body: "" });
     expect(css).toContain("@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important");
     expect(css).toMatch(/\.beat--typing\{max-height:0;opacity:0\}/);
-    expect(css).toMatch(/\.mock-approve\{[^}]*opacity:0;animation:lp-approve 18s infinite\}/);
+    expect(css).toMatch(/\.mock-wait,\.mock-approve\{[^}]*opacity:0;animation:lp-approve 18s infinite\}/);
+    expect(css).toMatch(/\.mock-ok\{animation:lp-done 18s infinite\}/);
     for (const k of ["me1", "t1", "ai1", "ai2", "ai3", "me2", "t2", "card"]) expect(css, k).toContain(`.b-${k}{animation-name:lp-${k}}@keyframes lp-${k}{`);
   });
 
   test("connect: ChatGPT first, honest plan lines, phone URL without QR, technical words only under Tehniline info", () => {
     const html = connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
     expect(html).toContain('<a href="/uhenda?a=chatgpt" aria-current="true">ChatGPT</a>');
-    expect(html).toContain("Tähtajad töötavad igas ChatGPT paketis. Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.");
+    expect(html).toContain("ChatGPT Pro paketis töötavad tähtajad ja juhised (ainult lugemine). Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.");
+    expect(html).toContain("Kumba valida? Kõige lihtsam algus on Claude: ühendus ja kinnitused töötavad ka tasuta paketis (testitud 30.10.2026). ChatGPT-s vajavad kinnitused Business paketti.");
+    const htmlEn = connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
+    expect(htmlEn).toContain("Which one? The easiest start is Claude: the connection and approvals work on the free plan too (tested 30 Oct 2026). In ChatGPT, approvals need the Business plan.");
+    expect(htmlEn).toContain("On ChatGPT Pro, deadlines and guidance work (read-only). Approvals (“Approve exactly this”) need ChatGPT Business.");
     expect(html).toContain("Jätka telefonis");
     expect(html).toContain("https:/<wbr>/<wbr>launchpad.example.com/<wbr>uhenda");
     expect(html).not.toMatch(/<svg|qr-box/);

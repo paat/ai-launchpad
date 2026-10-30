@@ -299,7 +299,10 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .mock-facts{display:flex;margin:0;flex-wrap:wrap;justify-content:space-between;gap:0 8px;color:var(--c-muted)}.mock-facts b{color:var(--c-text);font-variant-numeric:tabular-nums}
 .mock-btn{position:relative;display:grid;margin-top:10px}
 .mock-btn>span{grid-area:1/1;display:flex;align-items:center;justify-content:center;min-height:var(--tap);padding:0 10px;border-radius:var(--r-lg);font-weight:750;text-align:center}
-.mock-approve{background:var(--c-primary);color:#fff;opacity:0;animation:lp-approve 18s infinite}
+.mock-state{display:grid}.mock-state>span{grid-area:1/1;justify-self:start}
+.mock-wait,.mock-approve{opacity:0;animation:lp-approve 18s infinite}
+.mock-ok{animation:lp-done 18s infinite}
+.mock-approve{background:var(--c-primary);color:#fff}
 .mock-done{border:1px dashed var(--st-accepted-fg);background:var(--st-accepted-bg);color:var(--st-accepted-fg);animation:lp-done 18s infinite}
 .mock-btn>.mock-tap{position:absolute;top:50%;left:50%;width:46px;height:46px;min-height:0;margin:-23px 0 0 -23px;padding:0;border-radius:50%;background:rgba(255,255,255,.6);box-shadow:0 0 0 3px rgba(255,255,255,.35);opacity:0;animation:lp-tap 18s infinite}
 @keyframes lp-approve{0%,71%{opacity:1}72%,100%{opacity:0}}
@@ -1071,7 +1074,7 @@ export function landingBody(o: { lang: Lang }): string {
     ai("ai2", `<b>${esc(tsd[0])}</b> — ${esc(tsd[1])}`),
     ai("ai3", esc(offer)),
     me("me2", ask2), typing("t2"),
-    `<div class="beat b-card"><div class="mock-card"><div class="labels">${stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))}</div>
+    `<div class="beat b-card"><div class="mock-card"><div class="labels mock-state"><span class="mock-wait">${stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))}</span><span class="mock-ok">${stateChip("approved", t("Kinnitatud", "Approved"))}</span></div>
 <p class="mock-title">${esc(card)}</p><p class="mock-facts"><span>${esc(client)}</span><b>${esc(amount)}</b></p>
 <div class="mock-btn"><span class="mock-approve">${esc(approve)}</span><span class="mock-done">${esc(done)}</span><span class="mock-tap"></span></div></div></div>`,
   ].join("\n");
@@ -1085,7 +1088,7 @@ export function landingBody(o: { lang: Lang }): string {
   const steps = [
     t("Ühenda oma ChatGPT või Claude (2 minutit)", "Connect your ChatGPT or Claude (2 minutes)"),
     t("Küsi nagu tavaliselt: assistent teab sinu tähtaegu ja oskab tööd ette valmistada", "Ask as usual: your assistant knows your deadlines and can prepare the work"),
-    t("Kinnita telefonis üks kord — täpselt see saaja, summa ja dokument", "Approve once on your phone — exactly this recipient, amount and document"),
+    t("Kinnita telefonis üks kord — täpselt see saaja, summa ja dokument — või luba sarnased edaspidi automaatselt", "Approve once on your phone — exactly this recipient, amount and document — or allow similar ones automatically from now on"),
   ];
   const trust = [
     t("Midagi ei saadeta ilma sinu loata", "Nothing is sent without your permission"),
@@ -1270,7 +1273,8 @@ export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgp
   const wbr = (u: string) => esc(u).replace(/\//g, "/<wbr>");
   const plan = o.assistant === "claude"
     ? t("Claude lubab kohandatud ühendusi igas paketis (tasuta paketis üks ühendus). Testitud Claude'i tasuta paketis (30.10.2026).", "Claude allows custom connectors on every plan (Free: one connector). Tested on Claude's Free plan (30 Oct 2026).")
-    : t("Tähtajad töötavad igas ChatGPT paketis. Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", "Deadlines work on every ChatGPT plan. Approvals (“Approve exactly this”) need ChatGPT Business.");
+    : t("ChatGPT Pro paketis töötavad tähtajad ja juhised (ainult lugemine). Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", "On ChatGPT Pro, deadlines and guidance work (read-only). Approvals (“Approve exactly this”) need ChatGPT Business.");
+  const which = t("Kumba valida? Kõige lihtsam algus on Claude: ühendus ja kinnitused töötavad ka tasuta paketis (testitud 30.10.2026). ChatGPT-s vajavad kinnitused Business paketti.", "Which one? The easiest start is Claude: the connection and approvals work on the free plan too (tested 30 Oct 2026). In ChatGPT, approvals need the Business plan.");
   const address = remoteReady ? `<div class="endpoint"><code>${wbr(endpoint)}</code></div><p class="small muted">${t("Vali aadress ja kopeeri see.", "Select the address and copy it.")}</p>`
     : `<div class="notice"><p class="small">${t("Avalik HTTPS-aadress pole selles serveris veel seadistatud, seega pilves töötav assistent ei saa veel ühenduda.", "A public HTTPS address is not configured on this server yet, so a cloud assistant cannot connect yet.")}</p></div>`;
   const s = o.state;
@@ -1279,6 +1283,7 @@ export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgp
     : `<div class="status-chip" id="connect-status" data-state="waiting" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${s.kind === "anon" ? `${t("Logi sisse, et näha, kas sinu assistent on ühendatud.", "Sign in to see whether your assistant is connected.")} <a href="/login">${t("Logi sisse", "Sign in")}</a>` : s.kind === "sample" ? t("Näidistööruumis ühenduse olekut ei jälgita.", "Connection status is not tracked in a sample workspace.") : esc(t(`Ootan, et ${name} ühenduks…`, `Waiting for ${name} to connect…`))}</span></div>`;
   return `<h1>${t("Ühenda oma assistent", "Connect your assistant")}</h1>
 <p class="lede">${t("Sinu ChatGPT või Claude näeb sinu tähtaegu ja valmistab töid ette. Sina kinnitad ainult selle, mis sind seob.", "Your ChatGPT or Claude sees your deadlines and prepares work for you. You approve only what binds you.")}</p>
+<p class="small">${esc(which)}</p>
 <nav class="choice" aria-label="${t("Vali assistent", "Choose your assistant")}"><a href="/uhenda?a=chatgpt"${o.assistant === "chatgpt" ? ' aria-current="true"' : ""}>ChatGPT</a><a href="/uhenda?a=claude"${o.assistant === "claude" ? ' aria-current="true"' : ""}>Claude</a></nav>
 <p class="small">${esc(plan)}</p>
 ${o.owner ? `<p class="small"><a class="tap-link" href="/setup">${t("Pole veel assistenti? Aitame valida", "No assistant yet? We'll help you choose")}</a></p>` : ""}

@@ -42,8 +42,8 @@ for (const width of [390, 1280]) {
     expect(await opacity(page, ".b-me2")).toEqual([1]);
     await page.screenshot({ path: `${SHOTS}/teaser-${width}-08s.png`, fullPage: true });
     await seek(page, 14000);
-    expect(await opacity(page, ".b-card, .mock-done")).toEqual([1, 1]);
-    expect(await opacity(page, ".mock-approve")).toEqual([0]);
+    expect(await opacity(page, ".b-card, .mock-done, .mock-ok")).toEqual([1, 1, 1]);
+    expect(await opacity(page, ".mock-approve, .mock-wait")).toEqual([0, 0]);
     await page.screenshot({ path: `${SHOTS}/teaser-${width}-14s.png`, fullPage: true });
   });
 }
@@ -56,7 +56,7 @@ test("320px: no overflow; reduced motion shows the final frame statically", asyn
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
   expect(await opacity(page, ".beat:not(.beat--typing)")).toEqual([1, 1, 1, 1, 1, 1]);
   expect(await page.locator(".beat--typing").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))).toEqual([0, 0]);
-  expect(await opacity(page, ".mock-approve, .mock-done")).toEqual([0, 1]);
+  expect(await opacity(page, ".mock-wait, .mock-ok, .mock-approve, .mock-done")).toEqual([0, 1, 0, 1]);
   await expect(page.locator(".mock-done")).toHaveText("✓ Kinnitatud · Saadetud: demo");
   await page.screenshot({ path: `${SHOTS}/teaser-320-reduced-motion.png`, fullPage: true });
 });

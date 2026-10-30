@@ -13,7 +13,7 @@ AI agents take back-office work off a small-business owner so she can focus on h
 
 ## Plan caveat
 
-- **ChatGPT**, as `/uhenda?a=chatgpt` renders it: „Tähtajad töötavad igas ChatGPT paketis. Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.” (Source: help.openai.com 12584461, updated 28 Oct 2026.)
+- **ChatGPT**, as `/uhenda?a=chatgpt` renders it: „ChatGPT Pro paketis töötavad tähtajad ja juhised (ainult lugemine). Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.” (Source: help.openai.com 12584461, updated 28 Oct 2026.)
 - **Claude:** allows custom connectors on every plan (Free: one connector). Tested once on the Free plan with synthetic data (30 Oct 2026); see `docs/live-pilot.md`. Claude asks to allow each tool call.
 
 ## Steps
