@@ -8,7 +8,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createApp, type Config } from "../src/app.js";
 import { openDb, sha256 } from "../src/db.js";
-import { approvalDigest, canonicalJson } from "../src/mcp.js";
+import { approvalDigest, canonicalJson, type ApprovalRow } from "../src/mcp.js";
+import { approvalCardBody } from "../src/views.js";
 
 // Synthetic Google-style owners with direct sessions/tokens; no OIDC.
 let server: Server; let base = "";
@@ -53,13 +54,70 @@ test("canonical digest binds every field with stable key order", () => {
     expect(approvalDigest(changed)).not.toBe(approvalDigest(a));
 });
 
+test("the digest differs when only the recipient address differs (#35)", () => {
+  const a = reminder();
+  expect(approvalDigest(reminder({ recipient: { ...a.recipient, address: "billing@other.example" } }))).not.toBe(approvalDigest(a));
+});
+
 describe("approval cards over MCP", () => {
+  test("send_message and send_invoice without a recipient address are rejected and nothing is saved (#35)", async () => {
+    const o = owner("no-address");
+    const c = await client(o.token);
+    const message = reminder({ kind: "send_message", amount_cents: undefined });
+    for (const [id, action] of [["m-none", { ...message, recipient: { name: "Synthetic Client OÜ" } }], ["m-blank", { ...message, recipient: { name: "Synthetic Client OÜ", address: "  " } }], ["i-none", reminder({ recipient: { name: "Synthetic Client OÜ" } })]] as const)
+      expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: id, action } })), id).toContain("recipient.address is required for send_message and send_invoice");
+    expect((db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='no-address'").get() as { n: number }).n).toBe(0);
+    expect((db.prepare("SELECT count(*) n FROM reports WHERE owner_id='no-address'").get() as { n: number }).n).toBe(0);
+    // A filing names an authority, not an address; a message keeps amount_cents optional.
+    expect(parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "f-ok", action: reminder({ kind: "prepare_filing", amount_cents: undefined, recipient: { name: "EMTA (e-MTA)" } }) } })).state).toBe("pending");
+    expect(parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "m-ok", action: message } })).state).toBe("pending");
+  });
+
+  test("a legacy send approval without an address cannot be approved, on the card or by POST (#35)", async () => {
+    const o = owner("legacy-address");
+    const { address: _drop, ...recipient } = reminder().recipient;
+    const payload = reminder({ kind: "send_message", amount_cents: undefined, recipient });
+    db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at) VALUES(?,?,?,?,?,?,'pending',?,?)")
+      .run("appr_no_address", "legacy-address", "send_message", "legacy-1", JSON.stringify(payload), approvalDigest(payload), new Date(Date.now() + 3600_000).toISOString(), new Date().toISOString());
+    const card = await (await fetch(`${base}/approvals/appr_no_address`, { headers: { cookie: o.cookie } })).text();
+    expect(card).toContain("Aadress puudub — seda kinnitust ei saa kasutada");
+    expect(card).not.toContain("Kinnita täpselt see");
+    expect(card).not.toContain('value="approve"');
+    expect(card).toContain("Keeldu");
+    const en = await (await fetch(`${base}/approvals/appr_no_address?lang=en`, { headers: { cookie: o.cookie } })).text();
+    expect(en).toContain("Address missing — this approval cannot be used");
+    const forced = await decide(o, "appr_no_address", { decision: "approve", digest: approvalDigest(payload) });
+    expect(forced.status).toBe(409);
+    expect(await forced.text()).toContain("Aadress puudub — seda kinnitust ei saa kasutada. Midagi ei kinnitatud.");
+    expect(row("appr_no_address")).toMatchObject({ state: "pending", decided_at: null });
+    // The owner can still clear it by declining.
+    expect((await decide(o, "appr_no_address", { decision: "decline", digest: approvalDigest(payload) })).status).toBe(302);
+    expect(row("appr_no_address").state).toBe("declined");
+  });
+
+  test("an already-approved legacy send without an address is not usable and takes no outcome (#35)", async () => {
+    const o = owner("legacy-approved");
+    const c = await client(o.token);
+    const { address: _drop, ...recipient } = reminder().recipient;
+    const payload = reminder({ kind: "send_message", amount_cents: undefined, recipient });
+    const digest = approvalDigest(payload);
+    const now = new Date().toISOString();
+    db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at,decided_at) VALUES(?,?,?,?,?,?,'approved',?,?,?)")
+      .run("appr_approved_no_address", "legacy-approved", "send_message", "legacy-2", JSON.stringify(payload), digest, new Date(Date.now() + 3600_000).toISOString(), now, now);
+    const got = parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: "appr_approved_no_address" } }));
+    expect(got).toMatchObject({ state: "approved", usable: false, reason: "Address missing: request a new approval that includes the recipient address" });
+    for (const outcome of ["sent", "failed"])
+      expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: `la-${outcome}`, approval_id: "appr_approved_no_address", digest, outcome, observed_at: now } }))).toBe("Address missing: request a new approval that includes the recipient address. Nothing was recorded.");
+    expect(row("appr_approved_no_address")).toMatchObject({ state: "approved", outcome_json: null, consumed_at: null });
+  });
+
   test("request → owner approves exact card → outcome with identical digest; one-use lifecycle", async () => {
     const o = owner("flow");
     const c = await client(o.token);
     expect((await c.listTools()).tools.map((t) => t.name)).toEqual(expect.arrayContaining(["request_approval", "get_approval", "record_action_outcome"]));
     const started = parsed(await c.callTool({ name: "get_started", arguments: {} }));
     expect(started.tools).toEqual(expect.arrayContaining(["request_approval", "get_approval", "record_action_outcome"]));
+    expect(started.approvals_note).toContain("act only when get_approval returns approved (and usable is not false)");
 
     // Amount is required for invoices and payments; nothing is saved.
     const { amount_cents: _drop, ...noAmount } = reminder();
@@ -307,6 +365,69 @@ test("existing approvals table is migrated in place and legacy rows still load",
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("startup expires actionable legacy no-address sends; consumed rows untouched; idempotent (#35)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lp-approvals-"));
+  try {
+    const path = join(dir, "legacy-address.db");
+    const seed = openDb(path);
+    const { address: _drop, ...recipient } = reminder().recipient;
+    const insert = seed.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at,consumed_at) VALUES(?,'legacy',?,?,?,'d',?,?,?,?)");
+    const later = new Date(Date.now() + 3600_000).toISOString(), now = new Date().toISOString();
+    insert.run("appr_la_approved", "send_message", "la-1", JSON.stringify(reminder({ kind: "send_message", recipient })), "approved", later, now, null);
+    insert.run("appr_la_pending", "send_invoice", "la-2", JSON.stringify(reminder({ recipient: { ...recipient, address: "  " } })), "pending", later, now, null);
+    insert.run("appr_la_consumed", "send_message", "la-3", JSON.stringify(reminder({ kind: "send_message", recipient })), "consumed", later, now, now);
+    insert.run("appr_la_ok", "send_invoice", "la-4", JSON.stringify(reminder()), "approved", later, now, null);
+    // Whitespace that JS trim() strips must count as blank in SQL too.
+    for (const [i, address] of ["\t\n ", "  ﻿"].entries())
+      for (const state of ["pending", "approved"])
+        insert.run(`appr_la_ws_${state}_${i}`, "send_message", `la-ws-${state}-${i}`, JSON.stringify(reminder({ kind: "send_message", recipient: { ...recipient, address } })), state, later, now, null);
+    seed.close();
+    const states = () => { const d = openDb(path); try { return Object.fromEntries((d.prepare("SELECT id,state FROM approvals ORDER BY id").all() as { id: string; state: string }[]).map((r) => [r.id, r.state])); } finally { d.close(); } };
+    const expected = { appr_la_approved: "expired", appr_la_pending: "expired", appr_la_consumed: "consumed", appr_la_ok: "approved", appr_la_ws_pending_0: "expired", appr_la_ws_approved_0: "expired", appr_la_ws_pending_1: "expired", appr_la_ws_approved_1: "expired" };
+    expect(states()).toEqual(expected);
+    expect(states()).toEqual(expected); // a second init changes nothing
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("startup expires a no-address send in the pre-kind schema, same on a second open (#35)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lp-approvals-"));
+  try {
+    const path = join(dir, "pre-kind.db");
+    const old = new Database(path);
+    old.exec("CREATE TABLE approvals(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, payload_json TEXT NOT NULL, digest TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', expires_at TEXT NOT NULL, created_at TEXT NOT NULL, consumed_at TEXT)");
+    const { address: _drop, ...recipient } = reminder().recipient;
+    const at = new Date().toISOString();
+    old.prepare("INSERT INTO approvals VALUES('appr_pre_kind','legacy',?,'d','pending',?,?,NULL)").run(JSON.stringify(reminder({ kind: "send_message", amount_cents: undefined, recipient })), new Date(Date.now() + 3600_000).toISOString(), at);
+    old.close();
+    const state = () => { const d = openDb(path); try { return (d.prepare("SELECT state FROM approvals WHERE id='appr_pre_kind'").get() as { state: string }).state; } finally { d.close(); } };
+    expect(state()).toBe("expired");
+    expect(state()).toBe("expired");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("startup expires a send whose lone address is any JS-whitespace code point, same on a second open (#35)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lp-approvals-"));
+  try {
+    const path = join(dir, "ws-set.db");
+    const cps = [9, 10, 11, 12, 13, 32, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288, 65279];
+    const seed = openDb(path);
+    const { address: _drop, ...recipient } = reminder().recipient;
+    const insert = seed.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at,consumed_at) VALUES(?,'legacy','send_message',?,?,'d','pending',?,?,NULL)");
+    const later = new Date(Date.now() + 3600_000).toISOString(), now = new Date().toISOString();
+    for (const cp of cps) {
+      expect(String.fromCodePoint(cp).trim(), String(cp)).toBe("");
+      insert.run(`appr_cp_${cp}`, `cp-${cp}`, JSON.stringify(reminder({ kind: "send_message", recipient: { ...recipient, address: String.fromCodePoint(cp) } })), later, now);
+    }
+    seed.close();
+    for (let pass = 0; pass < 2; pass++) {
+      const d = openDb(path);
+      try {
+        for (const cp of cps) expect((d.prepare("SELECT state FROM approvals WHERE id=?").get(`appr_cp_${cp}`) as { state: string }).state, `U+${cp.toString(16)} pass ${pass}`).toBe("expired");
+      } finally { d.close(); }
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 // tribunal T-001: assistant-supplied text never renders as markup on Täna, Tehtud or the approval pages.
 const XSS = "<img src=x onerror=alert(1)>";
 const pageOf = async (o: { cookie: string }, path: string) => { const r = await fetch(`${base}${path}`, { headers: { cookie: o.cookie } }); expect(r.status, path).toBe(200); return r.text(); };
@@ -328,7 +449,7 @@ test("report_assessment executor, label, reason, company_label and next_action r
 test("an approval document title and recipient render escaped on Täna, Tehtud and the approval pages (tribunal T-001)", async () => {
   const o = owner("xss-approval");
   const c = await client(o.token);
-  const req = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "xss-a", action: reminder({ document: { title: XSS, content: "Tere!" }, recipient: { name: XSS } }) } }));
+  const req = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "xss-a", action: reminder({ document: { title: XSS, content: "Tere!" }, recipient: { name: XSS, address: "billing@client.example" } }) } }));
   for (const path of ["/", "/activity", "/approvals", `/approvals/${req.approval_id}`]) inert(await pageOf(o, path), path);
 });
 
@@ -346,4 +467,46 @@ test("Täna shows a pending approval behind 60 newer consumed ones; counts and p
   expect(html).toContain('<h2 id="ootab-h">Ootab sinult (1)</h2>');
   expect(html).toContain('<a class="needs" href="#ootab"><b>1</b>');
   expect(html).toContain('<a class="btn" href="/approvals/appr_old_pending">Vaata kinnitust</a>');
+});
+
+test("the receipt stepper treats accepted, rejected and paid as terminal for sends (#37 item 1)", () => {
+  const at = "2026-10-29T10:00:00.000Z";
+  const card = (kind: string, outcomes: string[]) => {
+    const history = outcomes.map((outcome) => ({ outcome, observed_at: at, recorded_at: at }));
+    const a: ApprovalRow = { id: "appr_s", kind, report_id: "r", payload_json: JSON.stringify(reminder({ kind })), digest: "d".repeat(64), state: "consumed", expires_at: at, created_at: at, decided_at: at, consumed_at: at, outcome_json: JSON.stringify({ ...history[history.length - 1], history }) };
+    return approvalCardBody({ csrf: "c", a, lang: "et", sample: false, now: new Date(at) });
+  };
+  for (const kind of ["send_message", "send_invoice"]) {
+    const accepted = card(kind, ["sent", "accepted"]);
+    expect(accepted, kind).toMatch(/state-step--done"><span class="state-mark" aria-hidden="true">✓<\/span><span class="state-text">Vastu võetud/);
+    expect(accepted, kind).not.toContain("Makstud: ootab");
+    expect(accepted, kind).not.toContain('aria-current="step"');
+    const rejected = card(kind, ["sent", "rejected"]);
+    expect(rejected, kind).toMatch(/state-step--stop"><span class="state-mark" aria-hidden="true">✕<\/span><span class="state-text">Tagasi lükatud/);
+    expect(rejected, kind).not.toContain("Makstud: ootab");
+    expect(rejected, kind).not.toContain('aria-current="step"');
+    const paid = card(kind, ["sent", "paid"]);
+    expect(paid, kind).toMatch(/state-step--done"><span class="state-mark" aria-hidden="true">✓<\/span><span class="state-text">Makstud/);
+    expect(paid, kind).not.toContain('aria-current="step"');
+    // Only sent: the follow-up is still open.
+    expect(card(kind, ["sent"]), kind).toMatch(/<li class="state-step state-step--todo" aria-current="step"><span class="state-mark" aria-hidden="true"><\/span><span class="state-text">Makstud: ootab/);
+  }
+});
+
+test("Täna keeps an old failed or rejected approval in Ootab sinult behind 60 newer done ones (#37 item 3)", async () => {
+  const o = owner("old-failed");
+  const ins = db.prepare("INSERT INTO approvals(id,owner_id,kind,payload_json,digest,state,expires_at,created_at,decided_at,consumed_at,outcome_json) VALUES(?,?,'send_invoice',?,?,'consumed',?,?,?,?,?)");
+  const later = new Date(Date.now() + 3600_000).toISOString(), t0 = Date.now() - 3600_000;
+  const old = new Date(t0).toISOString();
+  ins.run("appr_old_failed", "old-failed", JSON.stringify(reminder({ document: { title: "Old failed reminder", content: "Tere!" } })), "f".repeat(64), later, old, old, old, JSON.stringify({ outcome: "failed", observed_at: old }));
+  ins.run("appr_old_rejected", "old-failed", JSON.stringify(reminder({ document: { title: "Old rejected reminder", content: "Tere!" } })), "e".repeat(64), later, old, old, old, JSON.stringify({ outcome: "rejected", observed_at: old }));
+  for (let i = 0; i < 60; i++) {
+    const at = new Date(t0 + (i + 1) * 1000).toISOString();
+    ins.run(`appr_newer_${i}`, "old-failed", JSON.stringify(reminder({ document: { title: `Newer ${i}`, content: "Tere!" } })), `${i}`.padStart(64, "1"), later, at, at, at, JSON.stringify({ outcome: "sent", observed_at: at }));
+  }
+  const html = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
+  expect(html).toContain('<h2 id="ootab-h">Ootab sinult (2)</h2>');
+  expect(html).toContain('href="/approvals/appr_old_failed"');
+  expect(html).toContain('href="/approvals/appr_old_rejected"');
+  expect(html.match(/Ei õnnestunud — vaata üle/g)).toHaveLength(2);
 });

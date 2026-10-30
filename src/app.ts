@@ -4,7 +4,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
 import { arikratt } from "./arikratt.js";
-import { buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, logActivity, TOOL_ARG_KEYS, type ApprovalRow } from "./mcp.js";
+import { approvalAddressMissing, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, logActivity, TOOL_ARG_KEYS, type ApprovalRow } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
@@ -79,6 +79,25 @@ function toggleHref(req: Request, l: Lang): string {
 /** Lower-case company name without the legal form, for matching synthetic fixtures by name. */
 const normName = (v: string) => v.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
 const isLoopback = (req: Request) => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? "");
+
+// Public lookup limits (per process, in memory): non-synthetic register
+// lookups only. Synthetic fixtures are never limited. The day counter
+// resets on the Europe/Tallinn date.
+const LOOKUPS_PER_IP = 30, LOOKUP_WINDOW_MS = 10 * 60_000, LOOKUPS_PER_DAY = 500;
+export function lookupLimiter() {
+  const lookupsByIp = new Map<string, number[]>();
+  let lookupDay = { day: "", n: 0 };
+  return (ip: string, now = Date.now()): "ok" | "ip_limit" | "day_limit" => {
+    const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Tallinn" }).format(now);
+    if (lookupDay.day !== day) lookupDay = { day, n: 0 };
+    const recent = (lookupsByIp.get(ip) ?? []).filter((t) => now - t < LOOKUP_WINDOW_MS);
+    if (recent.length >= LOOKUPS_PER_IP) { lookupsByIp.set(ip, recent); return "ip_limit"; }
+    if (lookupDay.n >= LOOKUPS_PER_DAY) return "day_limit";
+    if (lookupsByIp.size > 10_000) for (const [k, v] of lookupsByIp) if (!v.some((t) => now - t < LOOKUP_WINDOW_MS)) lookupsByIp.delete(k);
+    recent.push(now); lookupsByIp.set(ip, recent); lookupDay.n++;
+    return "ok";
+  };
+}
 
 export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   const releaseSha = cfg.releaseSha ?? null;
@@ -351,36 +370,21 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     }
   });
 
-  // Public lookup limits (per process, in memory): non-synthetic register
-  // lookups only. Synthetic fixtures are never limited.
-  const LOOKUPS_PER_IP = 30, LOOKUP_WINDOW_MS = 10 * 60_000, LOOKUPS_PER_DAY = 500;
-  const lookupsByIp = new Map<string, number[]>();
-  let lookupDay = { day: "", n: 0 };
-  function publicLookupAllowed(req: Request): "ok" | "ip_limit" | "day_limit" {
-    const now = Date.now(), ip = req.ip || req.socket.remoteAddress || "?";
-    const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Tallinn" }).format(now);
-    if (lookupDay.day !== day) lookupDay = { day, n: 0 };
-    const recent = (lookupsByIp.get(ip) ?? []).filter((t) => now - t < LOOKUP_WINDOW_MS);
-    if (recent.length >= LOOKUPS_PER_IP) { lookupsByIp.set(ip, recent); return "ip_limit"; }
-    if (lookupDay.n >= LOOKUPS_PER_DAY) return "day_limit";
-    if (lookupsByIp.size > 10_000) for (const [k, v] of lookupsByIp) if (!v.some((t) => now - t < LOOKUP_WINDOW_MS)) lookupsByIp.delete(k);
-    recent.push(now); lookupsByIp.set(ip, recent); lookupDay.n++;
-    return "ok";
-  }
+  const lookupAllowed = lookupLimiter();
+  const publicLookupAllowed = (req: Request) => lookupAllowed(req.ip || req.socket.remoteAddress || "?");
   async function landingState(req: Request, q: string): Promise<{ status: number; state: LandingState }> {
     const show = async (code: string): Promise<{ status: number; state: LandingState }> => {
       const r = await companyObligations(register, { registryCode: code, months: 2 });
-      if (!r.ok) return { status: 200, state: { kind: "message", code: "invalid_code" } };
+      if (!r.ok) return { status: 200, state: { kind: "message", code: r.unavailable === "not_found" ? "not_found" : "invalid_code" } };
       const u = (r.result.company as { unavailable?: string }).unavailable;
       if (u) return { status: 200, state: { kind: "message", code: u === "not_found" ? "not_found" : u === "not_configured" ? "not_configured" : "unavailable" } };
       return { status: 200, state: { kind: "result", result: r.result as DeadlinesView } };
     };
     if (!q) return { status: 200, state: { kind: "empty" } };
     // A sample company matches only its code or its exact name, with or without the legal form: a substring is a real-register search.
-    const nq = normName(q);
-    const synthetic = Object.entries(SYNTHETIC_COMPANIES).find(([code, c]) => code === q || nq === normName(c.name) || nq === normName(c.name).replace(/ oü$/u, ""));
+    const nq = normName(q), code = q.replace(/\s+/g, "");
+    const synthetic = Object.entries(SYNTHETIC_COMPANIES).find(([c0, c]) => c0 === code || nq === normName(c.name) || nq === normName(c.name).replace(/ oü$/u, ""));
     if (synthetic) return show(synthetic[0]);
-    const code = q.replace(/\s+/g, "");
     if (/^\d{8}$/.test(code) && !validRegistryCode(code)) return { status: 200, state: { kind: "message", code: "invalid_code" } };
     if (!register.configured) return { status: 200, state: { kind: "message", code: "not_configured" } };
     const allowed = publicLookupAllowed(req);
@@ -413,11 +417,13 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const failure = unavailable === "not_cached" ? fillFailure(ref!) : undefined;
     if (unavailable === "not_cached") fillInBackground(ref!);
     expireApprovals(db, oid(req));
-    // Every pending approval (request_approval caps them at 20), then the recent approved/consumed slice.
-    const approvals = [
+    // Every pending approval (request_approval caps them at 20), then the recent approved/consumed slice,
+    // then older failed or rejected outcomes (bounded) so they stay in "Ootab sinult".
+    const approvals = [...new Map(([
       ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state='pending' ORDER BY created_at DESC LIMIT 20").all(oid(req)),
       ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state IN ('approved','consumed') ORDER BY created_at DESC LIMIT 50").all(oid(req)),
-    ] as ApprovalRow[];
+      ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state='consumed' AND json_extract(outcome_json,'$.outcome') IN ('failed','rejected') ORDER BY created_at DESC LIMIT 20").all(oid(req)),
+    ] as ApprovalRow[]).map((a) => [a.id, a])).values()];
     const reportCount = (db.prepare("SELECT count(*) n FROM reports WHERE owner_id=?").get(oid(req)) as { n: number }).n;
     const l = langOf(res);
     res.type("html").send(page(req, res, tr(l)("Täna", "Today"), "tana", tanaBody({
@@ -556,6 +562,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (a.state !== "pending") return ownerError(req, res, 409, t("Juba otsustatud", "Already decided"), t("Selle kinnituse kohta on otsus juba tehtud. Midagi ei kinnitatud ega keeldutud; vajadusel palu assistendil uus koostada.", `This approval is already ${a.state}. Nothing was approved or declined; ask your assistant for a new approval if needed.`));
     // A re-rendered card after a change can never approve a different payload.
     if (!safeEqual(String(bodyOf(req).digest ?? ""), a.digest)) return ownerError(req, res, 409, t("Kaart on vananenud", "This card is out of date"), t("Midagi muutus pärast seda, kui kaardi avasid. Midagi ei kinnitatud. Ava kinnitus uuesti.", "Something changed after you opened the card. Nothing was approved. Open the approval again."));
+    if (decision === "approve" && approvalAddressMissing(a)) return ownerError(req, res, 409, t("Aadress puudub", "Address missing"), t("Aadress puudub — seda kinnitust ei saa kasutada. Midagi ei kinnitatud. Keeldu ja palu assistendil küsida uus kinnitus koos saaja aadressiga.", "Address missing — this approval cannot be used. Nothing was approved. Decline it and ask your assistant for a new approval with the recipient's address."));
     const state = decision === "approve" ? "approved" : "declined";
     db.prepare("UPDATE approvals SET state=?,decided_at=? WHERE id=? AND owner_id=? AND state='pending'").run(state, nowIso(), a.id, oid(req));
     logActivity(db, oid(req), "owner", "approval_decided", state, `Owner ${state} ${a.kind ?? "action"} (digest ${a.digest.slice(0, 12)}). Launchpad sent, paid and filed nothing.`);
@@ -571,7 +578,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       if (kind === "demo") state = { kind: "sample" };
       else {
         // Each credential's own last use: an OAuth grant names its client; a manual token stays unnamed.
-        const g = db.prepare("SELECT c.metadata, g.last_used_at at FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? AND g.revoked=0 AND g.last_used_at IS NOT NULL ORDER BY g.last_used_at DESC LIMIT 1").get(s.owner_id) as { metadata: string; at: string } | undefined;
+        const g = db.prepare("SELECT c.metadata, g.last_used_at at FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? AND g.revoked=0 AND g.expires>? AND g.last_used_at IS NOT NULL ORDER BY g.last_used_at DESC LIMIT 1").get(s.owner_id, Date.now()) as { metadata: string; at: string } | undefined;
         const tok = db.prepare("SELECT max(last_used_at) at FROM mcp_tokens WHERE owner_id=? AND revoked=0").get(s.owner_id) as { at: string | null };
         if (tok.at && (!g || tok.at > g.at)) state = { kind: "connected", who: null, at: tok.at };
         else if (g) {

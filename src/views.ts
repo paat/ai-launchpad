@@ -1,6 +1,6 @@
 import type { Assessment, Coverage } from "./core.js";
 import { isHandled } from "./core.js";
-import type { ApprovalRow, AssistantMilestones, Exclusion } from "./mcp.js";
+import { approvalAddressMissing, type ApprovalRow, type AssistantMilestones, type Exclusion } from "./mcp.js";
 import type { CompanyCard, CompanyMatch } from "./arikratt.js";
 import { ET_OF, type FactNeeded, type Obligation } from "./obligations.js";
 import { BASETEN_MODEL } from "./model-quality.js";
@@ -495,7 +495,7 @@ ${tokenRows || "<p class=\"muted\">No tokens yet.</p>"}</details>
 ${opts.candidates.map((c) => `<div class="row"><strong>${esc(c.name)}</strong> <span class="pill">${esc(c.status)}</span><br><span class="small muted">${esc(c.connection)} · ${esc(c.jobs)} · ${esc(c.created_at)}</span><form method="post" action="/candidates/delete"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="candidate_id" value="${esc(c.id)}"><button type="submit" class="secondary">Delete this nomination</button></form></div>`).join("") || "<p class=\"muted\">None yet.</p>"}
 </section>
 <section class="card"><h2>Your minimal data</h2>
-<p>Launchpad stores your assessments, task reports, activity, service nominations and tokens. It also stores the exact text of every approval request your assistant asks you to approve (up to 4,000 characters each) and the de-identified text of requests your assistant could not do, until you delete your progress. It never receives your conversations. Deleting also revokes tokens and signs out other sessions, so old queued reports cannot recreate it. It does not delete any provider's records.</p>
+<p>Launchpad stores your assessments, task reports, activity, service nominations and tokens. It also stores the exact text of every approval request your assistant asks you to approve (up to 4,000 characters each, with the recipient's address, amounts and figures) and the de-identified text of requests your assistant could not do, until you delete your progress. It never receives your conversations. Deleting also revokes tokens and signs out other sessions, so old queued reports cannot recreate it. It does not delete any provider's records.</p>
 <p><a class="btn secondary" href="/export">Export my progress (JSON)</a></p>
 <form method="post" action="/delete" onsubmit="return confirm('Delete your Launchpad progress?')"><input type="hidden" name="csrf" value="${csrf}"><button type="submit" class="danger">Delete my progress</button></form></section>`;
 }
@@ -522,7 +522,7 @@ function approvalView(a: ApprovalRow, l: Lang) {
   const recipient = typeof p.recipient === "string" ? { name: p.recipient } : p.recipient ?? {};
   const kindKey = a.kind ?? p.kind ?? "";
   const kind = KIND[kindKey] ? t(...KIND[kindKey]) : t("Varasem näidiskinnitus", "Earlier synthetic approval");
-  return { p, recipient, kindKey, kind, title: p.document?.title ?? p.document_ref ?? kind, amount: typeof p.amount_cents === "number" ? fmtEur(p.amount_cents, l) : null, outcome, history: outcome?.history ?? (outcome ? [outcome] : []) };
+  return { p, recipient, noAddress: approvalAddressMissing(a), kindKey, kind, title: p.document?.title ?? p.document_ref ?? kind, amount: typeof p.amount_cents === "number" ? fmtEur(p.amount_cents, l) : null, outcome, history: outcome?.history ?? (outcome ? [outcome] : []) };
 }
 /** Per-outcome receipt words: [state-chip kind, ET, EN]. */
 const OUTCOME: Record<string, [string, string, string]> = { sent: ["sent", "Saadetud", "Sent"], submitted: ["sent", "Esitatud", "Submitted"], accepted: ["accepted", "Vastu võetud", "Accepted"], rejected: ["rejected", "Tagasi lükatud", "Rejected"], paid: ["paid", "Makstud", "Paid"], failed: ["rejected", "Ei õnnestunud", "Failed"] };
@@ -542,19 +542,21 @@ function stateLine(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, 
   else if (done) steps.push({ cls: sample ? "demo" : "done", mark: sample ? "–" : "✓", text: sample ? t(`${act[1]}: demo`, `${act[2]}: demo`) : t(act[1], act[2]), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(done.observed_at, l)}${sample ? t(" · päriselt ei saadetud", " · nothing really sent") : ""}` });
   else steps.push({ cls: "todo", mark: "", text: t(`${act[1]}: ootab assistendi teadet`, `${act[2]}: waiting for your assistant's report`) });
   if (follow && !failed) {
-    const f = seen(follow[0]), rej = seen("rejected");
-    if (rej) steps.push({ cls: "stop", mark: "✕", text: t("Tagasi lükatud", "Rejected"), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(rej.observed_at, l)}` });
-    else if (f) steps.push({ cls: "done", mark: "✓", text: t(follow[1], follow[2]), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(f.observed_at, l)}` });
+    // Terminal follow-ups: a filing ends accepted or rejected; a send also ends paid.
+    const end = v.history.find((h) => (v.kindKey === "prepare_filing" ? ["accepted", "rejected"] : ["accepted", "rejected", "paid"]).includes(h.outcome));
+    if (end?.outcome === "rejected") steps.push({ cls: "stop", mark: "✕", text: t("Tagasi lükatud", "Rejected"), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(end.observed_at, l)}` });
+    else if (end) steps.push({ cls: "done", mark: "✓", text: t(OUTCOME[end.outcome][1], OUTCOME[end.outcome][2]), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(end.observed_at, l)}` });
     else steps.push({ cls: "todo", mark: "", text: t(`${follow[1]}: ootab`, `${follow[2]}: pending`) });
   }
   const current = steps.findIndex((s) => s.cls === "todo");
   return `<ol class="state-line" aria-label="${t("Töö seis", "Where this job is")}">${steps.map((s, i) => `<li class="state-step state-step--${s.cls}"${i === current ? ' aria-current="step"' : ""}><span class="state-mark" aria-hidden="true">${s.mark}</span><span class="state-text">${esc(s.text)}${s.note ? `<span class="state-note">${esc(s.note)}</span>` : ""}</span></li>`).join("")}</ol>`;
 }
 
+const NO_ADDRESS = (l: Lang) => tr(l)("Aadress puudub — seda kinnitust ei saa kasutada", "Address missing — this approval cannot be used");
 function approvalFacts(v: ReturnType<typeof approvalView>, l: Lang): string {
   const t = tr(l);
   const row = (k: string, val: string | null | undefined, sub?: string | null, cls = "") => val ? `<div class="fact-row${cls}"><dt>${esc(k)}</dt><dd>${esc(val)}${sub ? `<span class="fact-sub">${esc(sub)}</span>` : ""}</dd></div>` : "";
-  return `<dl class="facts">${row(t("Saaja", "To"), v.recipient.name, v.recipient.address)}${row(t("Summa", "Amount"), v.amount, null, " fact-row--amount")}${row(t("Periood", "Period"), v.p.period ? fmtPeriod(v.p.period, l) : null)}</dl>`;
+  return `<dl class="facts">${row(t("Saaja", "To"), v.recipient.name, v.noAddress ? NO_ADDRESS(l) : v.recipient.address)}${row(t("Summa", "Amount"), v.amount, null, " fact-row--amount")}${row(t("Periood", "Period"), v.p.period ? fmtPeriod(v.p.period, l) : null)}</dl>`;
 }
 
 function handoffBox(kindKey: string, l: Lang): string {
@@ -581,7 +583,7 @@ ${approvalFacts(v, l)}
 ${content}
 ${handoffBox(v.kindKey, l)}
 <form method="post" action="/approvals/${esc(encodeURIComponent(a.id))}/decide"><input type="hidden" name="csrf" value="${esc(opts.csrf)}"><input type="hidden" name="digest" value="${esc(a.digest)}">
-<button name="decision" value="approve">${t("Kinnita täpselt see", "Approve exactly this")}</button><button class="secondary" name="decision" value="decline">${t("Keeldu", "Decline")}</button></form>
+${v.noAddress ? `<div class="notice" role="alert"><p><strong>${esc(NO_ADDRESS(l))}.</strong> ${t("Assistent ei märkinud, kuhu see läheb. Keeldu ja palu assistendil küsida uus kinnitus koos saaja aadressiga.", "Your assistant did not say where this goes. Decline it and ask your assistant for a new approval with the recipient's address.")}</p></div>` : `<button name="decision" value="approve">${t("Kinnita täpselt see", "Approve exactly this")}</button>`}<button class="secondary" name="decision" value="decline">${t("Keeldu", "Decline")}</button></form>
 <p class="small muted">${esc(t(`Kui assistent muudab midagi, küsib ta uue kinnituse. Kehtib 24 tundi, kuni ${fmtUntil(a.expires_at, l, now)}.`, `If your assistant changes anything, it asks again. Valid for 24 hours, until ${fmtUntil(a.expires_at, l, now)}.`))}</p>
 <p class="small muted">${t("AI-hüppelaud ise ei saada, maksa ega esita midagi; seda teeb sinu assistent oma tööriistadega ja ainult täpselt selle sisuga.", "AI Launchpad itself never sends, pays or files; your assistant does this with its own tools, and only with exactly this content.")}${sample ? ` ${t("Näidis: päriselt ei saadeta.", "Sample: nothing is really sent.")}` : ""}</p>
 ${approvalTech(a, v, l)}

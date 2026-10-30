@@ -112,15 +112,18 @@ export const canonicalJson = (v: unknown): string => Array.isArray(v) ? `[${v.ma
   : v !== null && typeof v === "object" ? `{${Object.entries(v).filter(([, x]) => x !== undefined).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, x]) => `${JSON.stringify(k)}:${canonicalJson(x)}`).join(",")}}`
   : JSON.stringify(v);
 export const approvalDigest = (action: unknown) => sha256(canonicalJson(action));
+/** Sends must lock their destination (#35): the digest then binds it. */
+export const ADDRESS_KINDS: readonly string[] = ["send_message", "send_invoice"];
+export const ADDRESS_REQUIRED = "recipient.address is required for send_message and send_invoice: the e-mail or e-invoice address the content goes to.";
 export const approvalActionSchema = z.object({
   kind: z.enum(APPROVAL_KINDS),
-  recipient: z.object({ name: s(120), address: s(120).optional() }).strict(),
+  recipient: z.object({ name: s(120), address: s(120).describe("The e-mail or e-invoice address. Required for send_message and send_invoice.").optional() }).strict(),
   amount_cents: z.number().int().min(1).max(999_999_999_999).optional(),
   currency: z.enum(["EUR"]).default("EUR"),
   period: s(40).optional(),
   document: z.object({ title: s(120), content: s(4000) }).strict(),
   summary: s(300),
-}).strict();
+}).strict().refine((a) => !ADDRESS_KINDS.includes(a.kind) || !!a.recipient.address?.trim(), { message: ADDRESS_REQUIRED, path: ["recipient", "address"] });
 const OUTCOME_FIRST: Record<string, string[]> = { send_message: ["sent", "failed"], send_invoice: ["sent", "failed"], prepare_payment: ["paid", "failed"], prepare_filing: ["submitted", "failed"] };
 const OUTCOME_NEXT: Record<string, string[]> = { sent: ["accepted", "rejected", "paid"], submitted: ["accepted", "rejected"] };
 export interface ApprovalRow { id: string; kind: string | null; report_id: string | null; payload_json: string; digest: string; state: string; expires_at: string; created_at: string; decided_at: string | null; consumed_at: string | null; outcome_json: string | null; }
@@ -128,6 +131,15 @@ export interface ApprovalRow { id: string; kind: string | null; report_id: strin
  *  approved-but-unused approval past expires_at becomes expired on read. */
 export function expireApprovals(db: Db, ownerId: string) {
   db.prepare("UPDATE approvals SET state='expired' WHERE owner_id=? AND state IN ('pending','approved') AND expires_at<=?").run(ownerId, nowIso());
+}
+const ADDRESS_MISSING = "Address missing: request a new approval that includes the recipient address";
+/** A stored send approval without a usable address (a legacy row) can never be approved or acted on. */
+export function approvalAddressMissing(a: Pick<ApprovalRow, "kind" | "payload_json">): boolean {
+  let p: { kind?: unknown; recipient?: unknown } = {};
+  try { p = JSON.parse(a.payload_json); } catch { /* unreadable: kind decides */ }
+  if (!ADDRESS_KINDS.includes(String(a.kind ?? p.kind ?? ""))) return false;
+  const address = p.recipient && typeof p.recipient === "object" ? (p.recipient as { address?: unknown }).address : undefined;
+  return typeof address !== "string" || !address.trim();
 }
 export function getApproval(db: Db, ownerId: string, id: string) {
   expireApprovals(db, ownerId);
@@ -161,16 +173,17 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
   let code = o.registryCode;
   let miss: { unavailable: string; unavailable_reason: string } | null = null;
   const name = o.assistant?.company_name;
+  let matched: { name: string; registry_code: string } | null = null;
   if (!code && name && ar.configured) {
     const found = await ar.search(name);
-    if (found.ok && found.matches.length === 1) code = found.matches[0].registry_code;
+    if (found.ok && found.matches.length === 1) { matched = found.matches[0]; code = matched.registry_code; }
     else if (!found.ok) miss = { unavailable: found.unavailable, unavailable_reason: found.reason };
     else if (found.matches.length === 0) miss = { unavailable: "no_match", unavailable_reason: `No company in the public register matches "${name}".` };
     else return { ok: false as const, error: `Several companies match "${name}": ${found.matches.map((m) => `${m.name} (${m.registry_code})`).join("; ")}. Ask the owner which registry code is theirs and call again with registry_code. No deadlines were computed.` };
   }
   if (!code && !o.assistant) return { ok: false as const, error: "No company is known yet. Ask the owner for the company name or 8-digit registry code, then call get_obligations with registry_code (or with facts). No deadlines were computed." };
   const lookup = code ? await ar.lookup(code, { cacheOnly: o.cacheOnly }) : null;
-  if (lookup && !lookup.ok && lookup.unavailable === "invalid_code") return { ok: false as const, error: `${lookup.reason} Ask the owner to check the code. No deadlines were computed.` };
+  if (lookup && !lookup.ok && (lookup.unavailable === "invalid_code" || lookup.unavailable === "not_found")) return { ok: false as const, unavailable: lookup.unavailable, error: `${lookup.reason} Ask the owner to check the code. No deadlines were computed.` };
   const facts: CompanyFacts = lookup?.ok ? { ...lookup.facts } : {};
   const mine = <T>(value: T): Fact<T> => ({ value, provenance: "assistant_supplied" });
   for (const [k, v] of Object.entries({ ...o.assistant, ...(code && !lookup?.ok ? { registry_code: code } : {}) })) {
@@ -182,6 +195,9 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
   const from = tallinnDate(today);
   const next = computeObligations(facts, { today, months: 3 }).obligations.find((x) => x.effective_due !== null && x.effective_due >= from) ?? null;
   const confirm = lookup?.ok ? lookup.confirm.map((fact) => ({ fact, ...CONFIRM_QUESTIONS[fact] })) : [];
+  // A single name-search match is a guess until the owner confirms it (#30 item 4).
+  const which = matched && `${matched.name} (${matched.registry_code})`;
+  const confirmCompany: FactNeeded[] = which ? [{ fact: "confirm_company", question_et: `Kas ${which} on sinu ettevõte?`, question_en: `Is ${which} your company?` }] : [];
   const company: CompanyCard & { unavailable?: string; unavailable_reason?: string } = lookup?.ok ? lookup.company : {
     name: facts.company_name?.value ?? null, registry_code: code ?? "", synthetic: false, provenance: "assistant_supplied", label_et: "Assistendi teade · avalikust registrist ei loetud", label_en: "Your assistant says · not read from a public register",
     snapshot_id: null, as_of: null, sources: [], attribution: "", ...(lookup && !lookup.ok ? { unavailable: lookup.unavailable, unavailable_reason: lookup.reason } : miss ?? {}),
@@ -190,23 +206,25 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
     company, computed_by: "rules", window: r.window, obligations: r.obligations.map(withPlaybook),
     next_deadline: next && withPlaybook(next),
     playbooks: PLAYBOOKS.filter((p) => [...r.obligations, ...(next ? [next] : [])].some((x) => p.triggers.includes(x.rule_id))).map(({ id, title, title_et, approval_kind }) => ({ id, title, title_et, approval_kind })),
-    facts_needed: [...(miss ? [REGISTRY_CODE_NEEDED] : []), ...confirm, ...r.facts_needed.filter((n) => !confirm.some((c) => c.fact === n.fact))],
+    facts_needed: [...confirmCompany, ...(miss ? [REGISTRY_CODE_NEEDED] : []), ...confirm, ...r.facts_needed.filter((n) => !confirm.some((c) => c.fact === n.fact))],
     data_as_of: company.as_of, disclaimer: OBLIGATIONS_DISCLAIMER,
-    assistant_instruction: `Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed.${miss ? " Ask the owner for the 8-digit registry code." : ""} Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.`,
+    assistant_instruction: `${which ? `Confirm with the owner that ${which} is their company before relying on these deadlines. ` : ""}Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed.${miss ? " Ask the owner for the 8-digit registry code." : ""} Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.`,
   } };
 }
 
 export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {}), hooks: { onUnmetNeed?: () => void } = {}) {
   const server = new McpServer({ name: "ai-launchpad", version: "0.2.0" });
   const need = (scope: string) => ctx.scopes.includes(scope);
+  /** Tools that need progress:report and sharing on: a read-only connection gets the same reconnect guidance everywhere. */
+  const sharingGate = (nothing: string) => !need("progress:report") ? readOnly(nothing) : !ctx.reportingEnabled ? `Progress sharing is stopped by the owner (it is off by default). ${nothing}` : null;
 
   server.registerTool("get_started", { description: "Start here. Start with the owner's deadlines (get_obligations), then offer the matching playbook. Public assessment framework, executable job playbooks and reporting guidance for any authenticated connection; with progress:read it also returns this workspace's company_ref, label and sharing state.", inputSchema: {}, annotations: { readOnlyHint: true } }, async () => {
     logActivity(db, ctx.ownerId, "assistant", "get_started", "ok", "Assistant fetched getting-started guidance.");
     const first_step = "Start with the owner's deadlines (get_obligations), then offer the matching playbook. Rules compute every date and each row has its official source; ask the owner only for the facts it lists in facts_needed. A row with a playbook_id has a job you can prepare: follow that playbook's steps; the owner only approves.";
     const shared = { framework: FRAMEWORK, playbooks: PLAYBOOKS,
       tools: ["get_obligations", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "request_approval", "get_approval", "record_action_outcome", "report_unmet_need"],
-      note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments; the exact text of each approval request until the owner deletes their progress; and the de-identified text of unmet needs. It stores no conversations. Reporting never approves business actions.",
-      approvals_note: "Before sending, invoicing, paying or filing for the owner, call request_approval with the exact content and act only after get_approval returns approved. Launchpad never sends, pays or files.",
+      note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments; private service nominations; the exact text of each approval request until the owner deletes their progress; and the de-identified text of unmet needs. It stores no conversations. Reporting never approves business actions.",
+      approvals_note: "Before sending, invoicing, paying or filing for the owner, call request_approval with the exact content and act only when get_approval returns approved (and usable is not false). Launchpad never sends, pays or files.",
       catalog_note: "search_services is a public research catalogue available to any authenticated connection; it never contains owner data." };
     if (!need("progress:read")) return json({ first_step, ...shared });
     return json({ first_step, workspace: { company_ref: ctx.companyRef, label: ctx.label }, ...shared, reporting_enabled: ctx.reportingEnabled });
@@ -229,8 +247,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
   });
 
   server.registerTool("report_assessment", { description: "Save a versioned business assessment — the agent's final judgment, not a verified outcome. No owner ratification is required. Idempotent by report_id; expected_version guards staleness. Retain all previously mapped responsibility rows; omissions are rejected. To change scope, explicitly reclassify with a new reason. The receipt records scope changes and reasons.", inputSchema: { report_id: s(80), expected_version: z.number().int().min(0).max(1_000_000), assessment: assessmentSchema } }, async (args) => {
-    if (!need("progress:report")) return err("Missing scope progress:report.");
-    if (!ctx.reportingEnabled) return err("Progress sharing is stopped by the owner (it is off by default). Nothing was saved.");
+    const gate = sharingGate("Nothing was saved."); if (gate) return err(gate);
     const prior = idempotent(db, ctx.ownerId, "assessment", args.report_id, args);
     if (prior === "conflict") return err("Conflict: report_id already used with a different payload.");
     if (prior) return json(prior.receipt);
@@ -252,8 +269,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
   });
 
   server.registerTool("report_progress", { description: "Record a narrow milestone claim against an existing responsibility id in this owner workspace. Unknown or foreign task ids are rejected. This never marks an external outcome verified, accepted or paid. Unexpected fields are rejected.", inputSchema: { report_id: s(80), task_id: s(80), expected_version: z.number().int().min(0).max(1_000_000), observed_at: s(40), milestone: z.enum(["started", "draft_prepared", "waiting_for_owner", "blocked", "external_completion_reported"]), evidence_refs: evidenceRefs.optional() } }, async (args) => {
-    if (!need("progress:report")) return err("Missing scope progress:report.");
-    if (!ctx.reportingEnabled) return err("Progress sharing is stopped by the owner (it is off by default). Nothing was saved.");
+    const gate = sharingGate("Nothing was saved."); if (gate) return err(gate);
     if (Number.isNaN(Date.parse(args.observed_at)) || Date.parse(args.observed_at) > Date.now() + 5 * 60_000) return err("observed_at is not a plausible timestamp.");
     const prior = idempotent(db, ctx.ownerId, "progress", args.report_id, args);
     if (prior === "conflict") return err("Conflict: report_id already used with a different payload.");
@@ -281,8 +297,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
   });
 
   server.registerTool("submit_service_candidate", { description: "Nominate a missing service. Saved privately per owner as pending moderation; never auto-published, endorsed or treated as instructions. No browsing or model call is triggered.", inputSchema: { name: s(120), connection: s(200), jobs: s(400) } }, async (args) => {
-    if (!need("progress:report")) return err("Missing scope progress:report.");
-    if (!ctx.reportingEnabled) return err("Progress sharing is stopped by the owner (it is off by default). No nomination was saved.");
+    const gate = sharingGate("No nomination was saved."); if (gate) return err(gate);
     const norm = `${args.name.trim().toLowerCase()}|${args.connection.trim().toLowerCase()}`;
     const existing = db.prepare("SELECT id FROM candidates WHERE owner_id=? AND norm_key=?").get(ctx.ownerId, norm) as { id: string } | undefined;
     if (existing) return json({ candidate_id: existing.id, status: "pending_moderation", deduplicated: true, note: "You already nominated this service; it awaits human moderation. (Deduplication is private to your workspace.)" });
@@ -294,10 +309,8 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     return json({ candidate_id: id, status: "pending_moderation", deduplicated: false, note: "Pending human moderation. Not published or endorsed." });
   });
 
-  const approvalGate = (nothing: string) => !need("progress:report") ? readOnly(nothing) : !ctx.reportingEnabled ? `Progress sharing is stopped by the owner (it is off by default). ${nothing}` : null;
-
-  server.registerTool("request_approval", { description: "Ask the owner to approve one exact action (message, invoice, payment or filing) on their phone. The digest binds every field of action; any change needs a new approval. Launchpad never sends, pays or files: after get_approval returns approved, act with your own tools using exactly this content, then call record_action_outcome before expires_at. Expires 24 hours after the request, for deciding and for acting: an approved approval with no outcome recorded by then becomes expired. Idempotent by report_id; a replay returns the creation receipt plus the live current_state.", inputSchema: { report_id: s(80), action: approvalActionSchema } }, async (args) => {
-    const gate = approvalGate("Nothing was saved and no approval was requested."); if (gate) return err(gate);
+  server.registerTool("request_approval", { description: "Ask the owner to approve one exact action (message, invoice, payment or filing) on their phone. The digest binds every field of action; any change needs a new approval. send_message and send_invoice must name recipient.address, the exact e-mail or e-invoice address you will send to. Launchpad never sends, pays or files: after get_approval returns approved, act with your own tools using exactly this content, then call record_action_outcome before expires_at. Expires 24 hours after the request, for deciding and for acting: an approved approval with no outcome recorded by then becomes expired. Idempotent by report_id; a replay returns the creation receipt plus the live current_state.", inputSchema: { report_id: s(80), action: approvalActionSchema } }, async (args) => {
+    const gate = sharingGate("Nothing was saved and no approval was requested."); if (gate) return err(gate);
     if (["send_invoice", "prepare_payment"].includes(args.action.kind) && args.action.amount_cents === undefined) return err(`amount_cents is required for ${args.action.kind}. Nothing was saved and no approval was requested.`);
     const prior = idempotent(db, ctx.ownerId, "approval", args.report_id, args);
     if (prior === "conflict") return err("Conflict: report_id already used with a different payload. Nothing was saved and no approval was requested.");
@@ -318,15 +331,16 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     return json(receipt);
   });
 
-  server.registerTool("get_approval", { description: "Check an approval you requested: state (pending, approved, declined, expired, consumed), digest, the exact action, decision time, expiry and any assistant-reported outcome. Act only when state is approved (it expires at expires_at if no outcome was recorded).", inputSchema: { approval_id: s(80) }, annotations: { readOnlyHint: true } }, async (args) => {
-    const gate = approvalGate("Nothing was read."); if (gate) return err(gate);
+  server.registerTool("get_approval", { description: "Check an approval you requested: state (pending, approved, declined, expired, consumed), digest, the exact action, decision time, expiry and any assistant-reported outcome. Act only when state is approved and usable is not false (it expires at expires_at if no outcome was recorded). An approved send_message/send_invoice stored without recipient.address returns usable: false with a reason: do not act on it; request a new approval that includes the address.", inputSchema: { approval_id: s(80) }, annotations: { readOnlyHint: true } }, async (args) => {
+    const gate = sharingGate("Nothing was read."); if (gate) return err(gate);
     const a = getApproval(db, ctx.ownerId, args.approval_id);
     if (!a) return err("Unknown approval_id in this workspace. Nothing was read.");
-    return json({ approval_id: a.id, state: a.state, digest: a.digest, action: JSON.parse(a.payload_json), created_at: a.created_at, decided_at: a.decided_at, expires_at: a.expires_at, outcome: a.outcome_json ? JSON.parse(a.outcome_json) : null });
+    const unusable = a.state === "approved" && approvalAddressMissing(a) ? { usable: false, reason: ADDRESS_MISSING } : {};
+    return json({ approval_id: a.id, state: a.state, ...unusable, digest: a.digest, action: JSON.parse(a.payload_json), created_at: a.created_at, decided_at: a.decided_at, expires_at: a.expires_at, outcome: a.outcome_json ? JSON.parse(a.outcome_json) : null });
   });
 
   server.registerTool("record_action_outcome", { description: "Record what happened after you acted on an approved action with your own tools. Requires the approval's exact digest; a changed payload needs a new approval. The first outcome must be recorded before expires_at, must fit the kind (send_message/send_invoice: sent or failed; prepare_payment: paid or failed; prepare_filing: submitted or failed) and consumes the approval (one use); later outcomes, also after expiry, may only advance it (sent → accepted/rejected/paid, submitted → accepted/rejected). Outcomes are labelled assistant_reported, never verified. Idempotent by report_id.", inputSchema: { report_id: s(80), approval_id: s(80), digest: s(64), outcome: z.enum(["sent", "submitted", "accepted", "rejected", "paid", "failed"]), observed_at: s(40), evidence_refs: evidenceRefs.optional() } }, async (args) => {
-    const gate = approvalGate("Nothing was recorded."); if (gate) return err(gate);
+    const gate = sharingGate("Nothing was recorded."); if (gate) return err(gate);
     if (Number.isNaN(Date.parse(args.observed_at)) || Date.parse(args.observed_at) > Date.now() + 5 * 60_000) return err("observed_at is not a plausible timestamp. Nothing was recorded.");
     const prior = idempotent(db, ctx.ownerId, "outcome", args.report_id, args);
     if (prior === "conflict") return err("Conflict: report_id already used with a different payload. Nothing was recorded.");
@@ -339,6 +353,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     const prev = a.outcome_json ? JSON.parse(a.outcome_json) as { outcome: string; history: unknown[] } : null;
     if (a.state === "pending") return err("The owner has not approved this yet. Do not act. Nothing was recorded.");
     if (a.state === "expired") return err("This approval expired before an outcome was recorded; request a new approval. Nothing was recorded.");
+    if (a.state === "approved" && approvalAddressMissing(a)) return err(`${ADDRESS_MISSING}. Nothing was recorded.`);
     const first = OUTCOME_FIRST[a.kind ?? ""] ?? [];
     if (a.state === "approved" && !first.includes(args.outcome)) return err(`A ${a.kind} approval's first outcome must be ${first.join(" or ")}. Nothing was recorded.`);
     if (a.state === "consumed" ? !OUTCOME_NEXT[prev?.outcome ?? ""]?.includes(args.outcome) : a.state !== "approved") {
@@ -357,8 +372,8 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     return json(receipt);
   });
 
-  server.registerTool("report_unmet_need", { description: "Report a job the owner asked for that you could not do (no connector, needs the owner's PIN or signature, a portal without an API, not supported yet, or unclear). Describe the need generically, in the owner's language, without names, company names, amounts, account numbers, personal or registry codes, e-mail addresses, phone numbers or other identifiers. Launchpad also replaces identifiers it detects before storing the text or showing it to any model, and keeps only that de-identified text. Launchpad then classifies it in the background (Meta's open model when live, a labelled mock locally); nothing is published unless the owner approves it on the Status page, and then only as anonymous open demand (category, short label, one-line spec). Idempotent by report_id.", inputSchema: { report_id: s(80), need: s(MAX_NEED_CHARS), blocker: z.enum(BLOCKERS), job_hint: s(MAX_JOB_HINT_CHARS).optional() } }, async (args) => {
-    const gate = approvalGate("Nothing was saved."); if (gate) return err(gate);
+  server.registerTool("report_unmet_need", { description: "Report a job the owner asked for that you could not do (no connector, needs the owner's PIN or signature, a portal without an API, not supported yet, or unclear). Describe the job generically; never include names of people, customers or employees. Write it in the owner's language, without company names, amounts, account numbers, personal or registry codes, e-mail addresses, phone numbers or other identifiers. Launchpad also replaces identifiers it detects before storing the text or showing it to any model, and keeps only that de-identified text. Launchpad then classifies it in the background (Meta's open model when live, a labelled mock locally); nothing is published unless the owner approves it on the Status page, and then only as anonymous open demand (category, short label, one-line spec). Idempotent by report_id.", inputSchema: { report_id: s(80), need: s(MAX_NEED_CHARS).describe("The job the owner asked for. Describe the job generically; never include names of people, customers or employees."), blocker: z.enum(BLOCKERS), job_hint: s(MAX_JOB_HINT_CHARS).optional() } }, async (args) => {
+    const gate = sharingGate("Nothing was saved."); if (gate) return err(gate);
     const r = recordUnmetNeed(db, ctx.ownerId, args);
     if ("error" in r) return err(r.error);
     if (r.created) {
