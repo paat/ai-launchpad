@@ -377,11 +377,31 @@ test("startup expires actionable legacy no-address sends; consumed rows untouche
     insert.run("appr_la_pending", "send_invoice", "la-2", JSON.stringify(reminder({ recipient: { ...recipient, address: "  " } })), "pending", later, now, null);
     insert.run("appr_la_consumed", "send_message", "la-3", JSON.stringify(reminder({ kind: "send_message", recipient })), "consumed", later, now, now);
     insert.run("appr_la_ok", "send_invoice", "la-4", JSON.stringify(reminder()), "approved", later, now, null);
+    // Whitespace that JS trim() strips must count as blank in SQL too.
+    for (const [i, address] of ["\t\n ", "  ﻿"].entries())
+      for (const state of ["pending", "approved"])
+        insert.run(`appr_la_ws_${state}_${i}`, "send_message", `la-ws-${state}-${i}`, JSON.stringify(reminder({ kind: "send_message", recipient: { ...recipient, address } })), state, later, now, null);
     seed.close();
     const states = () => { const d = openDb(path); try { return Object.fromEntries((d.prepare("SELECT id,state FROM approvals ORDER BY id").all() as { id: string; state: string }[]).map((r) => [r.id, r.state])); } finally { d.close(); } };
-    const expected = { appr_la_approved: "expired", appr_la_pending: "expired", appr_la_consumed: "consumed", appr_la_ok: "approved" };
+    const expected = { appr_la_approved: "expired", appr_la_pending: "expired", appr_la_consumed: "consumed", appr_la_ok: "approved", appr_la_ws_pending_0: "expired", appr_la_ws_approved_0: "expired", appr_la_ws_pending_1: "expired", appr_la_ws_approved_1: "expired" };
     expect(states()).toEqual(expected);
     expect(states()).toEqual(expected); // a second init changes nothing
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("startup expires a no-address send in the pre-kind schema, same on a second open (#35)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lp-approvals-"));
+  try {
+    const path = join(dir, "pre-kind.db");
+    const old = new Database(path);
+    old.exec("CREATE TABLE approvals(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, payload_json TEXT NOT NULL, digest TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', expires_at TEXT NOT NULL, created_at TEXT NOT NULL, consumed_at TEXT)");
+    const { address: _drop, ...recipient } = reminder().recipient;
+    const at = new Date().toISOString();
+    old.prepare("INSERT INTO approvals VALUES('appr_pre_kind','legacy',?,'d','pending',?,?,NULL)").run(JSON.stringify(reminder({ kind: "send_message", amount_cents: undefined, recipient })), new Date(Date.now() + 3600_000).toISOString(), at);
+    old.close();
+    const state = () => { const d = openDb(path); try { return (d.prepare("SELECT state FROM approvals WHERE id='appr_pre_kind'").get() as { state: string }).state; } finally { d.close(); } };
+    expect(state()).toBe("expired");
+    expect(state()).toBe("expired");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
