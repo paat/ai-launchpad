@@ -73,7 +73,7 @@ test("SDK OAuth client discovers PRM, registers, signs in from no session, conse
   const c = new Client({name:"SDK OAuth",version:"1"});
   await expect(c.connect(transport)).rejects.toThrow(); expect(authUrl).toBeDefined();
   const b = new Browser(); expect((await b.request(authUrl!.href)).headers.get("location")).toBe("/oauth/consent");
-  expect((await b.request("/oauth/consent")).headers.get("location")).toBe("/login");
+  expect((await b.request("/oauth/consent")).headers.get("location")).toBe("/login?return_to=%2Foauth%2Fconsent");
   expect((await b.login()).headers.get("location")).toBe("/oauth/consent");
   const html = await (await b.request("/oauth/consent")).text(); expect(html).toContain("http://127.0.0.1:45678"); expect(html).not.toContain('value="1" checked');
   const response = await b.request("/oauth/consent",{csrf:field(html,"csrf"),flow:field(html,"flow"),decision:"allow"});

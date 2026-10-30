@@ -11,10 +11,35 @@ below. No new live calls were made for this docs update.
 - Actual ChatGPT DCR OAuth: submitted assessment v1 / progress v2 with saved
   receipts; revoke blocked access; reconnect with a fresh `get_progress`
   succeeded with unchanged synthetic workspace. Receipts mean stored reports,
-  not external verification. Claude was not tested.
+  not external verification. Claude was not tested on 28 Oct; see the
+  dated Claude (Free plan) entry below.
 - Catalogue: 181 research records, not 181 verified integrations. No provider
   brokerage, public-register reads, external verifier, moderation, or 100%
   claim.
+
+## Claude (Free plan), 30 Oct 2026 ~12:50–12:57 UTC
+
+Tested once, in a real browser, on the owner's Claude Free plan, with
+synthetic data only. Not a Pro/Team/Enterprise claim.
+
+1. Customize → Connectors → Add custom connector; name "AI-hüppelaud", URL
+   `https://huppelaud.arikratt.ee/mcp` → Continue. Claude detected "Sign in
+   now" and "Register automatically" (DCR) as defaults → Add.
+2. Connect → Launchpad Google sign-in → Estonian consent page with "Jah: …
+   valmistab töid ette" ticked → Ühenda → back on claude.ai, connected.
+3. Claude called `get_obligations` for synthetic registry code 19990001 and
+   got TSD 10.11 (conditional) and KMD 20.11 with Riigi Teataja sources. It
+   offered the playbook and asked the `facts_needed` question.
+4. Claude called `request_approval`: send_message to Demo Klient OÜ,
+   `arved@demo-klient.example`, 240,00 €, period oktoober 2026.
+5. The owner declined the card ("Keeldusid. Midagi ei saadetud."). Claude
+   then called `get_approval`, saw `declined` and sent nothing.
+6. Claude asks "Allow once / Always allow" for every custom-connector tool
+   call, including read-only tools.
+7. Bug found: the first Connect needed a Google sign-in and then landed on
+   Täna (`/`) instead of the consent; a second Connect went straight to
+   consent. Fixed after this run (the login now keeps the pending authorize
+   request); the fix has not been re-tested live with Claude.
 
 ## Genuine Meta/Baseten use (pinned runtime)
 

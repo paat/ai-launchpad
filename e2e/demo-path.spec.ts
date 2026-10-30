@@ -49,7 +49,8 @@ test("/uhenda: ChatGPT first, no phone hand-off without public HTTPS, no overflo
   await noOverflow(page);
   await page.screenshot({ path: `${SHOTS}/uhenda-390.png`, fullPage: true });
   await page.getByRole("link", { name: "Claude" }).click();
-  await expect(page.getByText("AI-hüppelauaga pole seda veel testitud.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Testitud Claude'i tasuta paketis (30.10.2026).", { exact: false })).toBeVisible();
+  await expect(page.getByText("Vajuta Connect, logi sisse ja kinnita. Kui Claude küsib tööriista luba, vajuta Allow.")).toBeVisible();
 });
 
 test("consent names the one job permission, unchecked by default", async ({ page, request }) => {

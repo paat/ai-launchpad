@@ -261,7 +261,16 @@ describe("landing and connect", () => {
     const main = html.slice(0, html.indexOf('<details class="tech-details">'));
     expect(main).not.toMatch(/\bMCP\b|OAuth|scope|progress:/);
     const claude = connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "anon" }, owner: false });
-    expect(claude).toContain("AI-hüppelauaga pole seda veel testitud.");
+    expect(claude).toContain("Claude lubab kohandatud ühendusi igas paketis (tasuta paketis üks ühendus). Testitud Claude&#39;i tasuta paketis (30.10.2026).");
+    expect(claude).not.toContain("pole seda veel testitud");
+    const steps = [...claude.matchAll(/<h3 class="step-title">(.*?)<\/h3>/g)].map(m => m[1]);
+    expect(steps).toEqual(["Ava Claude'is Customize → Connectors → Add custom connector", "Nimi: AI-hüppelaud, aadress:", "Vajuta Connect, logi sisse ja kinnita. Kui Claude küsib tööriista luba, vajuta Allow."]);
+    expect(claude).toContain("<code>https:/<wbr>/<wbr>launchpad.example.com/<wbr>mcp</code>");
+    expect(claude).toContain("→ Continue → Add. Ära muuda midagi muud.");
+    const claudeEn = connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "anon" }, owner: false });
+    expect(claudeEn).toContain("Tested on Claude&#39;s Free plan (30 Oct 2026).");
+    expect([...claudeEn.matchAll(/<h3 class="step-title">(.*?)<\/h3>/g)].map(m => m[1])).toEqual(["In Claude open Customize → Connectors → Add custom connector", "Name: AI Launchpad, address:", "Press Connect, sign in and confirm. If Claude asks for tool permission, press Allow."]);
+    expect([...html.matchAll(/<h3 class="step-title">(.*?)<\/h3>/g)].map(m => m[1])).toEqual(["Kopeeri aadress", "Ava ChatGPT seadetes ühendused, lisa uus ühendus ja kleebi sinna aadress.", "Logi sisse ja vali, mida assistent tohib"]);
     expect(claude).toContain("Logi sisse, et näha, kas sinu assistent on ühendatud.");
     const ok = connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "connected", who: "ChatGPT", at: "2026-11-03T12:32:00Z" }, owner: true, now: NOW });
     expect(ok).toContain("Ühendatud · ChatGPT jõudis kohale kell 14:32");

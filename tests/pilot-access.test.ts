@@ -265,7 +265,7 @@ test("removing a subject and restarting denies old browser/consent sessions, man
     const homeA = await browserA.request(base, "/");
     expect(homeA.status).toBe(302); expect(homeA.headers.get("location")).toBe("/login");
     const consentA = await browserA.request(base, "/oauth/consent");
-    expect(consentA.status).toBe(302); expect(consentA.headers.get("location")).toBe("/login");
+    expect(consentA.status).toBe(302); expect(consentA.headers.get("location")).toBe("/login?return_to=%2Foauth%2Fconsent");
     expect(await mcpStatus(base, manualA)).toBe(401);
     expect(await mcpStatus(base, tokensA.access_token)).toBe(401);
     expect((await unexchanged.exchange()).status).toBe(400);
