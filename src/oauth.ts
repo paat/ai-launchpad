@@ -32,6 +32,8 @@ type Pending = { id: string; client_id: string; params: string; owner_id: string
 type Grant = { id: string; owner_id: string; epoch: number; client_id: string; scopes: string; resource: string; revoked: number; expires: number };
 type Credential = { hash: string; grant_id: string; kind: string; used: number; expires: number };
 type Code = { hash: string; grant_id: string; challenge: string; redirect: string; expires: number };
+// The only place a login may return to: never a URL taken from the request.
+export const CONSENT_PATH = "/oauth/consent";
 export function connectCookie(req: Request): string {
   return /(?:^|;\s*)lp_connect=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1] ?? "";
 }
@@ -139,13 +141,23 @@ export class LaunchpadOAuth implements OAuthServerProvider {
       this.db.prepare("INSERT INTO oauth_pending VALUES(?,?,?,?,?,?)").run(sha256(raw), client.client_id, JSON.stringify({ ...params, scopes }), s?.owner_id ?? null, epoch, pendingExpires);
       this.db.prepare("UPDATE oauth_clients SET expires=MAX(expires,?) WHERE id=?").run(pendingExpires, client.client_id);
     })();
-    res.append("set-cookie", `lp_connect=${raw}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${this.cfg.production ? "; Secure" : ""}`);
-    res.redirect("/oauth/consent");
+    res.append("set-cookie", this.connectSetCookie(raw));
+    res.redirect(CONSENT_PATH);
   }
-  pending(req: Request): Pending | undefined {
-    return this.db.prepare("SELECT * FROM oauth_pending WHERE id=? AND expires>?").get(sha256(connectCookie(req)), Date.now()) as Pending | undefined;
+  pending(req: Request): Pending | undefined { return this.pendingFor(connectCookie(req)); }
+  private pendingFor(raw: string): Pending | undefined {
+    return this.db.prepare("SELECT * FROM oauth_pending WHERE id=? AND expires>?").get(sha256(raw), Date.now()) as Pending | undefined;
   }
-  resume(req: Request) { return this.pending(req) ? "/oauth/consent" : "/"; }
+  resume(req: Request) { return this.pending(req) ? CONSENT_PATH : "/"; }
+  // After a Google round-trip: re-issue this browser's connect cookie from its
+  // own browser-bound login flow, so consent finds the pending request even if
+  // the cookie did not survive the trip. False when the request is gone.
+  continueAfterLogin(res: Response, raw: string): boolean {
+    if (!raw || !this.pendingFor(raw)) return false;
+    res.append("set-cookie", this.connectSetCookie(raw));
+    return true;
+  }
+  private connectSetCookie(raw: string) { return `lp_connect=${raw}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${this.cfg.production ? "; Secure" : ""}`; }
   private grant(id: string): Grant {
     const g = this.db.prepare("SELECT g.* FROM oauth_grants g JOIN owners o ON o.id=g.owner_id AND o.epoch=g.epoch WHERE g.id=? AND g.revoked=0 AND g.expires>?").get(id, Date.now()) as Grant | undefined;
     // Current pilot policy is re-checked here, so code exchange, refresh and

@@ -352,9 +352,9 @@ describe("Google OIDC through mock transport (no external network)", () => {
     };
   });
   afterAll(async () => { globalThis.fetch = nativeFetch; await new Promise<void>(ok => gServer.close(() => ok())); g.db.close(); });
-  async function begin(connectionCookie = "") {
+  async function begin(connectionCookie = "", query = "") {
     fault = "";
-    const r = await fetch(`${gBase}/auth/login/google`, { redirect: "manual", headers: { cookie: connectionCookie } });
+    const r = await fetch(`${gBase}/auth/login/google${query}`, { redirect: "manual", headers: { cookie: connectionCookie } });
     expect(r.status).toBe(302);
     const auth = new URL(r.headers.get("location")!);
     expect(auth.searchParams.get("scope")).toBe("openid email");
@@ -405,6 +405,45 @@ describe("Google OIDC through mock transport (no external network)", () => {
     expect(consent.status).toBe(200); expect(await consent.text()).toContain("https://assistant.example");
     const missing = await fetch(`${gBase}/oauth/consent`, { headers: { cookie: browserSession }, redirect: "manual" });
     expect(missing.status).toBe(400);
+  });
+  async function unauthenticatedAuthorize() {
+    const client = await (await fetch(`${gBase}/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token_endpoint_auth_method: "none", client_name: "Synthetic Claude", redirect_uris: ["https://assistant.example/callback"] }) })).json();
+    const params = new URLSearchParams({ client_id: client.client_id, redirect_uri: client.redirect_uris[0], response_type: "code", resource: `${gBase}/mcp`, code_challenge_method: "S256", code_challenge: "b".repeat(43), scope: "progress:read progress:report", state: "assistant-state" });
+    const start = await fetch(`${gBase}/authorize?${params}`, { redirect: "manual" });
+    expect(start.headers.get("location")).toBe("/oauth/consent");
+    return { client, connection: start.headers.getSetCookie().find(c => c.startsWith("lp_connect="))!.split(";")[0] };
+  }
+  test("first Connect with a Google login returns to consent for the same request, even if the connect cookie is lost", async () => {
+    const { client, connection } = await unauthenticatedAuthorize();
+    const gate = await fetch(`${gBase}/oauth/consent`, { headers: { cookie: connection }, redirect: "manual" });
+    expect(gate.headers.get("location")).toBe("/login?return_to=%2Foauth%2Fconsent");
+    expect(await (await fetch(`${gBase}${gate.headers.get("location")}`)).text()).toContain('href="/auth/login/google?return_to=%2Foauth%2Fconsent"');
+    const { cookie, cb } = await begin(connection, "?return_to=%2Foauth%2Fconsent");
+    const signed = await callback(cb, cookie); // the browser comes back without lp_connect
+    expect(signed.headers.get("location")).toBe("/oauth/consent");
+    const set = signed.headers.getSetCookie();
+    expect(set).toContainEqual(expect.stringMatching(new RegExp(`^${connection}; HttpOnly; SameSite=Lax`)));
+    const browserSession = set.find(c => c.startsWith("lp_session="))!.split(";")[0];
+    const consent = await fetch(`${gBase}/oauth/consent`, { headers: { cookie: `${browserSession}; ${connection}` }, redirect: "manual" });
+    expect(consent.status).toBe(200);
+    const html = await consent.text();
+    expect(html).toContain("Ühenda Synthetic Claude AI-hüppelauaga?");
+    expect(html).toContain("<strong>assistant.example</strong>");
+    expect(html).toContain("<dd>progress:read progress:report</dd>");
+    const pending = g.db.prepare("SELECT client_id,params FROM oauth_pending WHERE id=?").get(sha256(connection.slice("lp_connect=".length))) as { client_id: string; params: string };
+    expect(pending.client_id).toBe(client.client_id);
+    expect(JSON.parse(pending.params)).toMatchObject({ redirectUri: "https://assistant.example/callback", scopes: ["progress:read", "progress:report"], state: "assistant-state", codeChallenge: "b".repeat(43) });
+  });
+  test.each(["https://evil.example/oauth/consent", "//evil.example/oauth/consent", "/oauth/consent/../../approvals", "/oauth/disconnect", "/"])("a tampered return_to %s is ignored: the login lands on /", async (bad) => {
+    const { connection } = await unauthenticatedAuthorize();
+    const { cookie, cb } = await begin(connection, `?return_to=${encodeURIComponent(bad)}`);
+    const signed = await callback(cb, `${cookie}; ${connection}`);
+    expect(signed.status).toBe(302); expect(signed.headers.get("location")).toBe("/");
+    expect(signed.headers.getSetCookie().some(c => c.startsWith("lp_connect="))).toBe(false);
+  });
+  test("a login without a pending authorize lands on / even with a valid return_to", async () => {
+    const { cookie, cb } = await begin("", "?return_to=%2Foauth%2Fconsent");
+    expect((await callback(cb, cookie)).headers.get("location")).toBe("/");
   });
   test("wrong, missing and duplicate state fail before token exchange; original flow still works", async () => {
     const { cookie, cb } = await begin(); const before = tokenCalls;

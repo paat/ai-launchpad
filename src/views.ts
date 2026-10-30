@@ -339,10 +339,10 @@ export function errorBody(l: Lang, title: string, message: string, back: { href:
   return `<section class="card" role="alert"><h1>${esc(title)}</h1><p>${esc(message)}</p><a class="btn secondary" href="${esc(back.href)}">${esc(back.label)}</a></section>`;
 }
 
-export function loginBody(opts: { lang: Lang; demo: boolean; google: boolean; preauth: string; companies: readonly { key: string; label: string }[] }): string {
+export function loginBody(opts: { lang: Lang; demo: boolean; google: boolean; preauth: string; companies: readonly { key: string; label: string }[]; toConsent?: boolean }): string {
   const t = tr(opts.lang);
   return `<section class="card hero"><h1>${t("Logi sisse", "Sign in")}</h1><p class="lede">${t("Näed, mida sinu assistent sinu eest teeb, mis ootab sinu kinnitust ja mis on tulekul.", "See what your assistant does for you, what waits for your approval and what is coming up.")}</p>
-${opts.google ? `<p><a class="btn" href="/auth/login/google">${t("Jätka Google'iga", "Continue with Google")}</a></p><p class="small muted">${t("Ainult sinu tuvastamiseks (nimi ja e-posti tunnus). Gmaili ega kalendrit ei küsita.", "Identity only (name/email identifier). No Gmail or Calendar access is requested.")}</p>` : `<p class="small muted" role="note">${t("Google'i sisselogimine pole selles serveris veel seadistatud.", "Google sign-in is not configured on this local server yet.")}</p>`}
+${opts.google ? `<p><a class="btn" href="/auth/login/google${opts.toConsent ? "?return_to=%2Foauth%2Fconsent" : ""}">${t("Jätka Google'iga", "Continue with Google")}</a></p><p class="small muted">${t("Ainult sinu tuvastamiseks (nimi ja e-posti tunnus). Gmaili ega kalendrit ei küsita.", "Identity only (name/email identifier). No Gmail or Calendar access is requested.")}</p>` : `<p class="small muted" role="note">${t("Google'i sisselogimine pole selles serveris veel seadistatud.", "Google sign-in is not configured on this local server yet.")}</p>`}
 <p class="small muted">${t("Sisselogimine näitab, kes sa oled. See <strong>ei</strong> tõenda, et võid ettevõtte nimel tegutseda.", "Signing in proves who you are. It does <strong>not</strong> prove you may act for a company.")}</p>
 <p class="small"><a href="/demand">${t("Avatud soovid", "Open demand")}</a>: ${t("mida ettevõtjad oma assistendilt palusid, aga mida ükski ühendus veel teha ei oska.", "what businesses asked their assistants for that no connector can do yet.")}</p>
 </section>

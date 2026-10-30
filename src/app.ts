@@ -1,4 +1,4 @@
-import { LaunchpadOAuth, connectCookie, touchLastUsed } from "./oauth.js";
+import { LaunchpadOAuth, CONSENT_PATH, connectCookie, touchLastUsed } from "./oauth.js";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -261,7 +261,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   }
   const requireOwner = (req: Request, res: Response, next: NextFunction) => {
     const s = session(req);
-    if (!s) return res.redirect("/login");
+    if (!s) return res.redirect(req.method === "GET" && req.path === CONSENT_PATH ? `/login?return_to=${encodeURIComponent(CONSENT_PATH)}` : "/login");
     const owner = db.prepare("SELECT kind FROM owners WHERE id=?").get(s.owner_id) as { kind: string } | undefined;
     (req as Authed).ownerId = s.owner_id;
     (req as Authed).csrf = s.csrf;
@@ -313,7 +313,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   app.get("/health", (_req, res) => res.json({ ok: true, demo: cfg.demo, model_mode: publicCards ? "public_cards" : cfg.modelMode === "disabled" ? "disabled" : "test", live_inference: publicCards ? "enabled" : "disabled", catalog_size: loadCatalog().length, release_sha: releaseSha }));
   app.get("/login", (req, res) => {
     const token = cfg.demo ? issuePreauth(res) : "";
-    res.type("html").send(publicPage(req, res, tr(langOf(res))("Logi sisse", "Sign in"), loginBody({ lang: langOf(res), demo: cfg.demo, google: !!cfg.googleClientId, preauth: token, companies: DEMO_COMPANIES })));
+    res.type("html").send(publicPage(req, res, tr(langOf(res))("Logi sisse", "Sign in"), loginBody({ lang: langOf(res), demo: cfg.demo, google: !!cfg.googleClientId, preauth: token, companies: DEMO_COMPANIES, toConsent: req.query.return_to === CONSENT_PATH })));
   });
   app.post("/auth/demo", (req, res) => {
     if (!cfg.demo) return res.status(403).send("Demo login is disabled. It can only be enabled by server environment in local development, never by a web request.");
@@ -341,7 +341,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   });
 
   // --- Google OIDC: identity only, browser-bound, one-time, bounded ---
-  const oidcFlows = new Map<string, { codeVerifier: string; nonce: string; expires: number; bindHash: string; continuation: string }>();
+  // `connect` is server-side and browser-bound with the flow: a login that
+  // started from a pending authorize resumes that exact request at consent.
+  const oidcFlows = new Map<string, { codeVerifier: string; nonce: string; expires: number; bindHash: string; connect: string }>();
   function pruneFlows() {
     const now = Date.now();
     for (const [k, v] of oidcFlows) if (v.expires < now) oidcFlows.delete(k);
@@ -355,8 +357,12 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       const codeVerifier = oidc.randomPKCECodeVerifier(); const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier);
       const state = oidc.randomState(); const nonce = oidc.randomNonce();
       const bind = randomBytes(24).toString("base64url");
+      // return_to is never used as a URL: absent or exactly the consent path,
+      // and only with this browser's live pending authorize; anything else -> "/".
+      const asked = req.query.return_to;
+      const connect = (asked === undefined || asked === CONSENT_PATH) && oauth.pending(req) ? connectCookie(req) : "";
       pruneFlows();
-      oidcFlows.set(state, { codeVerifier, nonce, expires: Date.now() + 600_000, bindHash: sha256(bind), continuation: connectCookie(req) });
+      oidcFlows.set(state, { codeVerifier, nonce, expires: Date.now() + 600_000, bindHash: sha256(bind), connect });
       res.setHeader("set-cookie", `lp_oidc=${encodeURIComponent(bind)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${cfg.production ? "; Secure" : ""}`);
       const url = oidc.buildAuthorizationUrl(config, { redirect_uri: `${cfg.baseUrl}/auth/callback/google`, scope: "openid email", code_challenge: codeChallenge, code_challenge_method: "S256", state, nonce });
       res.redirect(url.href);
@@ -387,7 +393,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       const ownerId = ensureOwner(`google:${claims.sub}`, typeof claims.email === "string" ? claims.email : null, "google", "My company (name it via your assistant)");
       // Real workspaces are never seeded with synthetic fixtures.
       startSession(req, res, ownerId);
-      res.redirect(flow.continuation === connectCookie(req) ? oauth.resume(req) : "/");
+      res.redirect(oauth.continueAfterLogin(res, flow.connect) ? CONSENT_PATH : "/");
     } catch {
       res.status(401).send("Google sign-in could not be verified.");
     }
