@@ -665,8 +665,8 @@ describe("standing approvals (#45)", () => {
     expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "1 500,50" })).headers.get("location")).toBe("/uhenda#pusiload");
     expect(rules("std-uhendus")[0]).toMatchObject({ kind: "send_message", recipients_json: JSON.stringify(["billing@client.example"]), max_amount_cents: 150_050 });
     expect((await ask(c, reminder({ kind: "send_message", summary: "again" }))).auto_approved).toBe(true);
-    // A message without an amount is within any cap.
-    expect((await ask(c, reminder({ kind: "send_message", amount_cents: undefined, summary: "no amount" }))).auto_approved).toBe(true);
+    // A message without an amount cannot be checked against the cap, so the owner decides (tribunal T-003).
+    expect((await ask(c, reminder({ kind: "send_message", amount_cents: undefined, summary: "no amount" }))).state).toBe("pending");
   });
 
   test("create and revoke need the CSRF token and the exact Origin; another owner cannot revoke", async () => {

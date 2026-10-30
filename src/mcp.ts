@@ -148,12 +148,14 @@ export function liveStandingRules(db: Db, ownerId: string): StandingRule[] {
 /** The first live rule that covers this exact action, or null (then the owner decides on a card). */
 export function matchStandingRule(db: Db, ownerId: string, action: z.infer<typeof approvalActionSchema>): StandingRule | null {
   if (!STANDING_KINDS.includes(action.kind) || !action.recipient.address?.trim()) return null;
+  const amount = action.amount_cents;
+  if (amount === undefined) return null; // the cap cannot be checked: the owner decides on a card
   const address = normAddress(action.recipient.address), since = new Date(Date.now() - 24 * 3600_000).toISOString();
   return liveStandingRules(db, ownerId).find((r) => {
     if (r.kind !== action.kind) return false;
     const list = standingRecipients(r);
     if (list !== null && !list.includes(address)) return false;
-    if (action.amount_cents !== undefined && action.amount_cents > r.max_amount_cents) return false;
+    if (amount > r.max_amount_cents) return false;
     const used = (db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=? AND approved_by_rule=? AND created_at>?").get(ownerId, r.id, since) as { n: number }).n;
     return used < r.max_per_day;
   }) ?? null;
