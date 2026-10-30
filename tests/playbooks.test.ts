@@ -169,8 +169,21 @@ describe("agent-facing copy over MCP", () => {
     db.prepare("UPDATE approvals SET state='approved',decided_at=?,expires_at=? WHERE id=?").run(new Date().toISOString(), "2000-01-01T00:00:00.000Z", req.approval_id);
     expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "kmd-o", approval_id: req.approval_id, digest: req.digest, outcome: "submitted", observed_at: new Date().toISOString() } })))
       .toBe("This approval expired before an outcome was recorded; request a new approval. Nothing was recorded.");
-    const recheck = "Right before the owner files, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged figures or draft first. Record the outcome as soon as the owner says it is filed. Approvals are valid for 24 hours.";
+    const recheck = "Right before the owner files, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged figures or draft first. Approvals are valid for 24 hours.";
     for (const id of ["vat-return-prep", "annual-report"]) expect(byId(id).steps, id).toContain(recheck);
+  });
+
+  test("the expiry re-check only re-checks and renews; recording comes after the owner files (tribunal T-004)", () => {
+    for (const id of ["vat-return-prep", "annual-report"]) {
+      const steps = byId(id).steps;
+      const recheck = steps.findIndex((x) => x.startsWith("Right before the owner files"));
+      const filing = steps.findIndex((x) => x.includes("never automate the login, signature or submission"));
+      const recording = steps.findIndex((x) => x.includes("record_action_outcome"));
+      expect(steps[recheck], id).not.toMatch(/record_action_outcome|[Rr]ecord the outcome/);
+      expect(recheck, id).toBeLessThan(filing);
+      expect(recording, id).toBeGreaterThan(filing);
+      expect(steps.filter((x) => x.includes("record_action_outcome")), id).toHaveLength(1);
+    }
   });
 
   test("every expired-approval renewal asks for a NEW report_id (tribunal T-002)", () => {
