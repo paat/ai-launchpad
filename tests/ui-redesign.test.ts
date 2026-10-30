@@ -50,6 +50,10 @@ describe("shell, locale and login", () => {
     expect(html).toMatch(/<p class="sample-bar"><span class="label-chip label-chip--sample">Näidis<\/span>[^]*<\/p>\n<main>/);
     expect(html).toContain('<a class="brand" href="/">');
     expect(shell({ title: "Täna", active: "tana", csrf: "csrf-x", body: "<p>x</p>" })).not.toContain('class="sample-bar"');
+    // Täna with a synthetic company: the bar is the only marker; Tulekul keeps its source line.
+    const tanaPage = shell({ title: "Täna", active: "tana", csrf: "csrf-x", body: tana({ deadlines: mariDeadlines, approvals: [approval()] }), sample: true });
+    expect(tanaPage.match(/class="label-chip label-chip--sample"/g)).toHaveLength(1);
+    expect(tanaPage).toContain('<span class="small muted">Mari Disain OÜ · 19990001</span>');
   });
 
   test("direction A tokens: every text/background pair is at least 4.5:1", () => {
@@ -229,7 +233,11 @@ describe("Täna", () => {
     expect(tul).toContain('<dt class="me">Sina</dt><dd>esitad KMD e-MTA-s oma Smart-ID-ga</dd>');
     expect(tul).toContain("Summad arvutab sinu raamatupidamisprogramm, mitte tehisaru.");
     expect(tul).toContain("Valmista oktoobri KMD jaoks arved ette ja küsi minult kinnitust enne, kui midagi saadad.");
-    expect(tul).toContain('<span class="label-chip label-chip--sample">Näidis</span>');
+    expect(tul).toContain("Kes mida teeb");
+    // The sample bar already says Näidis; without it (a non-demo owner) the synthetic company carries its own chip.
+    expect(tul).not.toContain("label-chip--sample");
+    expect(tul).toContain('<span class="small muted">Mari Disain OÜ · 19990001</span>');
+    expect(tana({ deadlines: mariDeadlines, sample: false })).toContain('<span class="label-chip label-chip--sample">Näidis</span>');
     expect(html).not.toContain("Ametlik allikas");
   });
 
@@ -492,7 +500,7 @@ describe("activity and setup", () => {
       { action: "get_obligations", actor: "assistant", outcome: "ok", created_at: "2026-11-03T12:30:00Z", summary: "Read deadlines" },
     ];
     const html = activityBody({ rows, receipts: [], exclusions: [], lang: "et", now: NOW });
-    expect(html).toContain('class="card timeline"');
+    expect(html).toContain('class="section timeline"');
     expect(html).toContain("See pole täielik auditilogi");
     const main = html.slice(0, html.indexOf('<details class="tech-details">'));
     expect(main).toContain("Assistent teatas, mis kinnitatud tööga juhtus");

@@ -132,7 +132,7 @@ input[type=checkbox],input[type=radio]{width:22px;height:22px;min-height:0;margi
 label.check{display:flex;align-items:flex-start;gap:var(--s-3);min-height:var(--tap);padding:10px 0;font-weight:600;cursor:pointer}
 label.check input{margin-top:1px}
 .row button,.row .btn{width:auto;min-height:var(--tap);padding:8px 14px;margin:8px 0 0}
-.row,.card,dd{overflow-wrap:anywhere}
+.row,.card,.section,dd{overflow-wrap:anywhere}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* --- Utilities --- */
@@ -298,21 +298,45 @@ details.tech-details{margin:var(--s-2) 0 0;padding:0;border:0;background:none}
 .ai-block>.labels:first-child{margin-top:0}
 .receipt-head{margin:2px 0 4px;font-size:var(--fs-xl);font-weight:800;line-height:1.2;color:var(--c-primary)}
 /* ===== Proposed v2 additions (ux-revisit.md). Two components only. ===== */
-/* .today-sum: the three counts on the Täna hero, each a ≥44px anchor */
-.today-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:var(--s-3) 0 var(--s-2)}
-.today-sum a{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;min-height:64px;padding:8px 10px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface-2);color:var(--c-text);text-decoration:none;line-height:1.2}
-.today-sum b{font-size:var(--fs-xl);font-weight:800;font-variant-numeric:tabular-nums}
-.today-sum span{font-size:var(--fs-sm);font-weight:650;color:var(--c-muted)}
-.today-sum a.needs{border-color:var(--st-waiting-bd);background:var(--st-waiting-bg)}
-.today-sum a.needs b,.today-sum a.needs span{color:var(--st-waiting-fg)}
+/* .today-sum: the three counts on the Täna hero as pills, each a ≥44px anchor; amber only when something needs the owner */
+.today-sum{display:flex;flex-wrap:wrap;gap:6px;margin:var(--s-4) 0 var(--s-2)}
+.today-sum a{display:inline-flex;align-items:center;gap:5px;min-height:var(--tap);padding:4px 12px 4px 10px;border:1px solid var(--c-border);border-radius:999px;background:var(--c-surface);color:var(--c-text);font-size:var(--fs-sm);font-weight:650;line-height:1.2;text-decoration:none;transition:background var(--t-fast) var(--ease)}
+.today-sum a:hover{background:var(--c-surface-2)}
+.today-sum b{font-size:var(--fs-md);font-weight:800;font-variant-numeric:tabular-nums}
+.today-sum a.needs{border-color:var(--st-waiting-bd);background:var(--st-waiting-bg);color:var(--st-waiting-fg)}
 /* .handoff: who does what for one job (deadline row, unmet need, receipt) */
 .handoff{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 10px;margin:var(--s-2) 0 var(--s-1);padding:10px 12px;border:1px solid var(--c-divider);border-radius:var(--r-md);background:var(--c-surface-2);font-size:.9375rem;line-height:1.4}
 .handoff dt{font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}
 .handoff dd{margin:0}
 .handoff dt.me{color:var(--st-waiting-fg)}
-.deadline-row>.handoff,.deadline-row>.deadline-offer{grid-column:1/-1;margin-top:0}
 .ask-row{padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider)}
 .ask-row:last-child{border-bottom:0}
+/* --- T3 Täna: one page, sections not cards, one elevated object (.ask) --- */
+@media (min-width:960px){.wrap:has(.tana-grid){max-width:1040px}}
+.hero:not(.card){padding:var(--s-2) 0 var(--s-4)}
+.hero:not(.card) h1{margin:var(--s-1) 0 var(--s-2)}
+@media (min-width:600px){.hero:not(.card) .btn{width:auto;padding:12px 32px}}
+.section{padding:var(--s-6) 0;border-top:1px solid var(--c-divider)}
+.section>h2:first-child{margin-top:0}
+.tana-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:0 var(--s-12)}
+.tana-grid>.col:first-child>.section:first-child{padding-top:var(--s-2);border-top:0}
+@media (min-width:960px){.tana-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.tana-grid>.col>.section:first-child{padding-top:var(--s-2);border-top:0}}
+.ask{position:relative;display:flex;align-items:center;gap:var(--s-3);min-height:var(--tap);margin:0 0 var(--s-3);padding:var(--s-4) var(--s-4) var(--s-4) var(--s-6);border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface);color:inherit;text-decoration:none;box-shadow:0 1px 2px rgba(20,32,26,.04),0 8px 24px -16px rgba(20,32,26,.25);transition:box-shadow var(--t-fast) var(--ease),transform var(--t-fast) var(--ease)}
+.ask::before{content:"";position:absolute;left:0;top:var(--s-3);bottom:var(--s-3);width:4px;border-radius:0 4px 4px 0;background:var(--c-att-bd)}
+.ask--note::before{background:var(--c-border)}
+a.ask:hover{box-shadow:0 1px 2px rgba(20,32,26,.06),0 12px 28px -14px rgba(20,32,26,.35);transform:translateY(-1px)}
+.ask-body{display:block;flex:1 1 auto;min-width:0}
+.ask .labels{margin:0 0 var(--s-1)}
+.ask-title{display:block;font-size:var(--fs-lg);font-weight:750;line-height:1.3;color:var(--c-text)}
+.ask-meta,.ask p{display:block;margin:2px 0 0;color:var(--c-muted);font-size:var(--fs-sm)}
+.ask .chev{flex:none;width:10px;height:10px;border-top:2px solid var(--c-muted);border-right:2px solid var(--c-muted);transform:rotate(45deg)}
+details.plain,.deadline-row details{margin:var(--s-1) 0 0;padding:0;border:0;border-radius:0;background:none}
+details.plain>summary,.deadline-row details>summary{padding:0;font-size:var(--fs-sm)}
+details.plain>summary{color:var(--c-muted)}
+.deadline-row details>summary{color:var(--c-primary)}
+details.plain>summary::after,.deadline-row details>summary::after{margin:0 4px 0 2px}
+details.plain>summary>h2{margin:0;font:inherit;color:inherit}
+.tana-grid~details.plain{margin-top:var(--s-4)}
 /* ===== Issue #21 implementation additions ===== */
 pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(--c-surface-2);border-color:var(--c-divider);font:inherit;font-size:var(--fs-md);white-space:pre-wrap;overflow-wrap:anywhere}
 .big-url{margin:var(--s-2) 0;font-size:var(--fs-lg);font-weight:750;overflow-wrap:anywhere}
@@ -866,8 +890,11 @@ ${foot()}
 </article>`;
 }
 
-/** Pending approval as a whole-row link (Täna, approvals list). */
-function approvalLinkRow(a: ApprovalRow, l: Lang, now: Date, sample: boolean): string {
+/** Täna's elevated object: one thing that needs the owner, the whole card a link. */
+const askLink = (href: string, labels: string, title: string, meta: string) => `<a class="ask" href="${href}"><span class="ask-body"><span class="labels">${labels}</span><span class="ask-title">${title}</span><span class="ask-meta">${meta}</span></span><span class="chev" aria-hidden="true"></span></a>`;
+
+/** Approval as a whole-row link (approvals list), or as an ask card (Täna). */
+function approvalLinkRow(a: ApprovalRow, l: Lang, now: Date, sample: boolean, ask = false): string {
   const t = tr(l), v = approvalView(a, l);
   const sub = [v.amount, a.state === "pending" ? t(`kehtib kuni ${fmtUntil(a.expires_at, l, now)}`, `valid until ${fmtUntil(a.expires_at, l, now)}`) : fmtWhen(a.decided_at ?? a.created_at, l, now)].filter(Boolean).join(" · ");
   const chip = a.state === "pending" ? stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))
@@ -875,14 +902,15 @@ function approvalLinkRow(a: ApprovalRow, l: Lang, now: Date, sample: boolean): s
     : a.state === "approved" ? stateChip("approved", t("Kinnitatud", "Approved"))
     : a.state === "declined" ? stateChip("rejected", t("Keeldusid", "Declined"))
     : stateChip("void", t("Aegunud", "Expired"));
-  return `<a class="link-row" href="/approvals/${esc(encodeURIComponent(a.id))}"><span><span class="labels">${chip}${a.approved_by_rule ? ruleChip(l) : ""}</span><span class="link-row-title">${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}</span><span class="small muted">${esc(sub)}</span></span></a>`;
+  const href = `/approvals/${esc(encodeURIComponent(a.id))}`, labels = `${chip}${a.approved_by_rule ? ruleChip(l) : ""}`, title = `${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}`;
+  return ask ? askLink(href, labels, title, esc(sub)) : `<a class="link-row" href="${href}"><span><span class="labels">${labels}</span><span class="link-row-title">${title}</span><span class="small muted">${esc(sub)}</span></span></a>`;
 }
 
 export function approvalsListBody(rows: ApprovalRow[], l: Lang, sample: boolean, now = new Date()): string {
   const t = tr(l), pending = rows.filter((a) => a.state === "pending"), history = rows.filter((a) => a.state !== "pending");
   return `<h1>${t("Kinnitused", "Approvals")}</h1><p class="lede">${t("Tööd, mille jaoks sinu assistent küsis sinu kinnitust. AI-hüppelaud ise ei saada, maksa ega esita midagi.", "Work your assistant asked you to approve. AI Launchpad itself never sends, pays or files.")}</p>
-<section class="card" aria-labelledby="ap-w"><h2 id="ap-w">${t("Ootab sinult", "Needs you")} (${pending.length})</h2>${pending.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Praegu ei oota sinult midagi.", "Nothing is waiting for you right now.")}</p>`}</section>
-<section class="card" aria-labelledby="ap-h"><h2 id="ap-h">${t("Ajalugu", "History")}</h2>${history.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Otsustatud kinnitusi veel pole.", "No decided approvals yet.")}</p>`}</section>`;
+<section class="section" aria-labelledby="ap-w"><h2 id="ap-w">${t("Ootab sinult", "Needs you")} (${pending.length})</h2>${pending.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Praegu ei oota sinult midagi.", "Nothing is waiting for you right now.")}</p>`}</section>
+<section class="section" aria-labelledby="ap-h"><h2 id="ap-h">${t("Ajalugu", "History")}</h2>${history.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Otsustatud kinnitusi veel pole.", "No decided approvals yet.")}</p>`}</section>`;
 }
 
 export interface PublicCardViewOpts { topicId: string; locale: string; state: string; output: string | null; replayed: boolean; }
@@ -1068,7 +1096,8 @@ export function unmetNeedsBody(opts: { csrf: string; needs: OwnerNeed[]; lang: L
   const open = opts.needs.filter((n) => ["received", "classifying", "classification_failed"].includes(n.state));
   const decided = opts.needs.filter((n) => n.state === "published" || n.state === "kept_private");
   const decide = (n: OwnerNeed, decision: string, label: string, cls: string) => `<form method="post" action="/unmet-needs/decide"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="need_id" value="${esc(n.id)}"><input type="hidden" name="decision" value="${decision}"><button type="submit"${cls ? ` class="${cls}"` : ""}>${label}</button></form>`;
-  return `<section class="card" id="soovid" aria-labelledby="soovid-h"><h2 id="soovid-h">${t("Seda ei saa assistent sinu eest teha", "Your assistant can't do this for you")}</h2>
+  // Open while an optional decision waits: Ootab sinult links into it.
+  return `<details class="plain" id="soovid"${awaiting.length ? " open" : ""}><summary><h2 id="soovid-h">${t("Seda ei saa assistent sinu eest teha", "Your assistant can't do this for you")}</h2></summary>
 ${awaiting.map((n) => `<div class="row" id="soov-${esc(n.id)}"><div class="labels">${stateChip("waiting", t("Valikuline", "Optional"))}</div>
 <p>„${esc(n.need_redacted)}”</p>
 <dl class="facts facts--stacked"><div class="fact-row"><dt>${t("Miks:", "Why:")}</dt><dd>${esc(blockerLabel(n.blocker, l))}</dd></div><div class="fact-row"><dt>${t("Mida assistent saab teha:", "What your assistant can do:")}</dt><dd>${esc(BLOCKER_HANDOFF[n.blocker as Blocker] ? t(BLOCKER_HANDOFF[n.blocker as Blocker].et, BLOCKER_HANDOFF[n.blocker as Blocker].en) : "—")}</dd></div></dl>
@@ -1080,7 +1109,7 @@ ${decide(n, "publish", t("Avalda anonüümselt", "Publish anonymously"), "")}${d
 ${techDetails(l, techList([[t("Liigitaja", "Classified by"), classifierName(n.classified_by, l)], ["ID", n.id]]))}</div>`).join("")}
 ${open.map((n) => needRow(n, l)).join("")}
 ${decided.length ? `<details><summary>${t("Otsustatud soovid", "Decided requests")} (${decided.length})</summary>${decided.map((n) => needRow(n, l)).join("")}</details>` : ""}
-</section>`;
+</details>`;
 }
 
 /** Public, login-free Open demand list. Only aggregated, owner-approved
@@ -1119,10 +1148,10 @@ function deadlineRow(o: Obligation, l: Lang, opts: { now: Date; prompts: boolean
   return `<li class="deadline-row">${tile}
 <div><h3 class="deadline-title">${o.kind === "risk" && cond ? t("Võimalik: ", "Possible: ") : ""}${esc(t(o.title_et, o.title_en))} · ${esc(t(o.period_label_et, o.period_label_en))}</h3>
 ${cond ? `<p class="deadline-cond"><strong>${esc(cond)}</strong></p>` : ""}<p class="deadline-reason">${lead ? `<strong>${esc(lead)}</strong> ` : ""}${reason !== cond ? esc(reason) : ""}${esc(shifted)}</p>
-<div class="deadline-meta">${labelChip("rule", t("Arvutatud reeglist", "Calculated by rule"))}<a class="tap-link" href="${esc(o.source.url)}" rel="noopener noreferrer"><span>${t("Allikas", "Source")}: <span lang="et">${esc(o.source.act_et)} ${esc(o.source.section)}</span><span aria-hidden="true">&nbsp;↗</span></span></a></div></div>
-<div class="deadline-offer">${qualify ? `<p class="small"><strong>${qualify.slice(0, -2)}</strong></p>` : ""}<dl class="handoff"><dt>${t("Assistent", "Your assistant")}</dt><dd>${esc(t(h.assistant_et, h.assistant_en))}</dd><dt class="me">${t("Sina", "You")}</dt><dd>${esc(t(h.owner_et, h.owner_en))}</dd></dl>
+<div class="deadline-meta">${labelChip("rule", t("Arvutatud reeglist", "Calculated by rule"))}<a class="tap-link" href="${esc(o.source.url)}" rel="noopener noreferrer"><span>${t("Allikas", "Source")}: <span lang="et">${esc(o.source.act_et)} ${esc(o.source.section)}</span><span aria-hidden="true">&nbsp;↗</span></span></a></div>
+<details><summary>${t("Kes mida teeb", "Who does what")}</summary>${qualify ? `<p class="small"><strong>${qualify.slice(0, -2)}</strong></p>` : ""}<dl class="handoff"><dt>${t("Assistent", "Your assistant")}</dt><dd>${esc(t(h.assistant_et, h.assistant_en))}</dd><dt class="me">${t("Sina", "You")}</dt><dd>${esc(t(h.owner_et, h.owner_en))}</dd></dl>
 ${o.rule_id === "vat-return-kmd" ? `<p class="small muted">${t("Summad arvutab sinu raamatupidamisprogramm, mitte tehisaru.", "Your accounting software calculates the amounts, not AI.")}</p>` : ""}
-${opts.prompts ? `<div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(qualify + t(h.prompt_et, h.prompt_en))}”</p></div>` : ""}</div></li>`;
+${opts.prompts ? `<div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(qualify + t(h.prompt_et, h.prompt_en))}”</p></div>` : ""}</details></div></li>`;
 }
 
 export function deadlinesList(r: DeadlinesView, l: Lang, opts: { now?: Date; prompts?: boolean } = {}): string {
@@ -1264,14 +1293,14 @@ export function tanaBody(o: TanaOpts): string {
 
   // Ootab sinult
   const askRows = [
-    ...pending.map((x) => approvalLinkRow(x, l, now, o.sample)),
-    ...failed.map((x) => { const v = approvalView(x, l); return `<a class="link-row" href="/approvals/${esc(encodeURIComponent(x.id))}"><span><span class="labels">${stateChip("rejected", t("Ei õnnestunud — vaata üle", "Did not work — review it"))}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</span><span class="link-row-title">${esc([v.title, v.recipient.name].filter(Boolean).join(" · "))}</span><span class="small muted">${esc(fmtWhen(v.outcome?.observed_at ?? x.consumed_at, l, now))}</span></span></a>`; }),
-    ...qs.map((x) => `<div class="ask-row"><strong>${t("Vasta assistendile ühele küsimusele:", "Answer one question for your assistant:")}</strong><p class="small">„${esc(x.q)}” ${esc(x.then)}</p></div>`),
-    // Rationale and any effort estimate are the assistant's words, labelled as such; never in the hero or the counts.
-    ...(next ? [`<div class="ask-row"><strong>${t("Järgmine samm:", "Next step:")} ${esc(next.title)}</strong><p class="small"><span class="muted">${t("Assistendi hinnang:", "Your assistant's estimate:")}</span> ${esc([next.rationale, next.estimated_effort_saved?.trim()].filter(Boolean).join(" "))}</p><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(t(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale} Palun aita mul see ära teha või ütle, mida sinult vaja on.`, `Next step from my AI Launchpad assessment: "${next.title}". Why: ${next.rationale} Please help me do this, or tell me what you need from me.`))}”</p></div></div>`] : []),
-    // Unknowns stay in the main view (never only behind a disclosure); not counted as asks.
+    ...pending.map((x) => approvalLinkRow(x, l, now, o.sample, true)),
+    ...failed.map((x) => { const v = approvalView(x, l); return askLink(`/approvals/${esc(encodeURIComponent(x.id))}`, `${stateChip("rejected", t("Ei õnnestunud — vaata üle", "Did not work — review it"))}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`, esc([v.title, v.recipient.name].filter(Boolean).join(" · ")), esc(fmtWhen(v.outcome?.observed_at ?? x.consumed_at, l, now))); }),
+    ...qs.map((x) => `<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Vasta assistendile ühele küsimusele:", "Answer one question for your assistant:")}</span><p class="small">„${esc(x.q)}” ${esc(x.then)}</p></div></div>`),
+    // Unknowns stay in the main view, before any disclosure; not counted as asks.
     ...(a && (o.coverage.unresolved || a.gaps.length) ? [`<div class="ask-row"><strong>${t("Assistent pole veel kõike hinnanud:", "Your assistant has not assessed everything yet:")}</strong><ul class="tight">${[...(o.coverage.unresolved ? [t(`${o.coverage.unresolved} kohustus(t) on veel lahtised`, `${o.coverage.unresolved} item(s) still unresolved`)] : []), ...a.gaps].map((g) => `<li class="small">${esc(g)}</li>`).join("")}</ul></div>`] : []),
-    ...optional.map((x) => `<div class="ask-row"><a class="tap-link" href="#soov-${esc(x.id)}"><strong>${t("Valikuline:", "Optional:")}</strong> ${esc(needLabel(x, l) ?? x.need_redacted)}</a><p class="small muted">${t("Seda ei saa assistent sinu eest teha. Võid soovi anonüümselt avaldada.", "Your assistant can't do this for you. You may publish it anonymously.")}</p></div>`),
+    // Rationale and any effort estimate are the assistant's words, labelled as such; never in the hero or the counts.
+    ...(next ? [`<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Järgmine samm:", "Next step:")} ${esc(next.title)}</span><p class="small"><span class="muted">${t("Assistendi hinnang:", "Your assistant's estimate:")}</span> ${esc([next.rationale, next.estimated_effort_saved?.trim()].filter(Boolean).join(" "))}</p><details class="plain"><summary>${t("Mida assistendile öelda", "What to tell your assistant")}</summary><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(t(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale} Palun aita mul see ära teha või ütle, mida sinult vaja on.`, `Next step from my AI Launchpad assessment: "${next.title}". Why: ${next.rationale} Please help me do this, or tell me what you need from me.`))}”</p></div></details></div></div>`] : []),
+    ...optional.map((x) => `<div class="ask ask--note"><div class="ask-body"><a class="tap-link" href="#soov-${esc(x.id)}"><span><strong>${t("Valikuline:", "Optional:")}</strong> ${esc(needLabel(x, l) ?? x.need_redacted)}</span></a><p class="small">${t("Seda ei saa assistent sinu eest teha. Võid soovi anonüümselt avaldada.", "Your assistant can't do this for you. You may publish it anonymously.")}</p></div></div>`),
   ];
 
   // Assistent tegi: finished or prepared work only, never reads. Approved work still waiting for
@@ -1312,6 +1341,8 @@ export function tanaBody(o: TanaOpts): string {
     : !a && !o.approvals.length ? `<a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a>` : "";
   const h1 = n === 0 ? (open ? t("Täna ei oota sinult ükski kinnitus", "No approval is waiting for you today") : t("Täna pole sinult midagi vaja", "Nothing needs you today")) : n === 1 ? t("Sinult on täna vaja üht asja", "You're needed for 1 thing today") : t(`Sinult on täna vaja ${n} asja`, `You're needed for ${n} things today`);
 
+  // One sample marker per page: with the sample bar shown, a synthetic company keeps only its source line here.
+  const sourceChip = !deadlines ? "" : deadlines.company.synthetic ? (o.sample ? "" : sampleChip(l)) : labelChip(deadlines.company.provenance === "public_register" ? "official" : "assistant", t(deadlines.company.label_et, deadlines.company.label_en));
   const tulekul = deadlines ? deadlinesList(deadlines, l, { now, prompts: true })
     : o.deadlines === "not_cached" ? `<p class="muted">${t("Registri andmeid laaditakse. Värskenda lehte hetke pärast.", "Register facts are loading. Refresh the page in a moment.")}</p>`
     : o.deadlines === "invalid_code" ? deadlinesHint(l, t("Registrikood ei ole korrektne — palu assistendil see üle kontrollida.", "The registry code is not valid — ask your assistant to check it."), l)
@@ -1320,32 +1351,36 @@ export function tanaBody(o: TanaOpts): string {
     : `<p class="muted">${t(`Tähtajad ilmuvad siia, kui assistent teab sinu registrikoodi. Küsi temalt: „${TRY_PROMPT[0]}”`, `Deadlines appear here once your assistant knows your registry code. Ask it: “${TRY_PROMPT[1]}”`)}</p>`;
 
   const c = o.coverage;
-  const how = `<details><summary>${t("Kuidas see kokku pandi", "How this was put together")}</summary>
+  const how = `<details class="plain"><summary>${t("Kuidas see kokku pandi", "How this was put together")}</summary><div class="note">
 <p class="small">${deadlines?.company.synthetic ? t("Tähtajad: reeglistik ja näidisandmed.", "Deadlines: rules and sample data.") : deadlines?.company.provenance === "public_register" ? t("Tähtajad: reeglistik ja avalikud avaandmed (Ärikratt).", "Deadlines: rules and public open data (Ärikratt).") : t("Tähtajad: reeglistik ja sinu assistendi teated.", "Deadlines: rules and your assistant's reports.")} ${esc(t(`Assistendi teated: ${o.reportCount}, AI-hüppelaud neid ei kontrollinud. Allikast kontrollitud tulemusi: ${c.independently_verified_outcomes}.`, `Assistant reports: ${o.reportCount}, not checked by AI Launchpad. Outcomes verified at the source: ${c.independently_verified_outcomes}.`))} ${t("Säästetud aega ei ole mõõdetud, seega me seda ei näita.", "Time saved is not measured, so we don't show it.")}</p>
 ${a ? `<p class="small">${esc(t(`Assistendi hinnangul on ${c.covered} kohustust ${c.denominator}-st kaardistatust korras${c.percent != null ? ` (${c.percent}%)` : ""}.`, `Your assistant assesses ${c.covered} of ${c.denominator} mapped responsibilities as handled${c.percent != null ? ` (${c.percent}%)` : ""}.`))}${o.assessedAt ? ` ${t("Hinnatud", "Assessed")} ${esc(fmtWhen(o.assessedAt, l, now))}.` : ""}</p>
 <p class="small muted">${a.company_label ? t("Ettevõtte nime andis sinu assistent", "Company label supplied by your assistant") : t("Tööruumi nimi", "Workspace label")}${a.company_registry_ref ? ` · ${t("registriviide", "registry ref")} ${esc(a.company_registry_ref)}` : ""} — ${t("seda ei ole avalikust registrist kontrollitud ja see ei tõenda volitust.", "not verified against a public register, and not a mandate.")}</p>
 <p class="small">${esc(a.conclusion)}</p>
 <ul class="tight">${a.responsibilities.map((r) => `<li class="small">${esc(r.label)} — ${r.is_core ? t("sinu põhitöö", "your core work") : isHandled(r) ? esc(t(`teeb ${r.executor} (assistendi hinnang)`, `handled by ${r.executor} (your assistant's assessment)`)) : r.applicability === "unresolved" ? t("lahtine", "unresolved") : t("teed praegu ise", "you do it yourself now")}<br><span class="muted">${esc(r.reason)}</span></li>`).join("")}</ul>` : ""}
 ${o.exclusions.length ? `<p class="small muted">${t("Varasematest hinnangutest eemaldatud:", "Removed since earlier assessments:")} ${o.exclusions.map((x) => esc(x.label)).join(", ")}</p>` : ""}
-</details>`;
+</div></details>`;
 
-  return `<section class="card hero" aria-labelledby="t-h">
+  // T5 (#61) puts its progress strip directly under the pills, before the primary action.
+  return `<section class="hero" aria-labelledby="t-h">
 <p class="company">${esc(a?.company_label ?? deadlines?.company.name ?? o.label)}</p>
 <h1 id="t-h">${esc(h1)}</h1>
 <p class="lede">${esc(lede)} <span class="small muted">${timeEl(tallinnYmd(now), TODAY[l].format(now))}</span></p>
 <nav class="today-sum" aria-label="${t("Kokkuvõte", "Summary")}"><a${n ? ' class="needs"' : ""} href="#ootab"><b>${n}</b><span>${t("ootab sinult", "need you")}</span></a><a href="#tegi"><b>${doneCount}</b><span>${t("assistent tegi", "done for you")}</span></a><a href="#tulekul"><b>${upcoming}</b><span>${t("tulekul", "coming up")}</span></a></nav>
 ${primary}
 </section>
-<section class="card" id="ootab" aria-labelledby="ootab-h"><h2 id="ootab-h">${t("Ootab sinult", "Needs you")} (${n})</h2>
+<div class="tana-grid"><div class="col">
+<section class="section" id="ootab" aria-labelledby="ootab-h"><h2 id="ootab-h">${t("Ootab sinult", "Needs you")} (${n})</h2>
 ${askRows.join("") || `<p class="muted">${t("Praegu ei oota sinult midagi.", "Nothing is waiting for you right now.")}</p>`}</section>
-<section class="card timeline" id="tegi" aria-labelledby="tegi-h"><h2 id="tegi-h">${t("Assistent tegi", "Done for you")} (${doneCount})</h2>
+<section class="section timeline" id="tegi" aria-labelledby="tegi-h"><h2 id="tegi-h">${t("Assistent tegi", "Done for you")} (${doneCount})</h2>
 ${doneRows.join("") || `<p class="muted">${t(`Veel pole midagi tehtud. Proovi assistendile öelda: „${TRY_PROMPT[0]}”`, `Nothing done yet. Try telling your assistant: “${TRY_PROMPT[1]}”`)}</p>`}
 ${handledLine}
 <a class="tap-link" href="/activity">${t("Kõik tehtud tööd", "Everything done")}</a></section>
-<section class="card" id="tulekul" aria-labelledby="tulekul-h"><h2 id="tulekul-h">${t("Tulekul", "Coming up")} (${upcoming})</h2>
-${deadlines ? `<div class="labels">${deadlines.company.synthetic ? sampleChip(l) : deadlines.company.provenance === "public_register" ? labelChip("official", t(deadlines.company.label_et, deadlines.company.label_en)) : labelChip("assistant", t(deadlines.company.label_et, deadlines.company.label_en))}<span class="small muted">${esc([deadlines.company.name, deadlines.company.registry_code].filter(Boolean).join(" · "))}</span></div>` : ""}
+</div><div class="col">
+<section class="section" id="tulekul" aria-labelledby="tulekul-h"><h2 id="tulekul-h">${t("Tulekul", "Coming up")} (${upcoming})</h2>
+${deadlines ? `<div class="labels">${sourceChip}<span class="small muted">${esc([deadlines.company.name, deadlines.company.registry_code].filter(Boolean).join(" · "))}</span></div>` : ""}
 ${tulekul}
 ${deadlines ? `<p class="small muted">${t("Tähtajad arvutab reeglistik, mitte tehisaru. Kuupäevad on arvutatud, mitte esitatud ega makstud.", "Deadlines are calculated by rules, not AI. Dates are computed, not filed or paid.")}${deadlines.company.attribution && !deadlines.company.synthetic ? ` ${esc(deadlines.company.attribution)}` : ""}</p>` : ""}</section>
+</div></div>
 ${unmetNeedsBody({ csrf: o.csrf, needs: o.needs, lang: l })}
 ${how}`;
 }
@@ -1463,7 +1498,7 @@ export function activityBody(opts: { rows: Record<string, string>[]; receipts: R
   });
   return `<h1>${t("Tehtud", "Done")}</h1><p class="lede">${t("Mida sinu assistent sinu eest tegi ja mida sina otsustasid.", "What your assistant did for you and what you decided.")}</p>
 <div class="note"><p class="small">${t("See pole täielik auditilogi: ebaõnnestunud päringud võivad puududa. Tööd, mida assistent teeb teistes teenustes, siin ei nähta — see paistab ainult assistendi teatena ja on nii ka märgitud.", "Not a complete audit trail: failed requests may be missing. Work your assistant does with other providers is not observed here — it appears only as assistant reports, labelled as such.")}</p></div>
-<section class="card timeline" aria-labelledby="done-h"><h2 id="done-h">${t("Viimati tehtud", "Recently done")}</h2>${done.join("") || `<p>${t("Veel pole midagi tehtud.", "Nothing done yet.")}</p>`}</section>
+<section class="section timeline" aria-labelledby="done-h"><h2 id="done-h">${t("Viimati tehtud", "Recently done")}</h2>${done.join("") || `<p>${t("Veel pole midagi tehtud.", "Nothing done yet.")}</p>`}</section>
 ${techDetails(l, `<h2>${t("Kogu logi", "Full log")}</h2>${opts.rows.map((r) => `<div class="row"><code>${esc(r.action)}</code> · ${esc(r.actor)} · ${esc(r.outcome)}<br><span class="small muted">${esc(r.created_at)} · ${esc(r.summary)}</span></div>`).join("") || `<p>${t("Logi on tühi.", "No activity yet.")}</p>`}
 <h2>${t("Salvestatud teated (täpselt nagu salvestati)", "Accepted report payloads (exactly as saved)")}</h2>
 ${opts.receipts.map((r) => `<details><summary>${esc(r.kind)} ${esc(r.report_id)} · ${esc(r.created_at)}</summary><pre>${esc(r.payload_json)}</pre><pre>${esc(r.receipt_json)}</pre></details>`).join("") || `<p>${t("Teateid veel pole.", "No reports yet.")}</p>`}
