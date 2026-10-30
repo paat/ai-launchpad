@@ -32,7 +32,7 @@ describe("executable job playbooks (#26)", () => {
 
   test("no playbook says Launchpad does not compute deadlines; the owner does PIN, signature and submission", () => {
     for (const p of PLAYBOOKS) expect(JSON.stringify(p), p.id).not.toMatch(/does not compute|fabricate/i);
-    expect(byId("deadlines-check").summary).toBe("Call get_obligations: rules compute each date with its official source. Ask the facts_needed questions first, because one answer can remove a row. Then offer each row's handoff and ask whether to start.");
+    expect(byId("deadlines-check").steps[0]).toBe("Call get_obligations. Rules compute every date; quote them with each row's source link and never compute a deadline yourself.");
     const vat = byId("vat-return-prep").steps.join(" ");
     expect(vat).toContain("accounting software's own VAT report");
     expect(vat).toContain("Never calculate a tax amount yourself");
@@ -184,6 +184,15 @@ describe("agent-facing copy over MCP", () => {
     expect(filing).toBeGreaterThan(approval);
     expect(p.steps[filing + 1]).toBe("When the owner says it is submitted, call record_action_outcome with outcome submitted.");
     expect(p.done_when).toBe("The owner submitted the report in the e-Business Register and record_action_outcome recorded submitted.");
+  });
+
+  test("summaries are plain owner language without tool names; tool instructions stay in steps (tribunal T-005)", () => {
+    for (const p of PLAYBOOKS) {
+      expect(p.summary, p.id).not.toMatch(/get_|request_|record_|facts_needed|search_services|report_id|amount_cents/);
+      expect(p.summary, p.id).toMatch(/^Your assistant /);
+    }
+    expect(byId("deadlines-check").steps.join(" ")).toContain("get_obligations");
+    expect(byId("payment-reminder").summary).toContain("Nothing is sent until you approve the exact text, amount and recipient.");
   });
 
   test("the expiry re-check only re-checks and renews; recording comes after the owner files (tribunal T-004)", () => {

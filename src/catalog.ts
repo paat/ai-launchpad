@@ -55,7 +55,7 @@ export interface Playbook {
 }
 export const PLAYBOOKS: Playbook[] = [
   { id: "deadlines-check", title: "Check the owner's deadlines", title_et: "Vaata üle oma tähtajad",
-    summary: "Call get_obligations: rules compute each date with its official source. Ask the facts_needed questions first, because one answer can remove a row. Then offer each row's handoff and ask whether to start.",
+    summary: "Your assistant lists your upcoming tax and register deadlines, each with its official source. It first asks only the questions that can change the list, then offers to prepare each job.",
     source: "https://www.emta.ee/en/business-client/taxes-and-payment", source_label: "Estonian Tax and Customs Board (EMTA)",
     triggers: [], needs: ["The company's registry code or name (owner fact)."],
     steps: [
@@ -65,7 +65,7 @@ export const PLAYBOOKS: Playbook[] = [
     ],
     approval_kind: null, done_when: "The owner has seen each deadline with its source and has said which jobs to prepare.", verify_with: "Each row's official source link." },
   { id: "payment-reminder", title: "Remind a customer about an overdue invoice", title_et: "Meenuta kliendile tasumata arvet",
-    summary: "Find unpaid invoices past due, draft a polite reminder and send it only after the owner approves the exact text and recipient.",
+    summary: "Your assistant finds unpaid invoices past their due date and drafts a polite reminder. Nothing is sent until you approve the exact text, amount and recipient.",
     source: "https://www.riigiteataja.ee/akt/V%C3%95S", source_label: "Võlaõigusseadus § 113 (viivis), Riigi Teataja",
     triggers: [],
     needs: ["Unpaid sales invoices: the owner's accounting connector (search_services, e.g. werkzeug, trivis) or a file the owner shares.", "The owner's own email tool to send the reminder."],
@@ -79,7 +79,7 @@ export const PLAYBOOKS: Playbook[] = [
     ],
     approval_kind: "send_message", done_when: "The approved reminder was sent and record_action_outcome recorded sent.", verify_with: "The payment in the owner's accounting connector or bank statement; until then the outcome stays sent." },
   { id: "vat-return-prep", title: "Prepare the monthly VAT return (KMD)", title_et: "Valmista ette käibedeklaratsioon (KMD)",
-    summary: "Gather the month's invoices, take the figures from the accounting software's own VAT report and get the owner's approval; the owner files in e-MTA.",
+    summary: "Your assistant gathers the month's invoices and takes the VAT figures from your accounting software's own report. You approve the exact figures, then file the return yourself in e-MTA.",
     source: "https://www.riigiteataja.ee/akt/130062026129", source_label: "Käibemaksuseadus § 27, Riigi Teataja",
     triggers: ["vat-return-kmd"],
     needs: ["The month's sales and purchase invoices: the owner's accounting connector (search_services, e.g. werkzeug, trivis) or files the owner shares.", "The accounting software's own VAT report for the period."],
@@ -94,7 +94,7 @@ export const PLAYBOOKS: Playbook[] = [
     ],
     approval_kind: "prepare_filing", done_when: "The owner filed the return in e-MTA and record_action_outcome recorded submitted.", verify_with: "The owner's e-MTA filing confirmation; the submitted outcome is the owner's or your report, not verified by Launchpad." },
   { id: "annual-report", title: "Prepare the annual report", title_et: "Valmista ette majandusaasta aruanne",
-    summary: "Check the register status, gather what the report needs and give the owner a checklist; the owner signs and submits in the e-Business Register.",
+    summary: "Your assistant checks the register, gathers what the annual report needs and tells you what is still missing. You approve the exact draft, then sign and submit it yourself in the e-Business Register.",
     source: "https://www.riigiteataja.ee/akt/106072023131", source_label: "Äriseadustik § 179, Riigi Teataja",
     triggers: ["annual-report", "annual-report-overdue"],
     needs: ["The financial year's accounts: the owner's accounting connector (search_services, e.g. werkzeug, trivis) or files the owner shares.", "Owner facts the report asks for, such as the activity description and the number of employees."],
