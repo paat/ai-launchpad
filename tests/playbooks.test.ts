@@ -215,7 +215,7 @@ describe("agent-facing copy over MCP", () => {
     const steps = byId("payment-reminder").steps;
     const recheck = steps.findIndex((x) => x.startsWith("Right before sending, call get_approval."));
     expect(steps[recheck]).toBe("Right before sending, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged reminder first. Approvals are valid for 24 hours.");
-    const send = steps.findIndex((x) => x.startsWith("Act only after get_approval returns approved"));
+    const send = steps.findIndex((x) => x.startsWith("Act only when get_approval returns approved (and usable is not false)"));
     const sent = steps.indexOf("Call record_action_outcome with outcome sent (or failed).");
     const paid = steps.findIndex((x) => x.startsWith("Record paid only after a sent outcome, with a NEW report_id"));
     expect(steps.findIndex((x) => x.includes("request_approval"))).toBeLessThan(recheck);

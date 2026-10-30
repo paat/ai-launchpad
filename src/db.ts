@@ -41,6 +41,12 @@ export function openDb(path: string) {
   // Backward-safe: approval card columns are added to an existing table in place.
   const approvalCols = new Set((db.prepare("PRAGMA table_info(approvals)").all() as { name: string }[]).map((c) => c.name));
   for (const col of ["kind", "report_id", "decided_at", "outcome_json"]) if (!approvalCols.has(col)) db.exec(`ALTER TABLE approvals ADD COLUMN ${col} TEXT`);
+  // #35: a legacy send approval stored without a recipient address can never be
+  // used, so an actionable one (pending or approved) is expired once at startup.
+  // Consumed rows record what was already sent and are left as they are.
+  db.exec(`UPDATE approvals SET state='expired' WHERE state IN ('pending','approved')
+    AND COALESCE(kind, CASE WHEN json_valid(payload_json) THEN json_extract(payload_json,'$.kind') END) IN ('send_message','send_invoice')
+    AND CASE WHEN json_valid(payload_json) AND json_type(payload_json,'$.recipient.address')='text' THEN trim(json_extract(payload_json,'$.recipient.address')) ELSE '' END = ''`);
   // Which OAuth grant last reached the MCP endpoint, so /uhenda names the client that actually made contact.
   if (!(db.prepare("PRAGMA table_info(oauth_grants)").all() as { name: string }[]).some((c) => c.name === "last_used_at")) db.exec("ALTER TABLE oauth_grants ADD COLUMN last_used_at TEXT");
   // Friction loop (#20): owner-scoped unmet needs. Only de-identified text

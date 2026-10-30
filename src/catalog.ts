@@ -74,7 +74,7 @@ export const PLAYBOOKS: Playbook[] = [
       "Draft a polite reminder in the owner's language with the invoice number, the overdue amount and the due date as they appear on the invoice; the amount in the text is the same amount you put in amount_cents. Do not cite the statute or interest in the reminder unless the owner asks.",
       "Call request_approval with action kind send_message; recipient.name and recipient.address: the customer and their e-mail; amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000); period: the invoice's period; document.title and document.content: the exact reminder; summary: one line for the owner.",
       "Right before sending, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged reminder first. Approvals are valid for 24 hours.",
-      "Act only after get_approval returns approved: send exactly that text to exactly that address with your own tools; Launchpad sends nothing.",
+      "Act only when get_approval returns approved (and usable is not false): send exactly that text to exactly that address with your own tools; Launchpad sends nothing.",
       "Call record_action_outcome with outcome sent (or failed).",
       "Record paid only after a sent outcome, with a NEW report_id (the same report_id conflicts): call record_action_outcome with outcome paid only if you see the payment, for example in the accounting connector. A failed reminder can never become paid.",
     ],

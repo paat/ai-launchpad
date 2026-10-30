@@ -224,7 +224,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     const shared = { framework: FRAMEWORK, playbooks: PLAYBOOKS,
       tools: ["get_obligations", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "request_approval", "get_approval", "record_action_outcome", "report_unmet_need"],
       note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments; private service nominations; the exact text of each approval request until the owner deletes their progress; and the de-identified text of unmet needs. It stores no conversations. Reporting never approves business actions.",
-      approvals_note: "Before sending, invoicing, paying or filing for the owner, call request_approval with the exact content and act only after get_approval returns approved. Launchpad never sends, pays or files.",
+      approvals_note: "Before sending, invoicing, paying or filing for the owner, call request_approval with the exact content and act only when get_approval returns approved (and usable is not false). Launchpad never sends, pays or files.",
       catalog_note: "search_services is a public research catalogue available to any authenticated connection; it never contains owner data." };
     if (!need("progress:read")) return json({ first_step, ...shared });
     return json({ first_step, workspace: { company_ref: ctx.companyRef, label: ctx.label }, ...shared, reporting_enabled: ctx.reportingEnabled });

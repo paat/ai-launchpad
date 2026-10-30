@@ -117,6 +117,7 @@ describe("approval cards over MCP", () => {
     expect((await c.listTools()).tools.map((t) => t.name)).toEqual(expect.arrayContaining(["request_approval", "get_approval", "record_action_outcome"]));
     const started = parsed(await c.callTool({ name: "get_started", arguments: {} }));
     expect(started.tools).toEqual(expect.arrayContaining(["request_approval", "get_approval", "record_action_outcome"]));
+    expect(started.approvals_note).toContain("act only when get_approval returns approved (and usable is not false)");
 
     // Amount is required for invoices and payments; nothing is saved.
     const { amount_cents: _drop, ...noAmount } = reminder();
@@ -361,6 +362,26 @@ test("existing approvals table is migrated in place and legacy rows still load",
       const html = await card.text();
       expect(html).toContain("Demo Supplier OÜ"); expect(html).not.toContain("Kinnita täpselt see");
     } finally { await new Promise<void>((ok) => s.close(() => ok())); migrated.close(); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("startup expires actionable legacy no-address sends; consumed rows untouched; idempotent (#35)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lp-approvals-"));
+  try {
+    const path = join(dir, "legacy-address.db");
+    const seed = openDb(path);
+    const { address: _drop, ...recipient } = reminder().recipient;
+    const insert = seed.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at,consumed_at) VALUES(?,'legacy',?,?,?,'d',?,?,?,?)");
+    const later = new Date(Date.now() + 3600_000).toISOString(), now = new Date().toISOString();
+    insert.run("appr_la_approved", "send_message", "la-1", JSON.stringify(reminder({ kind: "send_message", recipient })), "approved", later, now, null);
+    insert.run("appr_la_pending", "send_invoice", "la-2", JSON.stringify(reminder({ recipient: { ...recipient, address: "  " } })), "pending", later, now, null);
+    insert.run("appr_la_consumed", "send_message", "la-3", JSON.stringify(reminder({ kind: "send_message", recipient })), "consumed", later, now, now);
+    insert.run("appr_la_ok", "send_invoice", "la-4", JSON.stringify(reminder()), "approved", later, now, null);
+    seed.close();
+    const states = () => { const d = openDb(path); try { return Object.fromEntries((d.prepare("SELECT id,state FROM approvals ORDER BY id").all() as { id: string; state: string }[]).map((r) => [r.id, r.state])); } finally { d.close(); } };
+    const expected = { appr_la_approved: "expired", appr_la_pending: "expired", appr_la_consumed: "consumed", appr_la_ok: "approved" };
+    expect(states()).toEqual(expected);
+    expect(states()).toEqual(expected); // a second init changes nothing
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
