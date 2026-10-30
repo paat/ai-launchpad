@@ -4,6 +4,12 @@ Put your AI assistant to work for your business / Pane oma AI-assistent ettevõt
 
 Turn the AI assistant an Estonian small-business owner already has — or is about to get — into their business assistant.
 
+## End goal
+
+AI agents take the back-office load off small-business owners and their employees, so people spend their time on their core work. Measures: time saved, reliable outcomes and remaining manual work ([R-001](docs/requirements/R-001-next-best-action.md)).
+
+Eesmärk: tehisaru-agendid võtavad väikeettevõtja ja tema töötajate õlult ära kontoritööd, et inimesed saaksid keskenduda oma põhitööle.
+
 > **Status:** owner-only HTTPS pilot at https://huppelaud.arikratt.ee. One owner ChatGPT plus Meta/Baseten path tested; Claude untested, so this is not broad compatibility or production ready. See [docs/live-pilot.md](docs/live-pilot.md) for dated evidence, cost, and recovery limits. Local demo and tests remain mock ($0); see [docs/local-demo.md](docs/local-demo.md).
 
 ## The problem

@@ -18,6 +18,8 @@ If a local `HANDOFF.md` exists, read it first: it holds the current state, owner
 
 ## Product principles (from README — do not drift)
 
+**End goal:** AI agents take the back-office load off small-business owners and their employees, so people spend their time on their core work. Judge product changes by whether they move toward the person's own agent taking a job off them end-to-end; where an action is executable, require an exact-payload approval and a recorded outcome. Read-only checks need neither.
+
 1. The owner's own assistant (Claude, ChatGPT) is the interface; we expose one remote MCP gateway. No chatbot that competes with it, except the temporary setup helper for people with no assistant yet.
 2. No forms: derive from public data or the assistant's context; ask only what nobody else knows.
 3. Nothing is filed, paid, signed or sent without a server-enforced approval bound to the exact recipient, amount, period and document. Record every action's state (submitted / accepted / rejected / paid).
