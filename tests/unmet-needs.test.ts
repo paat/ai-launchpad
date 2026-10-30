@@ -10,7 +10,7 @@ import { openDb, sha256, type Db } from "../src/db.js";
 import { BASETEN_MODEL, ModelQualityLedger, payloadHash, reservationMicroUsd, type FetchFn } from "../src/model-quality.js";
 import { openExistingPublicLedger } from "../src/model-public-cards.js";
 import {
-  MAX_EXISTING_LABELS, UNMET_NEED_NEXT, UNMET_NEED_RECHECK_MS, buildModelInput, deidentify, liveClassifier, mockClassifier,
+  MAX_EXISTING_LABELS, UNMET_NEED_NEXT, UNMET_NEED_RECHECK_MS, buildModelInput, cleanText, deidentify, liveClassifier, mockClassifier,
   parseClassification, unmetNeedRequestId,
 } from "../src/unmet-needs.js";
 import { demandPage } from "../src/views.js";
@@ -81,6 +81,14 @@ describe("deidentify", () => {
     ["registered as demo trading fie", "registered as [company]"],
     ["the same as last month, pay as you go", "the same as last month, pay as you go"],
     ["Kas sa saad aidata", "Kas sa saad aidata"],
+    // Legal form first, and a comma before the legal form (tribunal T-001).
+    ["leping OÜ Näidis Ehitus lõpeb", "leping [company] lõpeb"],
+    ["invoice from AS Demo Trading today.", "invoice from [company] today."],
+    ["contract with Demo Supplier, OÜ ends", "contract with [company] ends"],
+    ["contract with demo supplier, oü ends", "contract with [company] ends"],
+    ["minu OÜ ei saa seda teha", "minu OÜ ei saa seda teha"],
+    ["minu OÜ", "minu OÜ"],
+    ["registered an OÜ The next step", "registered an OÜ The next step"],
   ];
   test.each(cases)("%s", (input, expected) => {
     expect(deidentify(input)).toBe(expected);
@@ -92,6 +100,12 @@ describe("deidentify", () => {
     for (const leak of ["mari@", "5123", "49001010000", "Demo Supplier", "12345678", "1 500", "EE38", "https", "example"]) expect(out).not.toContain(leak);
     expect(deidentify(out)).toBe(out);
     expect(out).toMatch(/\[email\].*\[phone\].*\[personal_code\].*\[company\].*\[registry_code\].*\[amount\].*\[iban\].*\[url\]/);
+  });
+  test("company names in every legal-form position never reach the classifier input", () => {
+    const raw = "We pay OÜ Näidis Ehitus, then AS Demo Trading and Demo Supplier, OÜ";
+    const input = buildModelInput(deidentify(cleanText(raw)), "no_connector", []);
+    for (const leak of ["Näidis", "Ehitus", "Demo", "Trading", "Supplier"]) expect(input).not.toContain(leak);
+    expect(JSON.parse(input).need).toBe("We pay [company], then [company] and [company]");
   });
   test("ordinary prose words are not mistaken for an IBAN", () => {
     expect(deidentify("ab12 test case word")).toBe("ab12 test case word");

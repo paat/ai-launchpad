@@ -52,8 +52,12 @@ const SEP = String.raw`(?: ?[./-] ?| )`;
  * ("as" and "sa" are ordinary English and Estonian words). */
 const anyCase = (w: string) => [...w].map((c) => `[${c}${c.toLowerCase()}]`).join("");
 const LEGAL = String.raw`(?:${["MTÜ", "OÜ", "UÜ", "TÜ", "KÜ", "FIE"].map(anyCase).join("|")}|AS|SA)(?![\p{L}\p{N}])`;
-/** Words that start a sentence part, never a company name. */
-const NOT_NAME = String.raw`(?:a|an|the|and|or|of|to|for|from|with|by|at|on|in|into|via|as|is|my|our|your|their|this|that|ja|ning|või|ka|et|kui|minu|meie|see|selle)\s`;
+/** Words that start a sentence part, never a company name (either case
+ * of the first letter). */
+const NOT_NAME = String.raw`(?:${["a", "an", "the", "and", "or", "of", "to", "for", "from", "with", "by", "at", "on", "in", "into", "via", "as", "is", "my", "our", "your", "their", "this", "that", "ja", "ning", "või", "ka", "et", "kui", "minu", "meie", "see", "selle"].map((w) => `[${w[0]}${w[0].toUpperCase()}]${w.slice(1)}`).join("|")})[\s,]`;
+/** One word of a company name; `CAP` a capitalised one. */
+const WORD = String.raw`[\p{L}\p{N}&'.-]*`;
+const CAP = String.raw`\p{Lu}${WORD}`;
 const digitCount = (m: string) => m.replace(/\D/g, "").length;
 /** Ordered: earlier, more specific rules win (an e-mail is never re-read
  * as a domain, an IBAN or phone never as a digit run). Placeholders
@@ -67,9 +71,13 @@ const RULES: readonly [RegExp, string | ((m: string) => string)][] = [
   [/(?<![\p{L}\p{N}])[A-Za-z]{2}\d{2}(?: ?[A-Z0-9]{4}){3,7}(?: ?[A-Z0-9]{1,3})?(?![\p{L}\p{N}])/gu, "[iban]"],
   [/(?<![\p{L}\p{N}+])(?:\+|00)\d[\d ()-]{5,18}\d/gu, "[phone]"],
   [new RegExp(String.raw`(?:[€$£]|(?<![\p{L}])(?:EUR|USD|GBP)(?![\p{L}]))\s?${NUM}|${NUM}\s?(?:[€$£]|(?:EUR|USD|GBP|eurot?|euros?)(?![\p{L}]))`, "giu"), "[amount]"],
-  // Capitalised names first; then names in any case, not starting at a function word.
-  [new RegExp(String.raw`(?<![\p{L}\p{N}])(?:\p{Lu}[\p{L}\p{N}&'.-]*\s+){1,4}${LEGAL}`, "gu"), "[company]"],
-  [new RegExp(String.raw`(?<![\p{L}\p{N}])(?:(?!${NOT_NAME})\p{L}[\p{L}\p{N}&'.-]*\s+){1,4}${LEGAL}`, "gu"), "[company]"],
+  // Legal form first ("OÜ Näidis Ehitus"): capitalised names after it, not
+  // a function word and without a sentence-final dot. Then capitalised
+  // names before it, then names in any case not starting at a function
+  // word; a comma may precede the form ("Demo Supplier, OÜ").
+  [new RegExp(String.raw`(?<![\p{L}\p{N}])(?:${CAP}\s+){0,4}${LEGAL}\s+(?!${NOT_NAME})\p{Lu}[\p{L}\p{N}&'-]*(?:\s+\p{Lu}[\p{L}\p{N}&'-]*){0,3}`, "gu"), "[company]"],
+  [new RegExp(String.raw`(?<![\p{L}\p{N}])(?:${CAP}\s+){0,3}${CAP},?\s+${LEGAL}`, "gu"), "[company]"],
+  [new RegExp(String.raw`(?<![\p{L}\p{N}])(?:(?!${NOT_NAME})\p{L}${WORD}\s+){0,3}(?!${NOT_NAME})\p{L}${WORD},?\s+${LEGAL}`, "gu"), "[company]"],
   [/(?<!\p{N})\d(?:[ -]?\d){12,18}(?!\p{N})/gu, "[card]"],
   [/(?<!\p{N})[1-6]\d{10}(?!\p{N})/gu, "[personal_code]"],
   [new RegExp(String.raw`(?<!\p{N}${SEP}?)(?:5\d{6,7}|[3-8]\d{2,3}[ -]\d{4})(?!${SEP}?\p{N})`, "gu"), "[phone]"],
