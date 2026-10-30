@@ -22,7 +22,7 @@ If a local `HANDOFF.md` exists, read it first: it holds the current state, owner
 
 1. The owner's own assistant (Claude, ChatGPT) is the interface; we expose one remote MCP gateway. No chatbot that competes with it, except the temporary setup helper for people with no assistant yet.
 2. No forms: derive from public data or the assistant's context; ask only what nobody else knows.
-3. Nothing is filed, paid, signed or sent without a server-enforced approval bound to the exact recipient, amount, period and document. Record every action's state (submitted / accepted / rejected / paid).
+3. Nothing is filed, paid, signed or sent without a server-enforced approval bound to the exact action — given each time, or by a standing rule the owner set with hard limits (kind, recipients, amount, count, expiry), revocable at any time. Filings and payments are always confirmed by the owner in the official channel. Record every action's state (submitted / accepted / rejected / paid).
 4. Rules compute, models read: deadlines, tax amounts and obligations come from deterministic code with an official source per rule; models read, plan and draft.
 5. Store almost nothing: registry code and derived obligations.
 6. Reuse existing MCP servers before building adapters.
