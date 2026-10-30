@@ -766,6 +766,9 @@ function needRow(n: OwnerNeed, l: Lang): string {
 ${n.classified_by ? techDetails(l, techList([n.state === "classification_failed" ? [t("Liigitamine", "Classification"), t("liigitamise katse ebaõnnestus", "classification attempt failed")] : [t("Liigitaja", "Classified by"), classifierName(n.classified_by, l)]])) : ""}</div>`;
 }
 
+/** The stored text Open demand will show, as written: both classifiers write English. Joining an existing item adds no new spec. */
+const publicPreview = (n: OwnerNeed, l: Lang) => `<div class="note"><p class="small"><strong>${tr(l)("Avalikult näidatakse täpselt seda:", "Exactly this will be public:")}</strong></p><div${l !== "en" ? ' lang="en"' : ""}><p><strong>${esc(n.same_as ?? n.demand_label)}</strong></p>${!n.same_as && n.spec ? `<p class="small">${esc(n.spec)}</p>` : ""}</div></div>`;
+
 /** Unmet-need card (Täna). Publishing sends category, label and spec only. */
 export function unmetNeedsBody(opts: { csrf: string; needs: OwnerNeed[]; lang: Lang }): string {
   if (!opts.needs.length) return "";
@@ -780,6 +783,7 @@ ${awaiting.map((n) => `<div class="row" id="soov-${esc(n.id)}"><div class="label
 <dl class="facts facts--stacked"><div class="fact-row"><dt>${t("Miks:", "Why:")}</dt><dd>${esc(blockerLabel(n.blocker, l))}</dd></div><div class="fact-row"><dt>${t("Mida assistent saab teha:", "What your assistant can do:")}</dt><dd>${esc(BLOCKER_HANDOFF[n.blocker as Blocker] ? t(BLOCKER_HANDOFF[n.blocker as Blocker].et, BLOCKER_HANDOFF[n.blocker as Blocker].en) : "—")}</dd></div></dl>
 <div class="${n.classified_by === BASETEN_MODEL ? "ai-block" : "quote"}"><div class="labels">${classifiedChip(n.classified_by, l)}${labelChip("assistant", categoryLabel(n.category, l))}</div><p><strong>${esc(needLabel(n, l))}</strong></p><p class="small">${esc(needSpec(n, l))}</p>${n.same_as ? `<p class="small muted">${t("Sarnane soov on juba avatud soovide hulgas.", "Matches an existing open-demand item.")}</p>` : ""}</div>
 <p class="small">${t("Avalda anonüümse soovina (valikuline): kui piisavalt ettevõtjaid seda vajab, ehitatakse ühendus ja assistent saab selle ka sinult ära võtta.", "Publish as anonymous demand (optional): if enough owners need it, a connection gets built and your assistant can take this off you too.")}</p>
+${publicPreview(n, l)}
 ${decide(n, "publish", t("Avalda anonüümselt", "Publish anonymously"), "")}${decide(n, "keep_private", t("Jäta privaatseks", "Keep private"), "secondary")}
 <p class="small muted">${t("Avaldamisel jagatakse lehel ", "Publishing shares only the category, label and one-line spec on ")}<a href="/demand">${t("Avatud soovid", "Open demand")}</a>${t(" ainult liigitust, lühinime ja ühe rea kirjeldust — mitte sinu ettevõtet, kontot ega soovi teksti.", " — never your company, your account or the request text.")}</p>
 ${techDetails(l, techList([[t("Liigitaja", "Classified by"), classifierName(n.classified_by, l)], ["ID", n.id]]))}</div>`).join("")}

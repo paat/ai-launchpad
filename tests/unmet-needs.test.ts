@@ -528,7 +528,9 @@ test("publish / keep private: session + CSRF + exact Origin, owner-scoped, one d
     // Estonian page, Estonian copy: the mock's English fixture text is derived from category and blocker; no AI tint (QA D-12, D-21).
     expect(status).toContain("Pank ja maksed: ühendust pole");
     expect(status).toContain("Näidis-liigitus, mitte mudel: teenus valdkonnas „Pank ja maksed”, mille takistus täna on: ühendust pole.");
-    expect(status).not.toMatch(/Mock classification|local mock|Banking|class="ai-block"/);
+    // The stored English text appears only in the lang="en" "exactly this will be public" preview (tribunal T-004).
+    expect(status).toMatch(/<div lang="en"><p><strong>Banking[^<]*<\/strong><\/p><p class="small">Mock classification/);
+    expect(status.replace(/<div lang="en">.*?<\/div>/gs, "")).not.toMatch(/Mock classification|local mock|Banking|class="ai-block"/);
     expect(status).not.toContain("AI liigitus · Meta Muse Spark Open"); // mock output is a sample, never "AI"
     expect(status).toContain("Täna pole sinult midagi vaja"); // undecided needs never count in the hero
     const decide = (o: Owner, fields: Record<string, string>, extra: { origin?: string | null } = {}) => http(s, "/unmet-needs/decide", { cookie: o.raw, fields, ...extra });
@@ -620,4 +622,19 @@ test("export includes unmet needs; delete removes them (and their public demand)
     const l = openExistingPublicLedger(path);
     try { expect(l.db.prepare("SELECT count(*) n FROM mq_attempts").get()).toEqual({ n: 1 }); } finally { l.close(); }
   } finally { await s.close(); }
+});
+
+test("before publishing, the card shows exactly the stored text Open demand will show, for mock and live items (tribunal T-004)", () => {
+  const base = { id: "need_p", state: "classified", reason: null, need_redacted: "File VAT", blocker: "portal_without_api", job_hint_redacted: null, category: "tax_filings", same_as: null, created_at: "2026-10-30T10:00:00.000Z" };
+  const mock = { ...base, demand_label: "Tax filings: Portal without an API", spec: "Mock classification (deterministic fixture, not a model): a service for tax filings.", classified_by: "mock" };
+  const live = { ...base, demand_label: "VAT return filing", spec: "Prepare and file the VAT return.", classified_by: BASETEN_MODEL };
+  const preview = (html: string) => html.match(/<div class="note"><p class="small"><strong>(?:Avalikult näidatakse täpselt seda:|Exactly this will be public:)<\/strong><\/p>(.*?)<\/div><\/div>/s)?.[1];
+  for (const n of [mock, live]) {
+    const et = unmetNeedsBody({ csrf: "c", needs: [n], lang: "et" });
+    expect(preview(et), n.classified_by).toBe(`<div lang="en"><p><strong>${n.demand_label}</strong></p><p class="small">${n.spec}</p>`);
+    expect(et.indexOf("Avalikult näidatakse täpselt seda:")).toBeLessThan(et.indexOf('value="publish"'));
+    expect(preview(unmetNeedsBody({ csrf: "c", needs: [n], lang: "en" }))).toBe(`<div><p><strong>${n.demand_label}</strong></p><p class="small">${n.spec}</p>`);
+  }
+  // Joining an existing item: its public label is shown and no new spec becomes public.
+  expect(preview(unmetNeedsBody({ csrf: "c", needs: [{ ...live, same_as: "VAT filing" }], lang: "et" }))).toBe('<div lang="en"><p><strong>VAT filing</strong></p>');
 });
