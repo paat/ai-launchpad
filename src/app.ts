@@ -10,7 +10,7 @@ import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
 import type { FetchFn } from "./model-quality.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
-import { esc, shell, loginPage, statusBody, activityBody, connectionBody, tokenOnceBody, approvalsAttention, approvalsListBody, approvalCardBody, deadlinesCard, setupBody, servicesBody, playbooksBody } from "./views.js";
+import { esc, shell, loginPage, statusBody, activityBody, connectionBody, tokenOnceBody, approvalsAttention, approvalsListBody, approvalCardBody, deadlinesCard, deadlinesHint, setupBody, servicesBody, playbooksBody } from "./views.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; }
 // Owner-only pilot allowlist: exact opaque Google `sub` values, never emails.
@@ -101,6 +101,14 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   }
   // Public-register facts: with no key, lookups return not_configured without a network call.
   const register = arikratt(db, { apiKey: cfg.arikrattApiKey, url: cfg.arikrattMcpUrl });
+  // Status page never waits for the register: on a cache miss it starts one
+  // background fill per code (errors logged once, never thrown) and moves on.
+  const filling = new Set<string>();
+  const fillInBackground = (code: string) => {
+    if (filling.has(code)) return;
+    filling.add(code);
+    void register.lookup(code).then((r) => { if (!r.ok) console.warn(`Status deadlines: register lookup failed (${r.unavailable}).`); }, (e) => console.warn("Status deadlines: register lookup failed.", e)).finally(() => filling.delete(code));
+  };
   const app = express();
   app.disable("x-powered-by");
   // Forwarded addresses are trusted only when explicitly configured, and
@@ -310,11 +318,13 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const st = getState(db, oid(req));
     // Next deadlines: only for a known registry code (assessment ref or synthetic demo company).
     const ref = st.assessment?.company_registry_ref?.trim();
-    const deadlines = ref && /^\d{8}$/.test(ref) ? await companyObligations(register, { registryCode: ref, months: 2 }) : null;
+    const deadlines = ref && /^\d{8}$/.test(ref) ? await companyObligations(register, { registryCode: ref, months: 2, cacheOnly: true }) : null;
+    const notCached = deadlines?.ok && deadlines.result.company.unavailable === "not_cached";
+    if (notCached) fillInBackground(ref!);
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
     expireApprovals(db, oid(req));
     const pendingApprovals = (db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=? AND state='pending'").get(oid(req)) as { n: number }).n;
-    res.type("html").send(page(req, "Is my admin handled?", "status", approvalsAttention(pendingApprovals) + statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1, latestProgress: (st.progress[0] as unknown as { task_id: string; milestone: string; observed_at: string } | undefined) ?? null, deadlines: deadlines?.ok ? deadlinesCard(deadlines.result) : "" })));
+    res.type("html").send(page(req, "Is my admin handled?", "status", approvalsAttention(pendingApprovals) + statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1, latestProgress: (st.progress[0] as unknown as { task_id: string; milestone: string; observed_at: string } | undefined) ?? null, deadlines: notCached ? deadlinesHint() : deadlines?.ok ? deadlinesCard(deadlines.result) : "" })));
   } catch (e) { next(e); } });
 
   app.get("/activity", requireOwner, (req, res) => {

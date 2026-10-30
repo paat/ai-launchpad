@@ -8,12 +8,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createApp, type Config } from "../src/app.js";
 import { openDb, sha256 } from "../src/db.js";
-import { TOOL_ARG_KEYS } from "../src/mcp.js";
-import { arikratt, CACHE_TTL_MS } from "../src/arikratt.js";
+import { assistantFactsSchema, TOOL_ARG_KEYS } from "../src/mcp.js";
+import { arikratt, CACHE_TTL_MS, mapCompany } from "../src/arikratt.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import { computeObligations, easterSunday, publicHolidays, shiftToWorkingDay, validRegistryCode, type CompanyFacts } from "../src/obligations.js";
 
-const MARI = "19990001", KASE = "19990002", FAKE_VALID = "10000062";
+const MARI = "19990001", KASE = "19990002", FAKE_VALID = "10000062", SLOW = "10000107";
 const at = (day: string) => new Date(`${day}T10:00:00Z`);
 const ofRule = (facts: CompanyFacts, day: string, rule: string, months = 1) => computeObligations(facts, { today: at(day), months }).obligations.filter((o) => o.rule_id === rule);
 
@@ -83,16 +83,61 @@ describe("rules engine (memo § 3, pure)", () => {
 
   test("unknown facts give applies: if with a condition; nothing is dropped and nothing is invented", () => {
     const mari = ofRule(SYNTHETIC_COMPANIES[MARI].facts, "2026-11-01", "tsd-monthly-return");
-    expect(mari[0]).toMatchObject({ applies: "if", condition_et: "Kehtib, kui maksid oktoobris palka, juhatuse liikme tasu või dividende." });
+    expect(mari[0]).toMatchObject({ applies: "if", condition_et: "Kehtib, kui maksid oktoobris palka, juhatuse liikme tasu või dividende või kui sul on töölepinguga töötaja." });
     expect(mari[0].applies_because.map((b) => b.fact)).not.toContain("payouts_last_month");
     const none = computeObligations({}, { today: at("2026-11-02"), months: 1 });
     expect(none.obligations.map((o) => [o.rule_id, o.applies])).toEqual([["annual-report-overdue", "if"], ["tsd-monthly-return", "if"], ["vat-return-kmd", "if"]]);
     expect(none.obligations.every((o) => o.applies_because.length === 0 && o.condition_et && o.condition_en)).toBe(true);
     expect(none.facts_needed.map((n) => n.fact)).toEqual(["vat_registered", "payouts_last_month", "fy_end", "annual_report"]);
-    // Known facts decide: payouts → yes; no payouts and no employees → no zero-return row.
+    // Known facts decide: payouts → yes; assistant says no payouts and no other TSD trigger → no zero-return row.
     const paid = { ...SYNTHETIC_COMPANIES[MARI].facts, payouts_last_month: { value: true, provenance: "assistant_supplied" as const } };
     expect(ofRule(paid, "2026-11-01", "tsd-monthly-return")[0]).toMatchObject({ applies: "yes", applies_because: [{ fact: "payouts_last_month", provenance: "assistant_supplied" }, { fact: "employees" }, { fact: "labour_taxes_last_quarter" }] });
-    expect(ofRule({ ...paid, payouts_last_month: { value: false, provenance: "assistant_supplied" } }, "2026-11-01", "tsd-monthly-return")).toEqual([]);
+    expect(ofRule({ ...paid, payouts_last_month: { value: false, provenance: "assistant_supplied" }, other_tsd_triggers_last_month: { value: false, provenance: "assistant_supplied" } }, "2026-11-01", "tsd-monthly-return")).toEqual([]);
+  });
+
+  test("TSD: register employees 0 (lagged quarter, no board members) never suppresses the row", () => {
+    const facts: CompanyFacts = { employees: { value: 0, provenance: "public_register" }, labour_taxes_last_quarter: { value: 0, provenance: "public_register" }, payouts_last_month: { value: false, provenance: "assistant_supplied" } };
+    const r = computeObligations(facts, { today: at("2026-11-01"), months: 1 });
+    expect(r.obligations.filter((o) => o.rule_id === "tsd-monthly-return")).toMatchObject([{ applies: "if", condition_en: expect.stringContaining("employee") }]);
+    expect(r.facts_needed.map((n) => n.fact)).toContain("other_tsd_triggers_last_month");
+    // Labour taxes in the latest quarter → yes, even when the assistant says no payouts.
+    expect(ofRule({ ...facts, labour_taxes_last_quarter: { value: 900, provenance: "public_register" } }, "2026-11-01", "tsd-monthly-return")).toMatchObject([{ applies: "yes" }]);
+    // Both "no" facts must come from the assistant.
+    expect(ofRule({ ...facts, other_tsd_triggers_last_month: { value: false, provenance: "public_register" } }, "2026-11-01", "tsd-monthly-return")).toMatchObject([{ applies: "if" }]);
+  });
+
+  test("annual report: filed null (unknown) never counts as filed", () => {
+    const facts: CompanyFacts = { annual_report: { value: { latest_year: 2026, filed: null, overdue_days: null }, provenance: "public_register" } };
+    expect(ofRule(facts, "2027-07-05", "annual-report-overdue")).toMatchObject([{ kind: "risk", applies: "if", condition_et: "Kehtib, kui 2026. a majandusaasta aruanne on esitamata.", condition_en: "Applies if the 2026 annual report has not been filed." }]);
+    expect(ofRule(facts, "2027-06-01", "annual-report")).toMatchObject([{ applies: "if", condition_et: "Kehtib, kui 2026. a majandusaasta aruanne on esitamata." }]);
+    const filed: CompanyFacts = { annual_report: { value: { latest_year: 2026, filed: true, overdue_days: 0 }, provenance: "public_register" } };
+    expect(ofRule(filed, "2027-07-05", "annual-report-overdue")).toEqual([]);
+  });
+
+  test("VAT threshold: annual-report revenue and the assistant's year-to-date turnover stay separate", () => {
+    const base: CompanyFacts = { vat_registered: { value: false, provenance: "public_register" } };
+    const reg = computeObligations({ ...base, latest_annual_revenue: { value: 45_000, provenance: "public_register", as_of: "2025" } }, { today: at("2026-11-01"), months: 1 });
+    const row = reg.obligations.find((o) => o.rule_id === "vat-registration-threshold")!;
+    expect(row.reason_en).toMatch(/^Revenue in the latest annual report \(2025\) was €45,000, above the threshold: likely to cross it this year too\./);
+    expect(row.reason_et).toMatch(/^Viimase majandusaasta aruande \(2025\) müügitulu oli 45\s000 eurot, üle piiri/);
+    expect(reg.facts_needed).toContainEqual({ fact: "ytd_turnover_this_year", question_et: "Kui suur on selle aasta käive Eestis seni?", question_en: "What is this calendar year's Estonian turnover so far?" });
+    const ytd = ofRule({ ...base, ytd_turnover_this_year: { value: 41_000, provenance: "assistant_supplied" } }, "2026-11-01", "vat-registration-threshold")[0];
+    expect(ytd.reason_en).toMatch(/^Your assistant reports this year's Estonian turnover so far as €41,000, above the threshold\./);
+    expect(ytd.reason_et).toMatch(/^Assistendi sõnul on selle aasta käive Eestis seni 41\s000 eurot, üle piiri\./);
+    expect(`${ytd.reason_et} ${ytd.reason_en}`).not.toMatch(/aruande|annual report/);
+    expect(ytd.applies_because).toEqual([{ fact: "vat_registered", value: false, provenance: "public_register" }, { fact: "ytd_turnover_this_year", value: 41_000, provenance: "assistant_supplied" }]);
+    // The assistant cannot supply annual-report revenue.
+    expect(assistantFactsSchema.safeParse({ ytd_turnover_this_year: 41_000 }).success).toBe(true);
+    expect(assistantFactsSchema.safeParse({ latest_annual_revenue: 41_000 }).success).toBe(false);
+  });
+
+  test("synthetic fixtures carry provenance synthetic, never public_register", () => {
+    for (const day of ["2026-11-01", "2027-06-01", "2027-07-05"]) {
+      const r = computeObligations(SYNTHETIC_COMPANIES[MARI].facts, { today: at(day), months: 3 });
+      expect(r.obligations.length).toBeGreaterThan(0);
+      for (const o of r.obligations) for (const b of o.applies_because) expect(b.provenance, `${day} ${o.rule_id} ${b.fact}`).not.toBe("public_register");
+    }
+    for (const c of Object.values(SYNTHETIC_COMPANIES)) for (const f of Object.values(c.facts)) expect(f.provenance).toBe("synthetic");
   });
 
   test("VAT threshold is a warning only when not registered; TÖR only when a hire or board fee starts", () => {
@@ -119,10 +164,12 @@ const PERSON = "Synthetic Person Name", PERSON_CODE = "38001010000";
 let fake: Server; let fakeUrl = ""; let toolCalls = 0;
 function fakeCompany(code: string) {
   return {
-    snapshot_id: "20261029T054510Z", as_of: "2026-10-29", sources: ["https://avaandmed.ariregister.rik.ee/", { url: "https://www.emta.ee/" }],
+    snapshot_id: "20261029T054510Z", as_of: "2026-10-29", found: true,
+    sources: [{ key: "ariregister", name: "Äriregister", licence: "CC BY 4.0", licence_url: "https://creativecommons.org/licenses/by/4.0/", as_of: "2026-10-29" }, { key: "emta", name: "EMTA avaandmed", licence: "CC BY-SA 3.0", licence_url: "https://creativecommons.org/licenses/by-sa/3.0/" }],
     profile: { name: "Synthetic Register OÜ", vat_number: "EE000000000", emtak_code: "74101" },
     board: { members: [{ name: PERSON, personal_code: PERSON_CODE, role: "juhatuse liige" }] },
-    report_status: { latest_year: 2025, filed: true, status: "filed", overdue_days: 0 },
+    financials: { year: 2025, report_basis: "annual_report", revenue: 45000, revenue_reason: null, employees_avg: 1 },
+    report_status: { latest_year: 2025, filed: true, next_due: "2027-06-30", status: "filed", overdue_days: 0, period: "2025" },
     tax: [{ year: 2026, quarter: 2, labour_taxes: 900, employee_count: 0, turnover: 12000 }, { year: 2026, quarter: 3, labour_taxes: 1500, employee_count: 1, turnover: 15000 }],
     tax_debt: { on_list: false, snapshot_date: "2026-10-28" }, registry_code: code,
   };
@@ -135,6 +182,7 @@ beforeAll(async () => {
     const s = new McpServer({ name: "fake-arikratt", version: "1" });
     s.registerTool("get_company", { inputSchema: { registry_code: z.string(), sections: z.array(z.string()).optional() } }, async ({ registry_code, sections }) => {
       if (registry_code === "12417834") await new Promise((ok) => setTimeout(ok, 400));
+      if (registry_code === SLOW) await new Promise((ok) => setTimeout(ok, 5000));
       if (registry_code === "10000018") return { isError: true, content: [{ type: "text", text: "Company not found" }] };
       expect(sections).toEqual(["report_status", "tax"]);
       return { content: [{ type: "text", text: JSON.stringify(fakeCompany(registry_code)) }] };
@@ -165,7 +213,7 @@ describe("Ärikratt adapter", () => {
     const db = openDb(":memory:");
     const r = await arikratt(db, { apiKey: "test-key", url: fakeUrl }).lookup(FAKE_VALID);
     if (!r.ok) throw new Error(r.reason);
-    expect(r.company).toMatchObject({ name: "Synthetic Register OÜ", registry_code: FAKE_VALID, synthetic: false, provenance: "public_register", snapshot_id: "20261029T054510Z", as_of: "2026-10-29", sources: ["https://avaandmed.ariregister.rik.ee/", "https://www.emta.ee/"] });
+    expect(r.company).toMatchObject({ name: "Synthetic Register OÜ", registry_code: FAKE_VALID, synthetic: false, provenance: "public_register", snapshot_id: "20261029T054510Z", as_of: "2026-10-29", sources: [{ key: "ariregister", name: "Äriregister", licence: "CC BY 4.0", licence_url: "https://creativecommons.org/licenses/by/4.0/" }, { key: "emta", name: "EMTA avaandmed", licence: "CC BY-SA 3.0", licence_url: "https://creativecommons.org/licenses/by-sa/3.0/" }] });
     expect(r.company.attribution).toMatch(/CC BY 4\.0.*not an official register extract/s);
     expect(r.facts.vat_registered).toEqual({ value: true, provenance: "public_register", source: "arikratt:get_company", as_of: "2026-10-29" });
     expect(r.facts.labour_taxes_last_quarter?.value).toBe(1500); // latest quarter
@@ -177,6 +225,15 @@ describe("Ärikratt adapter", () => {
     for (const blob of [JSON.stringify(r), JSON.stringify(cached)]) for (const p of [PERSON, PERSON_CODE, "board", "members", "emtak"]) expect(blob).not.toContain(p);
     const found = await arikratt(db, { apiKey: "test-key", url: fakeUrl }).search("Synthetic");
     expect(found).toEqual({ ok: true, matches: [{ name: "Synthetic Register OÜ", registry_code: FAKE_VALID }] });
+  });
+  test("maps the live financials object to latest annual revenue with the report year", () => {
+    const { facts } = mapCompany(FAKE_VALID, { as_of: "2026-10-29", profile: { vat_number: null }, financials: { year: 2025, report_basis: "annual_report", revenue: 45000, revenue_reason: null, employees_avg: 1 } });
+    expect(facts.latest_annual_revenue).toEqual({ value: 45000, provenance: "public_register", source: "arikratt:get_company", as_of: "2025" });
+    expect(mapCompany(FAKE_VALID, { financials: { year: 2025, revenue: null, revenue_reason: "not_reported" } }).facts.latest_annual_revenue).toBeUndefined();
+  });
+  test("maps live sources[] with key, name, licence and licence_url", () => {
+    const { company } = mapCompany(FAKE_VALID, { sources: [{ key: "ariregister", name: "Äriregister", licence: "CC BY 4.0", licence_url: "https://example.test/licence", as_of: "2026-10-29", as_of_basis: "snapshot" }, { key: "emta", name: "EMTA", licence: "CC BY-SA 3.0", licence_url: "javascript:alert(1)" }] });
+    expect(company.sources).toEqual([{ key: "ariregister", name: "Äriregister", licence: "CC BY 4.0", licence_url: "https://example.test/licence" }, { key: "emta", name: "EMTA", licence: "CC BY-SA 3.0", licence_url: null }]);
   });
   test("cache: derived facts for 24 h, then refetched", async () => {
     const db = openDb(":memory:"), ar = arikratt(db, { apiKey: "test-key", url: fakeUrl });
@@ -268,7 +325,7 @@ describe("get_obligations tool and status card", () => {
     expect(r.obligations.length).toBeGreaterThan(0);
     for (const ob of r.obligations) {
       expect(ob.source.url).toMatch(/^https:\/\/www\.riigiteataja\.ee\/akt\//);
-      for (const b of ob.applies_because) if (b.provenance === "public_register") expect(b.source).toBe("synthetic_fixture");
+      for (const b of ob.applies_because) expect(b).toMatchObject({ provenance: "synthetic", source: "synthetic_fixture" });
     }
     const html = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
     for (const s of ["Järgmised tähtajad", "Next deadlines", "Mari Disain OÜ", "Arvutatud reeglist", "Calculated by rule", "Näidis · Sample", "https://www.riigiteataja.ee/akt/", "KMD ja käibemaks", "Tähtajad arvutab reeglistik, mitte tehisaru."]) expect(html, s).toContain(s);
@@ -294,5 +351,26 @@ describe("get_obligations tool and status card", () => {
       expect(r.data_as_of).toBe("2026-10-29");
       expect(JSON.stringify(r)).not.toContain(PERSON);
     } finally { s2.close(); }
+  });
+  test("Status page never waits for the register: a cache miss renders a one-line hint at once", async () => {
+    const cfg3: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
+    const { app: app3, db: db3 } = createApp(cfg3, openDb(":memory:"));
+    const s3 = await new Promise<Server>((ok) => { const s = app3.listen(0, "127.0.0.1", () => ok(s)); });
+    const base3 = `http://127.0.0.1:${(s3.address() as { port: number }).port}`; cfg3.baseUrl = base3;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const now = new Date().toISOString();
+      db3.prepare("INSERT INTO owners(id,subject,kind,reporting_enabled,created_at) VALUES('o','synthetic-o','google',0,?)").run(now);
+      db3.prepare("INSERT INTO workspaces(owner_id,company_ref,label,version) VALUES('o','ws-o','Synthetic workspace',1)").run();
+      db3.prepare("INSERT INTO assessments(id,owner_id,version,payload_json,payload_hash,created_at) VALUES('a','o',1,?,'h',?)").run(JSON.stringify({ ...DEMO_FIXTURES.alpha, company_registry_ref: SLOW }), now);
+      db3.prepare("INSERT INTO sessions(id_hash,owner_id,csrf,expires_at) VALUES(?,?,?,?)").run(sha256("sess-o"), "o", "csrf-o", new Date(Date.now() + 3600_000).toISOString());
+      const t0 = Date.now();
+      const res = await fetch(`${base3}/`, { headers: { cookie: "lp_session=sess-o" } });
+      const html = await res.text();
+      expect(Date.now() - t0).toBeLessThan(1000);
+      expect(res.status).toBe(200);
+      expect(html).toContain("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?”");
+      expect(html).not.toContain("Järgmised tähtajad");
+    } finally { warn.mockRestore(); s3.close(); }
   });
 });

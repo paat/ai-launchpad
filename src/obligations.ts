@@ -2,16 +2,22 @@
  * I/O, no model. Rules, sources and defaults follow
  * docs/research/N-obligation-deadline-rules.md; rule ids match the memo. */
 
-export type Provenance = "public_register" | "assistant_supplied" | "assumption";
+/** "synthetic": made-up Näidis / Sample fixtures, never register data. */
+export type Provenance = "public_register" | "assistant_supplied" | "assumption" | "synthetic";
 export interface Fact<T> { value: T; provenance: Provenance; as_of?: string; source?: string; }
 export interface AnnualReportStatus { latest_year: number | null; filed: boolean | null; overdue_days: number | null; }
 export interface CompanyFacts {
   company_name?: Fact<string>; registry_code?: Fact<string>;
   vat_registered?: Fact<boolean>; labour_taxes_last_quarter?: Fact<number>; employees?: Fact<number>;
   fy_end?: Fact<string>; annual_report?: Fact<AnnualReportStatus>; tax_debt_on_list?: Fact<boolean>;
+  /** Revenue in the latest annual report (register or fixture); as_of is the report year. */
   latest_annual_revenue?: Fact<number>;
+  /** Assistant-supplied only: this calendar year's Estonian turnover so far. */
+  ytd_turnover_this_year?: Fact<number>;
   /** Assistant-supplied only: payouts (salary, board fee, dividends) in the last calendar month. */
   payouts_last_month?: Fact<boolean>;
+  /** Assistant-supplied only: an employee (even unpaid) or another TSD trigger in the last calendar month. */
+  other_tsd_triggers_last_month?: Fact<boolean>;
   /** Assistant-supplied only: a hire or a paid board fee is about to start (TÖR). */
   hire_or_board_fee_starting?: Fact<boolean>;
 }
@@ -113,26 +119,29 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
   }
 
   // tsd-monthly-return + tsd-tax-payment + cit-distribution: the 10th after the payout month.
-  const payouts = facts.payouts_last_month, employees = facts.employees;
+  const payouts = facts.payouts_last_month, others = facts.other_tsd_triggers_last_month, labour = facts.labour_taxes_last_quarter;
+  // Register employee counts are quarterly, lagged and exclude board members: they never suppress a row.
+  const saidNo = (f: Fact<boolean> | undefined) => known(f) && !f.value && f.provenance === "assistant_supplied";
   if (!known(payouts)) need("payouts_last_month", `Kas maksid ${ET_IN[lastMonth.m0]} palka, juhatuse liikme tasu või dividende?`, `Did the company pay salary, a board member fee or dividends in ${EN_MONTH[lastMonth.m0]}?`);
   for (const dm of dueMonths) {
     const d = dated(iso(utc(dm.y, dm.m0, 10)));
     if (!inWindow(d.effective_due)) continue;
     const p = periodOf(dm);
     const isLast = p.y === lastMonth.y && p.m0 === lastMonth.m0;
-    const noEmployees = known(employees) && employees.value === 0;
     let row: Pick<Obligation, "applies" | "condition_et" | "condition_en" | "reason_et" | "reason_en"> | null;
     if (isLast && known(payouts) && payouts.value) row = { applies: "yes", reason_et: `Kehtib, sest maksid ${ET_IN[p.m0]} palka, juhatuse liikme tasu või dividende.`, reason_en: `Applies because the company made payouts in ${EN_MONTH[p.m0]}.` };
-    else if (isLast && known(payouts) && noEmployees) row = null; // EMTA: no zero-return without payouts or employees.
+    else if (isLast && saidNo(payouts) && saidNo(others)) row = null; // EMTA: no zero-return without payouts or employees.
+    else if (known(labour) && labour.value > 0) row = { applies: "yes", reason_et: "Kehtib, sest viimases kvartalis deklareeriti tööjõumakse.", reason_en: "Applies because labour taxes were declared in the latest quarter." };
     else {
-      const et = isLast && known(payouts) ? "Kehtib, kui sul on töölepinguga töötaja, kelle töötamine pole TÖR-is peatatud." : `Kehtib, kui maksid ${ET_IN[p.m0]} palka, juhatuse liikme tasu või dividende${noEmployees ? "" : " või kui sul on töölepinguga töötaja"}.`;
-      const en = isLast && known(payouts) ? "Applies if you have an employee under an employment contract whose work is not suspended in the employment register." : `Applies if you paid salary, a board member fee or dividends in ${EN_MONTH[p.m0]}${noEmployees ? "" : " or have an employee under an employment contract"}.`;
+      const et = isLast && known(payouts) ? "Kehtib, kui sul on töölepinguga töötaja, kelle töötamine pole TÖR-is peatatud." : `Kehtib, kui maksid ${ET_IN[p.m0]} palka, juhatuse liikme tasu või dividende või kui sul on töölepinguga töötaja.`;
+      const en = isLast && known(payouts) ? "Applies if you have an employee under an employment contract whose work is not suspended in the employment register." : `Applies if you paid salary, a board member fee or dividends in ${EN_MONTH[p.m0]} or have an employee under an employment contract.`;
       row = { applies: "if", condition_et: et, condition_en: en, reason_et: et, reason_en: en };
+      if (isLast && known(payouts) && !known(others)) need("other_tsd_triggers_last_month", `Kas sul oli ${ET_IN[p.m0]} töölepinguga töötaja (ka palgata) või muu TSD kohustus?`, `Did the company have an employee under an employment contract (even unpaid) or any other TSD obligation in ${EN_MONTH[p.m0]}?`);
     }
     if (!row) continue;
     out.push({ rule_id: "tsd-monthly-return", covers: ["tsd-monthly-return", "tsd-tax-payment", "cit-distribution"], kind: "deadline", title_et: "TSD ja maksud", title_en: "Income and social tax return (TSD) and taxes",
       period_label_et: `${ET_MONTH[p.m0]} ${p.y} väljamaksed`, period_label_en: `${EN_MONTH[p.m0]} ${p.y} payouts`, ...d, ...row,
-      applies_because: [...(isLast ? because("payouts_last_month", payouts) : []), ...because("employees", employees), ...because("labour_taxes_last_quarter", facts.labour_taxes_last_quarter)], source: SRC.tsd });
+      applies_because: [...(isLast ? [...because("payouts_last_month", payouts), ...because("other_tsd_triggers_last_month", others)] : []), ...because("employees", facts.employees), ...because("labour_taxes_last_quarter", labour)], source: SRC.tsd });
   }
 
   // annual-report: within 6 months of FY end (ÄS § 179 lg 4, TsÜS § 136 lg 3–4); annual-report-overdue: risk only (U9: no fine amount).
@@ -149,13 +158,16 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
   // Register signal: latest_year is the newest report period on file; filed refers to that period.
   const filedFor = (y: number): boolean | null => {
     if (!known(ar) || ar.value.latest_year === null) return null;
-    return ar.value.latest_year > y || (ar.value.latest_year === y && ar.value.filed !== false);
+    if (ar.value.latest_year !== y) return ar.value.latest_year > y;
+    return ar.value.filed; // null: the filing state is unknown, never assumed filed
   };
+  const unfiled = (l: { et: string; en: string }) => ({ condition_et: `Kehtib, kui ${l.et.toLowerCase()} on esitamata.`, condition_en: `Applies if the ${l.en.charAt(0).toLowerCase()}${l.en.slice(1)} has not been filed.` });
   for (const r of fyRows) {
-    if (!inWindow(r.effective_due) || filedFor(r.y) === true) continue;
+    const state = filedFor(r.y);
+    if (!inWindow(r.effective_due) || state === true) continue;
     const l = fyLabel(r);
     out.push({ rule_id: "annual-report", covers: ["annual-report"], kind: "deadline", title_et: "Majandusaasta aruanne", title_en: "Annual report", period_label_et: l.et, period_label_en: l.en,
-      statutory_due: r.statutory_due, effective_due: r.effective_due, shifted: r.shifted, applies: "yes",
+      statutory_due: r.statutory_due, effective_due: r.effective_due, shifted: r.shifted, ...(state === null ? { applies: "if" as const, ...unfiled(l) } : { applies: "yes" as const }),
       reason_et: "Kehtib igale osaühingule iga majandusaasta kohta, ka tegevuseta aasta eest.", reason_en: "Applies to every OÜ for every financial year, including inactive years.",
       applies_because: because("fy_end", fy), source: SRC.annual });
   }
@@ -169,24 +181,27 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
     const risk_en = `The registrar may fine repeatedly without a warning; deletion from the register is possible from ${deletion} once the registrar's own deadline has also passed.`;
     out.push({ rule_id: "annual-report-overdue", covers: ["annual-report-overdue"], kind: "risk", title_et: "Majandusaasta aruanne on tähtajast maas", title_en: "Annual report is overdue", period_label_et: l.et, period_label_en: l.en,
       statutory_due: lapsed.statutory_due, effective_due: lapsed.effective_due, shifted: lapsed.shifted,
-      ...(yes ? { applies: "yes" as const } : { applies: "if" as const, condition_et: `Kehtib, kui ${l.et.toLowerCase()} on esitamata.`, condition_en: `Applies if the ${l.en.charAt(0).toLowerCase()}${l.en.slice(1)} has not been filed.` }),
+      ...(yes ? { applies: "yes" as const } : { applies: "if" as const, ...unfiled(l) }),
       reason_et: risk_et, reason_en: risk_en,
       applies_because: [...because("annual_report", ar), ...because("tax_debt_on_list", facts.tax_debt_on_list)], source: SRC.overdue });
   }
 
   // vat-registration-threshold: warning only, never a legal decision (U5).
   if (known(vat) && !vat.value) {
-    const rev = facts.latest_annual_revenue;
-    if (!known(rev)) need("latest_annual_revenue", "Kui suur on selle aasta käive Eestis seni?", "What is this calendar year's Estonian turnover so far?");
-    const over = known(rev) && rev.value > VAT_THRESHOLD_EUR;
+    const rev = facts.latest_annual_revenue, ytd = facts.ytd_turnover_this_year;
+    if (!known(ytd)) need("ytd_turnover_this_year", "Kui suur on selle aasta käive Eestis seni?", "What is this calendar year's Estonian turnover so far?");
+    const eur = (l: string, n: number) => new Intl.NumberFormat(l).format(n), over = (n: number) => n > VAT_THRESHOLD_EUR;
+    const year = known(rev) && rev.as_of ? ` (${rev.as_of})` : "";
     const et = "Kui selle kalendriaasta käive Eestis ületab 40 000 eurot, esita 3 tööpäeva jooksul avaldus käibemaksukohustuslaseks registreerimiseks. Arvuta käive oma arvetest, mitte avalikest andmetest.";
     const en = "If this calendar year's Estonian turnover exceeds €40,000, apply for VAT registration within 3 working days. Count turnover from your own invoices, not from public data.";
     out.push({ rule_id: "vat-registration-threshold", covers: ["vat-registration-threshold"], kind: "warning", title_et: "Käibemaksukohustuslaseks registreerimise piir", title_en: "VAT registration threshold",
       period_label_et: `${f0.getUTCFullYear()}. a käive`, period_label_en: `${f0.getUTCFullYear()} turnover`, statutory_due: null, effective_due: null, shifted: false,
       applies: "if", condition_et: et, condition_en: en,
-      reason_et: known(rev) ? `Viimase aruande müügitulu oli ${new Intl.NumberFormat("et-EE").format(rev.value)} eurot${over ? ", üle piiri: tõenäoliselt ületad piiri ka sel aastal" : ""}. ${et}` : et,
-      reason_en: known(rev) ? `Revenue in the latest annual report was €${new Intl.NumberFormat("en-GB").format(rev.value)}${over ? ", above the threshold: likely to cross it this year too" : ""}. ${en}` : en,
-      applies_because: [...because("vat_registered", vat), ...because("latest_annual_revenue", rev)], source: SRC.vatReg });
+      reason_et: [known(rev) ? `Viimase majandusaasta aruande${year} müügitulu oli ${eur("et-EE", rev.value)} eurot${over(rev.value) ? ", üle piiri: tõenäoliselt ületad piiri ka sel aastal" : ""}.` : "",
+        known(ytd) ? `Assistendi sõnul on selle aasta käive Eestis seni ${eur("et-EE", ytd.value)} eurot${over(ytd.value) ? ", üle piiri" : ""}.` : "", et].filter(Boolean).join(" "),
+      reason_en: [known(rev) ? `Revenue in the latest annual report${year} was €${eur("en-GB", rev.value)}${over(rev.value) ? ", above the threshold: likely to cross it this year too" : ""}.` : "",
+        known(ytd) ? `Your assistant reports this year's Estonian turnover so far as €${eur("en-GB", ytd.value)}${over(ytd.value) ? ", above the threshold" : ""}.` : "", en].filter(Boolean).join(" "),
+      applies_because: [...because("vat_registered", vat), ...because("latest_annual_revenue", rev), ...because("ytd_turnover_this_year", ytd)], source: SRC.vatReg });
   }
 
   // tor-registration: informational, only when a hire or paid board fee is starting (U3).

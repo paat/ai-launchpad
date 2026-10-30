@@ -142,14 +142,15 @@ export const assistantFactsSchema = z.object({
   company_name: s(120).optional(),
   vat_registered: z.boolean().optional(),
   payouts_last_month: z.boolean().optional(),
+  other_tsd_triggers_last_month: z.boolean().optional(),
   employees: z.number().int().min(0).max(100_000).optional(),
   fy_end: z.string().regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/).refine((v) => !Number.isNaN(Date.parse(`2000-${v}T00:00:00Z`)) && new Date(`2000-${v}T00:00:00Z`).toISOString().slice(5, 10) === v, "fy_end must be a real MM-DD date").optional(),
-  latest_annual_revenue: z.number().min(0).max(1e12).optional(),
+  ytd_turnover_this_year: z.number().min(0).max(1e12).optional(),
   hire_or_board_fee_starting: z.boolean().optional(),
 }).strict();
 export const OBLIGATIONS_DISCLAIMER = "Tähtajad arvutab reeglistik, mitte tehisaru. Kuupäevad on arvutatud, mitte esitatud, makstud ega kontrollitud. See ei ole õigus- ega maksunõu; kontrolli iga rea allikat. / Deadlines are calculated by rules, not AI. Dates are computed, not filed, paid or verified. Not legal or tax advice; check each row's source.";
 const CONFIRM_QUESTIONS: Record<string, Omit<FactNeeded, "fact">> = { vat_registered: { question_et: "Registris on KMKR number, kuid viimastel kvartalitel käivet pole deklareeritud. Kas ettevõte on endiselt käibemaksukohustuslane?", question_en: "The register shows a VAT number but no declared turnover in recent quarters. Is the company still VAT-registered?" } };
-export async function companyObligations(ar: Arikratt, o: { registryCode?: string; assistant?: z.infer<typeof assistantFactsSchema>; months: number; today?: Date }) {
+export async function companyObligations(ar: Arikratt, o: { registryCode?: string; assistant?: z.infer<typeof assistantFactsSchema>; months: number; today?: Date; cacheOnly?: boolean }) {
   let code = o.registryCode;
   const name = o.assistant?.company_name;
   if (!code && name && ar.configured) {
@@ -158,7 +159,7 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
     else if (found.ok && found.matches.length > 1) return { ok: false as const, error: `Several companies match "${name}": ${found.matches.map((m) => `${m.name} (${m.registry_code})`).join("; ")}. Ask the owner which registry code is theirs and call again with registry_code. No deadlines were computed.` };
   }
   if (!code && !o.assistant) return { ok: false as const, error: "No company is known yet. Ask the owner for the company name or 8-digit registry code, then call get_obligations with registry_code (or with facts). No deadlines were computed." };
-  const lookup = code ? await ar.lookup(code) : null;
+  const lookup = code ? await ar.lookup(code, { cacheOnly: o.cacheOnly }) : null;
   if (lookup && !lookup.ok && lookup.unavailable === "invalid_code") return { ok: false as const, error: `${lookup.reason} Ask the owner to check the code. No deadlines were computed.` };
   const facts: CompanyFacts = lookup?.ok ? { ...lookup.facts } : {};
   const mine = <T>(value: T): Fact<T> => ({ value, provenance: "assistant_supplied" });

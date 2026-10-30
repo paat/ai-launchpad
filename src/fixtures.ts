@@ -44,10 +44,10 @@ export const DEMO_FIXTURES: Record<string, Assessment> = { alpha, beta };
 
 /** SYNTHETIC register facts for the deadlines demo. The codes deliberately FAIL
  * the RIK checksum, so they can never match a real company. Their facts are
- * shaped like public-register facts but always carry source synthetic_fixture
+ * shaped like public-register facts but always carry provenance synthetic
  * and are labelled Näidis / Sample, never "Ametlik allikas". */
-const sample = <T>(value: T): Fact<T> => ({ value, provenance: "public_register", source: "synthetic_fixture", as_of: "2026-10-29" });
+const sample = <T>(value: T): Fact<T> => ({ value, provenance: "synthetic", source: "synthetic_fixture", as_of: "2026-10-29" });
 export const SYNTHETIC_COMPANIES: Record<string, { name: string; facts: CompanyFacts }> = {
   "19990001": { name: "Mari Disain OÜ", facts: { company_name: sample("Mari Disain OÜ"), registry_code: sample("19990001"), vat_registered: sample(true), labour_taxes_last_quarter: sample(0), employees: sample(0), annual_report: sample({ latest_year: 2025, filed: true, overdue_days: 0 }), tax_debt_on_list: sample(false) } },
-  "19990002": { name: "Kase Konsult OÜ", facts: { company_name: sample("Kase Konsult OÜ"), registry_code: sample("19990002"), vat_registered: sample(false), labour_taxes_last_quarter: sample(1240), employees: sample(1), latest_annual_revenue: sample(38_000), annual_report: sample({ latest_year: 2025, filed: true, overdue_days: 0 }), tax_debt_on_list: sample(false) } },
+  "19990002": { name: "Kase Konsult OÜ", facts: { company_name: sample("Kase Konsult OÜ"), registry_code: sample("19990002"), vat_registered: sample(false), labour_taxes_last_quarter: sample(1240), employees: sample(1), latest_annual_revenue: { ...sample(38_000), as_of: "2025" }, annual_report: sample({ latest_year: 2025, filed: true, overdue_days: 0 }), tax_debt_on_list: sample(false) } },
 };
