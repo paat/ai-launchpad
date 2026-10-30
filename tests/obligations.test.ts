@@ -158,8 +158,8 @@ describe("rules engine (memo § 3, pure)", () => {
     const filed = { ...young, annual_report: SYNTHETIC_COMPANIES[MARI].facts.annual_report };
     expect(ofRule(filed, "2027-06-01", "annual-report")).toMatchObject([{ period_label_en: "2026 annual report", ...firstFy }]);
     expect(ofRule(filed, "2027-07-05", "annual-report-overdue")).toMatchObject([{ period_label_en: "2026 annual report", applies: "if", condition_et: firstFy.condition_et }]);
-    // A known FY end, or a company founded two or more years ago, keeps the ordinary rule.
-    expect(ofRule({ ...filed, fy_end: { value: "12-31", provenance: "assistant_supplied" } }, "2027-06-01", "annual-report")).toMatchObject([{ applies: "yes" }]);
+    // A known FY end still has an open-ended first year; later financial years keep the ordinary rule.
+    expect(ofRule({ ...filed, fy_end: { value: "12-31", provenance: "assistant_supplied" } }, "2027-06-01", "annual-report")).toMatchObject([{ applies: "if", condition_et: firstFy.condition_et }]);
     expect(ofRule(filed, "2028-06-01", "annual-report")).toMatchObject([{ period_label_en: "2027 annual report", applies: "yes" }]);
     // Founded 2012 or unknown: output unchanged.
     for (const facts of [SYNTHETIC_COMPANIES[MARI].facts, SYNTHETIC_COMPANIES[KASE].facts, {}]) for (const day of ["2026-10-30", "2027-06-01", "2027-07-05"]) {
@@ -167,6 +167,11 @@ describe("rules engine (memo § 3, pure)", () => {
       expect(computeObligations({ ...facts, founded: founded("2012-05-04") }, { today: at(day), months: 3 })).toEqual(base);
       expect(computeObligations({ ...facts, founded: undefined }, { today: at(day), months: 3 })).toEqual(base);
     }
+  });
+
+  test("annual report: the first financial year comes from the founding date, not from today's year (#43)", () => {
+    const facts: CompanyFacts = { founded: { value: "2024-12-30", provenance: "public_register" }, annual_report: { value: { latest_year: 2024, filed: false, overdue_days: null }, provenance: "public_register" } };
+    expect(ofRule(facts, "2026-01-05", "annual-report-overdue", 3)).toMatchObject([{ period_label_en: "2024 annual report", applies: "if", condition_en: "The end of the first financial year depends on the articles of association (it may run up to 18 months)." }]);
   });
 
   test("VAT threshold: annual-report revenue and the assistant's year-to-date turnover stay separate", () => {
@@ -312,7 +317,7 @@ describe("Ärikratt adapter", () => {
     expect(facts.latest_annual_revenue).toEqual({ value: 45000, provenance: "public_register", source: "arikratt:get_company", as_of: "2025" });
     expect(mapCompany(FAKE_VALID, { financials: { year: 2025, revenue: null, revenue_reason: "not_reported" } }).facts.latest_annual_revenue).toBeUndefined();
     expect(mapCompany(FAKE_VALID, { as_of: "2026-10-29", profile: { founded: "2026-03-12" } }).facts.founded).toEqual({ value: "2026-03-12", provenance: "public_register", source: "arikratt:get_company", as_of: "2026-10-29" });
-    for (const bad of [null, "", "12.03.2026", 2026]) expect(mapCompany(FAKE_VALID, { profile: { founded: bad } }).facts.founded, String(bad)).toBeUndefined();
+    for (const bad of [null, "", "12.03.2026", 2026, "2026-02-31", "2025-02-29"]) expect(mapCompany(FAKE_VALID, { profile: { founded: bad } }).facts.founded, String(bad)).toBeUndefined();
   });
   test("maps live sources[] with key, name, licence and licence_url", () => {
     const { company } = mapCompany(FAKE_VALID, { sources: [{ key: "ariregister", name: "Äriregister", licence: "CC BY 4.0", licence_url: "https://example.test/licence", as_of: "2026-10-29", as_of_basis: "snapshot" }, { key: "emta", name: "EMTA", licence: "CC BY-SA 3.0", licence_url: "javascript:alert(1)" }] });

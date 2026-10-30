@@ -190,12 +190,13 @@ export function computeObligations(facts: CompanyFacts, opts: { today: Date; mon
   if (!known(ar)) need("annual_report", "Kas viimase majandusaasta aruanne on äriregistrile esitatud?", "Has the latest annual report been filed with the Business Register?");
   const [fm, fd] = fy.value.split("-").map(Number);
   const founded = known(facts.founded) ? facts.founded.value : null;
+  const fyEnd = (y: number) => iso(utc(y, fm - 1, Math.min(fd, daysIn(y, fm - 1))));
   const fyRows = [-2, -1, 0, 1].map((k) => {
-    const y = f0.getUTCFullYear() + k, end = iso(utc(y, fm - 1, Math.min(fd, daysIn(y, fm - 1))));
+    const y = f0.getUTCFullYear() + k, end = fyEnd(y);
     return { y, end, ...dated(addMonths(end, 6)) };
   }).filter((r) => founded === null || r.end >= founded);
-  // ÄS § 179: the first financial year may run up to 18 months, so with an assumed FY end a young company's first report date is never definite.
-  const firstFyY = founded !== null && fy.provenance === "assumption" && Number(founded.slice(0, 4)) >= f0.getUTCFullYear() - 1 ? fyRows[0]?.y : undefined;
+  // ÄS § 179: the first financial year (the one containing the founding date) may run up to 18 months, so its report date is never definite.
+  const firstFyY = founded !== null && fyRows[0] && fyEnd(fyRows[0].y - 1) < founded ? fyRows[0].y : undefined;
   const firstFy = { applies: "if" as const, condition_et: "Esimese majandusaasta lõpp sõltub põhikirjast (võib olla kuni 18 kuud).", condition_en: "The end of the first financial year depends on the articles of association (it may run up to 18 months)." };
   const fyLabel = (r: { y: number; end: string }) => fy.value === "12-31" ? { et: `${r.y}. a majandusaasta aruanne`, en: `${r.y} annual report` } : { et: `Majandusaasta aruanne (majandusaasta lõppes ${etDate(r.end)})`, en: `Annual report (financial year ended ${enDate(r.end)})` };
   // Register signal: latest_year is the newest report period on file; filed refers to that period.
