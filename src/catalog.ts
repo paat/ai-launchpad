@@ -66,7 +66,7 @@ export const PLAYBOOKS: Playbook[] = [
     approval_kind: null, done_when: "The owner has seen each deadline with its source and has said which jobs to prepare.", verify_with: "Each row's official source link." },
   { id: "payment-reminder", title: "Remind a customer about an overdue invoice", title_et: "Meenuta kliendile tasumata arvet",
     summary: "Your assistant finds unpaid invoices past their due date and drafts a polite reminder. Nothing is sent until you approve the exact text, amount and recipient.",
-    source: "https://www.riigiteataja.ee/akt/V%C3%95S", source_label: "Võlaõigusseadus § 113 (viivis), Riigi Teataja",
+    source: "https://www.riigiteataja.ee/akt/13113422?leiaKehtiv=", source_label: "Võlaõigusseadus § 113 (viivis), Riigi Teataja",
     triggers: [],
     needs: ["Unpaid sales invoices: the owner's accounting connector (search_services, e.g. werkzeug, trivis) or a file the owner shares.", "The owner's own email tool to send the reminder."],
     steps: [
@@ -75,7 +75,7 @@ export const PLAYBOOKS: Playbook[] = [
       "Call request_approval with action kind send_message; recipient.name and recipient.address: the customer and their e-mail; amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000); period: the invoice's period; document.title and document.content: the exact reminder; summary: one line for the owner.",
       "After the owner says it is approved, call get_approval. Act only if its state is approved, and send exactly that text with your own tools; Launchpad sends nothing.",
       "Call record_action_outcome with outcome sent (or failed).",
-      "Advance the outcome to paid only if you see the payment, for example in the accounting connector.",
+      "Record paid with record_action_outcome using a NEW report_id (the same report_id conflicts), and only if you see the payment, for example in the accounting connector.",
     ],
     approval_kind: "send_message", done_when: "The approved reminder was sent and record_action_outcome recorded sent.", verify_with: "The payment in the owner's accounting connector or bank statement; until then the outcome stays sent." },
   { id: "vat-return-prep", title: "Prepare the monthly VAT return (KMD)", title_et: "Valmista ette käibedeklaratsioon (KMD)",

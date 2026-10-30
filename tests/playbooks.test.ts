@@ -24,7 +24,7 @@ describe("executable job playbooks (#26)", () => {
       if (p.approval_kind !== null) expect(APPROVAL_KINDS).toContain(p.approval_kind);
     }
     expect(byId("deadlines-check").approval_kind).toBeNull();
-    expect(byId("payment-reminder")).toMatchObject({ approval_kind: "send_message", source: "https://www.riigiteataja.ee/akt/V%C3%95S" });
+    expect(byId("payment-reminder")).toMatchObject({ approval_kind: "send_message", source: "https://www.riigiteataja.ee/akt/13113422?leiaKehtiv=" });
     expect(byId("vat-return-prep")).toMatchObject({ approval_kind: "prepare_filing", triggers: ["vat-return-kmd"] });
     expect(byId("annual-report")).toMatchObject({ approval_kind: "prepare_filing", triggers: ["annual-report", "annual-report-overdue"] });
     expect(byId("annual-report").verify_with).toBe("With applies \"yes\" (public-register facts): the register's report_status; get_obligations stops showing the row once the register lists the report as filed. With applies \"if\": the owner's e-Business Register submission confirmation.");
@@ -40,7 +40,7 @@ describe("executable job playbooks (#26)", () => {
     expect(byId("annual-report").steps.join(" ")).toMatch(/owner signs and submits the report in the e-Business Register; never automate/);
     const remind = byId("payment-reminder").steps.join(" ");
     expect(remind).toContain("Do not threaten late-payment interest (viivis) unless the owner asks for it.");
-    expect(remind).toMatch(/request_approval with action kind send_message.*get_approval.*record_action_outcome with outcome sent.*paid only if you see the payment/s);
+    expect(remind).toMatch(/request_approval with action kind send_message.*get_approval.*record_action_outcome with outcome sent.*paid with record_action_outcome using a NEW report_id.*only if you see the payment/s);
   });
 
   test("every trigger is a rule_id the engine can emit, mapped to one playbook, with the same official source", () => {
@@ -79,7 +79,7 @@ describe("executable job playbooks (#26)", () => {
   test("assistant_instruction: a conditional next_deadline is presented as conditional, its question first (tribunal T-006)", async () => {
     const r = await companyObligations(ar(), { registryCode: MARI, months: 1, today: at("2026-10-30") });
     if (!r.ok) throw new Error(r.error);
-    expect(r.result.assistant_instruction.endsWith(" If next_deadline.applies is 'if', present it as conditional and ask its facts_needed question first.")).toBe(true);
+    expect(r.result.assistant_instruction.endsWith(" If next_deadline.applies is 'if', present it as conditional and quote its condition.")).toBe(true);
   });
 
   test("next_deadline is present when the window is empty (30 Oct, months 1, VAT-registered sample)", async () => {

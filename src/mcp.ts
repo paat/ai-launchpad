@@ -192,7 +192,7 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
     playbooks: PLAYBOOKS.filter((p) => [...r.obligations, ...(next ? [next] : [])].some((x) => p.triggers.includes(x.rule_id))).map(({ id, title, title_et, approval_kind }) => ({ id, title, title_et, approval_kind })),
     facts_needed: [...(miss ? [REGISTRY_CODE_NEEDED] : []), ...confirm, ...r.facts_needed.filter((n) => !confirm.some((c) => c.fact === n.fact))],
     data_as_of: company.as_of, disclaimer: OBLIGATIONS_DISCLAIMER,
-    assistant_instruction: `Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed.${miss ? " Ask the owner for the 8-digit registry code." : ""} Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and ask its facts_needed question first.`,
+    assistant_instruction: `Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed.${miss ? " Ask the owner for the 8-digit registry code." : ""} Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.`,
   } };
 }
 
