@@ -283,6 +283,15 @@ test("/uhenda shows an OAuth grant as connected from its own last use, even with
   expect(await (await b.request("/uhenda")).text()).toContain("Ühendatud · ChatGPT jõudis kohale");
 });
 
+test("/uhenda does not show an expired OAuth grant as connected (#37 item 2)", async () => {
+  const { b } = await realChatgpt();
+  expect(await (await b.request("/uhenda")).text()).toContain("Ühendatud · ChatGPT jõudis kohale");
+  db.prepare("UPDATE oauth_grants SET expires=?").run(Date.now() - 1000);
+  const html = await (await b.request("/uhenda")).text();
+  expect(html).not.toContain("Ühendatud");
+  expect(html).not.toContain("ChatGPT jõudis");
+});
+
 test("last use is written only when older than 5 minutes, and never to mcp_tokens for OAuth calls (#21)", async () => {
   const { b, call, chatgpt } = await realChatgpt();
   const recent = new Date(Date.now() - 60_000).toISOString();

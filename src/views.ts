@@ -542,9 +542,10 @@ function stateLine(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, 
   else if (done) steps.push({ cls: sample ? "demo" : "done", mark: sample ? "–" : "✓", text: sample ? t(`${act[1]}: demo`, `${act[2]}: demo`) : t(act[1], act[2]), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(done.observed_at, l)}${sample ? t(" · päriselt ei saadetud", " · nothing really sent") : ""}` });
   else steps.push({ cls: "todo", mark: "", text: t(`${act[1]}: ootab assistendi teadet`, `${act[2]}: waiting for your assistant's report`) });
   if (follow && !failed) {
-    const f = seen(follow[0]), rej = seen("rejected");
-    if (rej) steps.push({ cls: "stop", mark: "✕", text: t("Tagasi lükatud", "Rejected"), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(rej.observed_at, l)}` });
-    else if (f) steps.push({ cls: "done", mark: "✓", text: t(follow[1], follow[2]), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(f.observed_at, l)}` });
+    // Terminal follow-ups: a filing ends accepted or rejected; a send also ends paid.
+    const end = v.history.find((h) => (v.kindKey === "prepare_filing" ? ["accepted", "rejected"] : ["accepted", "rejected", "paid"]).includes(h.outcome));
+    if (end?.outcome === "rejected") steps.push({ cls: "stop", mark: "✕", text: t("Tagasi lükatud", "Rejected"), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(end.observed_at, l)}` });
+    else if (end) steps.push({ cls: "done", mark: "✓", text: t(OUTCOME[end.outcome][1], OUTCOME[end.outcome][2]), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(end.observed_at, l)}` });
     else steps.push({ cls: "todo", mark: "", text: t(`${follow[1]}: ootab`, `${follow[2]}: pending`) });
   }
   const current = steps.findIndex((s) => s.cls === "todo");

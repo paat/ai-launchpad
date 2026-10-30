@@ -8,7 +8,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createApp, type Config } from "../src/app.js";
 import { openDb, sha256 } from "../src/db.js";
-import { approvalDigest, canonicalJson } from "../src/mcp.js";
+import { approvalDigest, canonicalJson, type ApprovalRow } from "../src/mcp.js";
+import { approvalCardBody } from "../src/views.js";
 
 // Synthetic Google-style owners with direct sessions/tokens; no OIDC.
 let server: Server; let base = "";
@@ -386,4 +387,46 @@ test("Täna shows a pending approval behind 60 newer consumed ones; counts and p
   expect(html).toContain('<h2 id="ootab-h">Ootab sinult (1)</h2>');
   expect(html).toContain('<a class="needs" href="#ootab"><b>1</b>');
   expect(html).toContain('<a class="btn" href="/approvals/appr_old_pending">Vaata kinnitust</a>');
+});
+
+test("the receipt stepper treats accepted, rejected and paid as terminal for sends (#37 item 1)", () => {
+  const at = "2026-10-29T10:00:00.000Z";
+  const card = (kind: string, outcomes: string[]) => {
+    const history = outcomes.map((outcome) => ({ outcome, observed_at: at, recorded_at: at }));
+    const a: ApprovalRow = { id: "appr_s", kind, report_id: "r", payload_json: JSON.stringify(reminder({ kind })), digest: "d".repeat(64), state: "consumed", expires_at: at, created_at: at, decided_at: at, consumed_at: at, outcome_json: JSON.stringify({ ...history[history.length - 1], history }) };
+    return approvalCardBody({ csrf: "c", a, lang: "et", sample: false, now: new Date(at) });
+  };
+  for (const kind of ["send_message", "send_invoice"]) {
+    const accepted = card(kind, ["sent", "accepted"]);
+    expect(accepted, kind).toMatch(/state-step--done"><span class="state-mark" aria-hidden="true">✓<\/span><span class="state-text">Vastu võetud/);
+    expect(accepted, kind).not.toContain("Makstud: ootab");
+    expect(accepted, kind).not.toContain('aria-current="step"');
+    const rejected = card(kind, ["sent", "rejected"]);
+    expect(rejected, kind).toMatch(/state-step--stop"><span class="state-mark" aria-hidden="true">✕<\/span><span class="state-text">Tagasi lükatud/);
+    expect(rejected, kind).not.toContain("Makstud: ootab");
+    expect(rejected, kind).not.toContain('aria-current="step"');
+    const paid = card(kind, ["sent", "paid"]);
+    expect(paid, kind).toMatch(/state-step--done"><span class="state-mark" aria-hidden="true">✓<\/span><span class="state-text">Makstud/);
+    expect(paid, kind).not.toContain('aria-current="step"');
+    // Only sent: the follow-up is still open.
+    expect(card(kind, ["sent"]), kind).toMatch(/<li class="state-step state-step--todo" aria-current="step"><span class="state-mark" aria-hidden="true"><\/span><span class="state-text">Makstud: ootab/);
+  }
+});
+
+test("Täna keeps an old failed or rejected approval in Ootab sinult behind 60 newer done ones (#37 item 3)", async () => {
+  const o = owner("old-failed");
+  const ins = db.prepare("INSERT INTO approvals(id,owner_id,kind,payload_json,digest,state,expires_at,created_at,decided_at,consumed_at,outcome_json) VALUES(?,?,'send_invoice',?,?,'consumed',?,?,?,?,?)");
+  const later = new Date(Date.now() + 3600_000).toISOString(), t0 = Date.now() - 3600_000;
+  const old = new Date(t0).toISOString();
+  ins.run("appr_old_failed", "old-failed", JSON.stringify(reminder({ document: { title: "Old failed reminder", content: "Tere!" } })), "f".repeat(64), later, old, old, old, JSON.stringify({ outcome: "failed", observed_at: old }));
+  ins.run("appr_old_rejected", "old-failed", JSON.stringify(reminder({ document: { title: "Old rejected reminder", content: "Tere!" } })), "e".repeat(64), later, old, old, old, JSON.stringify({ outcome: "rejected", observed_at: old }));
+  for (let i = 0; i < 60; i++) {
+    const at = new Date(t0 + (i + 1) * 1000).toISOString();
+    ins.run(`appr_newer_${i}`, "old-failed", JSON.stringify(reminder({ document: { title: `Newer ${i}`, content: "Tere!" } })), `${i}`.padStart(64, "1"), later, at, at, at, JSON.stringify({ outcome: "sent", observed_at: at }));
+  }
+  const html = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
+  expect(html).toContain('<h2 id="ootab-h">Ootab sinult (2)</h2>');
+  expect(html).toContain('href="/approvals/appr_old_failed"');
+  expect(html).toContain('href="/approvals/appr_old_rejected"');
+  expect(html.match(/Ei õnnestunud — vaata üle/g)).toHaveLength(2);
 });
