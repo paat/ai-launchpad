@@ -7,13 +7,14 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
-import { shell, loginPage, statusBody, activityBody, connectionBody, setupBody } from "../src/views.ts";
+import { shell, loginBody, tanaBody, activityBody, connectionBody, setupBody, landingBody, connectBody, approvalCardBody, approvalsListBody } from "../src/views.ts";
+import { computeObligations } from "../src/obligations.ts";
+import { SYNTHETIC_COMPANIES } from "../src/fixtures.ts";
 import { assessmentSchema, computeCoverage } from "../src/core.ts";
 
 const SHOTS = path.resolve("scratch/implementation/ui-redesign-finish-01-shots");
 await mkdir(SHOTS, { recursive: true });
 const CSRF = "synthetic-csrf";
-const BADGE = "Synthetic demo · mock data";
 const FIRST_REQUEST =
   "Use AI Launchpad to review what you know about my business admin. Tell me what is still unknown and recommend one next action that would remove the most work. Do not change any business service.";
 const ENDPOINT = "https://launchpad.example.com/mcp";
@@ -28,26 +29,45 @@ const assessment = assessmentSchema.parse({
   conclusion: "Partly mapped.",
   next_action: { title: "Check the urgent filing", rationale: "It may carry a deadline.", savings_basis: "unknown", uncertainty: "High.", needs_owner: true },
 });
+const NOW = new Date("2026-11-03T12:00:00Z");
+const mari = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: NOW, months: 2 });
+const mariDeadlines = { company: { name: "Mari Disain OÜ", registry_code: "19990001", synthetic: true, provenance: "synthetic_fixture", label_et: "Näidis", label_en: "Sample", snapshot_id: null, as_of: null, sources: [], attribution: "" }, obligations: mari.obligations, facts_needed: mari.facts_needed };
+const tana = (a, extra = {}) => tanaBody({ lang: "et", csrf: CSRF, sample: true, label: "Synthetic OÜ", assessment: a, coverage: computeCoverage(a), assessedAt: a ? "2026-10-28T10:00:00Z" : null, exclusions: [], approvals: [], progress: [], deadlines: null, needs: [], reportCount: 1, now: NOW, ...extra });
+// An 80-character document title on a consumed (sent) approval: the receipt and list must wrap it.
+const LONG_TITLE = "Maksemeeldetuletus: arve 2026-011 Kase Konsult OÜ tellitud strateegiaseminari eest";
+const longApproval = { id: "appr_long", kind: "send_message", report_id: "r1", digest: "d".repeat(64), state: "consumed", created_at: "2026-11-03T09:00:00Z", expires_at: "2026-11-04T09:00:00Z", decided_at: "2026-11-03T09:05:00Z", consumed_at: "2026-11-03T09:10:00Z",
+  outcome_json: JSON.stringify({ outcome: "sent", observed_at: "2026-11-03T09:10:00Z", history: [{ outcome: "sent", observed_at: "2026-11-03T09:10:00Z" }] }),
+  payload_json: JSON.stringify({ kind: "send_message", recipient: { name: "Demo Klient OÜ", address: "arved@demo-klient.example" }, amount_cents: 24000, period: "2026-10", document: { title: LONG_TITLE, content: "Tere!" }, summary: "Tasumata arve." }) };
 const pageHtml = {
   "connection-https": () =>
-    shell({ title: "Connection", active: "connection", badge: BADGE, csrf: CSRF, demo: true,
+    shell({ title: "Connection", active: "none", csrf: CSRF, sample: true, bodyLang: "en",
       body: connectionBody({ csrf: CSRF, baseUrl: "https://launchpad.example.com", reportingEnabled: false, tokens: [], grants: [], candidates: [] }) }),
   "connection-local": () =>
-    shell({ title: "Connection", active: "connection", badge: BADGE, csrf: CSRF, demo: true,
+    shell({ title: "Connection", active: "none", csrf: CSRF, sample: true, bodyLang: "en",
       body: connectionBody({ csrf: CSRF, baseUrl: "http://localhost:3000", reportingEnabled: false, tokens: [], grants: [], candidates: [] }) }),
   "status-assessed": () =>
-    shell({ title: "Status", active: "status", badge: BADGE, csrf: CSRF, demo: true,
-      body: statusBody({ label: "Synthetic OÜ", demo: true, assessment, coverage: computeCoverage(assessment), assessedAt: "2026-10-28T10:00:00Z", exclusions: [], historyCount: 1, reportingEnabled: false }) }),
+    shell({ title: "Täna", active: "tana", csrf: CSRF, sample: true, body: tana(assessment, { deadlines: mariDeadlines, needs: [{ id: "need_1", state: "classified", reason: null, need_redacted: "Esita KMD", blocker: "needs_owner_pin_or_signature", job_hint_redacted: null, category: "tax_filings", demand_label: "KMD esitamine", same_as: null, spec: "Mock.", classified_by: "mock", created_at: "2026-11-03T10:00:00Z" }] }) }),
   "status-unassessed": () =>
-    shell({ title: "Status", active: "status", badge: BADGE, csrf: CSRF, demo: true,
-      body: statusBody({ label: "Synthetic OÜ", demo: true, assessment: null, coverage: computeCoverage(null), assessedAt: null, exclusions: [], historyCount: 0, reportingEnabled: false }) }),
+    shell({ title: "Täna", active: "tana", csrf: CSRF, sample: true, body: tana(null) }),
   activity: () =>
-    shell({ title: "Activity", active: "activity", badge: BADGE, csrf: CSRF, demo: true,
-      body: activityBody({ rows: [{ action: "report saved", actor: "assistant", outcome: "accepted", created_at: "2026-10-28", summary: "Synthetic" }], receipts: [], exclusions: [] }) }),
+    shell({ title: "Tehtud", active: "tehtud", csrf: CSRF, sample: true,
+      body: activityBody({ rows: [{ action: "report_progress", actor: "assistant", outcome: "ok", created_at: "2026-10-28T10:00:00Z", summary: "Synthetic" }], receipts: [], exclusions: [], lang: "et", now: NOW }) }),
   login: () =>
-    loginPage({ demo: true, google: true, preauth: "pre-1", companies: [{ key: "alpha", label: "Demo Plumbing OÜ (synthetic)" }] }),
+    shell({ title: "Logi sisse", active: "none", csrf: "", body: loginBody({ lang: "et", demo: true, google: true, preauth: "pre-1", companies: [{ key: "alpha", label: "Mari Disain OÜ (näidis)" }] }) }),
+  landing: () =>
+    shell({ title: "Tähtajad", active: "none", csrf: "", sample: true, body: landingBody({ lang: "et", q: "Mari Disain", state: { kind: "result", result: mariDeadlines }, now: NOW }) }),
+  "landing-empty": () =>
+    shell({ title: "Tähtajad", active: "none", csrf: "", body: landingBody({ lang: "et", q: "", state: { kind: "empty" }, now: NOW }) }),
+  uhenda: () =>
+    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true }) }),
+  "uhenda-local": () =>
+    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "chatgpt", state: { kind: "anon" }, owner: false }) }),
+  "approval-receipt-long": () =>
+    shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: longApproval, lang: "et", sample: true, now: NOW }) }),
+  approvals: () =>
+    shell({ title: "Kinnitused", active: "none", csrf: CSRF, sample: true, body: approvalsListBody([longApproval], "et", true, NOW) }),
   setup: () =>
-    shell({ title: "Setup", active: "none", badge: BADGE, csrf: CSRF, demo: true,
+    shell({ title: "Setup", active: "none", csrf: CSRF, sample: true, bodyLang: "en",
       body: setupBody({ csrf: CSRF, result: null }) }),
 };
 
@@ -70,16 +90,27 @@ try {
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e?.message ?? e)));
 
-  const overflowAndTargets = () => page.evaluate(() => {
+  // New pages: every visible stand-alone a[href] is a tap target too. A link inside running text (its parent
+  // has its own words besides separators) is exempt; the redesign's legacy English pages are not in scope.
+  const NEW_PAGES = new Set(["status-assessed", "status-unassessed", "activity", "login", "landing", "landing-empty", "uhenda", "uhenda-local", "approval-receipt-long", "approvals"]);
+  const overflowAndTargets = (allAnchors) => page.evaluate((allAnchors) => {
     const de = document.documentElement;
     const targets = [];
-    for (const el of document.querySelectorAll("button, .btn, nav.main a, .tabs button")) {
+    const standAlone = (a) => ![...a.parentElement.childNodes].some((n) => n.nodeType === 3 && n.textContent.replace(/[\s·|]/g, ""));
+    const els = new Set(document.querySelectorAll("button, .btn, nav.main a, .tabs button, .choice a, .lang-toggle, .tap-link, .link-row, label.check, .today-sum a"));
+    // Links under a closed disclosure count too: measure with every details open, then restore.
+    const closed = allAnchors ? [...document.querySelectorAll("details:not([open])")] : [];
+    for (const d of closed) d.open = true;
+    if (allAnchors) for (const a of document.querySelectorAll("a[href]")) if (standAlone(a)) els.add(a);
+    for (const el of els) {
       const r = el.getBoundingClientRect();
       const vis = r.width > 0 && r.height > 0 && getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden";
       if (vis) targets.push({ tag: el.tagName, id: el.id || "", text: (el.textContent || "").trim().slice(0, 40), h: Math.round(r.height * 10) / 10 });
     }
-    return { scrollW: de.scrollWidth, clientW: de.clientWidth, bodyScrollW: document.body.scrollWidth, targets };
-  });
+    const out = { scrollW: de.scrollWidth, clientW: de.clientWidth, bodyScrollW: document.body.scrollWidth, targets };
+    for (const d of closed) d.open = false;
+    return out;
+  }, allAnchors);
   const boxInFirstViewport = (sel) => page.evaluate((s) => {
     const el = document.querySelector(s);
     if (!el) return null;
@@ -91,7 +122,7 @@ try {
     await page.setViewportSize(vp);
     for (const [name, make] of Object.entries(pageHtml)) {
       await page.setContent(make());
-      const g = await overflowAndTargets();
+      const g = await overflowAndTargets(NEW_PAGES.has(name));
       assert.ok(g.scrollW <= g.clientW + 1, `${name}@${vp.width}: no h-overflow html ${g.scrollW}>${g.clientW}`);
       assert.ok(g.bodyScrollW <= g.clientW + 1, `${name}@${vp.width}: no h-overflow body ${g.bodyScrollW}>${g.clientW}`);
       const small = g.targets.filter((t) => t.h < 44);
@@ -105,7 +136,7 @@ try {
     assert.ok(copyBox?.visible, `connection-https@${vp.width}: Copy MCP address in first viewport ${JSON.stringify(copyBox)}`);
     geometry[`copy-endpoint@${vp.width}`] = copyBox;
     await page.setContent(pageHtml["status-unassessed"]());
-    const linkBox = await boxInFirstViewport('a.btn[href="/connection"]');
+    const linkBox = await boxInFirstViewport('a.btn[href="/uhenda"]');
     assert.ok(linkBox?.visible, `status-unassessed@${vp.width}: connection link in first viewport ${JSON.stringify(linkBox)}`);
     geometry[`unassessed-connection-link@${vp.width}`] = linkBox;
   }
@@ -176,33 +207,25 @@ try {
       }
     }
   }
-  // Status Copy next step: success + absent fallback.
-  for (const mode of ["missing", "success"]) {
-    await page.setContent(pageHtml["status-assessed"]());
-    await page.evaluate((m) => {
-      window.copyCalls = [];
-      Object.defineProperty(navigator, "clipboard", { configurable: true,
-        value: m === "missing" ? undefined : { writeText: (t) => { window.copyCalls.push(t); return Promise.resolve(); } } });
-    }, mode);
-    await page.locator("#copy-next").click();
-    const s = await copyState("next");
-    if (mode === "success") { assert.equal(s.calls.length, 1); assert.ok(s.calls[0].includes("Check the urgent filing")); assert.equal(s.successVisible, true); }
-    else { assert.equal(s.fallbackVisible, true); assert.ok(s.value.includes("Check the urgent filing")); assert.equal(s.active, "copy-next-text"); }
+  // Täna is zero-JS: no inline script; the prompts are visible text.
+  for (const name of ["status-assessed", "status-unassessed", "landing", "landing-empty", "uhenda", "activity", "login"]) {
+    assert.ok(!pageHtml[name]().includes("<script"), `${name}: zero inline JS`);
   }
 
   // --- Unknowns visible outside closed details; synthetic/unchecked labels ---
   await page.setContent(pageHtml["status-assessed"]());
   const unk = await page.evaluate(() => {
-    const box = document.querySelector(".attention");
+    const box = [...document.querySelectorAll("#ootab .ask-row")].find((r) => r.textContent.includes("An urgent filing remains unassessed."));
     return { exists: !!box, visible: !!box && box.getBoundingClientRect().height > 0, inDetails: !!box?.closest("details"),
-      text: box?.textContent ?? "", body: document.body.textContent, badge: document.querySelector(".badge")?.textContent ?? "" };
+      body: document.body.textContent, sample: document.querySelector("header .label-chip--sample")?.textContent ?? "",
+      headings: [...document.querySelectorAll("main h2")].map((h) => h.textContent) };
   });
   assert.ok(unk.exists && unk.visible && !unk.inDetails, "unknowns visible outside details");
-  assert.ok(unk.text.includes("An urgent filing remains unassessed."), "gap text visible");
-  assert.ok(unk.body.includes("not independently checked"), "unchecked label visible");
-  assert.ok(unk.badge.includes("Synthetic"), "synthetic badge visible");
+  assert.ok(unk.body.includes("AI-hüppelaud neid ei kontrollinud"), "unchecked label present");
+  assert.equal(unk.sample, "Näidis", "sample chip visible");
+  assert.deepEqual(unk.headings.slice(0, 3).map((h) => h.replace(/ \(\d+\)$/, "")), ["Ootab sinult", "Assistent tegi", "Tulekul"], "Täna card order");
   await page.setContent(pageHtml.login());
-  assert.ok((await page.textContent("body")).includes("Local synthetic demo"), "login synthetic label");
+  assert.ok((await page.textContent("body")).includes("Proovi näidisettevõttega"), "login synthetic section");
   await page.setContent(pageHtml.setup());
   const setupText = await page.textContent("body");
   assert.ok(setupText.includes("Fixture guidance") && setupText.includes("No live model is called"), "setup fixture label");
@@ -238,8 +261,7 @@ try {
   // --- Escaping: untrusted assessment text never injects ---
   const evil = assessmentSchema.parse({ ...assessment, gaps: ["<svg onload=alert(1)>"],
     next_action: { ...assessment.next_action, title: '"><script>window.__pwned=1</script>', rationale: "x & y" } });
-  await page.setContent(shell({ title: "Status", active: "status", badge: BADGE, csrf: CSRF, demo: true,
-    body: statusBody({ label: "Synthetic OÜ", demo: true, assessment: evil, coverage: computeCoverage(evil), assessedAt: null, exclusions: [], historyCount: 1, reportingEnabled: false }) }));
+  await page.setContent(shell({ title: "Täna", active: "tana", csrf: CSRF, sample: true, body: tana(evil) }));
   const esc = await page.evaluate(() => ({ pwned: window.__pwned ?? null, svg: document.querySelectorAll("svg").length,
     scripts: [...document.querySelectorAll("script")].map((s) => s.textContent).join("\n"), text: document.body.textContent }));
   assert.equal(esc.pwned, null, "no script injection executed");

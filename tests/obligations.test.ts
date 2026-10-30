@@ -11,7 +11,7 @@ import { openDb, sha256 } from "../src/db.js";
 import { assistantFactsSchema, companyObligations, TOOL_ARG_KEYS } from "../src/mcp.js";
 import { arikratt, CACHE_TTL_MS, mapCompany } from "../src/arikratt.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
-import { computeObligations, easterSunday, publicHolidays, shiftToWorkingDay, validRegistryCode, type CompanyFacts } from "../src/obligations.js";
+import { HANDOFF, computeObligations, easterSunday, publicHolidays, shiftToWorkingDay, validRegistryCode, type CompanyFacts } from "../src/obligations.js";
 
 const MARI = "19990001", KASE = "19990002", FAKE_VALID = "10000062", SLOW = "10000107";
 const at = (day: string) => new Date(`${day}T10:00:00Z`);
@@ -54,7 +54,9 @@ describe("rules engine (memo § 3, pure)", () => {
     const late = ofRule(SYNTHETIC_COMPANIES[MARI].facts, "2027-07-05", "annual-report-overdue");
     expect(late).toHaveLength(1);
     expect(late[0]).toMatchObject({ kind: "risk", applies: "yes", statutory_due: "2027-06-30" });
-    expect(late[0].reason_et).toContain("2027-09-30");
+    // Owner-facing dates are civil dates, never ISO (QA D-11).
+    expect(late[0].reason_et).toContain("alates 30.09.2027");
+    expect(late[0].reason_en).toContain("from 30 September 2027");
     expect(JSON.stringify(late[0])).not.toMatch(/€|eurot|\d+ EUR/);
     // Non-calendar FY (TsÜS § 136 lg 3–4): FY end 30 Jun → due 30 Dec.
     const fy = ofRule({ ...SYNTHETIC_COMPANIES[MARI].facts, fy_end: { value: "06-30", provenance: "assistant_supplied" } }, "2026-12-01", "annual-report");
@@ -121,7 +123,18 @@ describe("rules engine (memo § 3, pure)", () => {
     expect(lateNo.facts_needed.map((n) => n.fact)).not.toContain("other_tsd_triggers_last_month");
     // 3 Nov, months 1: October's TSD (due 10 Nov) is inside the window, so ask about October.
     const early = computeObligations({}, { today: at("2026-11-03"), months: 1 });
-    expect(early.facts_needed).toContainEqual({ fact: "payouts_last_month", question_et: "Kas maksid oktoobris palka, juhatuse liikme tasu või dividende?", question_en: "Did the company pay salary, a board member fee or dividends in October?" });
+    expect(early.facts_needed).toContainEqual({ fact: "payouts_last_month", question_et: "Kas maksid oktoobris palka, juhatuse liikme tasu või dividende?", question_en: "Did the company pay salary, a board member fee or dividends in October?", period_label_et: "oktoober 2026 väljamaksed" });
+  });
+
+  test("TSD: the assistant's other_tsd_triggers_last_month true makes last month's row definite (#30 item 1)", () => {
+    const other = { other_tsd_triggers_last_month: { value: true, provenance: "assistant_supplied" as const } };
+    const rows = ofRule(other, "2026-11-03", "tsd-monthly-return", 2);
+    expect(rows.map((o) => [o.period_label_et, o.applies])).toEqual([["oktoober 2026 väljamaksed", "yes"], ["november 2026 väljamaksed", "if"]]);
+    expect(rows[0]).toMatchObject({ reason_et: "Kehtib, sest assistendi sõnul oli oktoobris töötaja või muu TSD kohustus.", reason_en: "Applies because your assistant reports an employee or another TSD obligation in October.", applies_because: [{ fact: "other_tsd_triggers_last_month", value: true, provenance: "assistant_supplied" }] });
+    expect(rows[0].condition_et).toBeUndefined();
+    // The row cannot go away any more, so the payouts question is not asked.
+    expect(computeObligations(other, { today: at("2026-11-03"), months: 2 }).facts_needed.map((n) => n.fact)).not.toContain("payouts_last_month");
+    expect(ofRule({ ...other, payouts_last_month: { value: false, provenance: "assistant_supplied" } }, "2026-11-03", "tsd-monthly-return")[0].applies).toBe("yes");
   });
 
   test("annual report: filed null (unknown) never counts as filed", () => {
@@ -174,6 +187,26 @@ describe("rules engine (memo § 3, pure)", () => {
     const r = computeObligations(SYNTHETIC_COMPANIES[MARI].facts, { today: new Date("2026-11-30T22:30:00Z"), months: 3 });
     expect(r.window).toEqual({ from: "2026-12-01", to: "2027-02-28" });
     expect(r.obligations.filter((o) => o.kind === "deadline").map((o) => o.effective_due)).toEqual(["2026-12-10", "2026-12-21", "2027-01-11", "2027-01-20", "2027-02-10", "2027-02-22"]);
+  });
+
+  test("every rule_id computeObligations can emit has a static handoff (no model, no amounts)", () => {
+    const said = <T>(value: T) => ({ value, provenance: "assistant_supplied" as const });
+    const scenarios: CompanyFacts[] = [
+      {}, // everything unknown: KMD "if", TSD "if", annual "if"
+      { vat_registered: said(true), payouts_last_month: said(true), annual_report: said({ latest_year: 2024, filed: false, overdue_days: 120 }) },
+      { vat_registered: said(false), ytd_turnover_this_year: said(12_000), hire_or_board_fee_starting: said(true) },
+    ];
+    const seen = new Set<string>();
+    for (const facts of scenarios) for (const day of ["2026-06-01", "2026-11-01"]) for (const o of computeObligations(facts, { today: at(day), months: 3 }).obligations) {
+      const key = o.rule_id === "tsd-monthly-return" ? `${o.rule_id}:${o.applies}` : o.rule_id;
+      seen.add(key);
+      expect(HANDOFF[key], key).toBeDefined();
+      for (const v of Object.values(o.handoff)) { expect(v.trim(), key).not.toBe(""); expect(v, key).not.toMatch(/\{kuu\}|\{month\}|\d/); }
+    }
+    // The scenarios reach every rule, so no HANDOFF entry is dead and no emitted rule lacks one.
+    expect([...seen].sort()).toEqual(Object.keys(HANDOFF).sort());
+    const kmd = computeObligations({ vat_registered: said(true) }, { today: at("2026-11-01"), months: 1 }).obligations.find((o) => o.rule_id === "vat-return-kmd")!;
+    expect(kmd.handoff).toMatchObject({ assistant_et: "kogub oktoobri arved kokku ja kontrollib, et ükski pole puudu", owner_et: "esitad KMD e-MTA-s oma Smart-ID-ga", prompt_et: "Valmista oktoobri KMD jaoks arved ette ja küsi minult kinnitust enne, kui midagi saadad.", assistant_en: "gathers October's invoices and checks none are missing" });
   });
 });
 
@@ -246,7 +279,7 @@ describe("Ärikratt adapter", () => {
   });
   test("register card: official open data via Ärikratt, never an official source; keeps the disclaimer (tribunal T-005)", () => {
     const { company } = mapCompany(FAKE_VALID, fakeCompany(FAKE_VALID));
-    expect(company).toMatchObject({ label_et: "Ametlikud avaandmed (Ärikratt) · Äriregister ja EMTA, seisuga 2026-10-29", label_en: "Official open data (via Ärikratt) · Business Register and EMTA, as of 2026-10-29", disclaimer: "Ametlike avaandmete väljavõte; mitte ametlik registriväljavõte, õigusnõu ega krediidiotsus." });
+    expect(company).toMatchObject({ label_et: "Ametlikud avaandmed (Ärikratt) · Äriregister ja EMTA, seisuga 29.10.2026", label_en: "Official open data (via Ärikratt) · Business Register and EMTA, as of 29 October 2026", disclaimer: "Ametlike avaandmete väljavõte; mitte ametlik registriväljavõte, õigusnõu ega krediidiotsus." });
     expect(JSON.stringify(company)).not.toMatch(/Ametlik allikas|Official source/);
     expect(mapCompany(FAKE_VALID, {}).company.disclaimer).toBeUndefined();
   });
@@ -365,12 +398,14 @@ describe("get_obligations tool and status card", () => {
       for (const b of ob.applies_because) expect(b).toMatchObject({ provenance: "synthetic", source: "synthetic_fixture" });
     }
     const html = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
-    for (const s of ["Järgmised tähtajad", "Next deadlines", "Mari Disain OÜ", "Arvutatud reeglist", "Calculated by rule", "Näidis · Sample", "https://www.riigiteataja.ee/akt/", "KMD ja käibemaks", "Tähtajad arvutab reeglistik, mitte tehisaru."]) expect(html, s).toContain(s);
+    for (const s of ["Tulekul", '<ul class="deadlines">', "Mari Disain OÜ", "Arvutatud reeglist", '<span class="label-chip label-chip--sample">Näidis</span>', "https://www.riigiteataja.ee/akt/", "KMD ja käibemaks", "Tähtajad arvutab reeglistik, mitte tehisaru.", '<dt class="me">Sina</dt>']) expect(html, s).toContain(s);
     expect(html).not.toContain("Ametlik allikas");
-    expect(html).toMatch(/<strong>\d{1,2}\. [a-zõäöü]+, (esmaspäev|teisipäev|kolmapäev|neljapäev|reede)<\/strong>/);
-    // No registry code known: no card, the existing layout stays.
+    // Date first: a dated tile per row, with the Estonian weekday.
+    expect(html).toMatch(/<time class="deadline-date" datetime="\d{4}-\d{2}-\d{2}"><span class="deadline-day">\d{1,2}<\/span><span class="deadline-mon">[a-zõäöü]+\.?<\/span><span class="deadline-wd">(esmaspäev|teisipäev|kolmapäev|neljapäev|reede)<\/span><\/time>/);
+    // No registry code known: no deadline rows, an honest pointer instead.
     const plain = await (await fetch(`${base}/`, { headers: { cookie: owner("plain").cookie } })).text();
-    expect(plain).not.toContain("Järgmised tähtajad");
+    expect(plain).not.toContain('<ul class="deadlines">');
+    expect(plain).toContain("Tähtajad ilmuvad siia, kui assistent teab sinu registrikoodi.");
   });
   test("Status: an unavailable register lookup renders the hint and the plain reason, never a deadlines card (tribunal T-006)", async () => {
     const html = await (await fetch(`${base}/`, { headers: { cookie: owner("nokeyref", FAKE_VALID).cookie } })).text();
@@ -396,6 +431,24 @@ describe("get_obligations tool and status card", () => {
       expect(JSON.stringify(r)).not.toContain(PERSON);
     } finally { s2.close(); }
   });
+  test("public search: a substring goes to the register, only the exact sample name or code opens the fixture (tribunal T-002)", async () => {
+    const cfg6: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
+    const { app: app6 } = createApp(cfg6, openDb(":memory:"));
+    const s6 = await new Promise<Server>((ok) => { const s = app6.listen(0, "127.0.0.1", () => ok(s)); });
+    const base6 = `http://127.0.0.1:${(s6.address() as { port: number }).port}`; cfg6.baseUrl = base6;
+    try {
+      const search = async (q: string) => { const start = toolCalls; const html = await (await fetch(`${base6}/?q=${encodeURIComponent(q)}`)).text(); return { html, calls: toolCalls - start }; };
+      const sub = await search("Mari");
+      expect(sub.calls).toBeGreaterThan(0);
+      expect(sub.html).toContain("Synthetic Register OÜ");
+      expect(sub.html).not.toContain("Mari Disain OÜ");
+      for (const q of ["Mari Disain", "mari disain oü", MARI]) {
+        const exact = await search(q);
+        expect(exact.calls, q).toBe(0);
+        expect(exact.html, q).toContain("Mari Disain OÜ");
+      }
+    } finally { s6.close(); }
+  });
   test("Status: a failed background fill is not retried for 10 minutes (tribunal T-007)", async () => {
     const cfg4: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
     const { app: app4, db: db4 } = createApp(cfg4, openDb(":memory:"));
@@ -417,6 +470,34 @@ describe("get_obligations tool and status card", () => {
       expect(toolCalls - start).toBe(1);
     } finally { warn.mockRestore(); s4.close(); }
   });
+  test("Täna: a remembered failed fill shows the hint and the plain reason, not loading (#30 item 2)", async () => {
+    const cfg5: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
+    const { app: app5, db: db5 } = createApp(cfg5, openDb(":memory:"));
+    const s5 = await new Promise<Server>((ok) => { const s = app5.listen(0, "127.0.0.1", () => ok(s)); });
+    const base5 = `http://127.0.0.1:${(s5.address() as { port: number }).port}`; cfg5.baseUrl = base5;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const now = new Date().toISOString();
+      db5.prepare("INSERT INTO owners(id,subject,kind,reporting_enabled,created_at) VALUES('o','synthetic-o','google',0,?)").run(now);
+      db5.prepare("INSERT INTO workspaces(owner_id,company_ref,label,version) VALUES('o','ws-o','Synthetic workspace',1)").run();
+      db5.prepare("INSERT INTO assessments(id,owner_id,version,payload_json,payload_hash,created_at) VALUES('a','o',1,?,'h',?)").run(JSON.stringify({ ...DEMO_FIXTURES.alpha, company_registry_ref: "10000018" }), now);
+      db5.prepare("INSERT INTO sessions(id_hash,owner_id,csrf,expires_at) VALUES(?,?,?,?)").run(sha256("sess-o"), "o", "csrf-o", new Date(Date.now() + 3600_000).toISOString());
+      const load = async () => (await fetch(`${base5}/`, { headers: { cookie: "lp_session=sess-o" } })).text();
+      expect(await load()).toContain("Registri andmeid laaditakse.");
+      await vi.waitFor(() => expect(warn).toHaveBeenCalledWith("Status deadlines: register lookup failed (not_found)."));
+      const after = await load();
+      expect(after).not.toContain("Registri andmeid laaditakse.");
+      expect(after).toContain("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?”");
+      expect(after).toMatch(/<span class="muted" lang="en">[^<]+<\/span><\/p>/);
+      expect(after).not.toContain('<ul class="deadlines">');
+    } finally { warn.mockRestore(); s5.close(); }
+  });
+  test("Täna: a checksum-invalid assessment registry ref says so instead of dropping Tulekul (#30 item 2)", async () => {
+    const html = await (await fetch(`${base}/`, { headers: { cookie: owner("badref", "19774662").cookie } })).text();
+    const tulekul = html.slice(html.indexOf('id="tulekul"'));
+    expect(tulekul).toContain("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?” <span class=\"muted\">Registrikood ei ole korrektne — palu assistendil see üle kontrollida.</span>");
+    expect(tulekul).not.toContain("Tähtajad ilmuvad siia");
+  });
   test("Status page never waits for the register: a cache miss renders a one-line hint at once", async () => {
     const cfg3: Config = { ...cfg, arikrattApiKey: "test-key", arikrattMcpUrl: fakeUrl };
     const { app: app3, db: db3 } = createApp(cfg3, openDb(":memory:"));
@@ -434,8 +515,8 @@ describe("get_obligations tool and status card", () => {
       const html = await res.text();
       expect(Date.now() - t0).toBeLessThan(1000);
       expect(res.status).toBe(200);
-      expect(html).toContain("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?”");
-      expect(html).not.toContain("Järgmised tähtajad");
+      expect(html).toContain("Registri andmeid laaditakse. Värskenda lehte hetke pärast.");
+      expect(html).not.toContain('<ul class="deadlines">');
     } finally { warn.mockRestore(); s3.close(); }
   });
 });

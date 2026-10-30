@@ -31,6 +31,24 @@ export const BLOCKER_LABELS: Record<Blocker, string> = {
   no_connector: "no connector exists", needs_owner_pin_or_signature: "needs the owner's PIN or signature",
   portal_without_api: "portal without an API", not_supported_yet: "not supported yet", unclear: "unclear",
 };
+// Owner-facing Estonian copy (issue #21). Static maps: never model output.
+export const BLOCKER_LABELS_ET: Record<Blocker, string> = {
+  no_connector: "ühendust pole", needs_owner_pin_or_signature: "vajab sinu Smart-ID-d või allkirja",
+  portal_without_api: "portaalil pole liidest", not_supported_yet: "seda veel ei toetata", unclear: "soov jäi ebaselgeks",
+};
+/** "Mida assistent saab teha": what the assistant can still take off the owner, per blocker. */
+export const BLOCKER_HANDOFF: Record<Blocker, { et: string; en: string }> = {
+  needs_owner_pin_or_signature: { et: "valmistab kõik ette; PIN-i või allkirja annad sina", en: "prepares everything; you give the PIN or signature" },
+  portal_without_api: { et: "valmistab andmed ette; sisestad portaali sina", en: "prepares the data; you enter it in the portal" },
+  no_connector: { et: "ei saa veel; ühendust pole", en: "can't yet; there is no connection" },
+  not_supported_yet: { et: "ei saa veel; ühendust pole", en: "can't yet; there is no connection" },
+  unclear: { et: "küsib sinult, mida täpselt vaja on", en: "asks you what exactly you need" },
+};
+export const CATEGORY_LABELS_ET: Record<Category, string> = {
+  tax_filings: "Maksudeklaratsioonid", bookkeeping: "Raamatupidamine", invoicing: "Arveldus", banking_payments: "Pank ja maksed",
+  payroll_hr: "Palk ja personal", contracts_legal: "Lepingud ja õigus", permits_sector: "Load ja valdkonna nõuded",
+  customers_sales: "Kliendid ja müük", grants_tenders: "Toetused ja hanked", other: "Muu",
+};
 
 export const MAX_NEED_CHARS = 600;
 export const MAX_JOB_HINT_CHARS = 120;

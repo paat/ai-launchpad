@@ -85,23 +85,31 @@ describe("approval cards over MCP", () => {
     const pending = parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: req.approval_id } }));
     expect(pending).toMatchObject({ state: "pending", digest: req.digest, decided_at: null, outcome: null, action: { ...reminder(), currency: "EUR" } });
 
-    // Status attention card + footer link.
+    // Täna: the pending approval leads "Ootab sinult" + footer link.
     const status = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
-    expect(status).toContain("1 approval waiting for you");
+    expect(status).toContain("Sinult on täna vaja üht asja");
+    expect(status).toContain(`href="/approvals/${req.approval_id}"`);
     expect(status).toContain('href="/approvals"');
-    // The card: plain kind, recipient, EUR amount, escaped preformatted content, short digest, the promise line.
+    // The card: document title as H1, kind chip, recipient, EUR amount, period, escaped full content, digest (technical), the promise line.
     const card = await (await fetch(`${base}/approvals/${req.approval_id}`, { headers: { cookie: o.cookie } })).text();
-    for (const s of ["Send an invoice", "Synthetic Client OÜ", "billing@client.example", "€1,240.00", "2026-10", "Payment reminder: invoice 2026-014", "Reminder for overdue invoice 2026-014", req.digest.slice(0, 12), "Approve exactly this", "Decline",
-      "Launchpad never sends, pays or files. After you approve, your assistant does this with its own tools, and only for exactly this content."]) expect(card).toContain(s);
+    for (const s of ["Arve", "Synthetic Client OÜ", "billing@client.example", "1240,00\u00a0€", "oktoober 2026", "<h1 id=\"a-h\">Payment reminder: invoice 2026-014</h1>", "Reminder for overdue invoice 2026-014", req.digest, "Kinnita täpselt see", "Keeldu", "Assistent valmistas ette",
+      "AI-hüppelaud ise ei saada, maksa ega esita midagi; seda teeb sinu assistent oma tööriistadega ja ainult täpselt selle sisuga."]) expect(card).toContain(s);
+    // Besides the hidden form binding, the digest is shown only under Tehniline info.
+    const visible = card.replace(`name="digest" value="${req.digest}"`, "");
+    expect(visible.indexOf(req.digest)).toBeGreaterThan(visible.indexOf("Tehniline info"));
     expect(card).toMatch(/<pre[^>]*>Tere!\n\nInvoice 2026-014 \(€1,240.00\) is overdue. &lt;script&gt;alert\(1\)&lt;\/script&gt;/);
     expect(card).not.toContain("<script>alert(1)");
-    expect(card).toMatch(/Expires in 2[34] h/);
+    expect(card).toMatch(/Kehtib 24 tundi, kuni (homme|täna) kella \d{2}:\d{2}\u2011ni\./);
+    expect(card).not.toMatch(/15 minutit|UTC/);
     const list = await (await fetch(`${base}/approvals`, { headers: { cookie: o.cookie } })).text();
     expect(list).toContain(`/approvals/${req.approval_id}`);
 
     // A stale card (wrong digest), a null Origin, a bad decision or a missing CSRF approve nothing.
     const stale = await decide(o, req.approval_id, { decision: "approve", digest: "0".repeat(64) });
-    expect(stale.status).toBe(409); expect(await stale.text()).toMatch(/Nothing was approved/);
+    expect(stale.status).toBe(409);
+    const staleHtml = await stale.text();
+    expect(staleHtml).toContain("Midagi muutus pärast seda, kui kaardi avasid. Midagi ei kinnitatud. Ava kinnitus uuesti.");
+    expect(staleHtml).toContain('<html lang="et">'); expect(staleHtml).toContain('href="/">Tagasi: Täna</a>');
     expect((await decide(o, req.approval_id, { decision: "approve", digest: req.digest }, "null")).status).toBe(403);
     expect((await decide(o, req.approval_id, { decision: "maybe", digest: req.digest })).status).toBe(400);
     expect((await decide({ ...o, csrf: "wrong" }, req.approval_id, { decision: "approve", digest: req.digest })).status).toBe(403);
@@ -112,8 +120,9 @@ describe("approval cards over MCP", () => {
     expect(row(req.approval_id).state).toBe("approved");
     expect((await decide(o, req.approval_id, { decision: "decline", digest: req.digest })).status).toBe(409);
     const decided = await (await fetch(`${base}/approvals/${req.approval_id}`, { headers: { cookie: o.cookie } })).text();
-    expect(decided).not.toContain("Approve exactly this"); expect(decided).toMatch(/Approved/); expect(decided).toMatch(/UTC/);
-    expect((await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text())).not.toContain("waiting for you");
+    expect(decided).not.toContain("Kinnita täpselt see"); expect(decided).toMatch(/✓ <\/span>Kinnitatud \d{2}:\d{2}/); expect(decided).toContain("Kinnitasin"); expect(decided).not.toMatch(/UTC/);
+    const after = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
+    expect(after).toContain("Täna pole sinult midagi vaja"); expect(after).toContain("Pooleli · ootab assistendi teadet");
     const approved = parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: req.approval_id } }));
     expect(approved.state).toBe("approved"); expect(approved.decided_at).toBeTruthy();
 
@@ -137,8 +146,16 @@ describe("approval cards over MCP", () => {
     expect(final.outcome).toMatchObject({ outcome: "paid", evidence_label: "assistant_reported" });
     expect(final.outcome.history.map((h: { outcome: string }) => h.outcome)).toEqual(["sent", "paid"]);
     const consumedCard = await (await fetch(`${base}/approvals/${req.approval_id}`, { headers: { cookie: o.cookie } })).text();
-    expect(consumedCard).not.toContain("Approve exactly this"); expect(consumedCard).toMatch(/assistant reported/i);
+    expect(consumedCard).not.toContain("Kinnita täpselt see"); expect(consumedCard).toContain("Assistent teatas"); expect(consumedCard).toContain("Sinu kinnitusi selles töös: 1.");
+    expect(consumedCard.indexOf("receipt-head")).toBeLessThan(consumedCard.indexOf("Sinu kinnitusi selles töös"));
 
+    // Tehtud rows name their object, and the time never runs into the verb (QA D-15, D-17).
+    const tehtud = await (await fetch(`${base}/activity`, { headers: { cookie: o.cookie } })).text();
+    const main = tehtud.slice(0, tehtud.indexOf('<details class="tech-details">'));
+    for (const verb of ["Sina kinnitasid", "Assistent valmistas töö ette ja palus sinu kinnitust", "Assistent teatas, mis kinnitatud tööga juhtus"]) expect(main).toMatch(new RegExp(`<strong>${verb}</strong><br><span>Payment reminder: invoice 2026-014 · Synthetic Client OÜ</span>`));
+    expect(main).not.toMatch(/<\/strong><span class="small muted"><time/);
+    // The approvals history marks synthetic data only for a demo owner.
+    expect(await (await fetch(`${base}/approvals`, { headers: { cookie: o.cookie } })).text()).not.toContain(": demo");
     // Activity: request, decision and outcomes; export carries approvals; delete removes them.
     const actions = (db.prepare("SELECT action FROM activity WHERE owner_id='flow'").all() as { action: string }[]).map((a) => a.action);
     expect(actions).toEqual(expect.arrayContaining(["request_approval", "approval_decided", "record_action_outcome"]));
@@ -171,9 +188,9 @@ describe("approval cards over MCP", () => {
     db.prepare("UPDATE approvals SET expires_at=? WHERE id=?").run("2000-01-01T00:00:00.000Z", e.approval_id);
     expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: e.approval_id } })).state).toBe("expired");
     const late = await decide(o, e.approval_id, { decision: "approve", digest: e.digest });
-    expect(late.status).toBe(409); expect(await late.text()).toMatch(/expired.*Nothing was/is);
+    expect(late.status).toBe(409); expect(await late.text()).toMatch(/aegunud.*Midagi ei kinnitatud/is);
     expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "e-o", approval_id: e.approval_id, digest: e.digest, outcome: "sent", observed_at: new Date().toISOString() } }))).toMatch(/expired.*Nothing was recorded/s);
-    expect(await (await fetch(`${base}/approvals/${e.approval_id}`, { headers: { cookie: o.cookie } })).text()).not.toContain("Approve exactly this");
+    expect(await (await fetch(`${base}/approvals/${e.approval_id}`, { headers: { cookie: o.cookie } })).text()).not.toContain("Kinnita täpselt see");
 
     const d = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "d1", action: reminder({ kind: "send_message", amount_cents: undefined }) } }));
     expect((await decide(o, d.approval_id, { decision: "decline", digest: d.digest })).status).toBe(302);
@@ -193,7 +210,7 @@ describe("approval cards over MCP", () => {
     expect(row(a.approval_id)).toMatchObject({ state: "expired", outcome_json: null });
     expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: a.approval_id } })).state).toBe("expired");
     const card = await (await fetch(`${base}/approvals/${a.approval_id}`, { headers: { cookie: o.cookie } })).text();
-    expect(card).toMatch(/Expired/); expect(card).toMatch(/Decided/); expect(card).not.toContain("Approve exactly this");
+    expect(card).toMatch(/Aegunud/); expect(card).toMatch(/Kinnitasid/); expect(card).not.toContain("Kinnita täpselt see");
 
     const u = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "ea2", action: reminder() } }));
     await decide(o, u.approval_id, { decision: "approve", digest: u.digest });
@@ -285,7 +302,48 @@ test("existing approvals table is migrated in place and legacy rows still load",
       const card = await fetch(`${lbase}/approvals/appr_legacy`, { headers: { cookie: "lp_session=sess-legacy" } });
       expect(card.status).toBe(200);
       const html = await card.text();
-      expect(html).toContain("Demo Supplier OÜ"); expect(html).not.toContain("Approve exactly this");
+      expect(html).toContain("Demo Supplier OÜ"); expect(html).not.toContain("Kinnita täpselt see");
     } finally { await new Promise<void>((ok) => s.close(() => ok())); migrated.close(); }
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// tribunal T-001: assistant-supplied text never renders as markup on Täna, Tehtud or the approval pages.
+const XSS = "<img src=x onerror=alert(1)>";
+const pageOf = async (o: { cookie: string }, path: string) => { const r = await fetch(`${base}${path}`, { headers: { cookie: o.cookie } }); expect(r.status, path).toBe(200); return r.text(); };
+const inert = (html: string, path: string) => { expect(html, path).toContain("&lt;img src=x onerror=alert(1)&gt;"); expect(html, path).not.toContain("<img src=x"); };
+test("report_assessment executor, label, reason, company_label and next_action render escaped on Täna and Tehtud (tribunal T-001)", async () => {
+  const o = owner("xss-assessment");
+  const c = await client(o.token);
+  const assessment = {
+    assessed_domains: ["money"], company_label: XSS, gaps: [XSS], conclusion: XSS,
+    responsibilities: [{ id: "invoicing", domain: "money", label: XSS, applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: XSS, access: "Owner-granted access", success_criterion: "Invoices drafted", next_checkpoint: "Next run", reason: XSS, evidence_refs: [] }],
+    next_action: { title: XSS, rationale: XSS, estimated_effort_saved: XSS, uncertainty: XSS, needs_owner: true },
+  };
+  expect(parsed(await c.callTool({ name: "report_assessment", arguments: { report_id: "xss-1", expected_version: 0, assessment } })).version).toBe(1);
+  expect(parsed(await c.callTool({ name: "report_progress", arguments: { report_id: "xss-p", task_id: "invoicing", expected_version: 1, observed_at: new Date().toISOString(), milestone: "draft_prepared" } })).receipt_id).toBeTruthy();
+  const tana = await pageOf(o, "/");
+  expect(tana).toContain(`teeb &lt;img src=x onerror=alert(1)&gt; (assistendi hinnang)`);
+  for (const path of ["/", "/activity"]) inert(path === "/" ? tana : await pageOf(o, path), path);
+});
+test("an approval document title and recipient render escaped on Täna, Tehtud and the approval pages (tribunal T-001)", async () => {
+  const o = owner("xss-approval");
+  const c = await client(o.token);
+  const req = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "xss-a", action: reminder({ document: { title: XSS, content: "Tere!" }, recipient: { name: XSS } }) } }));
+  for (const path of ["/", "/activity", "/approvals", `/approvals/${req.approval_id}`]) inert(await pageOf(o, path), path);
+});
+
+test("Täna shows a pending approval behind 60 newer consumed ones; counts and primary button use every pending one (tribunal T-003)", async () => {
+  const o = owner("many-done");
+  const ins = db.prepare("INSERT INTO approvals(id,owner_id,kind,payload_json,digest,state,expires_at,created_at,decided_at,consumed_at,outcome_json) VALUES(?,?,'send_invoice',?,?,?,?,?,?,?,?)");
+  const later = new Date(Date.now() + 3600_000).toISOString(), t0 = Date.now() - 3600_000;
+  ins.run("appr_old_pending", "many-done", JSON.stringify(reminder({ document: { title: "Oldest pending reminder", content: "Tere!" } })), "d".repeat(64), "pending", later, new Date(t0).toISOString(), null, null, null);
+  for (let i = 0; i < 60; i++) {
+    const at = new Date(t0 + (i + 1) * 1000).toISOString();
+    ins.run(`appr_done_${i}`, "many-done", JSON.stringify(reminder({ document: { title: `Done ${i}`, content: "Tere!" } })), `${i}`.padStart(64, "0"), "consumed", later, at, at, at, JSON.stringify({ outcome: "sent", observed_at: at }));
+  }
+  const html = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
+  expect(html).toContain("Oldest pending reminder");
+  expect(html).toContain('<h2 id="ootab-h">Ootab sinult (1)</h2>');
+  expect(html).toContain('<a class="needs" href="#ootab"><b>1</b>');
+  expect(html).toContain('<a class="btn" href="/approvals/appr_old_pending">Vaata kinnitust</a>');
 });

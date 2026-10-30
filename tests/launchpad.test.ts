@@ -124,7 +124,16 @@ test("live inference is hard-disabled even with a positive budget; the isolated 
 
 describe("HTTP security basics", () => {
   test("unauthenticated companion redirects; production config denies demo; unconfigured Google is an honest 503 without a stack", async () => {
-    expect((await fetch(`${base}/`, { redirect: "manual" })).status).toBe(302);
+    // Visitors without a session get the public landing (no owner data); companion pages still redirect.
+    const landing = await fetch(`${base}/`, { redirect: "manual" });
+    expect(landing.status).toBe(200);
+    const landingHtml = await landing.text();
+    expect(landingHtml).toContain("Sinu ettevõtte tähtajad ühe otsinguga");
+    expect(landingHtml).not.toContain('action="/auth/logout"');
+    for (const path of ["/activity", "/approvals", "/connection"]) {
+      const r = await fetch(`${base}${path}`, { redirect: "manual" });
+      expect(r.status).toBe(302); expect(r.headers.get("location")).toBe("/login");
+    }
     expect(configFromEnv({ NODE_ENV: "production", LAUNCHPAD_DEMO: "1", LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS: "synthetic-subject" } as NodeJS.ProcessEnv).demo).toBe(false);
     const g = await fetch(`${base}/auth/login/google`);
     expect(g.status).toBe(503); expect(await g.text()).not.toContain(" at ");
@@ -182,6 +191,17 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     await fetch(`${base}/tokens/revoke`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: `csrf=${await csrf(cookie)}&token_id=${tid}` });
     expect((await fetch(`${base}/mcp`, opts({ authorization: `Bearer ${token}` }))).status).toBe(401);
   });
+  test("demo company beta is one coherent company: the hero and the deadlines name the same Kase Konsult OÜ (#21, QA D-24)", async () => {
+    const html = await (await fetch(`${base}/`, { headers: { cookie: await login("beta") } })).text();
+    const hero = /<p class="company">([^<]+)<\/p>/.exec(html)![1];
+    const deadlines = /<section class="card" id="tulekul"[\s\S]*?<span class="small muted">([^<]+) · 19990002<\/span>/.exec(html)![1];
+    expect(hero).toBe("Kase Konsult OÜ (näidis)");
+    expect(hero.replace(" (näidis)", "")).toBe(deadlines);
+    expect(html).not.toMatch(/Bakery|synthetic fixture/i);
+    const loginPage = await (await fetch(`${base}/login`)).text();
+    expect(loginPage).toContain("Ava Kase Konsult OÜ (näidis)");
+    expect(loginPage).not.toContain("(synthetic)");
+  });
   test("sharing is off by default and the stop covers assessments, progress AND nominations", async () => {
     const cookie = await login("beta");
     // default-off even before any explicit stop
@@ -189,16 +209,16 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     const c = await mcpClient(raw);
     const before = parse(await c.callTool({ name: "get_progress", arguments: {} }));
     const v = before.version as number;
-    expect(((await c.callTool({ name: "report_progress", arguments: { report_id: "off1", task_id: "supplier-orders", expected_version: v, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBe(true);
+    expect(((await c.callTool({ name: "report_progress", arguments: { report_id: "off1", task_id: "payroll", expected_version: v, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBe(true);
     await grantSharing(cookie);
     const granted = await mcpClient(await issueToken(cookie));
-    expect(((await granted.callTool({ name: "report_progress", arguments: { report_id: "on1", task_id: "supplier-orders", expected_version: v, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBeUndefined();
+    expect(((await granted.callTool({ name: "report_progress", arguments: { report_id: "on1", task_id: "payroll", expected_version: v, observed_at: new Date().toISOString(), milestone: "started" } })) as { isError?: boolean }).isError).toBeUndefined();
     await fetch(`${base}/reporting`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: `csrf=${await csrf(cookie)}&enabled=0` });
     const stopped = await mcpClient(await issueToken(cookie));
     const sv = (parse(await stopped.callTool({ name: "get_progress", arguments: {} })).version) as number;
     const writes = [
       await stopped.callTool({ name: "report_assessment", arguments: { report_id: "off2", expected_version: sv, assessment: fullAssessment } }),
-      await stopped.callTool({ name: "report_progress", arguments: { report_id: "off3", task_id: "supplier-orders", expected_version: sv, observed_at: new Date().toISOString(), milestone: "started" } }),
+      await stopped.callTool({ name: "report_progress", arguments: { report_id: "off3", task_id: "payroll", expected_version: sv, observed_at: new Date().toISOString(), milestone: "started" } }),
       await stopped.callTool({ name: "submit_service_candidate", arguments: { name: "Stopped Service", connection: "https://example.invalid/mcp", jobs: "job" } }),
     ] as { isError?: boolean }[];
     expect(writes.map((w) => !!w.isError)).toEqual([true, true, true]);
@@ -218,7 +238,7 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     const b0 = parse(await cB.callTool({ name: "get_progress", arguments: {} }));
     expect(a0.assessment).not.toBeNull(); expect(b0.assessment).not.toBeNull();
     expect(a0.coverage.next_action).not.toBe(b0.coverage.next_action);
-    expect(b0.workspace.label).toContain("Bakery");
+    expect(b0.workspace.label).toContain("Kase Konsult");
     const revised = { ...fullAssessment, responsibilities: [...fullAssessment.responsibilities, ...DEMO_FIXTURES.alpha.responsibilities.filter(r => !fullAssessment.responsibilities.some(x => x.id === r.id)).map(r => ({ ...r, applicability: "not_applicable", reason: "Synthetic revised scope: this business has no VAT registration or employees." }))] };
     const args = { report_id: "r1", expected_version: a0.version, assessment: revised };
     const r1 = parse(await cA.callTool({ name: "report_assessment", arguments: args }));
@@ -286,9 +306,9 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     expect((await fetch(`${base}/approvals`, { method: "POST", headers: form, body: `csrf=${await csrf(cookie)}&recipient=Demo&amount_cents=1200&period=2026-10&document_ref=inv` })).status).toBe(404);
     expect((await fetch(`${base}/approvals/approve`, { method: "POST", headers: form, body: `csrf=${await csrf(cookie)}&approval_id=x&amount_cents=1200` })).status).toBe(404);
     const html = await (await fetch(`${base}/approvals`, { headers: { cookie } })).text();
-    expect(html).toContain("<h1>Approvals</h1>");
+    expect(html).toContain("<h1>Kinnitused</h1>");
     expect(html).not.toContain("Synthetic approval demo");
-    expect(html).toContain('<a href="/approvals">Approvals</a>');
+    expect(html).toContain('<a href="/approvals">Kinnitused</a>');
   });
 });
 
@@ -358,7 +378,7 @@ describe("Google OIDC through mock transport (no external network)", () => {
     expect(ok.status).toBe(302);
     const sessionCookie = ok.headers.getSetCookie().find(c => c.startsWith("lp_session="))!.split(";")[0];
     const home = await fetch(`${gBase}/`, { headers: { cookie: sessionCookie }, redirect: "manual" });
-    expect(home.status).toBe(200); expect(await home.text()).toContain("first assessment");
+    expect(home.status).toBe(200); expect(await home.text()).toContain("Täna pole sinult midagi vaja");
     expect((await callback(cb, cookie)).status).toBe(400);
     expect(g.db.prepare("SELECT count(*) n FROM assessments").get()).toEqual({ n: 0 });
   });

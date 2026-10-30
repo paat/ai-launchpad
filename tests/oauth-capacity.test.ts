@@ -240,7 +240,7 @@ test("hard total 500 with only active clients fails new registration explicitly 
   db.transaction(() => {
     for (let i = 0; i < 500; i++) {
       insertClient(`active-${i}`, now - 86400_000, now + 86400_000);
-      db.prepare("INSERT INTO oauth_grants VALUES(?,?,?,?,?,?,0,?,?)").run(`g-${i}`, alpha, 1, `active-${i}`, "progress:read", base + "/mcp", now + 86400_000, "https://example.com/cb");
+      db.prepare("INSERT INTO oauth_grants(id,owner_id,epoch,client_id,scopes,resource,revoked,expires,redirect) VALUES(?,?,?,?,?,?,0,?,?)").run(`g-${i}`, alpha, 1, `active-${i}`, "progress:read", base + "/mcp", now + 86400_000, "https://example.com/cb");
     }
   })();
   const refused = await register(); expect(refused.status).toBe(400); expect(await refused.text()).toContain("capacity");

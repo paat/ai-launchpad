@@ -28,6 +28,11 @@ const rec = (v: unknown): Record<string, unknown> => (v && typeof v === "object"
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
+/** The register's as-of date for owner-facing labels, Tallinn civil date, never ISO. */
+const asOfDate = (v: string, l: "et" | "en") => {
+  const t = Date.parse(v);
+  return Number.isNaN(t) ? v : new Intl.DateTimeFormat(l === "et" ? "et-EE" : "en-GB", { timeZone: "Europe/Tallinn", day: "numeric", month: l === "et" ? "2-digit" : "long", year: "numeric" }).format(t);
+};
 /** Field mapping per memo § 4. Only the paths below are ever read. */
 export function mapCompany(code: string, raw: unknown): { company: CompanyCard; facts: CompanyFacts; confirm: string[] } {
   const r = rec(raw), profile = rec(r.profile), status = rec(r.report_status), debt = rec(r.tax_debt), fin = rec(r.financials);
@@ -57,7 +62,7 @@ export function mapCompany(code: string, raw: unknown): { company: CompanyCard; 
   const https = (v: unknown) => { const u = str(v); return u?.startsWith("https://") ? u : null; };
   const sources = (Array.isArray(r.sources) ? r.sources : []).map(rec).map((s) => ({ key: str(s.key), name: str(s.name), licence: str(s.licence), licence_url: https(s.licence_url) }))
     .filter((s): s is RegisterSource => s.key !== null).slice(0, 10);
-  return { company: { name, registry_code: code, synthetic: false, provenance: "public_register", label_et: `Ametlikud avaandmed (Ärikratt) · Äriregister ja EMTA${as_of ? `, seisuga ${as_of}` : ""}`, label_en: `Official open data (via Ärikratt) · Business Register and EMTA${as_of ? `, as of ${as_of}` : ""}`, snapshot_id: str(r.snapshot_id), as_of, sources, attribution: ARIKRATT_ATTRIBUTION, ...(disclaimer ? { disclaimer } : {}) }, facts, confirm };
+  return { company: { name, registry_code: code, synthetic: false, provenance: "public_register", label_et: `Ametlikud avaandmed (Ärikratt) · Äriregister ja EMTA${as_of ? `, seisuga ${asOfDate(as_of, "et")}` : ""}`, label_en: `Official open data (via Ärikratt) · Business Register and EMTA${as_of ? `, as of ${asOfDate(as_of, "en")}` : ""}`, snapshot_id: str(r.snapshot_id), as_of, sources, attribution: ARIKRATT_ATTRIBUTION, ...(disclaimer ? { disclaimer } : {}) }, facts, confirm };
 }
 
 export function arikratt(db: Db, cfg: ArikrattConfig) {

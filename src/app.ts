@@ -1,4 +1,4 @@
-import { LaunchpadOAuth, connectCookie } from "./oauth.js";
+import { LaunchpadOAuth, connectCookie, touchLastUsed } from "./oauth.js";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -9,8 +9,9 @@ import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
 import type { FetchFn } from "./model-quality.js";
-import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
-import { esc, shell, loginPage, statusBody, activityBody, connectionBody, tokenOnceBody, approvalsAttention, approvalsListBody, approvalCardBody, deadlinesCard, deadlinesHint, setupBody, servicesBody, playbooksBody, unmetNeedsBody, demandPage } from "./views.js";
+import { DEMO_COMPANIES, DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "./fixtures.js";
+import { validRegistryCode } from "./obligations.js";
+import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, activityBody, connectionBody, tokenOnceBody, approvalsListBody, approvalCardBody, setupBody, servicesBody, playbooksBody, demandBody, type Lang, type ShellOpts, type LandingState, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; }
@@ -67,6 +68,16 @@ function safeEqual(a: string, b: string): boolean {
   const x = Buffer.from(a), y = Buffer.from(b);
   return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
 }
+/** Locale for this request: ?lang=et|en (persisted by the middleware), else the lang cookie, else Estonian. */
+const langOf = (res: Response): Lang => (res.locals.lang as Lang | undefined) ?? "et";
+/** The current URL with the other language, for the header toggle. */
+function toggleHref(req: Request, l: Lang): string {
+  const u = new URL(req.originalUrl, "http://launchpad.invalid");
+  u.searchParams.set("lang", l === "et" ? "en" : "et");
+  return u.pathname + u.search;
+}
+/** Lower-case company name without the legal form, for matching synthetic fixtures by name. */
+const normName = (v: string) => v.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
 const isLoopback = (req: Request) => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? "");
 
 export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
@@ -111,13 +122,15 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // background fill per code (errors logged once, never thrown) and moves on.
   // A failed fill blocks new fills for that code for 10 minutes.
   const FILL_RETRY_MS = 10 * 60_000;
-  const fillBlockedUntil = new Map<string, number>(); // in flight: Infinity
+  const fillBlocked = new Map<string, { until: number; reason?: string }>(); // in flight: until Infinity, no reason
   const fillInBackground = (code: string) => {
-    if ((fillBlockedUntil.get(code) ?? 0) > Date.now()) return;
-    fillBlockedUntil.set(code, Infinity);
-    const failed = () => fillBlockedUntil.set(code, Date.now() + FILL_RETRY_MS);
-    void register.lookup(code).then((r) => { if (r.ok) fillBlockedUntil.delete(code); else { failed(); console.warn(`Status deadlines: register lookup failed (${r.unavailable}).`); } }, (e) => { failed(); console.warn("Status deadlines: register lookup failed.", e); });
+    if ((fillBlocked.get(code)?.until ?? 0) > Date.now()) return;
+    fillBlocked.set(code, { until: Infinity });
+    const failed = (reason: string) => fillBlocked.set(code, { until: Date.now() + FILL_RETRY_MS, reason });
+    void register.lookup(code).then((r) => { if (r.ok) fillBlocked.delete(code); else { failed(r.reason); console.warn(`Status deadlines: register lookup failed (${r.unavailable}).`); } }, (e) => { failed("The register lookup failed."); console.warn("Status deadlines: register lookup failed.", e); });
   };
+  /** The plain reason of a failed fill while it is remembered (10 minutes). */
+  const fillFailure = (code: string) => { const b = fillBlocked.get(code); return b?.reason && b.until > Date.now() ? b.reason : undefined; };
   const unmetNeeds = new UnmetNeedQueue(db, needClassifier, (ownerId, action, outcome, summary) => logActivity(db, ownerId, "launchpad", action, outcome, summary));
   unmetNeeds.kick(); // resume any received/interrupted needs after a restart
   // Deferred needs (daily limit, another attempt in flight) retry without a new report or restart.
@@ -149,6 +162,12 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     // same-origin (not no-referrer): real same-origin form POSTs must carry an
     // Origin header, which the exact check above then validates.
     res.set({ "x-content-type-options": "nosniff", "referrer-policy": "same-origin", "cache-control": "no-store" });
+    next();
+  });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const asked = parseLang(req.query.lang);
+    if (asked) res.append("set-cookie", `lang=${asked}; Path=/; Max-Age=31536000; SameSite=Lax${cfg.production ? "; Secure" : ""}`);
+    res.locals.lang = asked ?? parseLang(cookieVal(req, "lang")) ?? "et";
     next();
   });
 
@@ -210,13 +229,18 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   const csrfOk = (req: Request, res: Response, next: NextFunction) => {
     const s = session(req);
     const given = String(bodyOf(req).csrf ?? req.headers["x-csrf-token"] ?? "");
-    if (!s || !safeEqual(given, s.csrf)) return res.status(403).send("CSRF check failed. Go back and try again.");
+    if (!s || !safeEqual(given, s.csrf)) { const t = tr(langOf(res)); return res.status(403).type("html").send(publicPage(req, res, t("Turvakontroll ebaõnnestus", "Security check failed"), errorBody(langOf(res), t("Turvakontroll ebaõnnestus", "Security check failed"), t("CSRF-kontroll ebaõnnestus. Mine tagasi, ava leht uuesti ja proovi uuesti. Midagi ei muudetud.", "CSRF check failed. Go back and try again. Nothing was changed.")))); }
     next();
   };
-  const page = (req: Request, title: string, active: "status" | "activity" | "connection" | "none", body: string) => shell({
-    title, active, body, csrf: (req as Authed).csrf ?? "", demo: cfg.demo,
-    badge: (req as Authed).ownerKind === "demo" ? "Synthetic demo · mock data" : cfg.production ? "Private pilot" : "Development preview",
+  const page = (req: Request, res: Response, title: string, active: ShellOpts["active"], body: string, extra: Partial<ShellOpts> = {}) => shell({
+    title, active, body, csrf: (req as Authed).csrf ?? "", lang: langOf(res), sample: (req as Authed).ownerKind === "demo", toggle: toggleHref(req, langOf(res)), ...extra,
   });
+  /** Public chrome (no nav, no logout) for visitors and error pages. */
+  function publicPage(req: Request, res: Response, title: string, body: string, extra: Partial<ShellOpts> = {}) {
+    return shell({ title, active: "none", body, csrf: "", lang: langOf(res), toggle: toggleHref(req, langOf(res)), ...extra });
+  }
+  /** Owner-facing error inside the shell with a way back (never plain text on the demo path). */
+  const ownerError = (req: Request, res: Response, status: number, title: string, message: string) => res.status(status).type("html").send(page(req, res, title, "none", errorBody(langOf(res), title, message)));
 
   const oauth = new LaunchpadOAuth(db, cfg, session, ownerAllowed);
   oauth.install(app, requireOwner, csrfOk);
@@ -229,7 +253,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     while (preauth.size >= 500) preauth.delete(preauth.keys().next().value as string);
     const token = randomBytes(24).toString("base64url");
     preauth.set(sha256(token), now + 600_000);
-    res.setHeader("set-cookie", `lp_preauth=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${cfg.production ? "; Secure" : ""}`);
+    res.append("set-cookie", `lp_preauth=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${cfg.production ? "; Secure" : ""}`);
     return token;
   }
   const demoAttempts = new Map<string, number[]>();
@@ -245,9 +269,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   }
 
   app.get("/health", (_req, res) => res.json({ ok: true, demo: cfg.demo, model_mode: publicCards ? "public_cards" : cfg.modelMode === "disabled" ? "disabled" : "test", live_inference: publicCards ? "enabled" : "disabled", catalog_size: loadCatalog().length, release_sha: releaseSha }));
-  app.get("/login", (_req, res) => {
+  app.get("/login", (req, res) => {
     const token = cfg.demo ? issuePreauth(res) : "";
-    res.type("html").send(loginPage({ demo: cfg.demo, google: !!cfg.googleClientId, preauth: token, companies: DEMO_COMPANIES }));
+    res.type("html").send(publicPage(req, res, tr(langOf(res))("Logi sisse", "Sign in"), loginBody({ lang: langOf(res), demo: cfg.demo, google: !!cfg.googleClientId, preauth: token, companies: DEMO_COMPANIES })));
   });
   app.post("/auth/demo", (req, res) => {
     if (!cfg.demo) return res.status(403).send("Demo login is disabled. It can only be enabled by server environment in local development, never by a web request.");
@@ -327,55 +351,122 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     }
   });
 
-  app.get("/", requireOwner, async (req, res, next) => { try {
+  // Public lookup limits (per process, in memory): non-synthetic register
+  // lookups only. Synthetic fixtures are never limited.
+  const LOOKUPS_PER_IP = 30, LOOKUP_WINDOW_MS = 10 * 60_000, LOOKUPS_PER_DAY = 500;
+  const lookupsByIp = new Map<string, number[]>();
+  let lookupDay = { day: "", n: 0 };
+  function publicLookupAllowed(req: Request): "ok" | "ip_limit" | "day_limit" {
+    const now = Date.now(), ip = req.ip || req.socket.remoteAddress || "?";
+    const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Tallinn" }).format(now);
+    if (lookupDay.day !== day) lookupDay = { day, n: 0 };
+    const recent = (lookupsByIp.get(ip) ?? []).filter((t) => now - t < LOOKUP_WINDOW_MS);
+    if (recent.length >= LOOKUPS_PER_IP) { lookupsByIp.set(ip, recent); return "ip_limit"; }
+    if (lookupDay.n >= LOOKUPS_PER_DAY) return "day_limit";
+    if (lookupsByIp.size > 10_000) for (const [k, v] of lookupsByIp) if (!v.some((t) => now - t < LOOKUP_WINDOW_MS)) lookupsByIp.delete(k);
+    recent.push(now); lookupsByIp.set(ip, recent); lookupDay.n++;
+    return "ok";
+  }
+  async function landingState(req: Request, q: string): Promise<{ status: number; state: LandingState }> {
+    const show = async (code: string): Promise<{ status: number; state: LandingState }> => {
+      const r = await companyObligations(register, { registryCode: code, months: 2 });
+      if (!r.ok) return { status: 200, state: { kind: "message", code: "invalid_code" } };
+      const u = (r.result.company as { unavailable?: string }).unavailable;
+      if (u) return { status: 200, state: { kind: "message", code: u === "not_found" ? "not_found" : u === "not_configured" ? "not_configured" : "unavailable" } };
+      return { status: 200, state: { kind: "result", result: r.result as DeadlinesView } };
+    };
+    if (!q) return { status: 200, state: { kind: "empty" } };
+    // A sample company matches only its code or its exact name, with or without the legal form: a substring is a real-register search.
+    const nq = normName(q);
+    const synthetic = Object.entries(SYNTHETIC_COMPANIES).find(([code, c]) => code === q || nq === normName(c.name) || nq === normName(c.name).replace(/ oü$/u, ""));
+    if (synthetic) return show(synthetic[0]);
+    const code = q.replace(/\s+/g, "");
+    if (/^\d{8}$/.test(code) && !validRegistryCode(code)) return { status: 200, state: { kind: "message", code: "invalid_code" } };
+    if (!register.configured) return { status: 200, state: { kind: "message", code: "not_configured" } };
+    const allowed = publicLookupAllowed(req);
+    if (allowed !== "ok") return { status: 429, state: { kind: "message", code: allowed } };
+    if (/^\d{8}$/.test(code)) return show(code);
+    const found = await register.search(q);
+    if (!found.ok) return { status: 200, state: { kind: "message", code: found.unavailable === "not_configured" ? "not_configured" : "unavailable" } };
+    if (found.matches.length === 1) return show(found.matches[0].registry_code);
+    return { status: 200, state: found.matches.length ? { kind: "choose", matches: found.matches } : { kind: "message", code: "no_match" } };
+  }
+
+  // GET /: the public landing for visitors; signed-in owners get "Täna". A
+  // browser that still presents a session cookie that is no longer valid is
+  // sent to sign in again (unchanged behaviour for authenticated sessions).
+  app.get("/", async (req, res, next) => {
+    if (session(req) || cookieVal(req, "lp_session")) return next();
+    try {
+      const q = String(req.query.q ?? "").trim().slice(0, 120);
+      const { status, state } = await landingState(req, q);
+      res.status(status).type("html").send(publicPage(req, res, tr(langOf(res))("Tähtajad", "Deadlines"), landingBody({ lang: langOf(res), q, state }), { sample: state.kind === "result" && state.result.company.synthetic }));
+    } catch (e) { next(e); }
+  }, requireOwner, async (req, res, next) => { try {
     const st = getState(db, oid(req));
-    // Next deadlines: only for a known registry code (assessment ref or synthetic demo company).
+    // Deadlines: only for a known registry code (assessment ref or synthetic demo company).
     const ref = st.assessment?.company_registry_ref?.trim();
     const deadlines = ref && /^\d{8}$/.test(ref) ? await companyObligations(register, { registryCode: ref, months: 2, cacheOnly: true }) : null;
     // Any unavailable register lookup renders the one-line hint (with the plain reason unless only not cached yet).
     const unavailable = deadlines?.ok ? deadlines.result.company.unavailable : undefined;
+    // A remembered failed fill shows its reason, not "loading".
+    const failure = unavailable === "not_cached" ? fillFailure(ref!) : undefined;
     if (unavailable === "not_cached") fillInBackground(ref!);
-    const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
     expireApprovals(db, oid(req));
-    const pendingApprovals = (db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=? AND state='pending'").get(oid(req)) as { n: number }).n;
-    res.type("html").send(page(req, "Is my admin handled?", "status", approvalsAttention(pendingApprovals) + statusBody({ label: st.ws.label, demo: (req as Authed).ownerKind === "demo", assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: owner.reporting_enabled === 1, latestProgress: (st.progress[0] as unknown as { task_id: string; milestone: string; observed_at: string } | undefined) ?? null, deadlines: !deadlines?.ok ? "" : unavailable ? deadlinesHint(unavailable === "not_cached" ? undefined : deadlines.result.company.unavailable_reason) : deadlinesCard(deadlines.result) }) + unmetNeedsBody({ csrf: (req as Authed).csrf, needs: ownerNeeds(db, oid(req)) })));
+    // Every pending approval (request_approval caps them at 20), then the recent approved/consumed slice.
+    const approvals = [
+      ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state='pending' ORDER BY created_at DESC LIMIT 20").all(oid(req)),
+      ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state IN ('approved','consumed') ORDER BY created_at DESC LIMIT 50").all(oid(req)),
+    ] as ApprovalRow[];
+    const reportCount = (db.prepare("SELECT count(*) n FROM reports WHERE owner_id=?").get(oid(req)) as { n: number }).n;
+    const l = langOf(res);
+    res.type("html").send(page(req, res, tr(l)("Täna", "Today"), "tana", tanaBody({
+      lang: l, csrf: (req as Authed).csrf, sample: (req as Authed).ownerKind === "demo", label: st.ws.label,
+      assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions,
+      approvals, progress: st.progress as unknown as { task_id: string; milestone: string; observed_at: string }[],
+      // A checksum-invalid ref is the only lookup that computes nothing: say so instead of dropping the section.
+      deadlines: !deadlines ? null : !deadlines.ok ? "invalid_code" : failure ? { unavailable_reason: failure } : unavailable === "not_cached" ? "not_cached" : unavailable ? { unavailable_reason: deadlines.result.company.unavailable_reason ?? unavailable } : deadlines.result as DeadlinesView,
+      needs: ownerNeeds(db, oid(req)), reportCount,
+    })));
   } catch (e) { next(e); } });
   app.post("/unmet-needs/decide", requireOwner, csrfOk, (req, res) => {
     const body = bodyOf(req);
     const extra = Object.keys(body).filter((k) => !["csrf", "need_id", "decision"].includes(k));
     const decision = body.decision === "publish" || body.decision === "keep_private" ? body.decision : null;
-    if (extra.length || !decision || typeof body.need_id !== "string") return res.status(400).send("Choose Publish anonymously or Keep private. Unexpected fields are rejected; nothing was changed.");
+    const t = tr(langOf(res));
+    if (extra.length || !decision || typeof body.need_id !== "string") return ownerError(req, res, 400, t("Vali üks", "Choose one"), t("Vali „Avalda anonüümselt” või „Jäta privaatseks”. Midagi ei muudetud.", "Choose Publish anonymously or Keep private. Unexpected fields are rejected; nothing was changed."));
     const r = decideNeed(db, oid(req), body.need_id, decision);
-    if (r === "not_found") return res.status(404).send("Request not found.");
-    if (r === "not_awaiting") return res.status(409).send("This request is not waiting for a decision. Nothing was changed.");
+    if (r === "not_found") return ownerError(req, res, 404, t("Soovi ei leitud", "Request not found"), t("Sellist soovi sinu tööruumis pole. Midagi ei muudetud.", "Request not found. Nothing was changed."));
+    if (r === "not_awaiting") return ownerError(req, res, 409, t("Juba otsustatud", "Already decided"), t("See soov ei oota otsust. Midagi ei muudetud.", "This request is not waiting for a decision. Nothing was changed."));
     logActivity(db, oid(req), "owner", decision === "publish" ? "unmet_need_published" : "unmet_need_kept_private", "ok", decision === "publish" ? "Unmet need published anonymously as open demand (category, label and spec only)." : "Unmet need kept private; it is never published.");
     res.redirect("/");
   });
   // Public, login-free aggregate of owner-approved demand. Never reads
   // owner, company or request text; briefly cacheable.
-  app.get("/demand", (_req, res) => {
-    res.set("cache-control", "public, max-age=60");
-    res.type("html").send(demandPage(aggregateDemand(db)));
+  app.get("/demand", (req, res) => {
+    // Shared caches may keep it briefly, per language cookie; never a response that sets the cookie.
+    if (!parseLang(req.query.lang)) res.set({ "cache-control": "public, max-age=60", vary: "Cookie" });
+    res.type("html").send(publicPage(req, res, tr(langOf(res))("Avatud soovid", "Open demand"), demandBody(aggregateDemand(db), langOf(res))));
   });
 
   app.get("/activity", requireOwner, (req, res) => {
     const rows = db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=? ORDER BY id DESC LIMIT 100").all(oid(req)) as Record<string, string>[];
     const receipts = db.prepare("SELECT kind,report_id,payload_json,receipt_json,created_at FROM reports WHERE owner_id=? ORDER BY created_at DESC LIMIT 20").all(oid(req)) as Record<string, string>[];
-    res.type("html").send(page(req, "Activity & evidence", "activity", activityBody({ rows, receipts, exclusions: getState(db, oid(req)).exclusions })));
+    res.type("html").send(page(req, res, tr(langOf(res))("Tehtud", "Done"), "tehtud", activityBody({ rows, receipts, exclusions: getState(db, oid(req)).exclusions, lang: langOf(res), approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(oid(req)) as ApprovalRow[] })));
   });
 
   app.get("/playbooks", requireOwner, (req, res) => {
     // Saved friction cards only: this GET never starts inference.
     const friction = publicCards ? publicCards.readFrictionCards().map((c) => ({ ...c, label: findTopic(FRICTION_TOPICS, c.topicId)!.label[c.locale] })) : undefined;
-    res.type("html").send(page(req, "Playbooks", "none", playbooksBody(PLAYBOOKS, friction)));
+    res.type("html").send(page(req, res, "Playbooks", "none", playbooksBody(PLAYBOOKS, friction), { bodyLang: "en" }));
   });
   app.get("/services", requireOwner, (req, res) => {
     const q = String(req.query.q ?? "").slice(0, 120);
-    res.type("html").send(page(req, "Service catalog", "none", servicesBody({ q, total: loadCatalog().length, results: q ? searchServices(q, 10) : [] })));
+    res.type("html").send(page(req, res, "Service catalog", "none", servicesBody({ q, total: loadCatalog().length, results: q ? searchServices(q, 10) : [] }), { bodyLang: "en" }));
   });
 
   const setupPublicCards = (card: PublicCardView | null) => ({ topics: SETUP_TOPICS.map((t) => ({ id: t.id, label: t.label.en })), card });
-  app.get("/setup", requireOwner, (req, res) => res.type("html").send(page(req, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result: null, ...(publicCards ? { publicCards: setupPublicCards(null) } : {}) }))));
+  app.get("/setup", requireOwner, (req, res) => res.type("html").send(page(req, res, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result: null, ...(publicCards ? { publicCards: setupPublicCards(null) } : {}) }), { bodyLang: "en" })));
   app.post("/setup", requireOwner, csrfOk, async (req, res) => {
     if (publicCards) {
       // Explicit fixed-topic generation only: current allowlisted Google
@@ -397,7 +488,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       const still = session(req);
       if (!still || still.owner_id !== setupOwnerId) return res.redirect("/login");
       logActivity(db, setupOwnerId, "owner", "setup_guidance_card", card.state === "completed" ? "ok" : card.state, `Generic public setup guidance card (${topic.id}/${locale}): ${card.state}${card.replayed ? ", saved replay" : ""}. No owner data was sent to the model.`);
-      return res.type("html").send(page(req, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result: null, publicCards: setupPublicCards(card) })));
+      return res.type("html").send(page(req, res, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result: null, publicCards: setupPublicCards(card) }), { bodyLang: "en" }));
     }
     const topic = String(bodyOf(req).topic ?? "").slice(0, 100);
     let result: string;
@@ -408,14 +499,14 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       result = r.output;
     } catch { result = "Setup guidance is unavailable in this configuration. The Connection page steps still work."; }
     logActivity(db, oid(req), "owner", "setup_guidance", "ok", "Setup guidance shown (deterministic mock fixture; no live model called).");
-    res.type("html").send(page(req, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result })));
+    res.type("html").send(page(req, res, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result }), { bodyLang: "en" }));
   });
 
   app.get("/connection", requireOwner, (req, res) => {
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
     const tokens = db.prepare("SELECT id,scopes,revoked,created_at,last_used_at FROM mcp_tokens WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, unknown>[];
     const candidates = db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, string>[];
-    res.type("html").send(page(req, "Connection & data", "connection", connectionBody({ csrf: (req as Authed).csrf, baseUrl: cfg.baseUrl, reportingEnabled: owner.reporting_enabled === 1, tokens, candidates, milestones: getAssistantMilestones(db, oid(req)), grants: db.prepare("SELECT g.id,g.scopes,g.revoked,g.expires,g.redirect,c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? ORDER BY g.rowid DESC").all(oid(req)) as Record<string, string>[] })));
+    res.type("html").send(page(req, res, "Connection & data", "none", connectionBody({ csrf: (req as Authed).csrf, baseUrl: cfg.baseUrl, reportingEnabled: owner.reporting_enabled === 1, tokens, candidates, milestones: getAssistantMilestones(db, oid(req)), grants: db.prepare("SELECT g.id,g.scopes,g.revoked,g.expires,g.redirect,c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? ORDER BY g.rowid DESC").all(oid(req)) as Record<string, string>[] }), { bodyLang: "en" }));
   });
   app.post("/tokens", requireOwner, csrfOk, (req, res) => {
     const owner = db.prepare("SELECT epoch FROM owners WHERE id=?").get(oid(req)) as { epoch: number };
@@ -425,7 +516,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     db.prepare("INSERT INTO mcp_tokens(id,owner_id,token_hash,scopes,epoch,created_at) VALUES(?,?,?,?,?,?)").run(newId("tok"), oid(req), sha256(raw), "progress:read,progress:report", owner.epoch, nowIso());
     logActivity(db, oid(req), "owner", "token_issue", "ok", "Assistant token issued (max 10 active; oldest auto-revoked beyond that).");
     // One-time display in this POST response. The raw token never appears in a URL.
-    res.type("html").send(page(req, "New assistant token", "connection", tokenOnceBody(raw)));
+    res.type("html").send(page(req, res, "New assistant token", "none", tokenOnceBody(raw), { bodyLang: "en" }));
   });
   app.post("/tokens/revoke", requireOwner, csrfOk, (req, res) => {
     db.prepare("UPDATE mcp_tokens SET revoked=1 WHERE id=? AND owner_id=?").run(String(bodyOf(req).token_id ?? ""), oid(req));
@@ -447,25 +538,53 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   app.get("/approvals", requireOwner, (req, res) => {
     expireApprovals(db, oid(req));
     const rows = db.prepare("SELECT * FROM approvals WHERE owner_id=? ORDER BY state='pending' DESC, created_at DESC LIMIT 200").all(oid(req)) as ApprovalRow[];
-    res.type("html").send(page(req, "Approvals", "none", approvalsListBody(rows)));
+    res.type("html").send(page(req, res, tr(langOf(res))("Kinnitused", "Approvals"), "none", approvalsListBody(rows, langOf(res), (req as Authed).ownerKind === "demo")));
   });
   app.get("/approvals/:id", requireOwner, (req, res) => {
+    const t = tr(langOf(res));
     const a = getApproval(db, oid(req), req.params.id);
-    if (!a) return res.status(404).send("Approval not found in your workspace. Nothing was approved.");
-    res.type("html").send(page(req, "Approval", "none", approvalCardBody({ csrf: (req as Authed).csrf, a })));
+    if (!a) return ownerError(req, res, 404, t("Kinnitust ei leitud", "Approval not found"), t("Sellist kinnitust sinu tööruumis pole. Midagi ei kinnitatud.", "Approval not found in your workspace. Nothing was approved."));
+    res.type("html").send(page(req, res, t("Kinnitus", "Approval"), "none", approvalCardBody({ csrf: (req as Authed).csrf, a, lang: langOf(res), sample: (req as Authed).ownerKind === "demo" })));
   });
   app.post("/approvals/:id/decide", requireOwner, csrfOk, (req, res) => {
+    const t = tr(langOf(res));
     const decision = bodyOf(req).decision;
-    if (decision !== "approve" && decision !== "decline") return res.status(400).send("Choose Approve exactly this or Decline. Nothing was approved or declined.");
+    if (decision !== "approve" && decision !== "decline") return ownerError(req, res, 400, t("Vali üks", "Choose one"), t("Vali „Kinnita täpselt see” või „Keeldu”. Midagi ei kinnitatud ega keeldutud.", "Choose Approve exactly this or Decline. Nothing was approved or declined."));
     const a = getApproval(db, oid(req), req.params.id);
-    if (!a) return res.status(404).send("Approval not found in your workspace. Nothing was approved or declined.");
-    if (a.state !== "pending") return res.status(409).send(`This approval is already ${a.state}. Nothing was approved or declined; ask your assistant for a new approval if needed.`);
+    if (!a) return ownerError(req, res, 404, t("Kinnitust ei leitud", "Approval not found"), t("Sellist kinnitust sinu tööruumis pole. Midagi ei kinnitatud ega keeldutud.", "Approval not found in your workspace. Nothing was approved or declined."));
+    if (a.state === "expired") return ownerError(req, res, 409, t("Kinnitus on aegunud", "This approval expired"), t("See kinnitus on aegunud. Midagi ei kinnitatud ega keeldutud. Palu assistendil uus koostada.", "This approval expired. Nothing was approved or declined. Ask your assistant for a new one."));
+    if (a.state !== "pending") return ownerError(req, res, 409, t("Juba otsustatud", "Already decided"), t("Selle kinnituse kohta on otsus juba tehtud. Midagi ei kinnitatud ega keeldutud; vajadusel palu assistendil uus koostada.", `This approval is already ${a.state}. Nothing was approved or declined; ask your assistant for a new approval if needed.`));
     // A re-rendered card after a change can never approve a different payload.
-    if (!safeEqual(String(bodyOf(req).digest ?? ""), a.digest)) return res.status(409).send("This card is out of date: the content changed after it was shown. Nothing was approved or declined. Open the approval again.");
+    if (!safeEqual(String(bodyOf(req).digest ?? ""), a.digest)) return ownerError(req, res, 409, t("Kaart on vananenud", "This card is out of date"), t("Midagi muutus pärast seda, kui kaardi avasid. Midagi ei kinnitatud. Ava kinnitus uuesti.", "Something changed after you opened the card. Nothing was approved. Open the approval again."));
     const state = decision === "approve" ? "approved" : "declined";
     db.prepare("UPDATE approvals SET state=?,decided_at=? WHERE id=? AND owner_id=? AND state='pending'").run(state, nowIso(), a.id, oid(req));
     logActivity(db, oid(req), "owner", "approval_decided", state, `Owner ${state} ${a.kind ?? "action"} (digest ${a.digest.slice(0, 12)}). Launchpad sent, paid and filed nothing.`);
     res.redirect(`/approvals/${encodeURIComponent(a.id)}`);
+  });
+
+  // Connect (spec screen 2): public page; the status chip needs a signed-in owner.
+  app.get("/uhenda", (req, res) => {
+    const s = session(req), l = langOf(res);
+    const kind = s ? (db.prepare("SELECT kind FROM owners WHERE id=?").get(s.owner_id) as { kind: string } | undefined)?.kind ?? "" : "";
+    let state: ConnectState = { kind: "anon" };
+    if (s) {
+      if (kind === "demo") state = { kind: "sample" };
+      else {
+        // Each credential's own last use: an OAuth grant names its client; a manual token stays unnamed.
+        const g = db.prepare("SELECT c.metadata, g.last_used_at at FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? AND g.revoked=0 AND g.last_used_at IS NOT NULL ORDER BY g.last_used_at DESC LIMIT 1").get(s.owner_id) as { metadata: string; at: string } | undefined;
+        const tok = db.prepare("SELECT max(last_used_at) at FROM mcp_tokens WHERE owner_id=? AND revoked=0").get(s.owner_id) as { at: string | null };
+        if (tok.at && (!g || tok.at > g.at)) state = { kind: "connected", who: null, at: tok.at };
+        else if (g) {
+          let who: string | null = null;
+          try { const n = (JSON.parse(g.metadata) as { client_name?: unknown }).client_name; who = typeof n === "string" && n.trim() ? n.trim().slice(0, 40) : null; } catch { who = null; }
+          state = { kind: "connected", who, at: g.at };
+        } else state = { kind: "waiting" };
+      }
+    }
+    const body = connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "claude" ? "claude" : "chatgpt", state, owner: !!s });
+    res.type("html").send(shell({ title: tr(l)("Ühenda", "Connect"), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, sample: kind === "demo", toggle: toggleHref(req, l), body,
+      // Zero JS: while an owner waits for the first assistant contact, the page reloads itself.
+      head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "" }));
   });
 
   app.get("/export", requireOwner, (req, res) => {
@@ -479,7 +598,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       db.prepare("DELETE FROM oauth_pending WHERE id=?").run(sha256(connectCookie(req)));
       db.prepare("UPDATE owners SET reporting_enabled=0 WHERE id=?").run(oid(req));
       for (const t of ["assessments", "reports", "progress", "activity", "approvals", "candidates", "unmet_needs"]) db.prepare(`DELETE FROM ${t} WHERE owner_id=?`).run(oid(req));
-      db.prepare("UPDATE mcp_tokens SET revoked=1 WHERE owner_id=?").run(oid(req));
+      db.prepare("UPDATE mcp_tokens SET revoked=1,last_used_at=NULL WHERE owner_id=?").run(oid(req));
       db.prepare("UPDATE owners SET epoch=epoch+1 WHERE id=?").run(oid(req));
       db.prepare("UPDATE workspaces SET version=0 WHERE owner_id=?").run(oid(req));
       // Invalidate every session: another browser must not silently keep
@@ -503,9 +622,11 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       const auth = req.headers.authorization ?? "";
       const raw = auth.startsWith("Bearer ") ? auth.slice(7) : "";
       let token = raw ? db.prepare("SELECT * FROM mcp_tokens WHERE token_hash=?").get(sha256(raw)) as { id: string; owner_id: string; scopes: string; epoch: number; revoked: number } | undefined : undefined;
+      let oauthGrant = false;
       if (!token && raw) {
         try {
           const info = await oauth.verifyAccessToken(raw);
+          oauthGrant = true;
           token = { id: String(info.extra!.grantId), owner_id: String(info.extra!.ownerId), epoch: Number(info.extra!.epoch), scopes: info.scopes.join(","), revoked: 0 };
         } catch { /* Same controlled 401 for expired/revoked OAuth credentials. */ }
       }
@@ -523,7 +644,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
         if (extra.length) return res.json({ jsonrpc: "2.0", id: rpc.id ?? null, result: { content: [{ type: "text", text: `Unexpected field(s) rejected: ${extra.join(", ")}. Reports accept only the documented fields; nothing was saved and no state (verified/paid/approved) can be set by a report.` }], isError: true } });
       }
       const ws = db.prepare("SELECT company_ref,label FROM workspaces WHERE owner_id=?").get(token.owner_id) as { company_ref: string; label: string };
-      db.prepare("UPDATE mcp_tokens SET last_used_at=? WHERE id=?").run(nowIso(), token.id);
+      if (!oauthGrant) touchLastUsed(db, "mcp_tokens", token.id);
       const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl }, register, { onUnmetNeed: () => unmetNeeds.kick() });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => { void transport.close(); void server.close(); });

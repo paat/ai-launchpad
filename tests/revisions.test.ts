@@ -5,7 +5,7 @@ import { buildMcpServer, getState } from "../src/mcp.js";
 import { openDb } from "../src/db.js";
 import { assessmentSchema, type Assessment } from "../src/core.js";
 import { DOMAINS } from "../src/catalog.js";
-import { statusBody } from "../src/views.js";
+import { tanaBody } from "../src/views.js";
 
 const initial: Assessment = assessmentSchema.parse({
   company_label: "Synthetic Harbor Studio OÜ", company_registry_ref: "synthetic-123",
@@ -63,7 +63,7 @@ test("omission cannot inflate coverage; reasoned scope changes preserve exact re
   expect(current.history.map((h: any) => h.version)).toEqual([1, 3]);
   expect(current.assessment.responsibilities[1].reason).toBe(revised.responsibilities[1].reason);
   const st = getState(db, "one");
-  const html = statusBody({ label: st.ws.label, demo: false, assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, historyCount: st.history.length, reportingEnabled: true });
+  const html = tanaBody({ lang: "en", csrf: "c", sample: false, label: st.ws.label, assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions, approvals: [], progress: [], deadlines: null, needs: [], reportCount: 0 });
   expect(html).toContain('(100%)'); expect(html).toContain(revised.responsibilities[1].reason);
   expect(html.split('<details>')[0]).toContain(initial.company_label);
   expect(html.split(initial.company_label!).length - 1).toBe(1);

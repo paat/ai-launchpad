@@ -43,8 +43,8 @@ async function register(extra: Record<string,unknown> = {}) {
   return fetch(base+"/register", {method:"POST", headers:{"content-type":"application/json",origin:"https://assistant.example"}, body: JSON.stringify({redirect_uris:["http://127.0.0.1:45678/callback"],client_name:"Scope test assistant",token_endpoint_auth_method:"none",...extra})});
 }
 // Issue one real OAuth grant through browser login + consent, then exchange.
-async function grant(scopes: string, updates: boolean, actor = "alpha", browser?: Browser) {
-  const client = await (await register()).json();
+async function grant(scopes: string, updates: boolean, actor = "alpha", browser?: Browser, clientName?: string) {
+  const client = await (await register(clientName ? { client_name: clientName } : {})).json();
   const verifier = randomBytes(32).toString("base64url"), b = browser ?? new Browser();
   const params = { response_type:"code",client_id:client.client_id, redirect_uri:client.redirect_uris[0], resource:base+"/mcp", code_challenge:createHash("sha256").update(verifier).digest("base64url"),code_challenge_method:"S256",state:"scope-state",scope:scopes };
   const start = await b.request("/authorize?"+new URLSearchParams(params)); expect(start.headers.get("location")).toBe("/oauth/consent");
@@ -109,20 +109,20 @@ test("scope alignment across real OAuth grants: report-only public get_started, 
     const rawReport = textOf(await cReport.callTool({ name: "get_started", arguments: {} }));
     expect(rawReport).not.toContain("company_ref");
     expect(rawReport).not.toContain("reporting_enabled");
-    expect(rawReport).not.toContain("Plumbing");
+    expect(rawReport).not.toContain("Mari Disain");
 
     // Read scopes preserve owner-specific getting-started behavior.
     const startedRead = parse(await cRead.callTool({ name: "get_started", arguments: {} }));
     expect(startedRead.workspace.company_ref).toBeTruthy();
-    expect(startedRead.workspace.label).toContain("Plumbing");
+    expect(startedRead.workspace.label).toContain("Mari Disain");
     expect(startedRead).toHaveProperty("reporting_enabled");
     const startedCombined = parse(await cCombined.callTool({ name: "get_started", arguments: {} }));
-    expect(startedCombined.workspace.label).toContain("Plumbing");
+    expect(startedCombined.workspace.label).toContain("Mari Disain");
 
     // get_progress is denied without progress:read.
     const denied = await cReport.callTool({ name: "get_progress", arguments: {} }) as { isError?: boolean };
     expect(denied.isError).toBe(true);
-    expect(parse(await cRead.callTool({ name: "get_progress", arguments: {} })).workspace.label).toContain("Plumbing");
+    expect(parse(await cRead.callTool({ name: "get_progress", arguments: {} })).workspace.label).toContain("Mari Disain");
     const combinedState = parse(await cCombined.callTool({ name: "get_progress", arguments: {} }));
     expect(combinedState.assessment).not.toBeNull();
 
@@ -144,7 +144,7 @@ test("scope alignment across real OAuth grants: report-only public get_started, 
       expect(res.catalog_size).toBe(181);
       expect(res.results.length).toBeGreaterThan(0);
       queries.push(JSON.stringify(res.results));
-      expect(JSON.stringify(res)).not.toContain("Plumbing");
+      expect(JSON.stringify(res)).not.toContain("Mari Disain");
       expect(JSON.stringify(res)).not.toContain("company_ref");
     }
     expect(queries[0]).toBe(queries[1]);
@@ -161,13 +161,13 @@ test("catalogue is identical across owners and revocation still kills OAuth acce
   try {
     const pa = parse(await ca.callTool({ name: "get_progress", arguments: {} }));
     const pb = parse(await cb.callTool({ name: "get_progress", arguments: {} }));
-    expect(pa.workspace.label).toContain("Plumbing");
-    expect(pb.workspace.label).toContain("Bakery");
+    expect(pa.workspace.label).toContain("Mari Disain");
+    expect(pb.workspace.label).toContain("Kase Konsult");
     expect(pa.assessment).not.toEqual(pb.assessment);
     const sa = parse(await ca.callTool({ name: "search_services", arguments: { query: "invoice", limit: 5 } }));
     const sb = parse(await cb.callTool({ name: "search_services", arguments: { query: "invoice", limit: 5 } }));
     expect(JSON.stringify(sa.results)).toBe(JSON.stringify(sb.results));
-    expect(JSON.stringify(sb)).not.toContain("Bakery");
+    expect(JSON.stringify(sb)).not.toContain("Kase Konsult");
     // /mcp is never anonymous.
     const anon = await fetch(base+"/mcp", { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }) });
     expect(anon.status).toBe(401);
@@ -176,4 +176,151 @@ test("catalogue is identical across owners and revocation still kills OAuth acce
     await betaBrowser.request("/oauth/disconnect", { csrf: await betaBrowser.csrf(), grant_id: id });
     await expect(sdk(b.tokens.access_token)).rejects.toThrow();
   } finally { await ca.close(); await cb.close(); }
+});
+
+// The consent page up to (not through) the owner's decision.
+async function consentPage(scopes: string) {
+  const client = await (await register()).json(), b = new Browser();
+  const params = { response_type:"code",client_id:client.client_id, redirect_uri:client.redirect_uris[0], resource:base+"/mcp", code_challenge:createHash("sha256").update(randomBytes(32)).digest("base64url"),code_challenge_method:"S256",state:"copy-state",scope:scopes };
+  expect((await b.request("/authorize?"+new URLSearchParams(params))).headers.get("location")).toBe("/oauth/consent");
+  await b.login();
+  return { b, html: await (await b.request("/oauth/consent")).text() };
+}
+const STORED_EN = "If you allow preparing work, we store work status, your assistant's assessment, texts sent for your approval, private service nominations and anonymised requests until you delete them.";
+const reject = async (c: { b: Browser; html: string }) => { await c.b.request("/oauth/consent", { csrf: field(c.html, "csrf"), flow: field(c.html, "flow"), decision: "reject" }); return c.html; };
+const STORED_ET = "Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, kinnitamiseks esitatud tekstid, privaatsed teenusesoovitused ja anonüümseks muudetud soovid, kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.";
+
+test("consent storage sentence lists private service nominations in both languages for read+report and report-only (#21)", async () => {
+  for (const scopes of ["progress:read progress:report", "progress:report"]) {
+    const c = await consentPage(scopes);
+    expect(c.html).toContain(STORED_ET);
+    expect(await (await c.b.request("/oauth/consent?lang=en")).text()).toContain(STORED_EN);
+  }
+});
+
+test("consent copy is derived from the requested scopes and never claims we store only approvals (#21)", async () => {
+  const both = await reject(await consentPage("progress:read progress:report"));
+  expect(both).toContain("näha sinu ettevõtte tähtaegu ja tööde seisu");
+  expect(both).toContain(STORED_ET);
+  expect(both).toContain("Ilma selleta saab Scope test assistant ainult lugeda.");
+  const read = await reject(await consentPage("progress:read"));
+  expect(read).toContain("näha sinu ettevõtte tähtaegu ja tööde seisu");
+  expect(read).not.toContain("salvestame");
+  expect(read).toContain("Sinu vestlusi ega faile AI-hüppelaud ei saa.");
+  // Report-only: no read ability is promised, and the unticked box means no connection (the handler denies it).
+  const { b, html } = await consentPage("progress:report");
+  expect(html).not.toContain("tähtaegu ja tööde seisu");
+  expect(html).toContain("öelda, mida ta saab sinu eest ära teha");
+  expect(html).toContain("Ilma linnukeseta ühendust ei looda ja Scope test assistant saab teate, et keeldusid.");
+  expect(html).not.toContain("ainult lugeda");
+  expect(html).toContain(STORED_ET);
+  for (const page of [both, read, html]) { expect(page).not.toContain("ainult selle"); expect(page).not.toContain("only what you are asked"); }
+  const unticked = await b.request("/oauth/consent", { csrf: field(html, "csrf"), flow: field(html, "flow"), decision: "allow" });
+  const location = new URL(unticked.headers.get("location")!);
+  expect(location.searchParams.get("error")).toBe("access_denied");
+  expect(location.searchParams.get("code")).toBeNull();
+  expect(db.prepare("SELECT count(*) n FROM oauth_grants").get()).toEqual({ n: 0 });
+});
+
+test("consent shows no owner nav or footer, and its errors render in the shell with lang and a way back (#21)", async () => {
+  const { b, html } = await consentPage("progress:read progress:report");
+  expect(html).not.toContain('<nav class="main"');
+  expect(html).not.toContain("Logi välja");
+  expect(html).not.toContain("Abi ja lisad");
+  await b.request("/oauth/consent", { csrf: field(html, "csrf"), flow: field(html, "flow"), decision: "reject" });
+  const again = await b.request("/oauth/consent");
+  expect(again.status).toBe(400);
+  const body = await again.text();
+  expect(body).toContain('<html lang="et">');
+  expect(body).toContain("Ühendamise taotlus on aegunud");
+  expect(body).toContain('href="/uhenda"');
+  const post = await b.request("/oauth/consent", { csrf: field(html, "csrf"), flow: field(html, "flow"), decision: "allow" });
+  expect(post.status).toBe(400);
+  expect(await post.text()).toContain('<html lang="et">');
+});
+
+test("/uhenda names the client that actually reached the MCP endpoint, not the newest consent (#21, QA D-08)", async () => {
+  const b = new Browser();
+  const chatgpt = await grant("progress:read", false, "alpha", b, "ChatGPT");
+  const c = await sdk(chatgpt.tokens.access_token);
+  try { await c.callTool({ name: "get_started", arguments: {} }); } finally { await c.close(); }
+  await grant("progress:read", false, "alpha", b, "Claude"); // consented later, never called a tool
+  const used = db.prepare("SELECT json_extract(c.metadata,'$.client_name') name, g.last_used_at FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id ORDER BY g.rowid").all() as { name: string; last_used_at: string | null }[];
+  expect(used.map((u) => [u.name, !!u.last_used_at])).toEqual([["ChatGPT", true], ["Claude", false]]);
+  // Connection status is tracked for real (non-sample) owners only.
+  db.prepare("UPDATE owners SET kind='google' WHERE subject='demo-alpha'").run();
+  const html = await (await b.request("/uhenda")).text();
+  expect(html).toContain("Ühendatud · ChatGPT jõudis kohale");
+  expect(html).not.toContain("Claude jõudis");
+});
+
+// A real (non-sample) owner with one OAuth ChatGPT grant that has called a tool.
+async function realChatgpt() {
+  const b = new Browser();
+  const chatgpt = await grant("progress:read", false, "alpha", b, "ChatGPT");
+  db.prepare("UPDATE owners SET kind='google' WHERE subject='demo-alpha'").run();
+  const call = async (token: string) => { const c = await sdk(token); try { await c.callTool({ name: "get_started", arguments: {} }); } finally { await c.close(); } };
+  await call(chatgpt.tokens.access_token);
+  const ownerId = (db.prepare("SELECT id FROM owners WHERE subject='demo-alpha'").get() as { id: string }).id;
+  const manual = async () => (/lp_[A-Za-z0-9_-]{43}/.exec(await (await b.request("/tokens", { csrf: await b.csrf() })).text()))![0];
+  return { b, chatgpt, call, ownerId, manual };
+}
+const grantUse = () => (db.prepare("SELECT last_used_at FROM oauth_grants").get() as { last_used_at: string | null }).last_used_at;
+
+test("/uhenda never shows a later manual-token call's time as the OAuth client's (#21)", async () => {
+  const { b, call, manual } = await realChatgpt();
+  db.prepare("UPDATE oauth_grants SET last_used_at='2026-10-01T09:00:00.000Z'").run();
+  await call(await manual());
+  const html = await (await b.request("/uhenda")).text();
+  expect(html).toContain("Ühendatud · Sinu assistent jõudis kohale");
+  expect(html).not.toContain("ChatGPT jõudis");
+});
+
+test("/uhenda shows an OAuth grant as connected from its own last use, even with the activity log removed (#21)", async () => {
+  const { b } = await realChatgpt();
+  db.prepare("DELETE FROM activity").run();
+  db.prepare("DELETE FROM assessments").run();
+  expect(await (await b.request("/uhenda")).text()).toContain("Ühendatud · ChatGPT jõudis kohale");
+});
+
+test("last use is written only when older than 5 minutes, and never to mcp_tokens for OAuth calls (#21)", async () => {
+  const { b, call, chatgpt } = await realChatgpt();
+  const recent = new Date(Date.now() - 60_000).toISOString();
+  db.prepare("UPDATE oauth_grants SET last_used_at=?").run(recent);
+  await call(chatgpt.tokens.access_token);
+  await call(chatgpt.tokens.access_token);
+  expect(grantUse()).toBe(recent);
+  expect(db.prepare("SELECT count(*) n FROM mcp_tokens").get()).toEqual({ n: 0 });
+  expect(await (await b.request("/uhenda")).text()).toContain("Ühendatud · ChatGPT jõudis kohale");
+  const stale = new Date(Date.now() - 6 * 60_000).toISOString();
+  db.prepare("UPDATE oauth_grants SET last_used_at=?").run(stale);
+  await call(chatgpt.tokens.access_token);
+  expect(grantUse()! > stale).toBe(true);
+});
+
+test("deleting progress clears last use from the owner's grants and tokens (#21)", async () => {
+  const { b, call, ownerId, manual } = await realChatgpt();
+  await call(await manual());
+  expect(db.prepare("SELECT count(*) n FROM mcp_tokens WHERE owner_id=? AND last_used_at IS NOT NULL").get(ownerId)).toEqual({ n: 1 });
+  expect(grantUse()).not.toBeNull();
+  expect((await b.request("/delete", { csrf: await b.csrf() })).status).toBe(302);
+  for (const t of ["oauth_grants", "mcp_tokens"]) expect(db.prepare(`SELECT count(*) n FROM ${t} WHERE owner_id=? AND last_used_at IS NOT NULL`).get(ownerId)).toEqual({ n: 0 });
+});
+
+test("an assistant's client name renders escaped on consent and /uhenda (tribunal T-001)", async () => {
+  const XSS = "<img src=x onerror=alert(1)>";
+  const inert = (html: string, where: string) => { expect(html, where).toContain("&lt;img src=x onerror=alert(1)&gt;"); expect(html, where).not.toContain("<img src=x"); };
+  const client = await (await register({ client_name: XSS })).json();
+  const b = new Browser();
+  const params = { response_type: "code", client_id: client.client_id, redirect_uri: client.redirect_uris[0], resource: base + "/mcp", code_challenge: createHash("sha256").update("v".repeat(43)).digest("base64url"), code_challenge_method: "S256", state: "xss", scope: "progress:read progress:report" };
+  expect((await b.request("/authorize?" + new URLSearchParams(params))).headers.get("location")).toBe("/oauth/consent");
+  await b.login();
+  inert(await (await b.request("/oauth/consent")).text(), "consent");
+  const g = await grant("progress:read", false, "alpha", new Browser(), XSS);
+  const c = await sdk(g.tokens.access_token);
+  try { await c.callTool({ name: "get_started", arguments: {} }); } finally { await c.close(); }
+  db.prepare("UPDATE owners SET kind='google' WHERE subject='demo-alpha'").run();
+  const html = await (await g.b.request("/uhenda")).text();
+  expect(html).toContain("Ühendatud · &lt;img src=x onerror=alert(1)&gt; jõudis kohale");
+  inert(html, "/uhenda");
 });

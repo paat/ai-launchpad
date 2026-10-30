@@ -6,7 +6,7 @@ import type { OAuthClientInformationFull, OAuthTokens, OAuthTokenRevocationReque
 import { InvalidClientMetadataError, InvalidGrantError, InvalidTokenError, InvalidRequestError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { sha256, newId, type Db } from "./db.js";
-import { esc, shell } from "./views.js";
+import { esc, errorBody, shell, tr, type Lang } from "./views.js";
 import type { Config } from "./app.js";
 
 const SCOPES = ["progress:read", "progress:report"];
@@ -22,6 +22,11 @@ const SCOPES = ["progress:read", "progress:report"];
 const PENDING_TOTAL = 100, PENDING_ANON = 70, PENDING_PER_OWNER = 2;
 const CLIENT_TOTAL = 500, CLIENT_UNUSED = 100, UNUSED_TTL_MS = 15 * 60_000, UNUSED_GRACE_MS = 2 * 60_000, UNUSED_GRACE_MARGIN_MS = 1000;
 const opaque = () => randomBytes(32).toString("base64url");
+// Last use is coarse (5 min) and written only when stale: read-only tool calls stay read-only.
+export const touchLastUsed = (db: Db, table: "oauth_grants" | "mcp_tokens", id: string) => {
+  const now = Date.now();
+  db.prepare(`UPDATE ${table} SET last_used_at=? WHERE id=? AND (last_used_at IS NULL OR last_used_at<?)`).run(new Date(now).toISOString(), id, new Date(now - 5 * 60_000).toISOString());
+};
 type Session = { owner_id: string; csrf: string };
 type Pending = { id: string; client_id: string; params: string; owner_id: string | null; epoch: number | null; expires: number };
 type Grant = { id: string; owner_id: string; epoch: number; client_id: string; scopes: string; resource: string; revoked: number; expires: number };
@@ -195,6 +200,7 @@ export class LaunchpadOAuth implements OAuthServerProvider {
     const c = this.db.prepare("SELECT * FROM oauth_credentials WHERE hash=? AND kind='access' AND expires>?").get(sha256(raw), Date.now()) as Credential | undefined;
     if (!c) throw new InvalidTokenError("Invalid access token.");
     const g = this.grant(c.grant_id);
+    touchLastUsed(this.db, "oauth_grants", g.id);
     return { token: raw, clientId: g.client_id, scopes: g.scopes.split(" "), expiresAt: Math.floor(c.expires/1000), resource: new URL(g.resource), extra: { ownerId: g.owner_id, epoch: g.epoch, grantId: g.id } };
   }
   async revokeToken(client: OAuthClientInformationFull, request: OAuthTokenRevocationRequest) {
@@ -206,7 +212,7 @@ export class LaunchpadOAuth implements OAuthServerProvider {
     })();
   }
   revokeOwner(ownerId: string) {
-    this.db.prepare("UPDATE oauth_grants SET revoked=1 WHERE owner_id=?").run(ownerId);
+    this.db.prepare("UPDATE oauth_grants SET revoked=1,last_used_at=NULL WHERE owner_id=?").run(ownerId);
     this.db.prepare("DELETE FROM oauth_pending WHERE owner_id=?").run(ownerId);
   }
   install(app: Express, requireOwner: RequestHandler, csrfOk: RequestHandler) {
@@ -250,28 +256,48 @@ export class LaunchpadOAuth implements OAuthServerProvider {
       }
       return { p, s, params: JSON.parse(p.params) as AuthorizationParams };
     };
+    // Consent errors render in the shell (lang, a way back), never bare text.
+    const consentError = (res: Response, status: number, et: string, en: string) => {
+      const l: Lang = res.locals.lang === "en" ? "en" : "et", t = tr(l);
+      res.status(status).type("html").send(shell({ title: t("Ühendamine katkes", "Connection stopped"), active: "none", lang: l, csrf: "", bare: true, body: errorBody(l, t("Ühendamine katkes", "Connection stopped"), t(et, en), { href: "/uhenda", label: t("Tagasi: Ühendus", "Back: Connection") }) }));
+    };
     app.get("/oauth/consent", requireOwner, (req, res) => {
-      const c = consent(req); if (!c) return res.status(400).send("Connection request expired or belongs to another browser/account. Start again in your assistant.");
-      const client = this.clientsStore.getClient(c.p.client_id); if (!client) return res.status(400).send("Client expired.");
+      const c = consent(req); if (!c) return consentError(res, 400, "Ühendamise taotlus on aegunud või kuulub teisele brauserile või kontole. Alusta uuesti oma assistendis.", "Connection request expired or belongs to another browser/account. Start again in your assistant.");
+      const client = this.clientsStore.getClient(c.p.client_id); if (!client) return consentError(res, 400, "Assistendi registreering on aegunud. Alusta uuesti oma assistendis.", "Client expired. Start again in your assistant.");
       // Same-origin (not no-referrer) on this same-origin form page, so a
       // genuine browser POST carries a real Origin for the strict exact check.
       // The outgoing callback redirect below still uses no-referrer.
-      res.set({ "content-security-policy": "frame-ancestors 'none'", "referrer-policy": "same-origin" }).type("html").send(shell({ title: "Connect assistant", active: "none", demo: this.cfg.demo, csrf: c.s.csrf, badge: "Review connection", body: `<section class="card"><h1>Connect ${esc(client.client_name ?? "assistant")}?</h1><p>This name is supplied by the requesting client. It is not a verified identity.</p><p>Return address: <strong>${esc(new URL(c.params.redirectUri).origin)}</strong></p><p>Requested scopes: <code>${esc(c.params.scopes!.join(" "))}</code></p><p>progress:read lets the assistant see your business and workspace details and your saved progress and sharing state: your workspace label, assessment, tasks, evidence references and activity. Getting-started guidance excludes your workspace details and sharing state unless you grant read permission. All connected assistants can search the public service catalogue. progress:report saves concise assessments, task updates and private service nominations. It can also ask you to approve a specific message, invoice, payment or filing; nothing happens unless you approve that exact content. No conversations, source documents or Google tokens are shared. This never authorizes payments, filings or signatures.</p><form method="post" action="/oauth/consent"><input type="hidden" name="csrf" value="${esc(c.s.csrf)}"><input type="hidden" name="flow" value="${esc(c.p.id)}">${c.params.scopes!.includes("progress:report") ? '<label><input type="checkbox" name="updates" value="1"> Allow updates and enable progress sharing (progress:report)</label>' : ""}<button name="decision" value="allow">Connect assistant</button><button class="secondary" name="decision" value="reject">Reject connection</button></form></section>` }));
+      const l: Lang = res.locals.lang === "en" ? "en" : "et", t = tr(l);
+      const name = esc(client.client_name ?? t("assistent", "assistant")), back = new URL(c.params.redirectUri);
+      // Copy follows the requested scopes: read abilities only when asked for; storage only when reporting is offered.
+      const read = c.params.scopes!.includes("progress:read"), report = c.params.scopes!.includes("progress:report");
+      res.set({ "content-security-policy": "frame-ancestors 'none'", "referrer-policy": "same-origin" }).type("html").send(shell({ title: t("Ühenda assistent", "Connect assistant"), active: "none", lang: l, csrf: c.s.csrf, bare: true, body: `<section class="card" aria-labelledby="k-h"><h1 id="k-h">${t(`Ühenda ${name} AI-hüppelauaga?`, `Connect ${name} to AI Launchpad?`)}</h1>
+<p class="small muted">${t("Tagasi", "Returns to")}: <strong>${esc(back.host)}</strong></p>
+<h2>${t(`${name} saab alati`, `${name} can always`)}</h2><ul class="tight">${read ? `<li>${t("näha sinu ettevõtte tähtaegu ja tööde seisu", "see your company's deadlines and work status")}</li>` : ""}<li>${t("öelda, mida ta saab sinu eest ära teha", "tell you what it can take off your hands")}</li></ul>
+<form method="post" action="/oauth/consent"><input type="hidden" name="csrf" value="${esc(c.s.csrf)}"><input type="hidden" name="flow" value="${esc(c.p.id)}">${report ? `<h2>${t("Kas lased tal töid ette valmistada?", "Let it prepare work for you?")}</h2>
+<label class="check"><input type="checkbox" name="updates" value="1"><span>${t(`Jah: ${name} valmistab ette kirjad, arved ja deklaratsioonid ning küsib iga kord sinult kinnitust`, `Yes: ${name} prepares messages, invoices and returns, and asks you every time before anything goes out`)}</span></label>
+<p class="small muted">${read ? t(`Ilma selleta saab ${name} ainult lugeda. Kirju ega arveid ta sinu eest ette valmistada ei saa. Hiljem lisamiseks tuleb ${name} uuesti ühendada.`, `Without it, ${name} can only read. It can't prepare messages or invoices for you. To add this later, reconnect ${name}.`) : t(`${name} küsib ainult töid ette valmistada. Ilma linnukeseta ühendust ei looda ja ${name} saab teate, et keeldusid.`, `${name} asks only to prepare work. Without the tick, no connection is made and ${name} is told you declined.`)}</p>
+<p class="small muted">${t("Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, kinnitamiseks esitatud tekstid, privaatsed teenusesoovitused ja anonüümseks muudetud soovid, kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.", "If you allow preparing work, we store work status, your assistant's assessment, texts sent for your approval, private service nominations and anonymised requests until you delete them. AI Launchpad never receives your conversations or files.")}</p>` : ""}
+<h2>${t(`AI-hüppelaua kaudu ei saa ${name} kunagi`, `Through AI Launchpad, ${name} can never`)}</h2><ul class="tight"><li>${t("ise maksta, deklaratsioone esitada ega allkirjastada", "pay, file returns or sign on its own")}</li></ul>
+${report ? "" : `<p class="small muted">${t("Sinu vestlusi ega faile AI-hüppelaud ei saa.", "AI Launchpad never receives your conversations or files.")}</p>`}
+<button name="decision" value="allow">${t("Ühenda", "Connect")}</button><button class="secondary" name="decision" value="reject">${t("Ära ühenda", "Don't connect")}</button></form>
+<details class="tech-details"><summary>${t("Tehniline info", "Technical details")}</summary><dl class="tech-list"><dt>${t("Kliendi nimi", "Client name")}</dt><dd>${name} — ${t("kliendi enda antud, see ei ole kontrollitud identiteet", "supplied by the requesting client; it is not a verified identity")}</dd><dt>${t("Tagasi", "Return address")}</dt><dd>${esc(back.origin)}</dd><dt>${t("Küsitud õigused", "Requested scopes")}</dt><dd>${esc(c.params.scopes!.join(" "))}</dd></dl>
+<div lang="en"><p>progress:read lets the assistant see your business and workspace details and your saved progress and sharing state: your workspace label, assessment, tasks, evidence references and activity. Getting-started guidance excludes your workspace details and sharing state unless you grant read permission. All connected assistants can search the public service catalogue. progress:report saves concise assessments, task updates and private service nominations. It can also ask you to approve a specific message, invoice, payment or filing; nothing happens unless you approve that exact content. No conversations, source documents or Google tokens are shared. This never authorizes payments, filings or signatures.</p><p class="small muted">progress:report is the “Yes” box above. Scopes are fixed at consent: adding it later needs a new connection</p></div></details></section>` }));
     });
     app.post("/oauth/consent", requireOwner, csrfOk, (req, res) => {
-      const c = consent(req); if (!c || req.body.flow !== c.p.id || !["allow", "reject"].includes(req.body.decision)) return res.status(400).send("Connection request expired or already used.");
+      const c = consent(req); if (!c || req.body.flow !== c.p.id || !["allow", "reject"].includes(req.body.decision)) return consentError(res, 400, "Ühendamise taotlus on aegunud või juba kasutatud. Alusta uuesti oma assistendis.", "Connection request expired or already used. Start again in your assistant.");
       const url = new URL(c.params.redirectUri);
       if (c.params.state) url.searchParams.set("state", c.params.state);
       const scopes = c.params.scopes!.filter(s => s !== "progress:report" || req.body.updates === "1");
       if (req.body.decision === "reject" || !scopes.length) {
         this.db.prepare("DELETE FROM oauth_pending WHERE id=?").run(c.p.id); url.searchParams.set("error", "access_denied");
       } else {
-        if (this.count("oauth_grants", "WHERE owner_id=?", [c.s.owner_id]) >= 100 || this.count("oauth_grants", "WHERE owner_id=? AND revoked=0", [c.s.owner_id]) >= 10) return res.status(409).send("Connection limit reached. Revoke an existing assistant connection.");
+        if (this.count("oauth_grants", "WHERE owner_id=?", [c.s.owner_id]) >= 100 || this.count("oauth_grants", "WHERE owner_id=? AND revoked=0", [c.s.owner_id]) >= 10) return consentError(res, 409, "Ühenduste piir on täis. Eemalda mõni olemasolev assistendi ühendus.", "Connection limit reached. Revoke an existing assistant connection.");
         const code = opaque(), id = newId("grant"), grantExpires = Date.now()+30*86400_000;
         this.db.transaction(() => {
           if (this.db.prepare("DELETE FROM oauth_pending WHERE id=?").run(c.p.id).changes !== 1) throw new Error("Consumed consent");
           this.db.prepare("UPDATE oauth_clients SET expires=MAX(expires,?) WHERE id=?").run(grantExpires, c.p.client_id);
-          this.db.prepare("INSERT INTO oauth_grants VALUES(?,?,?,?,?,?,0,?,?)").run(id, c.s.owner_id, c.p.epoch, c.p.client_id, scopes.join(" "), this.resource, grantExpires, c.params.redirectUri);
+          this.db.prepare("INSERT INTO oauth_grants(id,owner_id,epoch,client_id,scopes,resource,revoked,expires,redirect) VALUES(?,?,?,?,?,?,0,?,?)").run(id, c.s.owner_id, c.p.epoch, c.p.client_id, scopes.join(" "), this.resource, grantExpires, c.params.redirectUri);
           this.db.prepare("INSERT INTO oauth_codes VALUES(?,?,?,?,?)").run(sha256(code), id, c.params.codeChallenge, c.params.redirectUri, Date.now()+60_000);
           if (scopes.includes("progress:report")) this.db.prepare("UPDATE owners SET reporting_enabled=1 WHERE id=?").run(c.s.owner_id);
         })();
