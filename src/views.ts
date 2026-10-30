@@ -432,7 +432,7 @@ ${TEASER_CSS}
 /* Compact strip: lives in the Täna hero under the three pills. One tappable line + bar. */
 .ho-strip{display:block;margin:var(--s-3) 0 0;padding:var(--s-2) 0 var(--s-3);border-top:1px solid var(--c-divider);color:inherit;text-decoration:none}
 .ho-strip:hover .ho-line b{text-decoration:underline;text-underline-offset:.15em}
-.ho-line{display:flex;align-items:baseline;gap:var(--s-2) var(--s-3);flex-wrap:wrap;margin:0 0 var(--s-2);font-size:var(--fs-md)}
+.ho-line{display:flex;align-items:baseline;gap:2px var(--s-3);flex-wrap:wrap;margin:0 0 var(--s-2);font-size:var(--fs-md);line-height:1.35}
 .ho-line b{font-weight:750;color:var(--c-primary)}
 .ho-line .num{font-weight:800}
 .ho-line span{color:var(--c-muted);font-size:var(--fs-sm)}
@@ -445,7 +445,7 @@ ${TEASER_CSS}
 .ho-seg--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
 .ho-seg--done{border-color:var(--c-primary);background:var(--c-primary)}
 .ho-seg--other{border-style:dashed;border-color:var(--c-muted);background:repeating-linear-gradient(135deg,transparent 0 4px,var(--c-divider) 4px 8px)}
-.ho-seg--wait::after{content:"";position:absolute;right:-3px;top:-6px;width:10px;height:10px;border-radius:50%;background:var(--c-att-bd);border:2px solid #fff}
+.ho-seg--wait::after{content:"";position:absolute;right:-3px;top:-6px;width:10px;height:10px;border-radius:50%;background:var(--c-att);border:2px solid #fff}
 .ho-bar--lg{height:20px;gap:6px}
 .ho-bar--lg .ho-seg{border-radius:6px}
 
@@ -899,7 +899,9 @@ const hoSeg = (j: Job) => `ho-seg${j.rung === "mine" ? "" : ` ho-seg--${j.rung}`
 const HO_RUNG: Record<string, [string, string]> = { mine: ["sinu käes", "yours"], other: ["teeb keegi teine", "done by someone else"], prep: ["assistent valmistab ette, sina kinnitad", "your assistant prepares, you approve"], done: ["assistent teeb ise või lagi käes", "your assistant does it, or at its ceiling"] };
 /** Täna hero: the count and the small bar, one tap to the full section on Ühendus. Not a card. */
 export function handoverStrip(h: Handover, l: Lang): string {
-  const t = tr(l), sub = h.off ? hoSplit(h, l) : t("alusta ühest", "start with one");
+  const t = tr(l), pending = h.jobs.reduce((n, j) => n + j.evidence.pending, 0);
+  const wait = pending ? t(`${pending} ootab sinu kinnitust`, `${pending} waiting for your approval`) : "";
+  const sub = h.off ? [hoSplit(h, l), wait].filter(Boolean).join(", ") : wait || t("alusta ühest", "start with one");
   return `<a class="ho-strip" href="/uhenda#kaest-ara" aria-label="${esc(t(`Käest ära: ${hoCount(h, l)}. ${sub}. Vaata lähemalt.`, `Off your plate: ${hoCount(h, l)}. ${sub}. See more.`))}"><p class="ho-line"><b>${t("Käest ära:", "Off your plate:")} <span class="num">${h.off}</span> ${esc(t(`${h.off === 1 ? "töö" : "tööd"} ${h.total}-st`, `of ${h.total}`))}</b><span>${esc(sub)}</span><span class="go">${t("Vaata →", "See →")}</span></p>
 <ul class="ho-bar" aria-hidden="true">${h.jobs.map((j) => `<li class="${hoSeg(j)}"></li>`).join("")}</ul></a>`;
 }

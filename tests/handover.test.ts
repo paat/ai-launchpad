@@ -144,4 +144,13 @@ describe("„Käest ära” fix cycle 1", () => {
       expect(html(h)).not.toContain("Pikenda püsiluba");
     }
   });
+
+  test("the Täna strip says how many approvals wait, visibly and in its accessible name (review-design-t5-grok medium)", () => {
+    for (const approvals of [[appr({ state: "pending" })], [...week2()]]) {
+      const strip = handoverStrip(computeHandover({ assessment: null, obligations, approvals, rules: [], now: NOW }), "et");
+      expect(strip.match(/aria-label="([^"]*)"/)![1]).toContain("1 ootab sinu kinnitust");
+      expect(strip.match(/<span>([^<]*)<\/span>/)![1]).toContain("1 ootab sinu kinnitust");
+    }
+    expect(handoverStrip(computeHandover({ assessment: null, obligations, approvals: [], rules: [], now: NOW }), "et")).not.toContain("ootab");
+  });
 });
