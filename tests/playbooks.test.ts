@@ -123,6 +123,13 @@ describe("executable job playbooks (#26)", () => {
     }
     expect(byId("payment-reminder").steps.join(" ")).toMatch(/recipient\.address.*amount_cents/);
   });
+
+  test("payment-reminder: amount_cents is required, in euro cents with an example, and the text states the same amount (tribunal T-001)", () => {
+    const steps = byId("payment-reminder").steps;
+    const approval = steps.find((x) => x.includes("request_approval"))!;
+    expect(approval).toContain("amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000)");
+    expect(steps.find((x) => x.startsWith("Draft"))).toContain("the amount in the text is the same amount you put in amount_cents");
+  });
 });
 
 describe("agent-facing copy over MCP", () => {

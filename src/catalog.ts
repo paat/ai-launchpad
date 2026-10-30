@@ -71,8 +71,8 @@ export const PLAYBOOKS: Playbook[] = [
     needs: ["Unpaid sales invoices: the owner's accounting connector (search_services, e.g. werkzeug, trivis) or a file the owner shares.", "The owner's own email tool to send the reminder."],
     steps: [
       "Find unpaid invoices past their due date in the owner's accounting connector or in a file the owner shares.",
-      "Draft a polite reminder in the owner's language with the invoice number, amount and due date as they appear on the invoice. Do not threaten late-payment interest (viivis) unless the owner asks for it.",
-      "Call request_approval with action kind send_message; recipient.name and recipient.address: the customer and their e-mail; amount_cents: the overdue amount; period: the invoice's period; document.title and document.content: the exact reminder; summary: one line for the owner.",
+      "Draft a polite reminder in the owner's language with the invoice number, the overdue amount and the due date as they appear on the invoice; the amount in the text is the same amount you put in amount_cents. Do not threaten late-payment interest (viivis) unless the owner asks for it.",
+      "Call request_approval with action kind send_message; recipient.name and recipient.address: the customer and their e-mail; amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000); period: the invoice's period; document.title and document.content: the exact reminder; summary: one line for the owner.",
       "After the owner says it is approved, call get_approval. Act only if its state is approved, and send exactly that text with your own tools; Launchpad sends nothing.",
       "Call record_action_outcome with outcome sent (or failed).",
       "Advance the outcome to paid only if you see the payment, for example in the accounting connector.",
