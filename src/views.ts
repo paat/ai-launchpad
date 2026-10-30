@@ -1057,9 +1057,10 @@ export function landingBody(o: { lang: Lang }): string {
   const l = o.lang, t = tr(l), amount = fmtEur(24000, l);
   // One conversation, used for the animation and the screen-reader transcript.
   const ask1 = t("Mis mul sel kuul adminis ees on?", "What admin do I have this month?");
-  const kmd: [string, string] = [t("20. nov", "20 Nov"), t("KMD ja käibemaks", "VAT return (KMD) and VAT")];
+  const kmd: [string, string] = [t("20. nov", "20 Nov"), t("KMD ja käibemaks", "VAT return (KMD) and VAT payment")];
   const tsd: [string, string] = [t("10. nov", "10 Nov"), t("TSD · kas oktoobris oli väljamakseid?", "TSD · were there any payouts in October?")];
-  const rule = t("Arvutatud reeglist", "Calculated by rule"), source = `${t("Allikas", "Source")}: KMS § 27`;
+  const rule = t("Arvutatud reeglist", "Calculated by rule"), src = t("Allikas", "Source");
+  const kmdSource = `${src}: ${t("KMS", "VAT Act")} § 27, § 38`, tsdSource = `${src}: ${t("TuMS", "Income Tax Act")} § 40, § 54`;
   const offer = t("Saan oktoobri arved KMD jaoks ette valmistada. Kas alustan?", "I can prepare October's invoices for the VAT return. Shall I start?");
   const ask2 = t("Jah. Ja meenuta Demo Kliendile tasumata arvet.", "Yes. And remind Demo Klient about the unpaid invoice.");
   const card = t("Maksemeeldetuletus", "Payment reminder"), client = "Demo Klient OÜ";
@@ -1069,8 +1070,8 @@ export function landingBody(o: { lang: Lang }): string {
   const typing = (k: string) => `<div class="beat beat--typing b-${k}"><span class="typing"><i></i><i></i><i></i></span></div>`;
   const chat = [
     me("me1", ask1), typing("t1"),
-    ai("ai1", `<b>${esc(kmd[0])}</b> — ${esc(kmd[1])}<span class="labels">${labelChip("rule", rule)}${labelChip("assistant", source)}</span>`),
-    ai("ai2", `<b>${esc(tsd[0])}</b> — ${esc(tsd[1])}`),
+    ai("ai1", `<b>${esc(kmd[0])}</b> — ${esc(kmd[1])}<span class="labels">${labelChip("rule", rule)}${labelChip("official", kmdSource)}</span>`),
+    ai("ai2", `<b>${esc(tsd[0])}</b> — ${esc(tsd[1])}<span class="labels">${labelChip("official", tsdSource)}</span>`),
     ai("ai3", esc(offer)),
     me("me2", ask2), typing("t2"),
     `<div class="beat b-card"><div class="mock-card"><div class="labels mock-state"><span class="mock-wait">${stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))}</span><span class="mock-ok">${stateChip("approved", t("Kinnitatud", "Approved"))}</span></div>
@@ -1079,7 +1080,7 @@ export function landingBody(o: { lang: Lang }): string {
   ].join("\n");
   const transcript = [
     [t("Sina", "You"), ask1],
-    [t("Assistent", "Assistant"), `${kmd[0]} — ${kmd[1]} · ${rule} · ${source}. ${tsd[0]} — ${tsd[1]} ${offer}`],
+    [t("Assistent", "Assistant"), `${kmd[0]} — ${kmd[1]} · ${rule} · ${kmdSource}. ${tsd[0]} — ${tsd[1]} · ${tsdSource}. ${offer}`],
     [t("Sina", "You"), ask2],
     [t("Assistent", "Assistant"), `${t("Kinnitus", "Approval")}: ${card} · ${client} · ${amount}. „${approve}”`],
     [t("Sina", "You"), done.replace("✓ ", "")],

@@ -240,7 +240,7 @@ describe("landing and connect", () => {
   test("landing: what the product does, a labelled CSS-only chat teaser, 3 steps, trust strip, no search (owner 2026-10-30)", () => {
     const et = landingBody({ lang: "et" }), en = landingBody({ lang: "en" });
     for (const s of ["Sinu AI-assistent teeb kontoritöö.", "Sina kinnitad ainult selle, mis sind seob.", "ilma uue äpi ja vormideta", '<a class="btn" href="/uhenda">Ühenda oma assistent</a>',
-      '<span class="label-chip label-chip--sample">Näidis</span>', "Mis mul sel kuul adminis ees on?", "<b>20. nov</b> — KMD ja käibemaks", "Arvutatud reeglist", "Allikas: KMS § 27", "<b>10. nov</b> — TSD · kas oktoobris oli väljamakseid?",
+      '<span class="label-chip label-chip--sample">Näidis</span>', "Mis mul sel kuul adminis ees on?", "<b>20. nov</b> — KMD ja käibemaks", "Arvutatud reeglist", "<b>10. nov</b> — TSD · kas oktoobris oli väljamakseid?",
       "Saan oktoobri arved KMD jaoks ette valmistada. Kas alustan?", "Jah. Ja meenuta Demo Kliendile tasumata arvet.", "Maksemeeldetuletus", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud: demo",
       "Kuidas see töötab", "Ühenda oma ChatGPT või Claude (2 minutit)", "Midagi ei saadeta ilma sinu loata", "Tähtajad arvutab reeglistik, mitte tehisaru", "Smart-ID ja allkiri jäävad sinu kätte", 'href="/demand"']) expect(et, s).toContain(s);
     for (const s of ["Your AI assistant does the back office.", "Connect your assistant", ">Sample<", "<b>20 Nov</b>", fmtEur(24000, "en"), "Approve exactly this", "How it works"]) expect(en, s).toContain(s);
@@ -255,6 +255,22 @@ describe("landing and connect", () => {
     expect(et).toContain("Kinnita telefonis üks kord — täpselt see saaja, summa ja dokument — või luba sarnased edaspidi automaatselt");
     expect(en).toContain("Approve once on your phone — exactly this recipient, amount and document — or allow similar ones automatically from now on");
     expect(et).toContain('<span class="mock-wait"><span class="state-chip state-chip--waiting">Ootab sinu kinnitust</span></span><span class="mock-ok"><span class="state-chip state-chip--approved">Kinnitatud</span></span>');
+  });
+
+  test("landing teaser: official source chips carry the engine's sections, no assistant chip (tribunal T-002)", () => {
+    const et = landingBody({ lang: "et" }), en = landingBody({ lang: "en" });
+    const teaser = (h: string) => h.slice(h.indexOf('<figure class="teaser">'), h.indexOf("</figure>"));
+    const chip = (k: string, text: string) => `<span class="label-chip label-chip--${k}">${text}</span>`;
+    for (const h of [et, en]) expect(teaser(h)).not.toContain("label-chip--assistant");
+    expect(teaser(et)).toContain(chip("official", "Allikas: KMS § 27, § 38"));
+    expect(teaser(et)).toContain(chip("official", "Allikas: TuMS § 40, § 54"));
+    expect(teaser(et)).toContain(chip("rule", "Arvutatud reeglist"));
+    expect(teaser(en)).toContain(chip("official", "Source: VAT Act § 27, § 38"));
+    expect(teaser(en)).toContain(chip("official", "Source: Income Tax Act § 40, § 54"));
+    expect(en).toContain("<b>20 Nov</b> — VAT return (KMD) and VAT payment");
+    // The screen-reader transcript carries the same texts.
+    expect(et).toContain("Allikas: KMS § 27, § 38. 10. nov — TSD · kas oktoobris oli väljamakseid? · Allikas: TuMS § 40, § 54.");
+    expect(en).toContain("VAT return (KMD) and VAT payment · Calculated by rule · Source: VAT Act § 27, § 38.");
   });
 
   test("landing teaser: the dates are the engine's for November 2026 (10.11 TSD, 20.11 KMD)", () => {
