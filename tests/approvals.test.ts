@@ -676,12 +676,13 @@ describe("standing approvals (#45)", () => {
     expect(rules("std-any")[0]).toMatchObject({ recipients_json: null, max_amount_cents: 500_000 });
     expect((await ask(c, reminder({ recipient: { name: "New Client OÜ", address: "ap@new.example" } }))).auto_approved).toBe(true);
     const now = new Date().toISOString(), later = new Date(Date.now() + 86_400_000).toISOString();
-    for (const kind of ["prepare_payment", "prepare_filing"]) db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,?,NULL,999999999,99,?,?)").run(`rule_forged_${kind}`, "std-any", kind, later, now);
+    for (const kind of ["prepare_payment", "prepare_filing", "post_entries"]) db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,?,NULL,999999999,99,?,?)").run(`rule_forged_${kind}`, "std-any", kind, later, now);
     expect(await ask(c, reminder({ kind: "prepare_payment", recipient: { name: "Synthetic Client OÜ" } }))).toMatchObject({ state: "pending" });
     expect(await ask(c, reminder({ kind: "prepare_filing", amount_cents: undefined, recipient: { name: "EMTA (e-MTA)" } }))).toMatchObject({ state: "pending" });
+    expect(await ask(c, reminder({ kind: "post_entries", recipient: { name: "Näidis OÜ, e-arveldaja" } }))).toMatchObject({ state: "pending" });
     // Nor can the owner create one.
-    for (const kind of ["prepare_payment", "prepare_filing"]) expect((await post(o, "/standing-approvals", { kind, scope: "any", max_eur: "2000" })).status, kind).toBe(400);
-    expect(rules("std-any")).toHaveLength(3);
+    for (const kind of ["prepare_payment", "prepare_filing", "post_entries"]) expect((await post(o, "/standing-approvals", { kind, scope: "any", max_eur: "2000" })).status, kind).toBe(400);
+    expect(rules("std-any")).toHaveLength(4);
   });
 
   test("Ühendus creates a rule for already-approved recipients or any; the card offer is only for owner-approved sends", async () => {
