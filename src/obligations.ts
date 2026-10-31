@@ -45,7 +45,7 @@ export interface FactNeeded { fact: string; question_et: string; question_en: st
   period_label_et?: string; }
 
 const RT = "https://www.riigiteataja.ee/akt/";
-const SRC = {
+export const SRC = {
   kmd: { act_et: "Käibemaksuseadus", section: "§ 27 lg 1, § 38 lg 1", url: `${RT}130062026129`, tier: "A" },
   tsd: { act_et: "Tulumaksuseadus", section: "§ 40 lg 4–5, § 54 lg 2 ja 4", url: `${RT}109072026066`, tier: "A" },
   annual: { act_et: "Äriseadustik", section: "§ 179 lg 4", url: `${RT}106072023131`, tier: "A" },
