@@ -62,3 +62,35 @@ describe("#63 m12: Tehtud names the job", () => {
     expect(activityBody({ rows: [row("draft_prepared")], receipts: [], exclusions: [], lang: "en", now: NOW, assessment: alpha })).toContain("<strong>Prepared: ");
   });
 });
+
+describe("#63 m13: English Täna on a sample workspace", () => {
+  const beta = DEMO_FIXTURES.beta;
+  const kase = computeObligations(SYNTHETIC_COMPANIES["19990002"].facts, { today: NOW, months: 2 });
+  const en = (a = alpha, over: Partial<TanaOpts> = {}) => tana({ lang: "en", assessment: a, coverage: computeCoverage(a), handover: computeHandover({ assessment: a, obligations: (a === alpha ? mari : kase).obligations, approvals: [], rules: [], now: NOW }), deadlines: a === alpha ? mariDeadlines : { ...mariDeadlines, company: { ...mariDeadlines.company, name: "Kase Konsult OÜ", registry_code: "19990002" }, obligations: kase.obligations, facts_needed: kase.facts_needed }, ...over });
+  const strip = (html: string) => html.replace(/<span lang="et">[^<]*<\/span>/g, "");
+  test("the fixture's labels show in English; its free text stays as written, marked lang=\"et\"", () => {
+    const a = en(alpha, { progress: [{ task_id: "vat-prep", milestone: "draft_prepared", observed_at: "2026-11-03T09:15:00Z" }] }), b = en(beta);
+    expect(a).toContain('<p class="company">Mari Disain OÜ (sample)</p>');
+    expect(a).toContain("Prepared: VAT return (KMD)");
+    expect(a).toContain("Also handled by the accountant: VAT return (KMD)");
+    expect(a).toContain("Next step: Let your assistant draft reminders for unpaid invoices");
+    expect(a).toContain("<dt>The accountant</dt>");
+    expect(a).toContain('<span lang="et">Kaotab arvete käsitsi jälgimise; sina ainult kinnitad iga kirja.</span>');
+    expect(a).toContain('<span lang="et">Omaniku põhitöö; see jääb talle. (Näidis.)</span>');
+    expect(b).toContain("Next step: Restore the accounting connection");
+    expect(b).toContain("Also handled by the accountant: Payroll and TSD data");
+    expect(b).toContain('<li class="small"><span lang="et">Kliendi- ja õigusvaldkonda selles näidises ei hinnatud, seega üldist katvust ei näidata.</span></li>');
+    // Outside the lang="et" spans no fixture text is left in Estonian.
+    for (const html of [a, b]) {
+      const rest = strip(html.replace(/<style>[^]*?<\/style>/, ""));
+      for (const et of ["näidis)", "Disainitööd", "Arvete koostamine", "Maksemeeldetuletused", "KMD ettevalmistus", "Palgaarvestus", "Raamatupidamise ühendus", "Konsultatsioonitööd", "raamatupidaja", "Raamatupidaja", "Lase assistendil", "Taasta", "Kaotab", "Omaniku"]) expect(rest, et).not.toContain(et);
+    }
+  });
+  test("Estonian, and a real (non-sample) workspace in English, render the assistant's text as written", () => {
+    expect(tana()).toContain("Lisaks teeb raamatupidaja: KMD ettevalmistus");
+    expect(tana()).not.toContain('<span lang="et">Omaniku');
+    const real = en(alpha, { sample: false });
+    expect(real).toContain("Also handled by raamatupidaja: KMD ettevalmistus");
+    expect(real).not.toContain('<span lang="et">Omaniku');
+  });
+});

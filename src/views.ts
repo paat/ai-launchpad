@@ -5,6 +5,7 @@ import { approvalAddressMissing, normAddress, standingRecipients, standingRuleNa
 import type { CompanyCard } from "./arikratt.js";
 import { ET_OF, tallinnDate, type FactNeeded, type Obligation, type Source } from "./obligations.js";
 import { BASETEN_MODEL } from "./model-quality.js";
+import { DEMO_LABELS_EN } from "./fixtures.js";
 import { PLAYBOOKS, safeHttps, type ServiceRecord } from "./catalog.js";
 import { BLOCKER_HANDOFF, BLOCKER_LABELS, BLOCKER_LABELS_ET, CATEGORY_LABELS, CATEGORY_LABELS_ET, classifiedByLabel, type Blocker, type Category, type DemandItem, type OwnerNeed } from "./unmet-needs.js";
 
@@ -1485,10 +1486,16 @@ export interface TanaOpts {
 /** The register lookup is unavailable: ask the assistant instead, with the plain reason. */
 export const deadlinesHint = (l: Lang, reason: string, reasonLang: Lang = "en") => `<p class="small">${tr(l)("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?”", "Deadlines: ask your assistant \"What are my deadlines?\"")} <span class="muted"${reasonLang !== l ? ` lang="${reasonLang}"` : ""}>${esc(reason)}</span></p>`;
 const TRY_PROMPT: [string, string] = ["Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?", "What admin do I have this month, and what can you do yourself?"];
+/** English Täna on a sample workspace (#63 m13): the fixture labels we wrote show in English (plain);
+ * the rest of the assistant's text stays as written and is marked Estonian (html). */
+const fixtureText = (l: Lang, sample: boolean) => {
+  const on = l === "en" && sample, plain = (s: string) => (on && DEMO_LABELS_EN[s]) || s;
+  return { plain, html: (s: string) => (on && !DEMO_LABELS_EN[s] ? `<span lang="et">${esc(s)}</span>` : esc(plain(s))) };
+};
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function tanaBody(o: TanaOpts): string {
-  const l = o.lang, t = tr(l), now = o.now ?? new Date(), a = o.assessment;
+  const l = o.lang, t = tr(l), now = o.now ?? new Date(), a = o.assessment, fx = fixtureText(l, o.sample);
   const deadlines = o.deadlines && typeof o.deadlines === "object" && "obligations" in o.deadlines ? o.deadlines : null;
   const pending = o.approvals.filter((x) => x.state === "pending");
   // A failed or rejected outcome is not done work: it needs the owner.
@@ -1504,15 +1511,15 @@ export function tanaBody(o: TanaOpts): string {
     ...failed.map((x) => { const v = approvalView(x, l); return askLink(`/approvals/${esc(encodeURIComponent(x.id))}`, `${stateChip("rejected", t("Ei õnnestunud — vaata üle", "Did not work — review it"))}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`, esc([v.title, v.recipient.name].filter(Boolean).join(" · ")), esc(fmtWhen(v.outcome?.observed_at ?? x.consumed_at, l, now))); }),
     ...qs.map((x) => `<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Vasta assistendile ühele küsimusele:", "Answer one question for your assistant:")}</span><p class="small">„${esc(x.q)}” ${esc(x.then)}</p></div></div>`),
     // Unknowns stay in the main view, before any disclosure; not counted as asks.
-    ...(a && (o.coverage.unresolved || a.gaps.length) ? [`<div class="ask-row"><strong>${t("Assistent pole veel kõike hinnanud:", "Your assistant has not assessed everything yet:")}</strong><ul class="tight">${[...(o.coverage.unresolved ? [t(`${o.coverage.unresolved} kohustus(t) on veel lahtised`, `${o.coverage.unresolved} item(s) still unresolved`)] : []), ...a.gaps].map((g) => `<li class="small">${esc(g)}</li>`).join("")}</ul></div>`] : []),
+    ...(a && (o.coverage.unresolved || a.gaps.length) ? [`<div class="ask-row"><strong>${t("Assistent pole veel kõike hinnanud:", "Your assistant has not assessed everything yet:")}</strong><ul class="tight">${[...(o.coverage.unresolved ? [esc(t(`${o.coverage.unresolved} kohustus(t) on veel lahtised`, `${o.coverage.unresolved} item(s) still unresolved`))] : []), ...a.gaps.map(fx.html)].map((g) => `<li class="small">${g}</li>`).join("")}</ul></div>`] : []),
     // Rationale and any effort estimate are the assistant's words, labelled as such; never in the hero or the counts.
-    ...(next ? [`<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Järgmine samm:", "Next step:")} ${esc(next.title)}</span><p class="small"><span class="muted">${t("Assistendi hinnang:", "Your assistant's estimate:")}</span> ${esc([next.rationale, next.estimated_effort_saved?.trim()].filter(Boolean).join(" "))}</p><details class="plain"><summary>${t("Mida assistendile öelda", "What to tell your assistant")}</summary><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(t(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale} Palun aita mul see ära teha või ütle, mida sinult vaja on.`, `Next step from my AI Launchpad assessment: "${next.title}". Why: ${next.rationale} Please help me do this, or tell me what you need from me.`))}”</p></div></details></div></div>`] : []),
+    ...(next ? [`<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Järgmine samm:", "Next step:")} ${fx.html(next.title)}</span><p class="small"><span class="muted">${t("Assistendi hinnang:", "Your assistant's estimate:")}</span> ${[next.rationale, next.estimated_effort_saved?.trim()].filter((x): x is string => !!x).map(fx.html).join(" ")}</p><details class="plain"><summary>${t("Mida assistendile öelda", "What to tell your assistant")}</summary><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${t(`${esc(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale}`)} Palun aita mul see ära teha või ütle, mida sinult vaja on.`, `Next step from my AI Launchpad assessment: "${fx.html(next.title)}". Why: ${fx.html(next.rationale)} Please help me do this, or tell me what you need from me.`)}”</p></div></details></div></div>`] : []),
     ...optional.map((x) => `<div class="ask ask--note"><div class="ask-body"><a class="tap-link" href="#soov-${esc(x.id)}"><span><strong>${t("Valikuline:", "Optional:")}</strong> ${esc(needLabel(x, l) ?? x.need_redacted)}</span></a><p class="small">${t("Seda ei saa assistent sinu eest teha. Võid soovi anonüümselt avaldada.", "Your assistant can't do this for you. You may publish it anonymously.")}</p></div></div>`),
   ];
 
   // Assistent tegi: finished or prepared work only, never reads. Approved work still waiting for
   // the assistant's report is listed but not counted.
-  const titleOf = (id: string) => a?.responsibilities.find((r) => r.id === id)?.label ?? id;
+  const titleOf = (id: string) => fx.html(a?.responsibilities.find((r) => r.id === id)?.label ?? id);
   const doneRows: string[] = [];
   let doneCount = 0;
   for (const x of o.approvals) {
@@ -1529,10 +1536,10 @@ export function tanaBody(o: TanaOpts): string {
     if (p.milestone !== "draft_prepared" && p.milestone !== "external_completion_reported") continue;
     const verb = t(...PROGRESS_VERB[p.milestone]);
     doneCount++;
-    doneRows.push(`<div class="row"><strong>${verb} ${esc(titleOf(p.task_id))}</strong><div class="labels">${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${esc(fmtWhen(p.observed_at, l, now))}</span></div>`);
+    doneRows.push(`<div class="row"><strong>${verb} ${titleOf(p.task_id)}</strong><div class="labels">${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${esc(fmtWhen(p.observed_at, l, now))}</span></div>`);
   }
   const handled = (a?.responsibilities ?? []).filter(isHandled);
-  const handledLine = handled.length ? `<p class="small muted">${handled.map((r) => esc(t(`Lisaks teeb ${r.executor}: ${r.label} (assistendi hinnang).`, `Also handled by ${r.executor}: ${r.label} (your assistant's assessment).`))).join(" ")}</p>` : "";
+  const handledLine = handled.length ? `<p class="small muted">${handled.map((r) => `${t("Lisaks teeb", "Also handled by")} ${fx.html(r.executor!)}: ${fx.html(r.label)} ${esc(t("(assistendi hinnang).", "(your assistant's assessment)."))}`).join(" ")}</p>` : "";
 
   // A known unknown is never hidden behind "nothing needs you".
   const open = !!a && (o.coverage.unresolved > 0 || a.gaps.length > 0);
@@ -1552,7 +1559,7 @@ export function tanaBody(o: TanaOpts): string {
   const sourceChip = !deadlines ? "" : deadlines.company.synthetic ? (o.sample ? "" : sampleChip(l)) : labelChip(deadlines.company.provenance === "public_register" ? "official" : "assistant", t(deadlines.company.label_et, deadlines.company.label_en));
   // Rule rows whose job „Käest ära” gives to someone else (e.g. the accountant does the KMD), from the same handover.
   const others = Object.fromEntries((o.handover?.jobs ?? []).filter((j) => j.rung === "other" && j.assessed?.executor)
-    .flatMap((j) => (PLAYBOOKS.find((p) => p.id === j.id)?.triggers ?? []).map((rule) => [rule, j.assessed!.executor!])));
+    .flatMap((j) => (PLAYBOOKS.find((p) => p.id === j.id)?.triggers ?? []).map((rule) => [rule, fx.plain(j.assessed!.executor!)])));
   const tulekul = deadlines ? deadlinesList(deadlines, l, { now, prompts: true, others })
     : o.deadlines === "not_cached" ? `<p class="muted">${t("Registri andmeid laaditakse. Värskenda lehte hetke pärast.", "Register facts are loading. Refresh the page in a moment.")}</p>`
     : o.deadlines === "invalid_code" ? deadlinesHint(l, t("Registrikood ei ole korrektne — palu assistendil see üle kontrollida.", "The registry code is not valid — ask your assistant to check it."), l)
@@ -1565,14 +1572,14 @@ export function tanaBody(o: TanaOpts): string {
 <p class="small">${deadlines?.company.synthetic ? t("Tähtajad: reeglistik ja näidisandmed.", "Deadlines: rules and sample data.") : deadlines?.company.provenance === "public_register" ? t("Tähtajad: reeglistik ja avalikud avaandmed (Ärikratt).", "Deadlines: rules and public open data (Ärikratt).") : t("Tähtajad: reeglistik ja sinu assistendi teated.", "Deadlines: rules and your assistant's reports.")} ${esc(t(`Assistendi teated: ${o.reportCount}, AI-hüppelaud neid ei kontrollinud. Allikast kontrollitud tulemusi: ${c.independently_verified_outcomes}.`, `Assistant reports: ${o.reportCount}, not checked by AI Launchpad. Outcomes verified at the source: ${c.independently_verified_outcomes}.`))} ${t("Säästetud aega ei ole mõõdetud, seega me seda ei näita.", "Time saved is not measured, so we don't show it.")}</p>
 ${a ? `<p class="small">${esc(t(`Assistendi hinnangul on ${c.covered} kohustust ${c.denominator}-st kaardistatust korras${c.percent != null ? ` (${c.percent}%)` : ""}.`, `Your assistant assesses ${c.covered} of ${c.denominator} mapped responsibilities as handled${c.percent != null ? ` (${c.percent}%)` : ""}.`))}${o.assessedAt ? ` ${t("Hinnatud", "Assessed")} ${esc(fmtWhen(o.assessedAt, l, now))}.` : ""}</p>
 <p class="small muted">${a.company_label ? t("Ettevõtte nime andis sinu assistent", "Company label supplied by your assistant") : t("Tööruumi nimi", "Workspace label")}${a.company_registry_ref ? ` · ${t("registriviide", "registry ref")} ${esc(a.company_registry_ref)}` : ""} — ${t("seda ei ole avalikust registrist kontrollitud ja see ei tõenda volitust.", "not verified against a public register, and not a mandate.")}</p>
-<p class="small">${esc(a.conclusion)}</p>
-<ul class="tight">${a.responsibilities.map((r) => `<li class="small">${esc(r.label)} — ${r.is_core ? t("sinu põhitöö", "your core work") : isHandled(r) ? esc(t(`teeb ${r.executor} (assistendi hinnang)`, `handled by ${r.executor} (your assistant's assessment)`)) : r.applicability === "unresolved" ? t("lahtine", "unresolved") : t("teed praegu ise", "you do it yourself now")}<br><span class="muted">${esc(r.reason)}</span></li>`).join("")}</ul>` : ""}
-${o.exclusions.length ? `<p class="small muted">${t("Varasematest hinnangutest eemaldatud:", "Removed since earlier assessments:")} ${o.exclusions.map((x) => esc(x.label)).join(", ")}</p>` : ""}
+<p class="small">${fx.html(a.conclusion)}</p>
+<ul class="tight">${a.responsibilities.map((r) => `<li class="small">${fx.html(r.label)} — ${r.is_core ? t("sinu põhitöö", "your core work") : isHandled(r) ? `${t("teeb", "handled by")} ${fx.html(r.executor!)} ${esc(t("(assistendi hinnang)", "(your assistant's assessment)"))}` : r.applicability === "unresolved" ? t("lahtine", "unresolved") : t("teed praegu ise", "you do it yourself now")}<br><span class="muted">${fx.html(r.reason)}</span></li>`).join("")}</ul>` : ""}
+${o.exclusions.length ? `<p class="small muted">${t("Varasematest hinnangutest eemaldatud:", "Removed since earlier assessments:")} ${o.exclusions.map((x) => fx.html(x.label)).join(", ")}</p>` : ""}
 </div></details>`;
 
   // T5 (#61) puts its progress strip directly under the pills, before the primary action.
   return `<section class="hero" aria-labelledby="t-h">
-<p class="company">${esc(a?.company_label ?? deadlines?.company.name ?? o.label)}</p>
+<p class="company">${fx.html(a?.company_label ?? deadlines?.company.name ?? o.label)}</p>
 <h1 id="t-h">${esc(h1)}</h1>
 <p class="lede">${esc(lede)} <span class="small muted">${timeEl(tallinnYmd(now), TODAY[l].format(now))}</span></p>
 <nav class="today-sum" aria-label="${t("Kokkuvõte", "Summary")}"><a${n ? ' class="needs"' : ""} href="#ootab"><b>${n}</b><span>${t("ootab sinult", "need you")}</span></a><a href="#tegi"><b>${doneCount}</b><span>${t("assistent tegi", "done for you")}</span></a><a href="#tulekul"><b>${upcoming}</b><span>${t("tulekul", "coming up")}</span></a></nav>
