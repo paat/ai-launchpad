@@ -323,6 +323,7 @@ describe("approval cards over MCP", () => {
     expect(card).toContain("The entries, exactly as they will be posted");
     expect(card).toContain(">Posted<");
     expect(card).toContain("A check total, not a payment");
+    expect(card).toContain("€453.20 check total");
     expect(await (await fetch(`${base}/activity?lang=en`, { headers: { cookie: o.cookie } })).text()).toContain("Oktoober 2026");
   });
 

@@ -63,10 +63,11 @@ describe("executable job playbooks (#26)", () => {
     expect(all).toContain("every connected mailbox, searched by the vendor's name and the amount");
     expect(all).toContain("never from the payment reference");
     expect(all).toContain("only as an unconfirmed draft. It is confirmed only as a line in that month's post_entries approval");
-    expect(all).toContain("With read-only access, give the owner the approved list to enter in their own software and record nothing");
+    expect(all).toContain("without request_approval (you change nothing, the owner does)");
+    expect(all).toContain("with read-only access the owner enters the list themselves, so request no approval and record nothing");
     expect(all).toContain("one movement per question");
     expect(all).toContain("Never guess.");
-    expect(all).toMatch(/request_approval with action kind post_entries.*owner_confirmation: their words, verbatim.*With write access, post exactly the approved entries, nothing else, then call record_action_outcome with outcome posted/s);
+    expect(all).toMatch(/request_approval with action kind post_entries.*owner_confirmation: their words, verbatim.*Post exactly the approved entries, nothing else, then call record_action_outcome with outcome posted/s);
     expect(p.needs.join(" ")).not.toContain("follow the connect-service playbook");
     expect(p.done_when).toContain("equals the bank statement's balance");
     expect(byId("annual-report").steps.join(" ")).toContain("follow the books-catch-up playbook first");
