@@ -94,7 +94,8 @@ describe("executable job playbooks (#26)", () => {
     expect(acc.join(" ")).toContain("never offer community or local servers from the catalogue");
     expect(acc.join(" ")).toContain("in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.");
     expect(acc.join(" ")).toContain("removing AI Launchpad stops deadlines and approvals, suggest upgrading the plan, and stop here without the last step; never suggest removing AI Launchpad.");
-    expect(verify).toMatch(/^Verify only the service the owner asked for/);
+    expect(verify).toMatch(/^Verify only the service the owner asked for, or the mailbox they agreed to use instead, read-only,/);
+    expect(verify).toContain("or the mailbox they agreed to use instead");
     expect(verify).toContain("e-mail, only the date of the newest message, with no subject or content;");
     expect(verify).toContain("Do not create, change, delete or send anything during setup.");
     for (const id of ["payment-reminder", "vat-return-prep", "annual-report"]) expect(byId(id).needs[0], id).toContain("(if no accounting connector answers yet, follow the connect-service playbook)");
