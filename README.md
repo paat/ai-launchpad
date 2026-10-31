@@ -42,7 +42,7 @@ First persona: a one-person Estonian service OÜ, books in e-arveldaja or Merit.
 
 ### Path A — the owner already has an assistant
 
-1. **Site:** one step that can't happen in chat — add the AI Launchpad connector to Claude or ChatGPT (URL + a three-step guide; later one tap via their connector directories).
+1. **Site:** one step that can't happen in chat — add the AI Launchpad connector to Claude or ChatGPT (URL + a three-step guide; later one tap via their connector directories). On a paid Claude plan the [AI Launchpad plugin](plugin/ai-launchpad/README.md) adds the connector plus skills that send "link my e-mail" or "my annual report" to Launchpad; on the free plan the connector's own `connect_my_services` tool does that job.
 2. **In chat:** "help me run my company's admin" → the assistant calls `get_started` and asks only *which company?* (name or registry code).
 3. **AI Launchpad fills in the rest from public data** via the [Ärikratt MCP](https://arikratt.ee/mcp): VAT number and activities (Business Register), employee count, labour taxes and turnover (tax board quarterly data), licences, annual-report status, tax debt → **obligations calendar and the list of jobs the assistant can take over**.
 4. **Unknowns** (accounting software, bank): the assistant first checks its own connectors; it asks one question only if still unknown.

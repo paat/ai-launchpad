@@ -1,0 +1,15 @@
+{
+  "name": "ai-launchpad",
+  "description": "AI Launchpad: back office for Estonian small businesses in Claude.",
+  "owner": {
+    "name": "AI Launchpad contributors",
+    "url": "https://github.com/paat/ai-launchpad"
+  },
+  "plugins": [
+    {
+      "name": "ai-launchpad",
+      "source": "./plugin/ai-launchpad",
+      "description": "Back office for Estonian small businesses: deadlines from public data, plain-words help linking accounting, e-mail and bank, approvals before anything is sent, paid or filed."
+    }
+  ]
+}
