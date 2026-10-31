@@ -1167,19 +1167,25 @@ ${opts.result ? `<section class="card" role="status"><p>${esc(opts.result)}</p><
 // --- Kataloog (/kataloog): public research catalogue, ET first, zero JS. ---
 type Conn = "hosted_mcp" | "local_mcp" | "self_hosted_mcp" | "ordinary_api";
 const CONN: Record<Conn, [string, string]> = { hosted_mcp: ["MCP · pilves", "MCP · cloud"], local_mcp: ["MCP · sinu arvutis", "MCP · on your computer"], self_hosted_mcp: ["MCP · ise majutatud", "MCP · self-hosted"], ordinary_api: ["API", "API"] };
-/** Job groups in display order; `sector` (free text in the research data) maps to the first match. */
+/** Job groups in display order; `sector` (free text in the research data) maps to every group it names, so a compound sector
+ * („payments/shipping”, „legal/public data”) is found under each (#52). Õigus comes before the generic data group. */
 export const CATALOGUE_GROUPS = [
   { id: "raamatupidamine", et: "Raamatupidamine ja arved", en: "Accounting and invoices", match: /accounting|invoic|payroll/ },
   { id: "pank", et: "Pank ja maksed", en: "Bank and payments", match: /bank|payment/ },
   { id: "epost", et: "E-post ja kalender", en: "Email and calendar", match: /email|calendar|scheduling/ },
   { id: "kullerid", et: "Kullerid", en: "Couriers", match: /courier|logistics|shipping/ },
-  { id: "andmed", et: "Avalikud ja äriandmed", en: "Public and business data", match: /public|business data|government|statistics|^procurement$|tax/ },
   { id: "oigus", et: "Õigus", en: "Legal", match: /legal|contract/ },
+  { id: "andmed", et: "Avalikud ja äriandmed", en: "Public and business data", match: /public|business data|government|statistics|^procurement$|tax/ },
   { id: "brauser", et: "Brauser ja automaatika", en: "Browser and automation", match: /browser/ },
   { id: "muu", et: "Muu", en: "Other", match: /(?:)/ },
 ] as const;
 export type CatalogueGroup = (typeof CATALOGUE_GROUPS)[number]["id"];
-export const catalogueGroup = (sector: string | undefined): CatalogueGroup => CATALOGUE_GROUPS.find((g) => g.match.test((sector ?? "").toLowerCase()))!.id;
+/** Every job group a sector names (Muu only when none does); the first is where the full list shows the service. */
+export const catalogueGroups = (sector: string | undefined): CatalogueGroup[] => {
+  const hits = CATALOGUE_GROUPS.filter((g) => g.id !== "muu" && g.match.test((sector ?? "").toLowerCase())).map((g) => g.id);
+  return hits.length ? hits : ["muu"];
+};
+export const catalogueGroup = (sector: string | undefined): CatalogueGroup => catalogueGroups(sector)[0];
 /** Where a connection works, from its interface class: hosted MCP everywhere, local MCP on a computer, self-hosted MCP on your own server, the rest needs a connector. */
 export const whereItWorks = (ic: string | undefined): [string, string] =>
   ic === "hosted_mcp" ? ["Kõikjal · veeb, telefon, arvuti", "Anywhere · web, phone, computer"]
@@ -1191,7 +1197,8 @@ const fmtYmd = (ymd: string) => /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd.split("-")
 
 function serviceCard(r: ServiceRecord, l: Lang): string {
   const t = tr(l), conn = CONN[r.interface_class as Conn];
-  const link = [...(r.sources ?? []), r.connection].map(safeHttps).find((u): u is string => !!u) ?? null;
+  // The provider's own connection URL first; research citations only when there is none (#52).
+  const link = [r.connection, ...(r.sources ?? [])].map(safeHttps).find((u): u is string => !!u) ?? null;
   // Research text is English; mark it so screen readers switch voice on the Estonian page.
   const en = l === "en" ? "" : ' lang="en"';
   return `<article class="card svc" data-service="${esc(r.id)}"><h3>${esc(r.name)}</h3>
@@ -1209,30 +1216,37 @@ export function catalogueBody(o: { lang: Lang; q: string; g: CatalogueGroup | nu
   // Ärikratt is pinned above with what Launchpad actually does with it.
   const listed = all.filter((r) => r.id !== "arikratt" && (!o.matched || o.matched.has(r.id)));
   const href = (g: string | null) => { const p = new URLSearchParams(); if (g) p.set("g", g); if (o.q) p.set("q", o.q); const s = p.toString(); return s ? `/kataloog?${s}` : "/kataloog"; };
-  const counts = new Map<string, number>(); for (const r of listed) { const g = catalogueGroup(r.sector); counts.set(g, (counts.get(g) ?? 0) + 1); }
+  const counts = new Map<string, number>(); for (const r of listed) for (const g of catalogueGroups(r.sector)) counts.set(g, (counts.get(g) ?? 0) + 1);
   const chips = `<nav class="chips" aria-label="${t("Tööde rühmad", "Job groups")}"><a href="${esc(href(null))}"${o.g ? "" : ' aria-current="page"'}>${t("Kõik", "All")}</a>${CATALOGUE_GROUPS.map((g) => `<a href="${esc(href(g.id))}"${o.g === g.id ? ' aria-current="page"' : ""}>${esc(t(g.et, g.en))} <span>${counts.get(g.id) ?? 0}</span></a>`).join("")}</nav>`;
   const sections = CATALOGUE_GROUPS.filter((g) => !o.g || o.g === g.id).map((g) => {
-    const rows = listed.filter((r) => catalogueGroup(r.sector) === g.id);
+    // A group filter shows every service in the group; the full list shows each service once, under its first group.
+    const rows = listed.filter((r) => (o.g ? catalogueGroups(r.sector).includes(g.id) : catalogueGroup(r.sector) === g.id));
     return rows.length ? `<section aria-labelledby="g-${g.id}"><h2 id="g-${g.id}" class="svc-group">${esc(t(g.et, g.en))} <span class="muted">${rows.length}</span></h2>${rows.map((r) => serviceCard(r, l)).join("")}</section>` : "";
   }).join("");
   const kratt = `https://arikratt.ee/${l === "en" ? "en" : "et"}/mcp`;
+  // Pinned above the list with what Launchpad does with them; a search hides a card it does not match (#52), as searchServices matches the list.
+  const what = { launchpad: ["Näeb sinu ettevõtte tähtaegu koos ametliku allikaga, valmistab töid ette ja küsib enne saatmist või esitamist sinu kinnitust täpselt sellele sisule.", "Sees your company's deadlines with their official sources, prepares the work and asks you to approve the exact content before anything is sent or filed."], arikratt: ["Avalikud ettevõtteandmed äriregistrist ja maksuametist. AI-hüppelaud arvutab nende põhjal sinu tähtajad.", "Public company data from the Business Register and the Tax Board. AI Launchpad computes your deadlines from it."] } as const;
+  const shows = (text: string) => !o.q || text.toLowerCase().includes(o.q.trim().toLowerCase());
+  const pinned = [
+    shows(`AI-hüppelaud AI Launchpad ${what.launchpad.join(" ")}`) ? `<article class="card svc svc--pinned"><h3>${t("AI-hüppelaud", "AI Launchpad")}</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t("Testitud: ChatGPT 28.10.2026 · Claude 30.10.2026", "Tested: ChatGPT 28 Oct 2026 · Claude 30 Oct 2026"))}</div>
+<p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v">${t(...what.launchpad)}</p>
+<a class="tap-link" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a></article>` : "",
+    shows(`Ärikratt ${what.arikratt.join(" ")}`) ? `<article class="card svc svc--pinned"><h3>Ärikratt</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t("AI-hüppelaud kasutab seda", "Used by AI Launchpad"))}</div>
+<p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v">${t(...what.arikratt)}</p>
+<a class="tap-link" href="${esc(kratt)}" rel="noopener noreferrer">${t("Ärikratti avalik MCP", "Ärikratt public MCP")}: arikratt.ee</a></article>` : "",
+  ].filter(Boolean).join("\n");
+  const pinnedSection = pinned ? `<section aria-labelledby="pin-h"><h2 id="pin-h" class="svc-group">${t("Alusta siit", "Start here")}</h2>${pinned}</section>` : "";
   return `<section class="card hero"><h1>${t("Teenused, mida sinu AI-assistent saab kasutada", "Services your AI assistant can use")}</h1>
 <p class="lede">${t(`<strong>${mcp} MCP-ühendust ja ${api} API-t</strong> (kokku ${o.records.length} uuritud teenusest) Eesti ettevõtja tööde jaoks.`, `<strong>${mcp} MCP connections and ${api} APIs</strong> (out of ${o.records.length} researched services) for the jobs of an Estonian business owner.`)}</p>
 <ul class="legend" aria-label="${t("Kus ühendus töötab", "Where a connection works")}"><li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 8.5 4.75 4.75 0 0 1 17.5 18z"/></svg> <strong>${t(...whereItWorks("hosted_mcp"))}</strong>: ${t("töötab ka assistendi telefonirakenduses: telefonis küsid ja kinnitad liikvel olles.", "also works in the assistant's phone app: ask and approve on the go.")}</li>
 <li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 20h20"/></svg> <strong>${t(...whereItWorks("local_mcp"))}</strong>: ${t("raskemaks tööks oma failide ja rakendustega (Claude Desktop/Cowork või ChatGPT töölauarakendus).", "for heavier work with your own files and apps (Claude Desktop/Cowork or the ChatGPT desktop app).")}</li>
 <li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/></svg> <strong>${t(...whereItWorks("self_hosted_mcp"))}</strong>: ${t("teenuse paigaldad ise (või IT-partner) oma serverisse; seejärel töötab ka veebis ja telefonis, kui assistent lubab lisada MCP aadressi.", "you (or an IT partner) install it on your own server; then it also works on web and phone if your assistant lets you add an MCP address.")}</li>
 <li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4"/></svg> <strong>${t(...whereItWorks("ordinary_api"))}</strong>: ${t("teenusel on API või integratsioon, aga valmis assistendi ühendust veel pole.", "the service has an API or an integration, but no ready assistant connection yet.")}</li></ul>
-<p class="small muted">${esc(t(`Iga ühendus laseb sinu assistendil teha rohkem töid sinu eest. Ühendad need oma assistendis ise; AI-hüppelaud neid ei vahenda. Allikas: avalikud dokumendid, kontrollitud ${fmtYmd(checked)}.`, `Each connection lets your assistant take more jobs off you. You connect them in your own assistant; AI Launchpad does not broker them. Source: public documentation, checked ${checked}.`))}</p></section>
-<section aria-label="${t("Kinnitatud", "Pinned")}">
-<article class="card svc svc--pinned"><h3>${t("AI-hüppelaud", "AI Launchpad")}</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t("Testitud: ChatGPT 28.10.2026 · Claude 30.10.2026", "Tested: ChatGPT 28 Oct 2026 · Claude 30 Oct 2026"))}</div>
-<p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v">${t("Näeb sinu ettevõtte tähtaegu koos ametliku allikaga, valmistab töid ette ja küsib enne saatmist või esitamist sinu kinnitust täpselt sellele sisule.", "Sees your company's deadlines with their official sources, prepares the work and asks you to approve the exact content before anything is sent or filed.")}</p>
-<a class="tap-link" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a></article>
-<article class="card svc svc--pinned"><h3>Ärikratt</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t("AI-hüppelaud kasutab seda", "Used by AI Launchpad"))}</div>
-<p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v">${t("Avalikud ettevõtteandmed äriregistrist ja maksuametist. AI-hüppelaud arvutab nende põhjal sinu tähtajad.", "Public company data from the Business Register and the Tax Board. AI Launchpad computes your deadlines from it.")}</p>
-<a class="tap-link" href="${esc(kratt)}" rel="noopener noreferrer">${t("Ärikratti avalik MCP", "Ärikratt public MCP")}: arikratt.ee</a></article></section>
+<p class="small muted">${esc(t(`Iga ühendus laseb sinu assistendil teha rohkem töid sinu eest. Ühendad need oma assistendis ise; AI-hüppelaud neid ei vahenda. Allikas: avalikud dokumendid, kontrollitud ${fmtYmd(checked)}.`, `Each connection lets your assistant take more jobs off you. You connect them in your own assistant; AI Launchpad does not broker them. Source: public documentation, checked ${/^\d{4}-\d{2}-\d{2}$/.test(checked) ? C_DAY_MON_YEAR.en.format(civil(checked)) : checked}.`))}</p></section>
+${pinnedSection}
 <form method="get" action="/kataloog" role="search" class="search">${o.g ? `<input type="hidden" name="g" value="${esc(o.g)}">` : ""}<label>${t("Otsi nime või töö järgi", "Search by name or job")} <input name="q" value="${esc(o.q)}" maxlength="120"></label><button type="submit">${t("Otsi", "Search")}</button></form>
 ${chips}
-${sections || `<p class="card">${o.q ? esc(t(`„${o.q}” kohta ei leidnud midagi.`, `Nothing found for “${o.q}”.`)) : t("Selles rühmas pole teenuseid.", "No services in this group.")} <a class="tap-link" href="/kataloog">${t("Näita kõiki", "Show all")}</a></p>`}`;
+${sections || (o.q && pinned) ? sections : `<p class="card">${o.q ? esc(t(`„${o.q}” kohta ei leidnud midagi.`, `Nothing found for “${o.q}”.`)) : t("Selles rühmas pole teenuseid.", "No services in this group.")} <a class="tap-link" href="/kataloog">${t("Näita kõiki", "Show all")}</a></p>`}`;
 }
 
 export function playbooksBody(items: { title: string; summary: string; source: string; source_label: string }[], frictionCards?: (PublicCardViewOpts & { label: string })[]): string {
