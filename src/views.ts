@@ -933,12 +933,12 @@ const HO_CAN: Record<string, [string, string]> = {
   invoicing: ["Assistent saab arve ette valmistada ja sinu kinnitusel saata.", "Your assistant can prepare an invoice and send it once you approve."],
 };
 const HO_CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>', HO_ARROW = '<svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg>';
-function handoverRow(j: Job, l: Lang, now: Date): string {
-  const t = tr(l), e = j.evidence, assessedChip = labelChip("assistant", t("Assistendi hinnang", "Your assistant's assessment"));
+function handoverRow(j: Job, l: Lang, now: Date, sample: boolean): string {
+  const t = tr(l), fx = fixtureText(l, sample), e = j.evidence, assessedChip = labelChip("assistant", t("Assistendi hinnang", "Your assistant's assessment"));
   const mark = j.rung === "done" ? HO_CHECK : j.rung === "prep" ? HO_ARROW : j.rung === "other" ? "R" : "";
   const rung = j.rung === "done" ? (j.ceiling === "rule" ? `${t("Assistent teeb ise", "Your assistant does it")} ${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}` : `${t("Assistent valmistab ette, sina esitad", "Your assistant prepares, you file")} ${labelChip("official", t("Lagi käes: seadus", "At its ceiling: the law"))}`)
     : j.rung === "prep" ? t("Assistent valmistab ette, sina kinnitad", "Your assistant prepares, you approve")
-    : j.rung === "other" ? `${esc(t(`Teeb ${j.assessed?.executor}`, `Done by ${j.assessed?.executor}`))} ${assessedChip}` : t("Teed ise", "You do it");
+    : j.rung === "other" ? `${esc(t(`Teeb ${j.assessed?.executor}`, `Done by ${fx.plain(j.assessed?.executor ?? "")}`))} ${assessedChip}` : t("Teed ise", "You do it");
   const verb = j.ceiling === "law" ? t("esitatud", "filed") : t("saadetud", "sent");
   const lines: string[] = [];
   if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.auto ? t(`, neist <span class="num">${e.auto}</span> ilma sinuta`, `, <span class="num">${e.auto}</span> without you`) : ""}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
@@ -986,7 +986,7 @@ ${HO_CONNECTOR(l)}`);
 ${HO_CONNECTOR(l)}`);
 }
 /** Ühendus → Käest ära: count, bar, one row per job with its evidence, one next step, and the expired-unused finding. */
-export function handoverSection(h: Handover, l: Lang, csrf: string, now = new Date()): string {
+export function handoverSection(h: Handover, l: Lang, csrf: string, now = new Date(), sample = false): string {
   const t = tr(l), split = hoSplit(h, l), ex = h.findings.expiredUnused;
   const sub = h.off ? `${split}.${h.fromAssessment ? ` ${t(`Assistendi hinnang lisas nimekirja ${h.fromAssessment} ${h.fromAssessment === 1 ? "töö" : "tööd"}.`, `Your assistant's assessment added ${h.fromAssessment} ${h.fromAssessment === 1 ? "job" : "jobs"} to the list.`)}` : ""}` : t("Siia tulevad tööd, mille assistent on päriselt ära teinud, mitte klikid ega lubadused.", "Jobs land here only when your assistant has really done them, not clicks or promises.");
   const month = h.month.done ? `${esc(hoMonth(h.month.ym, l))}: ${t(`<b>${h.month.done}</b> ${h.month.done === 1 ? "töö" : "tööd"} tehtud, <b>${h.month.auto}</b> ilma sinuta.`, `<b>${h.month.done}</b> done, <b>${h.month.auto}</b> without you.`)}` : `${esc(hoMonth(h.month.ym, l))}: ${t("assistent pole veel ühtegi tööd lõpetanud.", "your assistant has not finished a job yet.")}`;
@@ -996,7 +996,7 @@ export function handoverSection(h: Handover, l: Lang, csrf: string, now = new Da
 <ul class="ho-bar ho-bar--lg" aria-label="${esc(t(`${h.total} tööd`, `${h.total} jobs`))}">${h.jobs.map((j) => `<li class="${hoSeg(j)}"><span class="vh">${esc(`${hoJobTitle(j, l)}: ${t(...HO_RUNG[j.rung] as [string, string])}${j.evidence.pending ? t(`; ${j.evidence.pending} ootab praegu`, `; ${j.evidence.pending} waiting now`) : ""}`)}</span></li>`).join("")}</ul>
 <ul class="ho-legend" aria-hidden="true">${(["mine", "prep", "done", "other"] as const).map((r) => `<li><i${r === "mine" ? "" : ` class="ho-seg--${r}"`}></i>${esc(t(...HO_RUNG[r] as [string, string]))}</li>`).join("")}</ul>
 <p class="ho-month">${month}</p>
-<div class="ho-grid"><div><ul class="ho-jobs">${h.jobs.map((j) => handoverRow(j, l, now)).join("")}</ul>${finding}</div>
+<div class="ho-grid"><div><ul class="ho-jobs">${h.jobs.map((j) => handoverRow(j, l, now, sample)).join("")}</ul>${finding}</div>
 ${handoverNext(h, l, csrf)}</div>
 <details class="plain"><summary>${t("Kuidas see arvutatakse", "How this is calculated")}</summary><div class="boxed small"><p>${t("Üks lahter = üks töö. Lahter täitub ainult salvestatud kinnitusest, mille tulemus on saadetud, esitatud või makstud (assistendi teade, AI-hüppelaud seda ei kontrollinud), või kehtivast püsiloast, mis on juba korra töötanud. Ootel kinnitused, lugemised ja sisselogimised lahtrit ei täida. „Teeb raamatupidaja” on assistendi hinnang. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.", "One cell = one job. A cell fills only from a stored approval whose outcome is sent, filed or paid (your assistant's report, not checked by AI Launchpad), or from a live standing approval that has already worked once. Pending approvals, reads and sign-ins fill nothing. “Done by the accountant” is your assistant's assessment. No percentage and no hours saved, because we don't measure them.")}</p></div></details>
 </section>`;
@@ -1673,7 +1673,7 @@ export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgp
     ? (() => { const d = new Date(s.at), time = TIME[l].format(d), sameDay = tallinnYmd(d) === tallinnYmd(now); const who = s.who ?? t("Sinu assistent", "Your assistant"); return `<div class="status-chip" id="connect-status" data-state="connected" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${esc(t(`Ühendatud · ${who} jõudis kohale ${sameDay ? "" : `${DAY.et.format(d)} `}kell ${time}`, `Connected · ${who} reached AI Launchpad ${sameDay ? "" : `on ${DAY.en.format(d)} `}at ${time}`))}</span></div>`; })()
     : `<div class="status-chip" id="connect-status" data-state="${s.kind === "sample" ? "sample" : "waiting"}" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${s.kind === "anon" ? `${t("Logi sisse, et näha, kas sinu assistent on ühendatud.", "Sign in to see whether your assistant is connected.")} <a href="/login">${t("Logi sisse", "Sign in")}</a>` : s.kind === "sample" ? t("Näidistööruumis ühenduse olekut ei jälgita.", "Connection status is not tracked in a sample workspace.") : esc(t(`Ootan, et ${name} ühenduks…`, `Waiting for ${name} to connect…`))}</span></div>`;
   // A sample workspace has nothing to set up, so „Käest ära” comes first (QA M2).
-  const handover = o.standing && o.handover ? handoverSection(o.handover, l, o.standing.csrf, now) : "", sampleFirst = s.kind === "sample";
+  const handover = o.standing && o.handover ? handoverSection(o.handover, l, o.standing.csrf, now, s.kind === "sample") : "", sampleFirst = s.kind === "sample";
   return `<h1>${t("Ühenda oma assistent", "Connect your assistant")}</h1>
 <p class="lede">${t("Sinu ChatGPT või Claude näeb sinu tähtaegu ja valmistab töid ette. Sina kinnitad ainult selle, mis sind seob.", "Your ChatGPT or Claude sees your deadlines and prepares work for you. You approve only what binds you.")}</p>
 ${sampleFirst ? handover : ""}
@@ -1725,8 +1725,8 @@ const DONE_VERBS: Record<string, [string, string]> = {
   standing_rule_revoked: ["Sina lõpetasid püsiloa", "You ended a standing approval"],
   standing_auto_approved: ["Püsiluba kinnitas assistendi töö", "Your standing approval approved your assistant's work"],
 };
-export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date; approvals?: ApprovalRow[]; rules?: StandingRule[]; assessment?: Assessment | null }): string {
-  const l = opts.lang, t = tr(l), now = opts.now ?? new Date();
+export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date; approvals?: ApprovalRow[]; rules?: StandingRule[]; assessment?: Assessment | null; sample?: boolean }): string {
+  const l = opts.lang, t = tr(l), now = opts.now ?? new Date(), fx = fixtureText(l, !!opts.sample);
   // Approval rows name their object (title · recipient): the log summary carries the approval id or digest prefix.
   const approvalOf = (summary: string) => (opts.approvals ?? []).find((x) => summary.includes(x.id) || summary.includes(`digest ${x.digest.slice(0, 12)}`));
   const objectOf = (summary: string) => {
@@ -1741,7 +1741,7 @@ export function activityBody(opts: { rows: Record<string, string>[]; receipts: R
     const ruleSent = r.action === "record_action_outcome" && byRule && /^Outcome sent /.test(r.summary ?? "");
     // A progress row names its job by the assessment's label, as Täna does.
     const progress = r.action === "report_progress" ? PROGRESS_SUMMARY.exec(r.summary ?? "") : null;
-    const verb = progress ? `${t(...PROGRESS_VERB[progress[2]])} ${opts.assessment?.responsibilities.find((x) => x.id === progress[1])?.label ?? progress[1]}` : ruleSent ? t("Assistent saatis püsiloa alusel:", "Your assistant sent under a standing approval:") : r.action === "approval_decided" ? (r.outcome === "approved" ? t("Sina kinnitasid", "You approved") : r.outcome === "declined" ? t("Sina keeldusid", "You declined") : null) : DONE_VERBS[r.action] ? t(...DONE_VERBS[r.action]) : null;
+    const verb = progress ? `${t(...PROGRESS_VERB[progress[2]])} ${fx.plain(opts.assessment?.responsibilities.find((x) => x.id === progress[1])?.label ?? progress[1])}` : ruleSent ? t("Assistent saatis püsiloa alusel:", "Your assistant sent under a standing approval:") : r.action === "approval_decided" ? (r.outcome === "approved" ? t("Sina kinnitasid", "You approved") : r.outcome === "declined" ? t("Sina keeldusid", "You declined") : null) : DONE_VERBS[r.action] ? t(...DONE_VERBS[r.action]) : null;
     if (!verb || (r.outcome !== "ok" && r.action !== "approval_decided")) return [];
     const chip = `${r.actor === "assistant" ? labelChip("assistant", t("Assistent teatas", "Your assistant reports")) : r.action === "approval_decided" && r.outcome === "approved" ? labelChip("owner", t("Sinu kinnitus", "You approved")) : ""}${byRule ? ruleChip(l) : ""}`;
     const object = objectOf(r.summary ?? "");

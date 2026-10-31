@@ -94,3 +94,19 @@ describe("#63 m13: English Täna on a sample workspace", () => {
     expect(real).not.toContain('<span lang="et">Omaniku');
   });
 });
+
+describe("sample English: Ühendus and Tehtud labels", () => {
+  test("Ühendus shows „Done by the accountant”; Tehtud names the job in English; Estonian and real workspaces keep the text as written", () => {
+    const row = (milestone: string) => ({ actor: "assistant", action: "report_progress", outcome: "ok", summary: `vat-prep: ${milestone} (assistant reported).`, created_at: "2026-11-03T09:15:00Z" });
+    const connect = (lang: "et" | "en", sample: boolean) => handoverSection(handover, lang, "c", NOW, sample);
+    const en = connect("en", true);
+    expect(en).toContain("Done by the accountant");
+    expect(en).not.toContain("raamatupidaja");
+    expect(connect("et", true)).toContain("Teeb raamatupidaja");
+    expect(connect("en", false)).toContain("Done by raamatupidaja");
+    const done = (lang: "et" | "en", sample: boolean) => activityBody({ rows: [row("draft_prepared")], receipts: [], exclusions: [], lang, now: NOW, assessment: alpha, sample });
+    expect(done("en", true)).toContain("Prepared: VAT return (KMD)");
+    expect(done("en", false)).toContain("Prepared: KMD ettevalmistus");
+    expect(done("et", true)).toContain("Valmistas ette: KMD ettevalmistus");
+  });
+});

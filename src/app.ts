@@ -446,7 +446,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const rows = db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=? ORDER BY id DESC LIMIT 100").all(oid(req)) as Record<string, string>[];
     const receipts = db.prepare("SELECT kind,report_id,payload_json,receipt_json,created_at FROM reports WHERE owner_id=? ORDER BY created_at DESC LIMIT 20").all(oid(req)) as Record<string, string>[];
     const st = getState(db, oid(req));
-    res.type("html").send(page(req, res, tr(langOf(res))("Tehtud", "Done"), "tehtud", activityBody({ rows, receipts, exclusions: st.exclusions, assessment: st.assessment, lang: langOf(res), approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(oid(req)) as ApprovalRow[], rules: ownerRules(oid(req)) })));
+    res.type("html").send(page(req, res, tr(langOf(res))("Tehtud", "Done"), "tehtud", activityBody({ rows, receipts, exclusions: st.exclusions, assessment: st.assessment, sample: (req as Authed).ownerKind === "demo", lang: langOf(res), approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(oid(req)) as ApprovalRow[], rules: ownerRules(oid(req)) })));
   });
 
   app.get("/playbooks", requireOwner, (req, res) => {
