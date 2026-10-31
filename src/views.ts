@@ -5,7 +5,7 @@ import { approvalAddressMissing, normAddress, standingRecipients, standingRuleNa
 import type { CompanyCard } from "./arikratt.js";
 import { ET_OF, tallinnDate, type FactNeeded, type Obligation } from "./obligations.js";
 import { BASETEN_MODEL } from "./model-quality.js";
-import { safeHttps, type ServiceRecord } from "./catalog.js";
+import { PLAYBOOKS, safeHttps, type ServiceRecord } from "./catalog.js";
 import { BLOCKER_HANDOFF, BLOCKER_LABELS, BLOCKER_LABELS_ET, CATEGORY_LABELS, CATEGORY_LABELS_ET, classifiedByLabel, type Blocker, type Category, type DemandItem, type OwnerNeed } from "./unmet-needs.js";
 
 export const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -1325,7 +1325,7 @@ ${items.length ? items.map((i) => `<section class="card"><h2>${esc(i.label)}</h2
 // --- Deadlines (#19) with handoffs (ux2 change 2): date first, rule label, source, who does what. ---
 export interface DeadlinesView { company: CompanyCard & { unavailable?: string }; obligations: Obligation[]; facts_needed: FactNeeded[] }
 
-function deadlineRow(o: Obligation, l: Lang, opts: { now: Date; prompts: boolean }): string {
+function deadlineRow(o: Obligation, l: Lang, opts: { now: Date; prompts: boolean; others?: Record<string, string> }): string {
   const t = tr(l), today = tallinnYmd(opts.now);
   let tile: string, lead = "";
   if (o.effective_due) {
@@ -1343,19 +1343,22 @@ function deadlineRow(o: Obligation, l: Lang, opts: { now: Date; prompts: boolean
   const cond = o.applies === "if" && o.condition_et && o.kind !== "warning" ? t(o.condition_et, o.condition_en ?? o.condition_et) : "";
   const reason = t(o.reason_et, o.reason_en);
   const qualify = cond && o.rule_id !== "tsd-monthly-return" ? t("Kui see kehtib: ", "If this applies: ") : "";
+  // #63 m5: when the assistant's assessment says someone else prepares this job, the row says so too, once.
+  const other = opts.others?.[o.rule_id];
+  const doer = other ? `<dt>${esc(cap(other))}</dt><dd>${t("valmistab ette", "prepares it")} ${labelChip("assistant", t("Assistendi hinnang", "Your assistant's assessment"))}</dd>` : `<dt>${t("Assistent", "Your assistant")}</dt><dd>${esc(t(h.assistant_et, h.assistant_en))}</dd>`;
   return `<li class="deadline-row">${tile}
 <div><h3 class="deadline-title">${o.kind === "risk" && cond ? t("Võimalik: ", "Possible: ") : ""}${esc(t(o.title_et, o.title_en))} · ${esc(t(o.period_label_et, o.period_label_en))}</h3>
 ${cond ? `<p class="deadline-cond"><strong>${esc(cond)}</strong></p>` : ""}<p class="deadline-reason">${lead ? `<strong>${esc(lead)}</strong> ` : ""}${reason !== cond ? esc(reason) : ""}${esc(shifted)}</p>
 <div class="deadline-meta">${labelChip("rule", t("Arvutatud reeglist", "Calculated by rule"))}<a class="tap-link" href="${esc(o.source.url)}" rel="noopener noreferrer"><span>${t("Allikas", "Source")}: <span lang="et">${esc(o.source.act_et)} ${esc(o.source.section)}</span><span aria-hidden="true">&nbsp;↗</span></span></a></div>
-<details><summary>${t("Kes mida teeb", "Who does what")}</summary>${qualify ? `<p class="small"><strong>${qualify.slice(0, -2)}</strong></p>` : ""}<dl class="handoff"><dt>${t("Assistent", "Your assistant")}</dt><dd>${esc(t(h.assistant_et, h.assistant_en))}</dd><dt class="me">${t("Sina", "You")}</dt><dd>${esc(t(h.owner_et, h.owner_en))}</dd></dl>
+<details><summary>${t("Kes mida teeb", "Who does what")}</summary>${qualify ? `<p class="small"><strong>${qualify.slice(0, -2)}</strong></p>` : ""}<dl class="handoff">${doer}<dt class="me">${t("Sina", "You")}</dt><dd>${esc(t(h.owner_et, h.owner_en))}</dd></dl>
 ${o.rule_id === "vat-return-kmd" ? `<p class="small muted">${t("Summad arvutab sinu raamatupidamisprogramm, mitte tehisaru.", "Your accounting software calculates the amounts, not AI.")}</p>` : ""}
-${opts.prompts ? `<div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(qualify + t(h.prompt_et, h.prompt_en))}”</p></div>` : ""}</details></div></li>`;
+${opts.prompts && !other ? `<div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(qualify + t(h.prompt_et, h.prompt_en))}”</p></div>` : ""}</details></div></li>`;
 }
 
-export function deadlinesList(r: DeadlinesView, l: Lang, opts: { now?: Date; prompts?: boolean } = {}): string {
+export function deadlinesList(r: DeadlinesView, l: Lang, opts: { now?: Date; prompts?: boolean; others?: Record<string, string> } = {}): string {
   const now = opts.now ?? new Date();
   if (!r.obligations.length) return `<p class="muted">${tr(l)("Selles vahemikus tähtaegu pole.", "No deadlines in this period.")}</p>`;
-  return `<ul class="deadlines">${r.obligations.map((o) => deadlineRow(o, l, { now, prompts: !!opts.prompts })).join("")}</ul>`;
+  return `<ul class="deadlines">${r.obligations.map((o) => deadlineRow(o, l, { now, prompts: !!opts.prompts, others: opts.others })).join("")}</ul>`;
 }
 
 /** Which rule a missing fact can change: a question is shown only when it can change a row on screen. */
@@ -1544,7 +1547,10 @@ export function tanaBody(o: TanaOpts): string {
 
   // One sample marker per page: with the sample bar shown, a synthetic company keeps only its source line here.
   const sourceChip = !deadlines ? "" : deadlines.company.synthetic ? (o.sample ? "" : sampleChip(l)) : labelChip(deadlines.company.provenance === "public_register" ? "official" : "assistant", t(deadlines.company.label_et, deadlines.company.label_en));
-  const tulekul = deadlines ? deadlinesList(deadlines, l, { now, prompts: true })
+  // Rule rows whose job „Käest ära” gives to someone else (e.g. the accountant does the KMD), from the same handover.
+  const others = Object.fromEntries((o.handover?.jobs ?? []).filter((j) => j.rung === "other" && j.assessed?.executor)
+    .flatMap((j) => (PLAYBOOKS.find((p) => p.id === j.id)?.triggers ?? []).map((rule) => [rule, j.assessed!.executor!])));
+  const tulekul = deadlines ? deadlinesList(deadlines, l, { now, prompts: true, others })
     : o.deadlines === "not_cached" ? `<p class="muted">${t("Registri andmeid laaditakse. Värskenda lehte hetke pärast.", "Register facts are loading. Refresh the page in a moment.")}</p>`
     : o.deadlines === "invalid_code" ? deadlinesHint(l, t("Registrikood ei ole korrektne — palu assistendil see üle kontrollida.", "The registry code is not valid — ask your assistant to check it."), l)
     : o.deadlines === "not_found" ? deadlinesHint(l, t("Registrikoodiga ettevõtet registrist ei leitud — palu assistendil kood üle kontrollida.", "No company with this registry code in the register — ask your assistant to check the code."), l)
