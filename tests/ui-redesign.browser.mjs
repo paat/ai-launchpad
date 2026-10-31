@@ -44,6 +44,8 @@ const reminder = { kind: "send_message", recipient: { name: "Demo Klient OÜ", a
   document: { title: "Maksemeeldetuletus: arve 2026-014", content: "Tere!\n\nMeie arve nr 2026-014 (20.10.2026) summas 240,00 € on veel tasumata; maksetähtaeg oli 20. oktoober. Palun tasuge see lähiajal. Kui olete juba maksnud, pidage see kiri tühjaks.\n\nAitäh,\nMari" },
   summary: "Demo Klient OÜ pole arvet tasunud; maksetähtaeg oli 20. oktoober." };
 const pendingApproval = { id: "appr_t2", kind: "send_message", report_id: "r2", digest: "e".repeat(64), state: "pending", created_at: "2026-11-03T11:50:00Z", expires_at: "2026-11-04T11:50:00Z", decided_at: null, consumed_at: null, outcome_json: null, payload_json: JSON.stringify(reminder) };
+// #63 m7: a 40-line letter must not push the decision below the desktop fold.
+const longLetterApproval = { ...pendingApproval, id: "appr_long_letter", payload_json: JSON.stringify({ ...reminder, document: { ...reminder.document, content: Array.from({ length: 40 }, (_, i) => `Rida ${i + 1}: arve 2026-014 on veel tasumata.`).join("\n") } }) };
 const approvedApproval = { ...pendingApproval, state: "approved", decided_at: "2026-11-03T11:55:00Z" };
 // T3: the prototype's Täna — demo company, one pending reminder, one prepared job, two deadlines.
 const demoAssessment = DEMO_FIXTURES.alpha;
@@ -89,6 +91,8 @@ const pageHtml = {
     shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: { ...week2[0], outcome_json: longApproval.outcome_json }, lang: "et", sample: true, now: NOW, handover: uhendaHandover }) }),
   "approval-pending": () =>
     shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: pendingApproval, lang: "et", sample: true, now: NOW }) }),
+  "approval-long-letter": () =>
+    shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: longLetterApproval, lang: "et", sample: true, now: NOW }) }),
   "approval-approved": () =>
     shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: approvedApproval, lang: "et", sample: true, now: NOW }) }),
   approvals: () =>
@@ -119,7 +123,7 @@ try {
 
   // New pages: every visible stand-alone a[href] is a tap target too. A link inside running text (its parent
   // has its own words besides separators) is exempt; the redesign's legacy English pages are not in scope.
-  const NEW_PAGES = new Set(["status-assessed", "tana-demo", "status-unassessed", "activity", "login", "landing", "landing-en", "uhenda", "uhenda-ho", "uhenda-local", "approval-receipt-long", "approval-receipt-strip", "approval-pending", "approval-approved", "approvals"]);
+  const NEW_PAGES = new Set(["status-assessed", "tana-demo", "status-unassessed", "activity", "login", "landing", "landing-en", "uhenda", "uhenda-ho", "uhenda-local", "approval-receipt-long", "approval-receipt-strip", "approval-pending", "approval-long-letter", "approval-approved", "approvals"]);
   const overflowAndTargets = (allAnchors) => page.evaluate((allAnchors) => {
     const de = document.documentElement;
     const targets = [];
@@ -227,8 +231,23 @@ try {
     assert.deepEqual(g.targets.filter((t) => t.h < 44), [], `${name}@1280: targets >= 44px`);
   }
   await page.setContent(pageHtml["approval-pending"]());
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("form.decide")).position), "static", "decide bar is static on desktop");
   await page.screenshot({ path: path.join(T2_SHOTS, "t2-approval-1280.png"), fullPage: true });
+  // #63 m7: with a 40-line letter, „Kinnita täpselt see” is still in the first 1280×800 viewport (the bar is sticky on every width).
+  await page.setContent(pageHtml["approval-long-letter"]());
+  await settle();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const longApprove = await boxInFirstViewport("button[value=approve]");
+  const longPage = await page.evaluate(() => ({ height: document.documentElement.scrollHeight, lines: document.querySelector("pre.letter").textContent.split("\n").length }));
+  assert.ok(longPage.lines === 40 && longPage.height > 800, `approval-long-letter@1280: the letter runs past the fold ${JSON.stringify(longPage)}`);
+  assert.ok(longApprove?.visible, `approval-long-letter@1280: approve button in the first viewport ${JSON.stringify(longApprove)}`);
+  await page.screenshot({ path: path.join(T2_SHOTS, "approval-1280-long.png") });
+  // Focus order holds with the sticky bar: facts → letter → approve → decline.
+  await page.locator("pre.letter").focus();
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement.value), "approve", "1280: Tab from the letter reaches approve");
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement.value), "decline", "1280: then decline");
+  geometry.longApprove1280 = longApprove;
 
   // --- T3 Täna: hero and the first ask card in the first phone viewport, one page ≤ 1 900 px, two columns on desktop ---
   await page.setViewportSize({ width: 390, height: 844 });

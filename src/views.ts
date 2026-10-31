@@ -239,11 +239,11 @@ article.card.ticket{margin:0 0 var(--s-6);padding:0;border-radius:var(--r-xl);bo
 .ticket pre.letter{margin:0 0 var(--s-4);padding:var(--s-3) var(--s-4);border:0;border-left:3px solid var(--c-border);border-radius:0 var(--r-md) var(--r-md) 0;line-height:1.5}
 .hand{margin:0 0 var(--s-4);color:var(--c-muted);font-size:var(--fs-sm)}
 .hand b{color:var(--c-att);font-weight:700}
-.decide{position:static;z-index:2;display:flex;flex-wrap:nowrap;align-items:center;gap:var(--s-2) var(--s-3);margin:0 calc(-1 * var(--s-4));padding:var(--s-3) var(--s-4) max(12px,env(safe-area-inset-bottom));border-top:1px solid var(--c-divider);background:rgba(255,255,255,.94);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.decide{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:nowrap;align-items:center;gap:var(--s-2) var(--s-3);margin:0 calc(-1 * var(--s-4));padding:var(--s-3) var(--s-4) max(12px,env(safe-area-inset-bottom));border-top:1px solid var(--c-divider);background:rgba(255,255,255,.94);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 .decide button{flex:1 1 auto;min-width:0;min-height:56px;margin:0;font-size:var(--fs-lg)}
 .decide button.text{flex:0 0 auto;min-height:var(--tap);font-size:var(--fs-md);white-space:nowrap}
 @media (min-width:600px){.decide{margin:0 calc(-1 * var(--s-6));padding-left:var(--s-6);padding-right:var(--s-6)}}
-@media (max-width:879px){.decide{position:sticky;bottom:0}html:has(.decide){scroll-padding-bottom:88px}}
+html:has(.decide){scroll-padding-bottom:88px}
 @media (max-width:479px){.decide button{padding-left:12px;padding-right:12px;font-size:var(--fs-md)}}
 @media (max-width:339px){.decide{flex-wrap:wrap}}
 .fine{margin:var(--s-3) 0 0;color:var(--c-muted);font-size:var(--fs-sm)}
