@@ -52,7 +52,7 @@ describe("executable job playbooks (#26)", () => {
     expect(p).toMatchObject({ approval_kind: null, triggers: [] });
     const steps = p.steps.join(" ");
     expect(p.steps[1]).toMatch(/^Ask one question unless the owner already said it: what should be linked \(accounting software, e-mail or bank\).*Follow only the branch for that service/);
-    expect(steps).toContain("Call search_services with the product's own name");
+    expect(steps).toContain("Call search_services: for accounting software with \"werkzeug\", for e-mail or a bank with the product's own name.");
     expect(steps).toContain("Bank: explain only what the matching search_services entry documents and stop there. Never start a bank key, credential or payment setup.");
     expect(p.steps.at(-1)).toContain("Verify only the service the owner asked for");
     expect(p.steps[0]).toMatch(/^Speak plainly: the owner may not know what MCP, a connector or an API is/);
@@ -65,7 +65,8 @@ describe("executable job playbooks (#26)", () => {
     expect(steps).toContain("This playbook never writes and never calls request_approval; any later change or message belongs to the job's own playbook and its approval.");
     const accounting = p.steps.find((x) => x.startsWith("Accounting:"))!;
     expect(accounting.indexOf("Before any key is created, choose reading only")).toBeLessThan(accounting.indexOf("Then guide the owner to create the key"));
-    expect(accounting).toContain("if the product has no read-only key, tell the owner plainly that the key could also change the books and let them decide");
+    expect(accounting).toContain("never offer community or local servers from the catalogue");
+    expect(accounting).toContain("then stop and wait: continue only after the owner explicitly agrees, and if they decline, explain that it cannot be linked read-only yet.");
     for (const id of ["payment-reminder", "vat-return-prep", "annual-report"]) expect(byId(id).needs[0], id).toContain("(if no accounting connector answers yet, follow the connect-service playbook)");
     expect(steps).toContain("Erply Books or other software: follow only the connector's own published setup guide.");
     // Same menu paths as the Connection page (src/views.ts connectionBody).
