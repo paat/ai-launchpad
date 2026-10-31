@@ -1,6 +1,6 @@
 # UI critique — AI-hüppelaud, 30 Oct 2026
 
-Ranked by impact on first impression, trust and "will I take the first step". Screens: `design/input/`. Audience: busy, non-technical Estonian micro-business owners, mostly on a phone. North star: the owner's own assistant takes a job off them end to end.
+Ranked by impact on first impression, trust and "will I take the first step". Screens: the screenshots named below (prototype kept outside the repo). Audience: busy, non-technical Estonian micro-business owners, mostly on a phone. North star: the owner's own assistant takes a job off them end to end.
 
 | # | Problem | Evidence | Impact |
 |---|---|---|---|

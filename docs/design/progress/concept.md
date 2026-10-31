@@ -1,6 +1,6 @@
 # AI adoption progress — concept, 30 Oct 2026
 
-Owner ask: "an AI adoption progress bar — a sense of overall progress, an overview of what has been done, and how to improve further." North star: progress is **jobs taken off the person**, not clicks or features used. Fits direction A „Selge leht” (`design/directions.md`, `design/plan.md`): white page, one highlighted object per screen, amber only for "needs you", honest labels.
+Owner ask: "an AI adoption progress bar — a sense of overall progress, an overview of what has been done, and how to improve further." North star: progress is **jobs taken off the person**, not clicks or features used. Fits direction A „Selge leht” (`docs/design/direction-a/directions.md`, `docs/design/direction-a/plan.md`): white page, one highlighted object per screen, amber only for "needs you", honest labels.
 
 Inputs read: `src/db.ts`, `src/core.ts`, `src/mcp.ts`, `src/catalog.ts`, `src/obligations.ts`, `src/oauth.ts`, `src/fixtures.ts`, `src/views.ts` (`tanaBody`, `connectBody`), issue #51.
 
@@ -105,4 +105,4 @@ Findings from issue #51 appear under the list as plain sentences when present, e
 - **Week 2:** 4 jobs (assessment added „Arvete koostamine”); reminders mid green with a pending dot (3 sent, 1 paid, 1 waiting), KMD dashed (accountant), two outlined; „2 tööd 4-st”; finding „1 kinnitus aegus kasutamata”; next step = the standing-approval sentence for reminders with limits from the 3 past approvals.
 - **Month 2 (advanced):** reminders deep green under a live rule (4 sent without the owner), KMD deep green at its legal ceiling, invoices mid green, annual report outlined and seasonal; „3 tööd 4-st, 2 ilma sinuta”; next step = standing approval for invoices to the 3 known recipients; the note names the reminders rule's expiry.
 
-Prototype: `design/progress/proto.html` (built by `build.mjs` from `src/proto.html` + `src/progress.css` on top of direction A's `design/proto/src/base.css`). Shots: `design/progress/shots/{day1,week2,month2}-{390,1280}.png`, `fold-390.png`. Build plan: `design/progress/build.md`.
+Prototype and its shots (day 1, week 2, month 2 at 390 and 1280 px, plus the 390 fold): prototype kept outside the repo. Build plan: `docs/design/progress/build.md`.

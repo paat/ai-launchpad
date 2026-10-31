@@ -1,6 +1,6 @@
 # Design directions — AI-hüppelaud, 30 Oct 2026
 
-Three distinct directions, each answering the critique (`design/critique.md`). Contrast ratios computed with the WCAG 2.1 formula; AA = 4.5:1 for text, 3:1 for large text and UI.
+Three distinct directions, each answering the critique (`docs/design/direction-a/critique.md`). Contrast ratios computed with the WCAG 2.1 formula; AA = 4.5:1 for text, 3:1 for large text and UI.
 
 ---
 
@@ -101,4 +101,4 @@ Non-technical owners on a phone need one obvious target per screen (critique #1,
 
 Build **A „Selge leht”**. Borrow from B the tabular figures and the one-time stamp-style check on receipts; borrow from C the staggered 200 ms entrance of the three Täna sections (desktop video only, off under reduced motion).
 
-Reasons, in order: it fixes the three highest-impact defects (one target per screen, visible approval button, flat type) with CSS tokens and a sticky bar rather than new pages; it keeps every existing class and label kind so `e2e/` changes are small; it is the only direction that improves the desktop video without a redesign of the data; it is buildable by one founder in two days before 4 Nov. Prototypes: `design/proto/landing.html`, `design/proto/approval.html`, `design/proto/tana.html`. Plan: `design/plan.md`.
+Reasons, in order: it fixes the three highest-impact defects (one target per screen, visible approval button, flat type) with CSS tokens and a sticky bar rather than new pages; it keeps every existing class and label kind so `e2e/` changes are small; it is the only direction that improves the desktop video without a redesign of the data; it is buildable by one founder in two days before 4 Nov. Prototypes for landing, approval and Täna: prototype kept outside the repo. Plan: `docs/design/direction-a/plan.md`.
