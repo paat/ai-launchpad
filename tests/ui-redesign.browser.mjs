@@ -230,6 +230,31 @@ try {
     else assert.ok(s.bottom <= s.barTop + 0.5, `320: focused ${s.tag} ends above the bar ${JSON.stringify(s)}`);
   }
   geometry.focus320 = stops.map(({ tag, value, bottom, barTop, barH, pad }) => ({ tag, value, bottom, barTop, barH, pad }));
+  // PR #65 note (#63): scroll-padding scales with text zoom. With a 32 px root font, every element focused before the bar still ends above it;
+  // where the bar stays sticky (1280) the padding covers it, on phones it drops into the flow. At the default font, EN at 390 is covered too.
+  for (const [width, root, lang] of [[390, 32, "et"], [390, 32, "en"], [1280, 32, "et"], [1280, 32, "en"], [390, 0, "en"]]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.setContent(shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, lang, body: approvalCardBody({ csrf: CSRF, a: pendingApproval, lang, sample: true, now: NOW }) }));
+    if (root) await page.addStyleTag({ content: `html{font-size:${root}px}` });
+    const zoomStops = [];
+    for (let i = 0; i < 40 && zoomStops.at(-1)?.value !== "decline"; i++) {
+      await page.keyboard.press("Tab");
+      zoomStops.push(await page.evaluate(() => {
+        const el = document.activeElement, form = document.querySelector("form.decide"), bar = form.getBoundingClientRect(), r = el.getBoundingClientRect();
+        return { tag: el.tagName, value: el.value ?? null, inBar: !!el.closest("form.decide"), bottom: r.bottom, barTop: bar.top, barH: bar.height, sticky: getComputedStyle(form).position === "sticky",
+          pad: parseFloat(getComputedStyle(document.documentElement).scrollPaddingBottom), root: parseFloat(getComputedStyle(document.documentElement).fontSize) };
+      }));
+    }
+    const label = `${root || "default"} root ${width}/${lang}`;
+    assert.ok(zoomStops.some((st) => !st.inBar) && zoomStops.at(-1).value === "decline" && (!root || zoomStops[0].root === root), `${label}: Tab reaches the bar after other stops ${JSON.stringify(zoomStops)}`);
+    if (width === 1280 || !root) assert.ok(zoomStops.every((st) => st.sticky), `${label}: the bar stays sticky`);
+    for (const st of zoomStops) {
+      if (st.sticky) assert.ok(st.barH <= st.pad, `${label}: scroll-padding ${st.pad}px covers the ${st.barH}px bar`);
+      if (!st.inBar) assert.ok(st.bottom <= st.barTop + 0.5, `${label}: focused ${st.tag} ends above the bar ${JSON.stringify(st)}`);
+    }
+    if (root) await page.screenshot({ path: path.join(T2_SHOTS, `t2-approval-pending-${width}-root${root}-${lang}.png`) });
+    (geometry.focusZoom ??= {})[label] = zoomStops.map(({ tag, value, bottom, barTop, barH, pad, sticky }) => ({ tag, value, bottom, barTop, barH, pad, sticky }));
+  }
   // #63 m8: from 300 px up, the bar is one row in ET and EN: „Keeldu” is a compact text button beside the approve button, both ≥44 px, and scroll-padding covers the bar.
   for (const width of [300, 320]) for (const lang of ["et", "en"]) {
     await page.setViewportSize({ width, height: 568 });

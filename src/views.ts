@@ -51,11 +51,13 @@ const CSS = `
 --fs-h1:clamp(1.75rem,5.5vw,2.5rem);--fs-h2:1.25rem;--fs-display:clamp(2.125rem,6.5vw,3.25rem);--fs-amount:2.75rem;
 --s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:20px;--s-6:24px;--s-8:32px;--s-12:48px;--s-16:64px;
 --r-sm:6px;--r-md:12px;--r-lg:16px;--r-xl:20px;--tap:44px;
+/* One px at the default text size, in rem so it grows with text zoom (the root is 17px on phones). */
+--px:calc(1rem / 16);
 --ease:cubic-bezier(.2,.7,.2,1);--t-fast:160ms;--t-med:200ms}
 
 /* --- Base and shell --- */
 *{box-sizing:border-box}
-@media (max-width:480px){html{font-size:106.25%}}
+@media (max-width:480px){html{font-size:106.25%}:root{--px:calc(1rem / 17)}}
 body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;margin:0;background:var(--c-bg);color:var(--c-text);line-height:1.55;-webkit-font-smoothing:antialiased}
 .wrap{max-width:640px;margin:auto;padding:var(--s-2) var(--s-4) var(--s-8)}
 header.top{display:flex;align-items:center;gap:var(--s-3);min-height:60px;padding:var(--s-2) 0}
@@ -244,10 +246,13 @@ article.card.ticket{margin:0 0 var(--s-6);padding:0;border-radius:var(--r-xl);bo
 .decide button{flex:1 1 auto;min-width:0;min-height:56px;margin:0;font-size:var(--fs-lg)}
 .decide button.text{flex:0 0 auto;min-height:var(--tap);font-size:var(--fs-md);white-space:nowrap}
 @media (min-width:600px){.decide{margin:0 calc(-1 * var(--s-6));padding-left:var(--s-6);padding-right:var(--s-6)}}
-/* Scroll padding = the bar (1px border + 12px top + 56px button + bottom inset) + 8px air. It stays one row from 300px (#63 m8):
-   on narrow phones „Keeldu” is a compact text button and a long approve label may take two 1.2-line rows inside its 56px button. */
-html:has(.decide){scroll-padding-bottom:calc(77px + max(12px,env(safe-area-inset-bottom)))}
-@media (max-width:479px){.decide button{padding-left:12px;padding-right:12px;font-size:var(--fs-md)}}
+/* Scroll padding = the bar (1px border + 12px top + 56px button + bottom inset) + 8px air, in --px so it grows with text zoom (PR #65).
+   It stays one row from 300px (#63 m8): on phones „Keeldu” is a compact text button and a long approve label may take two 1.2-line
+   rows inside its 56px button. Under large text, where the card is narrower than 12em, the label would wrap further: the bar stays in flow. */
+html:has(.decide){scroll-padding-bottom:calc(77 * var(--px) + max(12 * var(--px), env(safe-area-inset-bottom)))}
+.ticket-body{container-type:inline-size}
+@container (max-width:12em){.decide{position:static}}
+@media (max-width:479px){.decide button{padding:6px 12px;line-height:1.2;font-size:var(--fs-md)}}
 @media (max-width:379px){.decide{gap:var(--s-2)}.decide button{padding:6px 10px;line-height:1.2}.decide button.text{padding:6px 8px}}
 .fine{margin:var(--s-3) 0 0;color:var(--c-muted);font-size:var(--fs-sm)}
 .turn{margin:var(--s-1) 0 var(--s-4)}
