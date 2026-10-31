@@ -69,7 +69,7 @@ describe("executable job playbooks (#26)", () => {
     expect(bank[0]).toMatch(/^Bank: only LHV can be linked, through LHV's own read-only connection \(no payments\)\./);
     expect(bank[0]).toContain("quote only the entry with id lhv-ai; the connector address is https://mcp.lhv.ai/mcp");
     expect(bank[0]).toContain("own Smart-ID (never automate it)");
-    expect(bank[0]).toContain("Any other bank: say plainly that it cannot be linked live yet and offer the statement route instead: the owner downloads the account statement for the needed period from their internet bank (CSV or CAMT.053 XML) and shares the file here, and you use it only to match payments to invoices. Then stop here without the last step. Never start a bank key, credential or payment setup, and never offer community bank tools.");
+    expect(bank[0]).toContain("Any other bank: say plainly that it cannot be linked live yet and offer the statement route instead: the owner downloads the account statement for the needed period from their internet bank as a file and shares it here, and you use it only to match payments to invoices. Then stop here without the last step. Never start a bank key, credential or payment setup, and never offer community bank tools.");
     expect(verify).toContain("LHV, only the date of the latest transaction, with no amounts.");
     for (const s of ["paste the key values", "Add custom connector", "API access permits", "search_services with \"werkzeug\""]) {
       expect(branch.filter((x) => x.includes(s)).every((x) => x.startsWith("Accounting:")), s).toBe(true);
@@ -82,7 +82,9 @@ describe("executable job playbooks (#26)", () => {
     expect(acc[readOnly]).toContain("If the product or the connector offers no read-only key, say plainly that it cannot be linked safely yet, because the key could also change the books, and stop here: skip all remaining steps.");
     expect(acc.at(-1)).toMatch(/Once the connector is added, go to the last step\.$/);
     expect(acc.join(" ")).toContain("own Smart-ID or ID-card (never automate the login)");
-    expect(acc.join(" ")).toContain("Merit Aktiva or Erply Books: continue only if the connector's own published setup guide documents a read-only key, and create only that; otherwise stop here: skip all remaining steps. Other software: say plainly that it cannot be linked yet and stop here.");
+    expect(acc[0]).toMatch(/^Accounting: if an accounting connector for this company already answers a read-only question, skip the remaining Accounting steps and go to the last step\./);
+    expect(acc.join(" ")).toContain("ticks only reading functions (if the permit cannot be limited to reading, stop here: skip all remaining steps)");
+    expect(acc.join(" ")).toContain("Merit Aktiva or Erply Books: continue only if the connector's own published setup guide documents a read-only key, and create only that; otherwise stop here: skip all remaining steps. Other software: say plainly that it cannot be linked yet and stop here: skip all remaining steps.");
     expect(acc.join(" ")).toContain("never offer community or local servers from the catalogue");
     expect(acc.join(" ")).toContain("in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.");
     expect(acc.join(" ")).toContain("removing AI Launchpad stops deadlines and approvals, and suggest upgrading the plan.");
@@ -204,6 +206,7 @@ describe("agent-facing copy over MCP", () => {
     const c = await connect(["progress:read"]);
     const i = c.getInstructions() ?? "";
     expect(i).toContain("may not know technical words such as MCP, connector or API");
+    expect(i).toContain("short sentences, everyday words, one question per message, and no codes or file-format names (account numbers, CAMT, XML, API, MCP) unless the owner uses them first.");
     expect(i).toContain("follow the connect-service playbook before answering from your own connector directory; it says which lookups are allowed.");
     const tools = (await c.listTools()).tools;
     expect(tools.find((x) => x.name === "search_services")?.description).toMatch(/^Research catalogue behind the connect-service playbook: when linking a service, query only as that playbook's branch says\./);
