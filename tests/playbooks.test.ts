@@ -57,15 +57,20 @@ describe("executable job playbooks (#26)", () => {
     expect(rules).toContain("Never ask for keys, passwords or PINs in the chat; if the owner pastes one here, do not repeat, store or pass it to any tool");
     expect(p.needs.join(" ")).toContain("never ask for, repeat or accept a password or PIN in the chat");
     expect(ask).toMatch(/^Ask one question unless the owner already said it: what should be linked \(accounting software, e-mail or bank\)/);
-    expect(ask).toContain("Follow only the steps that start with that service's name; each one says how to finish.");
+    expect(ask).toContain("Follow only the steps that start with that service's name; each one says how to finish. A connector for a different service never lets you skip these steps.");
+    expect(ask).not.toMatch(/go straight to the last step/);
     // Branch-specific steps are scoped by their prefix; each non-accounting branch ends explicitly.
     const branch = rest.slice(0, -1);
     for (const x of branch) expect(x).toMatch(/^(E-mail|Bank|Accounting): /);
     const email = branch.filter((x) => x.startsWith("E-mail:")), bank = branch.filter((x) => x.startsWith("Bank:")), acc = branch.filter((x) => x.startsWith("Accounting:"));
     expect([email.length, bank.length]).toEqual([1, 1]);
-    expect(email[0]).toContain("if it is Gmail or Microsoft 365, offer your built-in connector, and once the owner has connected it, go to the last step.");
+    expect(email[0]).toContain("if it is Gmail or Microsoft 365, offer your built-in connector (if it is already connected, skip the offer), and once it is connected, go to the last step.");
     expect(email[0]).toContain("say plainly that it cannot be linked, do not search or quote catalogue entries for it, and stop here without the last step");
-    expect(bank[0]).toBe("Bank: say plainly that linking a bank is not offered yet, and stop here without the last step. Do not search the catalogue, and never start a bank key, credential or payment setup.");
+    expect(bank[0]).toMatch(/^Bank: only LHV can be linked, through LHV's own read-only connection \(no payments\)\./);
+    expect(bank[0]).toContain("quote only the entry with id lhv-ai; the connector address is https://mcp.lhv.ai/mcp");
+    expect(bank[0]).toContain("own Smart-ID (never automate it)");
+    expect(bank[0]).toContain("Any other bank: say plainly that it cannot be linked yet and stop here without the last step. Never start a bank key, credential or payment setup, and never offer community bank tools.");
+    expect(verify).toContain("LHV, only the date of the latest transaction, with no amounts.");
     for (const s of ["paste the key values", "Add custom connector", "API access permits", "search_services with \"werkzeug\""]) {
       expect(branch.filter((x) => x.includes(s)).every((x) => x.startsWith("Accounting:")), s).toBe(true);
       expect(acc.some((x) => x.includes(s)), s).toBe(true);
@@ -77,11 +82,12 @@ describe("executable job playbooks (#26)", () => {
     expect(acc[readOnly]).toContain("If the product or the connector offers no read-only key, say plainly that it cannot be linked safely yet, because the key could also change the books, and stop here: skip all remaining steps.");
     expect(acc.at(-1)).toMatch(/Once the connector is added, go to the last step\.$/);
     expect(acc.join(" ")).toContain("own Smart-ID or ID-card (never automate the login)");
+    expect(acc.join(" ")).toContain("Merit Aktiva or Erply Books: continue only if the connector's own published setup guide documents a read-only key, and create only that; otherwise stop here: skip all remaining steps. Other software: say plainly that it cannot be linked yet and stop here.");
     expect(acc.join(" ")).toContain("never offer community or local servers from the catalogue");
     expect(acc.join(" ")).toContain("in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.");
     expect(acc.join(" ")).toContain("removing AI Launchpad stops deadlines and approvals, and suggest upgrading the plan.");
     expect(verify).toMatch(/^Verify only the service the owner asked for/);
-    expect(verify).toContain("e-mail, only the date of the newest message, with no subject or content.");
+    expect(verify).toContain("e-mail, only the date of the newest message, with no subject or content;");
     expect(verify).toContain("Do not create, change, delete or send anything during setup.");
     for (const id of ["payment-reminder", "vat-return-prep", "annual-report"]) expect(byId(id).needs[0], id).toContain("(if no accounting connector answers yet, follow the connect-service playbook)");
   });
