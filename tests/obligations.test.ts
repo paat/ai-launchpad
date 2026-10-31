@@ -321,6 +321,9 @@ describe("Ärikratt adapter", () => {
     const { facts } = mapCompany(FAKE_VALID, { as_of: "2026-10-29", profile: { vat_number: null }, financials: { year: 2025, report_basis: "annual_report", revenue: 45000, revenue_reason: null, employees_avg: 1 } });
     expect(facts.latest_annual_revenue).toEqual({ value: 45000, provenance: "public_register", source: "arikratt:get_company", as_of: "2025" });
     expect(mapCompany(FAKE_VALID, { financials: { year: 2025, revenue: null, revenue_reason: "not_reported" } }).facts.latest_annual_revenue).toBeUndefined();
+    const figs = mapCompany(FAKE_VALID, { as_of: "2026-10-29", financials: { year: 2025, revenue: 0, net_profit: -53, equity: 1248, total_assets: 1248, liabilities: 0 } }).facts.latest_annual_report_figures;
+    expect(figs).toEqual({ value: { year: 2025, revenue: 0, net_profit: -53, total_assets: 1248, equity: 1248, liabilities: 0 }, provenance: "public_register", source: "arikratt:get_company", as_of: "2025" });
+    expect(mapCompany(FAKE_VALID, { financials: { year: 2025, revenue: null, revenue_reason: "not_reported" } }).facts.latest_annual_report_figures).toBeUndefined();
     expect(mapCompany(FAKE_VALID, { as_of: "2026-10-29", profile: { founded: "2026-03-12" } }).facts.founded).toEqual({ value: "2026-03-12", provenance: "public_register", source: "arikratt:get_company", as_of: "2026-10-29" });
     for (const bad of [null, "", "12.03.2026", 2026, "2026-02-31", "2025-02-29"]) expect(mapCompany(FAKE_VALID, { profile: { founded: bad } }).facts.founded, String(bad)).toBeUndefined();
   });
@@ -369,6 +372,10 @@ describe("Ärikratt adapter", () => {
     if (!direct.ok) throw new Error(direct.error);
     expect(direct.result.facts_needed.map((n) => n.fact)).not.toContain("confirm_company");
     expect(direct.result.assistant_instruction).not.toContain("Confirm with the owner that");
+    // Register facts reach the assistant, so it never asks the owner for them (owner 2026-10-31).
+    expect(direct.result.public_facts.vat_registered).toMatchObject({ value: true, provenance: "public_register" });
+    expect(direct.result.public_facts.latest_annual_report_figures).toMatchObject({ value: { year: 2025, revenue: 45000 }, as_of: "2025" });
+    expect(direct.result.assistant_instruction).toContain("public_facts (such as VAT registration and the latest filed annual report figures) are already known, so never ask for them.");
   });
   test("honest unavailable states: timeout, not found, bad key", async () => {
     const db = openDb(":memory:");
@@ -436,7 +443,7 @@ describe("get_obligations tool and status card", () => {
     expect(r.facts_needed.map((n: { fact: string }) => n.fact)).not.toContain("vat_registered");
     const kmd = r.obligations.find((o: { rule_id: string }) => o.rule_id === "vat-return-kmd");
     expect(kmd).toMatchObject({ applies: "yes", applies_because: [{ fact: "vat_registered", value: true, provenance: "assistant_supplied" }] });
-    expect(r.assistant_instruction).toBe("Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed. Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.");
+    expect(r.assistant_instruction).toBe("Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed; public_facts (such as VAT registration and the latest filed annual report figures) are already known, so never ask for them. Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.");
     expect(r.disclaimer).toContain("calculated by rules, not AI");
     expect(r.computed_by).toBe("rules");
   });
