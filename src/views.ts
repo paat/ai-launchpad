@@ -201,6 +201,15 @@ nav.main a[aria-current="page"]::after{content:"";position:absolute;left:var(--s
 @media (min-width:600px){nav.main a{flex:0 0 auto;padding:var(--s-2) var(--s-4)}}
 .sample-bar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-1) var(--s-3);margin:0 0 var(--s-6);padding:var(--s-2) var(--s-3);border:1px dashed var(--lbl-sample-bd);border-radius:var(--r-md);color:var(--c-muted);font-size:var(--fs-sm)}
 .sample-bar .label-chip--sample{padding:0;border:0;color:var(--c-text);font-weight:800}
+.naidis-frame{margin:0 0 var(--s-5)}
+.naidis-banner{margin:0 0 var(--s-3);padding:var(--s-3);border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface-2);font-size:var(--fs-sm)}
+.naidis-steps{display:flex;flex-wrap:wrap;gap:var(--s-1);margin:0 0 var(--s-2)}
+.naidis-steps a{display:inline-flex;flex:1 1 auto;align-items:center;justify-content:center;min-height:var(--tap);padding:var(--s-2);border-radius:var(--r-sm);font-size:var(--fs-sm);font-weight:700;text-decoration:none;white-space:nowrap}
+.naidis-steps a[aria-current="page"]{background:var(--c-deep);color:#fff}
+.naidis-note{margin:0;color:var(--c-muted);font-size:var(--fs-sm)}
+.naidis-ro{min-width:0;min-inline-size:0;margin:0;padding:0;border:0}
+.naidis-ro .row>a{display:inline-flex;align-items:center;min-height:var(--tap)}
+.naidis-cta{margin:var(--s-5) 0 0}
 footer{display:flex;flex-wrap:wrap;align-items:center;gap:0 var(--s-4);margin-top:var(--s-8);padding-top:var(--s-3);border-top:1px solid var(--c-divider);font-size:var(--fs-sm)}
 .guides{display:flex;gap:0 var(--s-4);flex-wrap:wrap;margin:0}.guides a{min-height:var(--tap);display:inline-flex;align-items:center}
 footer form{margin-left:auto}
@@ -511,6 +520,7 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .landing-hero h1 span{color:var(--c-primary);background:linear-gradient(transparent 68%,#cfe3c6 68%,#cfe3c6 92%,transparent 92%)}
 .landing-hero .lede{max-width:34rem;margin:0 0 var(--s-5);font-size:var(--fs-lg);line-height:1.5}
 .landing-hero .btn{width:100%;font-size:var(--fs-lg)}
+.landing-actions{display:flex;flex-wrap:wrap;align-items:center;gap:0 var(--s-4)}
 @media (min-width:880px){.landing-hero{grid-template-areas:"text phone" "jobs phone";grid-template-columns:minmax(0,1fr) 360px;grid-template-rows:auto 1fr;gap:var(--s-6) 56px;margin-top:var(--s-6)}.landing-hero .btn{width:auto;padding:12px 32px}}
 .teaser{position:relative;width:100%;max-width:360px;margin:0 auto}
 .teaser::before{content:"";position:absolute;inset:8% 0 4%;z-index:-1;border-radius:50%;background:radial-gradient(closest-side,#c9dcbf,transparent);opacity:.9}
@@ -1662,7 +1672,7 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
 <section class="landing-hero" aria-labelledby="hero-h"><div>
 <h1 id="hero-h">${t("Tegele sellega, milles oled hea.", "Focus on what you're good at.")} <span>${t("Kontoritöö teeb sinu AI-assistent.", "Your AI assistant does the office work.")}</span></h1>
 <p class="lede">${esc(t("Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud juhib tööd: ütleb, milliseid ühendusi vaja, küsib sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude'iga.", "Your assistant does the office work through your accounting, bank and e-mail connectors. AI Launchpad runs the work: it tells you which connectors you need, asks for your approval, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude."))}</p>
-<a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a></div>
+<div class="landing-actions"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a><a class="tap-link" href="/naidis">${t("Vaata näidist", "See a sample")}</a></div></div>
 <figure class="teaser" id="landing-phone">
 <input type="checkbox" id="teaser-pause" class="vh-input">
 ${jobs.map(conversation).join("\n")}

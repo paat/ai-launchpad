@@ -15,6 +15,7 @@ import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
 import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
+import { naidisBody } from "./naidis.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; }
 // Owner-only pilot allowlist: exact opaque Google `sub` values, never emails.
@@ -188,7 +189,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   });
   app.use((req: Request, res: Response, next: NextFunction) => {
     const asked = parseLang(req.query.lang);
-    if (asked) res.append("set-cookie", `lang=${asked}; Path=/; Max-Age=31536000; SameSite=Lax${cfg.production ? "; Secure" : ""}`);
+    const naidis = req.path === "/naidis" || req.path.startsWith("/naidis/");
+    if (asked && !naidis) res.append("set-cookie", `lang=${asked}; Path=/; Max-Age=31536000; SameSite=Lax${cfg.production ? "; Secure" : ""}`);
     res.locals.lang = asked ?? parseLang(cookieVal(req, "lang")) ?? "et";
     next();
   });
@@ -434,6 +436,19 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     logActivity(db, oid(req), "owner", decision === "publish" ? "unmet_need_published" : "unmet_need_kept_private", "ok", decision === "publish" ? "Unmet need published anonymously as open demand (category, label and spec only)." : "Unmet need kept private; it is never published.");
     res.redirect("/");
   });
+  // Public, login-free synthetic walkthrough. These routes never look up a
+  // session or read owner data; the only inputs are the fixed in-code rows.
+  for (const [path, step, titleEt, titleEn] of [
+    ["/naidis", "tana", "Täna", "Today"],
+    ["/naidis/kinnitus", "kinnitus", "Kinnitus", "Approval"],
+    ["/naidis/tehtud", "tehtud", "Tehtud", "Done"],
+  ] as const) app.get(path, (req, res) => {
+    // As on /demand, a language-selecting response is private and sets no cookie here.
+    if (!parseLang(req.query.lang)) res.set({ "cache-control": "public, max-age=300", vary: "Cookie" });
+    const l = langOf(res);
+    res.type("html").send(publicPage(req, res, tr(l)(titleEt, titleEn), naidisBody(step, l), { sample: true }));
+  });
+
   // Public, login-free aggregate of owner-approved demand. Never reads
   // owner, company or request text; briefly cacheable.
   app.get("/demand", (req, res) => {
