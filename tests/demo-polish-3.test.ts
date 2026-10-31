@@ -97,3 +97,15 @@ describe("grok medium: the assessment paragraph does not use the approval verb",
     expect(p).not.toContain("kinnitamist");
   });
 });
+
+describe("grok medium: a friction card that is not completed has a translated status line", () => {
+  const card = { topicId: "invoice_reminders", locale: "en", state: "failed", output: null, replayed: false, label: "Invoice reminders" };
+  test("no „steps above” on /playbooks; the status line is in the UI language", () => {
+    const et = playbooksBody("et", [], [card]);
+    expect(et).not.toContain("steps above");
+    expect(et).toContain('<p class="small muted" lang="et">See soovitus pole praegu saadaval.</p>');
+    const en = playbooksBody("en", [], [card]);
+    expect(en).not.toContain("steps above");
+    expect(en).toContain('<p class="small muted" lang="en">This suggestion is not available right now.</p>');
+  });
+});
