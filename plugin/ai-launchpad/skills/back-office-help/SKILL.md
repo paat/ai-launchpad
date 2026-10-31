@@ -1,6 +1,6 @@
 ---
 name: back-office-help
-description: Help an Estonian small-business owner with back-office work. Use when the owner asks about tax or filing deadlines, VAT, the annual report, payroll declarations, unpaid invoices, their books for a year, or what is missing from their records.
+description: Help an Estonian small-business owner with back-office work. Use when the owner asks about tax or filing deadlines, VAT, the annual report, payroll declarations, unpaid invoices, their books for a year (how far they are, closing a month or year), or what is missing from their records.
 ---
 
 The owner may not know accounting or technical words. Speak plainly: short sentences, everyday words, one question per message, and no technical codes or file formats unless the owner uses them first.
