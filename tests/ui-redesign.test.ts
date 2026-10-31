@@ -345,7 +345,7 @@ describe("landing and connect", () => {
     for (const k of ["approve", "allow"]) for (const p of ["out", "in", "tap"]) expect(css, `${k}-${p}`).toContain(`@keyframes lp-${k}-${p}{`);
   });
 
-  test("connect: ChatGPT first, honest plan lines, phone URL without QR, technical words only under Tehniline info", () => {
+  test("connect (ChatGPT tab): honest plan lines, phone URL without QR, technical words only under Tehniline info", () => {
     const html = connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
     expect(html).toContain('<a href="/uhenda?a=chatgpt" aria-current="true">ChatGPT</a>');
     expect(html).toContain("ChatGPT Pro paketis töötavad tähtajad ja juhised (ainult lugemine). Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.");

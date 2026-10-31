@@ -26,21 +26,24 @@ test("public landing: what the product does, then Connect leads to /uhenda", asy
   await expect(page).toHaveURL(/\/uhenda$/);
 });
 
-test("/uhenda: ChatGPT first, no phone hand-off without public HTTPS, no overflow, sign-in chip for visitors", async ({ page }) => {
+test("/uhenda: Claude preselected (QA m11), ChatGPT one tap away, no phone hand-off without public HTTPS, no overflow, sign-in chip for visitors", async ({ page }) => {
   await page.goto("/uhenda");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Ühenda oma assistent");
-  await expect(page.getByRole("link", { name: "ChatGPT" })).toHaveAttribute("aria-current", "true");
+  // „Kõige lihtsam algus on Claude”, so the Claude tab is the one selected.
+  await expect(page.getByRole("link", { name: "Claude" })).toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("link", { name: "ChatGPT" })).not.toHaveAttribute("aria-current", "true");
+  await expect(page.getByText("Testitud Claude'i tasuta paketis (30.10.2026).", { exact: false })).toBeVisible();
   // The local server has no public HTTPS address, so the phone hand-off would not work: it is not offered (QA D-14).
   await expect(page.getByRole("heading", { name: "Jätka telefonis" })).toHaveCount(0);
   await expect(page.getByText("Avalik HTTPS-aadress pole selles serveris veel seadistatud", { exact: false })).toBeVisible();
-  await expect(page.getByText("Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", { exact: false })).toBeVisible();
   await expect(page.locator("#connect-status")).toContainText("Logi sisse");
   expect(await page.locator('meta[http-equiv="refresh"]').count()).toBe(0);
   await noOverflow(page);
   await page.screenshot({ path: `${SHOTS}/uhenda-390.png`, fullPage: true });
-  await page.getByRole("link", { name: "Claude" }).click();
-  await expect(page.getByText("Testitud Claude'i tasuta paketis (30.10.2026).", { exact: false })).toBeVisible();
   await expect(page.getByText("Vajuta Connect, logi sisse ja kinnita. Kui Claude küsib tööriista luba, vajuta Allow.")).toBeVisible();
+  await page.getByRole("link", { name: "ChatGPT" }).click();
+  await expect(page.getByRole("link", { name: "ChatGPT" })).toHaveAttribute("aria-current", "true");
+  await expect(page.getByText("Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", { exact: false })).toBeVisible();
 });
 
 test("/uhenda for a sample owner: „Käest ära” before the setup steps, no amber local-setup notice (QA M2)", async ({ page }) => {
