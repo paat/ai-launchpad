@@ -189,6 +189,42 @@ test("pause toggle: keyboard-focusable, 44 px, stops the animation without scrip
   await page.screenshot({ path: `${SHOTS}/teaser-390-pause-focus.png`, fullPage: true });
 });
 
+test("390px: activating another card while paused shows its final frame and stays paused (tribunal T-005)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await activateUnpaid(page);
+  await page.locator("label.teaser-pause").click();
+  await expect(page.locator("#teaser-pause")).toBeChecked();
+  const id = "invoice";
+  await page.locator(`[data-job-activate="${id}"]`).click();
+  await page.waitForFunction((job) => {
+    const track = document.querySelector("#job-track"), card = document.querySelector(`[data-job-card="${job}"]`);
+    if (!track || !card) return false;
+    const r = card.getBoundingClientRect(), t = track.getBoundingClientRect();
+    const inside = r.left >= t.left - 1 && r.right <= t.right + 1;
+    return inside && document.querySelector(".job-card--active")?.getAttribute("data-job-card") === job;
+  }, id);
+  const conversation = page.locator(`[data-job-conversation="${id}"]`);
+  await expect(conversation).toBeVisible();
+  const lastBubble = conversation.locator(".bubble").last();
+  await expect(lastBubble).toHaveCSS("opacity", "1");
+  // Opacity on the bubble itself does not move; the beat that reveals it does.
+  await expect.poll(() => lastBubble.evaluate((el) => getComputedStyle(el.closest(".beat")!).opacity)).toBe("1");
+  await expect(conversation.locator(".mock-done")).toHaveCSS("opacity", "1");
+  await expect(conversation.locator(".mock-approve")).toHaveCSS("opacity", "0");
+  const states = () => page.evaluate((job) => {
+    const anims = document.querySelector(`[data-job-conversation="${job}"]`)?.getAnimations({ subtree: true }) ?? [];
+    return { n: anims.length, play: [...new Set(anims.map((a) => a.playState))].sort().join(","), min: anims.reduce((m, a) => Math.min(m, Number(a.currentTime)), Infinity) };
+  }, id);
+  await expect.poll(states).toMatchObject({ n: expect.any(Number), play: "paused" });
+  expect((await states()).n).toBeGreaterThan(0);
+  expect((await states()).min).toBeGreaterThanOrEqual(14000);
+  await page.locator("label.teaser-pause").click();
+  await expect(page.locator("#teaser-pause")).not.toBeChecked();
+  await expect.poll(states).toMatchObject({ play: "running" });
+  expect((await states()).min).toBeGreaterThanOrEqual(14000);
+});
+
 test("320px: no overflow; reduced motion shows the final frame statically", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 740 });
   await page.emulateMedia({ reducedMotion: "reduce" });
