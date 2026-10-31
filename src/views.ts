@@ -1770,7 +1770,7 @@ export function tanaBody(o: TanaOpts): string {
     doneCount++;
     doneRows.push(`<div class="row"><strong>${verb} ${titleOf(p.task_id)}</strong><div class="labels">${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${esc(fmtWhen(p.observed_at, l, now))}</span></div>`);
   }
-  const handled = (a?.responsibilities ?? []).filter(isHandled);
+  const handled = (a?.responsibilities ?? []).filter((r) => !notApplicable.has(r.id) && isHandled(r));
   const handledLine = handled.length ? `<p class="small muted">${handled.map((r) => `${t("Lisaks teeb", "Also handled by")} ${fx.html(r.executor!)}: ${fx.html(r.label)} ${esc(t("(assistendi hinnang).", "(your assistant's assessment)."))}`).join(" ")}</p>` : "";
 
   // A known unknown is never hidden behind "nothing needs you".
@@ -1805,7 +1805,7 @@ export function tanaBody(o: TanaOpts): string {
 ${a ? `<p class="small">${esc(t(`Assistendi hinnangul on ${c.covered} kohustust ${c.denominator}-st kaardistatust korras${c.percent != null ? ` (${c.percent}%)` : ""}.`, `Your assistant assesses ${c.covered} of ${c.denominator} mapped responsibilities as handled${c.percent != null ? ` (${c.percent}%)` : ""}.`))}${o.assessedAt ? ` ${t("Hinnatud", "Assessed")} ${esc(fmtWhen(o.assessedAt, l, now))}.` : ""}</p>
 <p class="small muted">${a.company_label ? t("Ettevõtte nime andis sinu assistent", "Company label supplied by your assistant") : t("Tööruumi nimi", "Workspace label")}${a.company_registry_ref ? ` · ${t("registriviide", "registry ref")} ${esc(a.company_registry_ref)}` : ""} — ${t("seda ei ole avalikust registrist kontrollitud ja see ei tõenda volitust.", "not verified against a public register, and not a mandate.")}</p>
 <p class="small">${fx.html(a.conclusion)}</p>
-<ul class="tight">${a.responsibilities.map((r) => `<li class="small">${fx.html(r.label)} — ${r.is_core ? t("sinu põhitöö", "your core work") : isHandled(r) ? `${t("teeb", "handled by")} ${fx.html(r.executor!)} ${esc(t("(assistendi hinnang)", "(your assistant's assessment)"))}` : r.applicability === "unresolved" ? t("lahtine", "unresolved") : r.applicability === "not_applicable" ? t("sind ei puuduta", "does not apply to you") : t("teed praegu ise", "you do it yourself now")}<br><span class="muted">${fx.html(r.reason)}</span></li>`).join("")}</ul>` : ""}
+<ul class="tight">${a.responsibilities.map((r) => `<li class="small">${fx.html(r.label)} — ${r.applicability === "not_applicable" ? t("sind ei puuduta", "does not apply to you") : r.is_core ? t("sinu põhitöö", "your core work") : isHandled(r) ? `${t("teeb", "handled by")} ${fx.html(r.executor!)} ${esc(t("(assistendi hinnang)", "(your assistant's assessment)"))}` : r.applicability === "unresolved" ? t("lahtine", "unresolved") : t("teed praegu ise", "you do it yourself now")}<br><span class="muted">${fx.html(r.reason)}</span></li>`).join("")}</ul>` : ""}
 ${o.exclusions.length ? `<p class="small muted">${t("Varasematest hinnangutest eemaldatud:", "Removed since earlier assessments:")} ${o.exclusions.map((x) => fx.html(x.label)).join(", ")}</p>` : ""}
 </div></details>`;
 
