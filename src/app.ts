@@ -6,6 +6,8 @@ import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
 import { arikratt } from "./arikratt.js";
 import { approvalAddressMissing, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, liveStandingRules, logActivity, normAddress, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, TOOL_ARG_KEYS, type ApprovalRow, type StandingRule } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
+import { computeHandover, handoverObligations, largestAmount, offerCapCents, standingBasis } from "./handover.js";
+import type { Assessment } from "./core.js";
 import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
 import type { FetchFn } from "./model-quality.js";
@@ -263,6 +265,13 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   const ownerError = (req: Request, res: Response, status: number, title: string, message: string) => res.status(status).type("html").send(page(req, res, title, "none", errorBody(langOf(res), title, message)));
   /** Every standing approval of the owner (live, ended and expired), to name the rule behind an approval. */
   const ownerRules = (ownerId: string) => db.prepare("SELECT * FROM standing_approvals WHERE owner_id=? ORDER BY created_at DESC").all(ownerId) as StandingRule[];
+  // Deadlines: only for a known registry code (assessment ref or synthetic demo company).
+  const ownerDeadlines = (assessment: Assessment | null) => { const ref = assessment?.company_registry_ref?.trim(); return ref && /^\d{8}$/.test(ref) ? companyObligations(register, { registryCode: ref, months: 2, cacheOnly: true }) : Promise.resolve(null); };
+  // „Käest ära” (#61): once per request, from the stored approvals and rules plus the rule-computed deadlines.
+  const ownerHandover = (ownerId: string, assessment: Assessment | null, deadlines: Awaited<ReturnType<typeof ownerDeadlines>>) => {
+    expireApprovals(db, ownerId);
+    return computeHandover({ assessment, obligations: deadlines?.ok ? handoverObligations(deadlines) : [], approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(ownerId) as ApprovalRow[], rules: ownerRules(ownerId), now: new Date() });
+  };
 
   const oauth = new LaunchpadOAuth(db, cfg, session, ownerAllowed);
   oauth.install(app, requireOwner, csrfOk);
@@ -387,9 +396,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     res.type("html").send(publicPage(req, res, tr(langOf(res))("Kontoritöö teeb sinu AI-assistent", "Your AI assistant does the office work"), landingBody({ lang: langOf(res) })));
   }, requireOwner, async (req, res, next) => { try {
     const st = getState(db, oid(req));
-    // Deadlines: only for a known registry code (assessment ref or synthetic demo company).
     const ref = st.assessment?.company_registry_ref?.trim();
-    const deadlines = ref && /^\d{8}$/.test(ref) ? await companyObligations(register, { registryCode: ref, months: 2, cacheOnly: true }) : null;
+    const deadlines = await ownerDeadlines(st.assessment);
     // Any unavailable register lookup renders the one-line hint (with the plain reason unless only not cached yet).
     const unavailable = deadlines?.ok ? deadlines.result.company.unavailable : undefined;
     // A remembered failed fill shows its reason, not "loading".
@@ -411,7 +419,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       approvals, progress: st.progress as unknown as { task_id: string; milestone: string; observed_at: string }[],
       // A checksum-invalid ref is the only lookup that computes nothing: say so instead of dropping the section.
       deadlines: !deadlines ? null : !deadlines.ok ? "invalid_code" : failure?.unavailable === "not_found" ? "not_found" : failure ? { unavailable_reason: failure.reason } : unavailable === "not_cached" ? "not_cached" : unavailable ? { unavailable_reason: deadlines.result.company.unavailable_reason ?? unavailable } : deadlines.result as DeadlinesView,
-      needs: ownerNeeds(db, oid(req)), reportCount, rules: ownerRules(oid(req)),
+      needs: ownerNeeds(db, oid(req)), reportCount, rules: ownerRules(oid(req)), handover: ownerHandover(oid(req), st.assessment, deadlines),
     })));
   } catch (e) { next(e); } });
   app.post("/unmet-needs/decide", requireOwner, csrfOk, (req, res) => {
@@ -584,7 +592,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const t = tr(langOf(res));
     const a = getApproval(db, oid(req), req.params.id);
     if (!a) return ownerError(req, res, 404, t("Kinnitust ei leitud", "Approval not found"), t("Sellist kinnitust sinu tööruumis pole. Midagi ei kinnitatud.", "Approval not found in your workspace. Nothing was approved."));
-    res.type("html").send(page(req, res, t("Kinnitus", "Approval"), "none", approvalCardBody({ csrf: (req as Authed).csrf, a, lang: langOf(res), sample: (req as Authed).ownerKind === "demo", rules: ownerRules(oid(req)) })));
+    res.type("html").send(page(req, res, t("Kinnitus", "Approval"), "none", approvalCardBody({ csrf: (req as Authed).csrf, a, lang: langOf(res), sample: (req as Authed).ownerKind === "demo", rules: ownerRules(oid(req)),
+      // The same default cap as the Ühendus offer, from this send and the owner's past approvals of its job (QA m4).
+      capCents: offerCapCents(largestAmount([a, ...standingBasis(db.prepare("SELECT * FROM approvals WHERE owner_id=? AND kind=?").all(oid(req), a.kind ?? "") as ApprovalRow[], a.kind ?? "")])) })));
   });
   app.post("/approvals/:id/decide", requireOwner, csrfOk, (req, res) => {
     const t = tr(langOf(res));
@@ -625,7 +635,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       if (body.scope === "any") recipients = null;
       else if (body.scope === "approved") {
         // The recipients the owner has already approved once for this kind.
-        const rows = db.prepare("SELECT payload_json FROM approvals WHERE owner_id=? AND kind=? AND decided_at IS NOT NULL AND state!='declined' AND approved_by_rule IS NULL").all(oid(req), kind) as { payload_json: string }[];
+        const rows = standingBasis(db.prepare("SELECT * FROM approvals WHERE owner_id=? AND kind=?").all(oid(req), kind) as ApprovalRow[], kind);
         recipients = [...new Set(rows.flatMap((r) => { try { const x = (JSON.parse(r.payload_json) as { recipient?: { address?: unknown } }).recipient?.address; return typeof x === "string" && x.trim() ? [normAddress(x)] : []; } catch { return []; } }))];
         if (!recipients.length) return bad(409, t("Sa pole sellist saatmist veel kinnitanud. Vali „Kõik saajad (ka uued)” või kinnita enne üks saatmine.", "You have not approved such a send yet. Choose “Any recipient (including new ones)” or approve one send first."));
       } else return bad(400, t("Vali, kellele püsiluba kehtib.", "Choose who the standing approval covers."));
@@ -650,7 +660,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   });
 
   // Connect (spec screen 2): public page; the status chip needs a signed-in owner.
-  app.get("/uhenda", (req, res) => {
+  app.get("/uhenda", async (req, res, next) => { try {
     const s = session(req), l = langOf(res);
     const kind = s ? (db.prepare("SELECT kind FROM owners WHERE id=?").get(s.owner_id) as { kind: string } | undefined)?.kind ?? "" : "";
     let state: ConnectState = { kind: "anon" };
@@ -668,15 +678,16 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
         } else state = { kind: "waiting" };
       }
     }
+    const assessment = s ? getState(db, s.owner_id).assessment : null;
     const feed = s ? db.prepare("SELECT created_at FROM calendar_feeds WHERE owner_id=?").get(s.owner_id) as { created_at: string } | undefined : undefined;
-    const body = connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "claude" ? "claude" : "chatgpt", state, owner: !!s, ...(s ? { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null }, standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) } } : {}) });
+    const body = connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : "claude", state, owner: !!s, ...(s ? { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null }, standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, assessment, await ownerDeadlines(assessment)) } : {}) });
     res.type("html").send(shell({ title: tr(l)("Ühenda", "Connect"), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, sample: kind === "demo", toggle: toggleHref(req, l), body,
       // Zero JS: while an owner waits for the first assistant contact, the page reloads itself.
       head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "" }));
-  });
+  } catch (e) { next(e); } });
 
   app.get("/export", requireOwner, (req, res) => {
-    const data = { workspace: getState(db, oid(req)).ws, assessments: db.prepare("SELECT version,payload_json,created_at FROM assessments WHERE owner_id=?").all(oid(req)), progress: db.prepare("SELECT * FROM progress WHERE owner_id=?").all(oid(req)), candidates: db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=?").all(oid(req)), activity: db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=?").all(oid(req)), approvals: db.prepare("SELECT id,kind,report_id,payload_json,digest,state,created_at,expires_at,decided_at,consumed_at,outcome_json,approved_by_rule FROM approvals WHERE owner_id=?").all(oid(req)), standing_approvals: db.prepare("SELECT id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at,revoked_at FROM standing_approvals WHERE owner_id=?").all(oid(req)), unmet_needs: db.prepare("SELECT id,report_id,need_redacted,blocker,job_hint_redacted,state,reason,category,demand_label,same_as,spec,classified_by,created_at,updated_at,decided_at FROM unmet_needs WHERE owner_id=?").all(oid(req)) };
+    const data = { workspace: getState(db, oid(req)).ws, assessments: db.prepare("SELECT version,payload_json,created_at FROM assessments WHERE owner_id=?").all(oid(req)), progress: db.prepare("SELECT * FROM progress WHERE owner_id=?").all(oid(req)), candidates: db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=?").all(oid(req)), activity: db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=?").all(oid(req)), approvals: db.prepare("SELECT id,kind,report_id,payload_json,digest,state,created_at,expires_at,decided_at,consumed_at,outcome_json,approved_by_rule,playbook_id FROM approvals WHERE owner_id=?").all(oid(req)), standing_approvals: db.prepare("SELECT id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at,revoked_at FROM standing_approvals WHERE owner_id=?").all(oid(req)), unmet_needs: db.prepare("SELECT id,report_id,need_redacted,blocker,job_hint_redacted,state,reason,category,demand_label,same_as,spec,classified_by,created_at,updated_at,decided_at FROM unmet_needs WHERE owner_id=?").all(oid(req)) };
     res.setHeader("content-disposition", "attachment; filename=launchpad-export.json");
     res.json(data);
   });

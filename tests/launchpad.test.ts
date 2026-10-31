@@ -194,7 +194,7 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
   test("demo company beta is one coherent company: the hero and the deadlines name the same Kase Konsult OÜ (#21, QA D-24)", async () => {
     const html = await (await fetch(`${base}/`, { headers: { cookie: await login("beta") } })).text();
     const hero = /<p class="company">([^<]+)<\/p>/.exec(html)![1];
-    const deadlines = /<section class="card" id="tulekul"[\s\S]*?<span class="small muted">([^<]+) · 19990002<\/span>/.exec(html)![1];
+    const deadlines = /<section class="section" id="tulekul"[\s\S]*?<span class="small muted">([^<]+) · 19990002<\/span>/.exec(html)![1];
     expect(hero).toBe("Kase Konsult OÜ (näidis)");
     expect(hero.replace(" (näidis)", "")).toBe(deadlines);
     expect(html).not.toMatch(/Bakery|synthetic fixture/i);

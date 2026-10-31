@@ -1,5 +1,6 @@
 import type { Assessment, Coverage } from "./core.js";
 import { isHandled } from "./core.js";
+import { offerCapCents, type Handover, type Job } from "./handover.js";
 import { approvalAddressMissing, normAddress, standingRecipients, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type AssistantMilestones, type Exclusion, type StandingRule } from "./mcp.js";
 import type { CompanyCard } from "./arikratt.js";
 import { ET_OF, type FactNeeded, type Obligation } from "./obligations.js";
@@ -22,103 +23,117 @@ const TEASER_CSS = BEATS.map(([k, a, cap = "16rem"]) => `.b-${k}{animation-name:
   + "\n" + TYPING.map(([k, a, b]) => `.b-${k}{animation-name:lp-${k}}@keyframes lp-${k}{0%,${a}%{max-height:0;opacity:0}${a + 1}%,${b}%{max-height:4rem;opacity:1}${b + 1}%,100%{max-height:0;opacity:0}}`).join("\n");
 
 const CSS = `
+/* --- Tokens (design direction A „Selge leht”, docs/design/direction-a) --- */
+:root{color-scheme:light;
+--c-bg:#fff;--c-surface:#fff;--c-surface-2:#F4F6F2;--c-surface-3:var(--c-surface-2);
+--c-text:#14201A;--c-muted:#4F5B53;--c-primary:#1B5E3B;--c-on-primary:#fff;--c-link:var(--c-primary);
+--c-deep:#0F3D25;--c-mint:#A3E0B5;
+--c-att:#9A4A00;--c-att-dark:#6B4E00;--c-att-bg:#FFF4D6;--c-att-bd:#F0C36B;
+--c-border:#DCE2DA;--c-divider:#E6EAE3;--c-control:#6f7d67;--c-control-2:#4f7a4a;--c-step-todo:#7d8a76;
+--c-danger:#B42318;--c-focus:#1f5fd6;--c-pulse:#b07d00;
+--lbl-official-bg:#e1f0e3;--lbl-official-fg:#14502a;--lbl-official-bd:#B9DCC2;
+--lbl-rule-bg:#fff;--lbl-rule-fg:#1B5E3B;--lbl-rule-bd:#1B5E3B;
+--lbl-assistant-bg:#eceee9;--lbl-assistant-fg:#3d4640;--lbl-assistant-bd:#c9cec5;
+--lbl-owner-bg:#14201A;--lbl-owner-fg:#fff;--lbl-owner-bd:#14201A;
+--lbl-ai-bg:#efe9fb;--lbl-ai-fg:#4c2a85;--lbl-ai-bd:#c9b8ec;--lbl-ai-tint:#f8f5fd;
+--lbl-sample-bg:transparent;--lbl-sample-fg:#4F5B53;--lbl-sample-bd:#8A948C;
+--lbl-where-bg:var(--c-surface);--lbl-where-fg:var(--c-text);--lbl-where-bd:var(--c-border);
+--st-drafted-bg:#eceee9;--st-drafted-fg:#3d4640;
+--st-waiting-bg:var(--c-att-bg);--st-waiting-fg:var(--c-att-dark);--st-waiting-bd:var(--c-att-bd);
+--st-approved-bg:var(--c-primary);--st-approved-fg:#fff;
+--st-sent-bg:#e3ecf9;--st-sent-fg:#1d4580;
+--st-accepted-bg:#e1f0e3;--st-accepted-fg:#14502a;
+--st-rejected-bg:#fbe5e3;--st-rejected-fg:var(--c-danger);
+--st-paid-bg:#d9efe9;--st-paid-fg:#0f4f43;
+--st-void-bg:#fbe5e3;--st-void-fg:var(--c-danger);
+--fs-xs:.8125rem;--fs-sm:.9375rem;--fs-md:1rem;--fs-lg:1.125rem;--fs-xl:1.5rem;--fs-2xl:2rem;
+--fs-h1:clamp(1.75rem,5.5vw,2.5rem);--fs-h2:1.25rem;--fs-display:clamp(2.125rem,6.5vw,3.25rem);--fs-amount:2.75rem;
+--s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:20px;--s-6:24px;--s-8:32px;--s-12:48px;--s-16:64px;
+--r-sm:6px;--r-md:12px;--r-lg:16px;--r-xl:20px;--tap:44px;
+--ease:cubic-bezier(.2,.7,.2,1);--t-fast:160ms;--t-med:200ms}
+
+/* --- Base and shell --- */
 *{box-sizing:border-box}
-body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;background:#eceee6;color:#1a241d;line-height:1.5;-webkit-font-smoothing:antialiased}
-.wrap{max-width:680px;margin:auto;padding:14px 16px 36px}
-header.top{display:flex;align-items:center;gap:8px;min-height:32px}
-.mark{width:14px;height:14px;border-radius:4px;background:#1a4d2e;flex:none}
-.brand{font-weight:750;font-size:1.05rem;letter-spacing:-.02em;margin-right:auto}
-.badge{display:inline-block;font-size:.75rem;font-weight:650;padding:3px 9px;border-radius:999px;background:#e3e9d8;color:#33472a;border:1px solid #c3d0ab}
-.badge.amber{background:#fdf3d7;color:#6b4e00;border-color:#e3c878}
-nav.main{display:flex;gap:4px;margin:10px 0 16px;padding:4px;background:#fff;border:1px solid #d9ded2;border-radius:14px}
-nav.main a{flex:1 1 0;text-align:center;min-height:44px;display:flex;align-items:center;justify-content:center;padding:8px 6px;border-radius:10px;color:#33402f;text-decoration:none;font-weight:650;font-size:.95rem}
-nav.main a[aria-current="page"]{background:#1a4d2e;color:#fff}
-a{color:#155e33}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #2f6fed;outline-offset:2px}
-.card{background:#fff;border:1px solid #d9ded2;border-radius:16px;padding:18px;margin:12px 0;box-shadow:0 1px 2px rgba(26,36,29,.05)}
-.hero{padding:22px 18px}.hero h1{font-size:1.3rem;margin:2px 0 6px}
-.company{font-weight:700;color:#1a4d2e;margin:0}
-.next{font-size:1.55rem;font-weight:750;letter-spacing:-.02em;line-height:1.25;margin:6px 0 8px;color:#12291a}
-.lede{color:#46523f;margin:0 0 4px}
-.muted{color:#4d5a48;font-size:.94rem}.small{font-size:.86rem}
-button,.btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:12px 18px;border-radius:12px;border:1px solid #1a4d2e;background:#1a4d2e;color:#fff;font:inherit;font-weight:700;cursor:pointer;text-decoration:none;width:100%;margin:8px 0}
-button.secondary,.btn.secondary{background:#fff;color:#1a4d2e;border-color:#9db894}
-button.danger{background:#fff;color:#8f1d1d;border-color:#8f1d1d}
-input,select,textarea{font:inherit;min-height:48px;padding:10px 12px;border:1px solid #93a187;border-radius:10px;width:100%;margin:4px 0 12px;background:#fff;color:#1a241d}
+@media (max-width:480px){html{font-size:106.25%}}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;margin:0;background:var(--c-bg);color:var(--c-text);line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:640px;margin:auto;padding:var(--s-2) var(--s-4) var(--s-8)}
+header.top{display:flex;align-items:center;gap:var(--s-3);min-height:60px;padding:var(--s-2) 0}
+.brand{display:inline-flex;align-items:center;gap:10px;min-height:var(--tap);margin-right:auto;color:var(--c-text);text-decoration:none;font-weight:800;font-size:var(--fs-lg);letter-spacing:-.02em;white-space:nowrap}
+.mark{position:relative;flex:none;width:24px;height:24px;border-radius:7px;background:var(--c-deep)}
+.mark::after{content:"";position:absolute;left:8px;top:4px;width:6px;height:11px;border:solid var(--c-mint);border-width:0 3px 3px 0;transform:rotate(45deg)}
+nav.main{display:flex;gap:var(--s-2);margin:0 0 var(--s-4);border-bottom:1px solid var(--c-divider)}
+nav.main a{position:relative;flex:1 1 0;display:flex;align-items:center;justify-content:center;min-height:48px;padding:var(--s-2);color:var(--c-muted);font-weight:700;text-decoration:none;transition:color var(--t-fast) var(--ease)}
+nav.main a:hover,nav.main a[aria-current="page"]{color:var(--c-text)}
+nav.main a[aria-current="page"]::after{content:"";position:absolute;left:var(--s-2);right:var(--s-2);bottom:-1px;height:3px;border-radius:3px 3px 0 0;background:var(--c-primary)}
+@media (min-width:600px){nav.main a{flex:0 0 auto;padding:var(--s-2) var(--s-4)}}
+.sample-bar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-1) var(--s-3);margin:0 0 var(--s-6);padding:var(--s-2) var(--s-3);border:1px dashed var(--lbl-sample-bd);border-radius:var(--r-md);color:var(--c-muted);font-size:var(--fs-sm)}
+.sample-bar .label-chip--sample{padding:0;border:0;color:var(--c-text);font-weight:800}
+footer{display:flex;flex-wrap:wrap;align-items:center;gap:0 var(--s-4);margin-top:var(--s-8);padding-top:var(--s-3);border-top:1px solid var(--c-divider);font-size:var(--fs-sm)}
+.guides{display:flex;gap:0 var(--s-4);flex-wrap:wrap;margin:0}.guides a{min-height:var(--tap);display:inline-flex;align-items:center}
+footer form{margin-left:auto}
+footer form button{width:auto;min-height:var(--tap);margin:0;padding:0 var(--s-2);border-color:transparent;background:none;color:var(--c-primary);font-size:var(--fs-sm);font-weight:650}
+footer form button:hover{background:var(--c-surface-2)}
+a{color:var(--c-link);text-underline-offset:.15em}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--c-focus);outline-offset:2px}
+.badge{display:inline-block;font-size:var(--fs-xs);font-weight:650;padding:3px 9px;border-radius:999px;background:var(--c-surface-2);color:var(--c-text);border:1px solid var(--c-border)}
+.badge.amber{background:var(--c-att-bg);color:var(--c-att-dark);border-color:var(--c-att-bd)}
+
+/* --- Type, cards and blocks --- */
+h1{font-size:var(--fs-h1);font-weight:800;letter-spacing:-.025em;line-height:1.1;margin:var(--s-1) 0 var(--s-3)}
+h2{font-size:var(--fs-h2);font-weight:750;letter-spacing:-.01em;line-height:1.25;margin:var(--s-4) 0 var(--s-2)}
+h3{font-size:var(--fs-md);font-weight:750;margin:var(--s-4) 0 var(--s-2)}
+.card>h2:first-child,.card>h3:first-child{margin-top:0}
+.card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:var(--s-4);margin:var(--s-3) 0}
+.hero{padding:var(--s-5) var(--s-4)}
+.company{font-weight:700;color:var(--c-primary);margin:0}
+.next{font-size:var(--fs-xl);font-weight:750;letter-spacing:-.02em;line-height:1.25;margin:6px 0 8px;color:var(--c-text)}
+.lede{color:var(--c-muted);font-size:var(--fs-lg);margin:0 0 var(--s-2)}
+.muted{color:var(--c-muted);font-size:var(--fs-sm)}.small{font-size:var(--fs-sm)}
+button,.btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:12px 18px;border-radius:var(--r-md);border:1px solid var(--c-primary);background:var(--c-primary);color:var(--c-on-primary);font:inherit;font-weight:700;cursor:pointer;text-decoration:none;width:100%;margin:8px 0;transition:background var(--t-fast) var(--ease),transform var(--t-fast) var(--ease)}
+button:active,.btn:active{transform:translateY(1px)}
+button.secondary,.btn.secondary{background:var(--c-surface);color:var(--c-primary);border-color:var(--c-control-2)}
+button.danger{background:var(--c-surface);color:var(--c-danger);border-color:var(--c-danger)}
+button.text{width:auto;min-height:var(--tap);padding:8px 12px;border-color:transparent;background:none;color:var(--c-primary);font-size:var(--fs-md)}
+button.text.danger{color:var(--c-danger)}
+button.text:hover{background:var(--c-surface-2)}
+input,select,textarea{font:inherit;min-height:48px;padding:10px 12px;border:1px solid var(--c-control);border-radius:var(--r-md);width:100%;margin:4px 0 12px;background:var(--c-surface);color:var(--c-text)}
 textarea{min-height:88px}
 [hidden]{display:none!important}
 label{font-weight:650;display:block}
-details{border:1px solid #d9ded2;border-radius:12px;padding:10px 14px;margin:10px 0;background:#fff}
+details{border:1px solid var(--c-border);border-radius:var(--r-md);padding:10px 14px;margin:10px 0;background:var(--c-surface)}
 details>summary{padding:4px 0}
-h1{font-size:1.5rem;font-weight:750;letter-spacing:-.02em;line-height:1.2;margin:4px 0 8px}
-h2{font-size:1.05rem;font-weight:750;letter-spacing:-.01em;margin:16px 0 6px}h3{font-size:.98rem;font-weight:750;margin:18px 0 6px}
-.card>h2:first-child,.card>h3:first-child{margin-top:0}
-summary{cursor:pointer;font-weight:650;min-height:44px;display:flex;align-items:center}
-progress{width:100%;height:12px;accent-color:#1a4d2e}
-pre{white-space:pre-wrap;word-break:break-word;background:#eef1e7;border:1px solid #dde3d2;border-radius:10px;padding:12px;font-size:.8rem}
-code{word-break:break-all}
+summary{cursor:pointer;font-weight:650;min-height:var(--tap);display:flex;align-items:center;gap:var(--s-2);list-style:none}summary::-webkit-details-marker{display:none}
+summary::after{content:"";flex:none;width:8px;height:8px;margin:0 4px 0 auto;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform var(--t-fast) var(--ease)}
+details[open]>summary::after{transform:rotate(45deg)}
+progress{width:100%;height:12px;accent-color:var(--c-primary)}
+pre{white-space:pre-wrap;word-break:break-word;background:var(--c-surface-2);border:1px solid var(--c-divider);border-radius:var(--r-md);padding:12px;font-size:.8rem}
+code{word-break:normal;overflow-wrap:anywhere}
 pre.doc{max-height:55vh;overflow:auto;font-size:.9rem}
-dl.facts{margin:8px 0}dl.facts dt{font-size:.86rem;color:#4d5a48;margin-top:8px}dl.facts dd{margin:0;font-weight:650;overflow-wrap:anywhere}
-.endpoint{background:#eef1e7;border:1px solid #ccd6bc;border-radius:10px;padding:12px;margin:8px 0;font-size:.92rem}
+dl.facts{margin:8px 0}dl.facts dt{font-size:var(--fs-sm);color:var(--c-muted);margin-top:8px}dl.facts dd{margin:0;font-weight:650;overflow-wrap:anywhere}
+.endpoint{background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:var(--r-md);padding:12px;margin:8px 0;font-size:var(--fs-sm)}
 .endpoint code{font-weight:650}
-.quote{background:#f6f7f1;border:1px solid #dde3d2;border-radius:10px;padding:4px 12px;margin:8px 0}
-.notice{background:#fdf3d7;border:1px solid #e3c878;border-radius:12px;padding:12px 14px;margin:10px 0}
+.quote{background:var(--c-surface-2);border:1px solid var(--c-divider);border-radius:var(--r-md);padding:4px 12px;margin:8px 0}
+.notice{background:var(--c-att-bg);border:1px solid var(--c-att-bd);border-radius:var(--r-md);padding:12px 14px;margin:10px 0}
 .notice p{margin:4px 0}
-.note{background:#f6f7f1;border:1px solid #dde3d2;border-radius:10px;padding:10px 12px;margin:10px 0}.note p{margin:2px 0}
+.note{background:var(--c-surface-2);border:1px solid var(--c-divider);border-radius:var(--r-md);padding:10px 12px;margin:10px 0}.note p{margin:2px 0}
 .steps{margin:8px 0;padding-left:22px}.steps li{margin:6px 0}
-.tabs{display:flex;gap:4px;padding:4px;background:#eef1e7;border:1px solid #d9ded2;border-radius:12px;margin:10px 0}
-.tabs button{flex:1 1 0;width:auto;min-height:48px;margin:0;background:transparent;color:#33402f;border-color:transparent}
-.tabs button[aria-selected="true"]{background:#1a4d2e;color:#fff;border-color:#1a4d2e}
+.tabs{display:flex;gap:4px;padding:4px;background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:var(--r-md);margin:10px 0}
+.tabs button{flex:1 1 0;width:auto;min-height:48px;margin:0;background:transparent;color:var(--c-text);border-color:transparent}
+.tabs button[aria-selected="true"]{background:var(--c-primary);color:var(--c-on-primary);border-color:var(--c-primary)}
 .tabpanel{padding:2px 2px 6px}
-.row{padding:12px 0;border-bottom:1px solid #e7ebdd}.row:last-child{border-bottom:0}
+.row{padding:12px 0;border-bottom:1px solid var(--c-divider)}.row:last-child{border-bottom:0}
 .timeline .row{padding-left:14px;position:relative}
-.timeline .row::before{content:"";position:absolute;left:0;top:20px;width:7px;height:7px;border-radius:50%;background:#1a4d2e}
-.pill{display:inline-block;font-size:.76rem;font-weight:650;padding:2px 9px;border-radius:999px;background:#eef2e0;color:#33472a;margin:2px 4px 2px 0}
-.pill.owner{background:#fdf3d7;color:#6b4e00;border:1px solid #e3c878}
-footer{margin-top:24px}footer form button{width:auto;min-height:48px}
-.guides{display:flex;gap:8px 16px;flex-wrap:wrap;margin:8px 0}.guides a{min-height:44px;display:inline-flex;align-items:center}
+.timeline .row::before{content:"";position:absolute;left:0;top:20px;width:7px;height:7px;border-radius:50%;background:var(--c-primary)}
+.pill{display:inline-block;font-size:var(--fs-xs);font-weight:650;padding:2px 9px;border-radius:999px;background:var(--c-surface-2);color:var(--c-text);border:1px solid var(--c-divider);margin:2px 4px 2px 0}
+.pill.owner{background:var(--c-att-bg);color:var(--c-att-dark);border-color:var(--c-att-bd)}
 ul.tight{margin:6px 0;padding-left:20px}ul.tight li{margin:4px 0}
-.meta{border-top:1px solid #e7ebdd;margin-top:12px;padding-top:10px}
-@media (max-width:380px){.wrap{padding:12px 12px 32px}.hero{padding:18px 14px}.card{padding:15px 14px}.next{font-size:1.4rem}h1{font-size:1.35rem}}
-/* ===== AI-hüppelaud UI additions v1 (design-spec.md). Append to the CSS constant in src/views.ts. ===== */
-/* --- Tokens --- */
-:root{color-scheme:light;
---c-bg:#eceee6;--c-surface:#fff;--c-surface-2:#f6f7f1;--c-surface-3:#eef1e7;
---c-text:#1a241d;--c-muted:#4d5a48;--c-primary:#1a4d2e;--c-on-primary:#fff;--c-link:#155e33;
---c-border:#d9ded2;--c-divider:#e7ebdd;--c-control:#6f7d67;--c-control-2:#4f7a4a;--c-step-todo:#7d8a76;
---c-danger:#8f1d1d;--c-focus:#1f5fd6;--c-pulse:#b07d00;
---lbl-official-bg:#e1f0e3;--lbl-official-fg:#14502a;--lbl-official-bd:#a9d1b2;
---lbl-rule-bg:#fff;--lbl-rule-fg:#1a4d2e;--lbl-rule-bd:#1a4d2e;
---lbl-assistant-bg:#eceee9;--lbl-assistant-fg:#3d4640;--lbl-assistant-bd:#c9cec5;
---lbl-owner-bg:#1a4d2e;--lbl-owner-fg:#fff;--lbl-owner-bd:#1a4d2e;
---lbl-ai-bg:#efe9fb;--lbl-ai-fg:#4c2a85;--lbl-ai-bd:#c9b8ec;--lbl-ai-tint:#f8f5fd;
---lbl-sample-bg:#fdf3d7;--lbl-sample-fg:#6b4e00;--lbl-sample-bd:#b08a1e;
---st-drafted-bg:#eceee9;--st-drafted-fg:#3d4640;
---st-waiting-bg:#fdf3d7;--st-waiting-fg:#6b4e00;--st-waiting-bd:#e3c878;
---st-approved-bg:#1a4d2e;--st-approved-fg:#fff;
---st-sent-bg:#e3ecf9;--st-sent-fg:#1d4580;
---st-accepted-bg:#e1f0e3;--st-accepted-fg:#14502a;
---st-rejected-bg:#fbe5e3;--st-rejected-fg:#8f1d1d;
---st-paid-bg:#d9efe9;--st-paid-fg:#0f4f43;
---st-void-bg:#fbe5e3;--st-void-fg:#8f1d1d;
---fs-xs:.8125rem;--fs-sm:.875rem;--fs-md:1rem;--fs-lg:1.125rem;--fs-xl:1.5rem;--fs-2xl:2rem;
---s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:20px;--s-6:24px;--s-8:32px;
---r-sm:6px;--r-md:10px;--r-lg:12px;--r-xl:16px;--tap:44px}
-
-/* --- Replacements of existing rules (R1-R9) --- */
-a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--c-focus);outline-offset:2px}
-input,select,textarea{border-color:var(--c-control)}
-button.secondary,.btn.secondary{border-color:var(--c-control-2)}
+.meta{border-top:1px solid var(--c-divider);margin-top:12px;padding-top:10px}
+@media (max-width:380px){.wrap{padding:var(--s-2) var(--s-3) var(--s-8)}.hero{padding:var(--s-4) 14px}.card{padding:14px}.next{font-size:1.4rem}}
 input[type=checkbox],input[type=radio]{width:22px;height:22px;min-height:0;margin:0;padding:0;flex:none;accent-color:var(--c-primary)}
 label.check{display:flex;align-items:flex-start;gap:var(--s-3);min-height:var(--tap);padding:10px 0;font-weight:600;cursor:pointer}
 label.check input{margin-top:1px}
 .row button,.row .btn{width:auto;min-height:var(--tap);padding:8px 14px;margin:8px 0 0}
-code{word-break:normal;overflow-wrap:anywhere}
-.row,.card,dd{overflow-wrap:anywhere}
-header.top{min-height:var(--tap)}.brand{white-space:nowrap}
-.hero h1{font-size:var(--fs-xl)}h2{font-size:var(--fs-lg)}
-summary{list-style:none;gap:var(--s-2)}summary::-webkit-details-marker{display:none}
-summary::after{content:"";flex:none;width:8px;height:8px;margin:0 4px 0 auto;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg)}
-details[open]>summary::after{transform:rotate(45deg)}
+.row,.card,.section,.hero,dd{overflow-wrap:anywhere}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* --- Utilities --- */
@@ -137,7 +152,7 @@ h1,h2,h3,.link-row-title,.receipt-head{overflow-wrap:anywhere}
 .label-chip--assistant{background:var(--lbl-assistant-bg);color:var(--lbl-assistant-fg);border-color:var(--lbl-assistant-bd)}
 .label-chip--owner{background:var(--lbl-owner-bg);color:var(--lbl-owner-fg);border-color:var(--lbl-owner-bd)}
 .label-chip--ai{background:var(--lbl-ai-bg);color:var(--lbl-ai-fg);border-color:var(--lbl-ai-bd)}
-.label-chip--where{background:var(--c-surface);color:var(--c-text);border-color:var(--c-border)}
+.label-chip--where{background:var(--lbl-where-bg);color:var(--lbl-where-fg);border-color:var(--lbl-where-bd)}
 .label-chip--sample{background:var(--lbl-sample-bg);color:var(--lbl-sample-fg);border:1px dashed var(--lbl-sample-bd);text-transform:uppercase;letter-spacing:.05em}
 .state-chip{border-radius:999px;padding:2px 10px 2px 8px}
 .state-chip::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:currentColor}
@@ -183,9 +198,9 @@ h1,h2,h3,.link-row-title,.receipt-head{overflow-wrap:anywhere}
 
 /* --- .state-line (action stepper) --- */
 .state-line{list-style:none;margin:var(--s-4) 0;padding:0}
-.state-step{position:relative;display:flex;align-items:flex-start;gap:var(--s-3);padding-bottom:var(--s-4)}
+.state-step{position:relative;display:flex;align-items:flex-start;gap:var(--s-3);padding-bottom:var(--s-3)}
 .state-step:last-child{padding-bottom:0}
-.state-step:not(:last-child)::after{content:"";position:absolute;left:11px;top:26px;bottom:2px;width:2px;background:var(--c-border)}
+.state-step:not(:last-child)::after{content:"";position:absolute;left:11px;top:26px;bottom:0;width:2px;background:var(--c-divider)}
 .state-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:2px solid var(--c-step-todo);border-radius:50%;background:var(--c-surface);font-size:.75rem;font-weight:800;line-height:1}
 .state-step--done .state-mark{background:var(--c-primary);border-color:var(--c-primary);color:var(--c-on-primary)}
 .state-step--demo .state-mark{border-style:dashed;border-color:var(--lbl-sample-fg);color:var(--lbl-sample-fg)}
@@ -194,9 +209,65 @@ h1,h2,h3,.link-row-title,.receipt-head{overflow-wrap:anywhere}
 .state-step--todo .state-text{font-weight:500;color:var(--c-muted)}
 .state-note{display:block;font-size:var(--fs-sm);font-weight:400;color:var(--c-muted)}
 
+/* --- .ticket (approval card): state strip, kind, title, amount, facts, letter, decision pinned to the thumb --- */
+article.card.ticket{margin:0 0 var(--s-6);padding:0;border-radius:var(--r-xl);box-shadow:0 1px 2px rgba(20,32,26,.04),0 16px 40px -28px rgba(20,32,26,.35);overflow:clip}
+.strip{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2) var(--s-3);padding:var(--s-3) var(--s-4);border-bottom:1px solid var(--c-divider);background:var(--c-surface-2);font-size:var(--fs-sm);font-weight:700}
+.strip--wait{background:var(--c-att-bg);color:var(--c-att-dark);border-color:var(--c-att-bd)}
+.strip--ok{background:var(--c-primary);color:var(--c-on-primary);border-color:var(--c-primary)}
+.strip--ok .label-chip--owner{background:#fff;color:var(--c-primary);border-color:#fff}
+.strip .dot{flex:none;width:9px;height:9px;border-radius:50%;background:currentColor}
+.strip .labels{margin:0}
+.ticket .strip h1{margin:0;font-size:inherit;font-weight:750;line-height:1.3;color:inherit}
+.stamp{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#fff;color:var(--c-primary)}
+.stamp svg{width:16px;height:16px}
+.stamp path{stroke-dasharray:24;stroke-dashoffset:0;animation:lp-draw .3s var(--ease) both}
+@keyframes lp-draw{from{stroke-dashoffset:24}to{stroke-dashoffset:0}}
+.ticket-body{padding:var(--s-4) var(--s-4) 0}
+.ticket-foot{padding:var(--s-2) var(--s-4) var(--s-4)}
+@media (min-width:600px){.ticket-body{padding:var(--s-6) var(--s-6) 0}.ticket-foot{padding:var(--s-2) var(--s-6) var(--s-6)}}
+.kind{margin:0;color:var(--c-muted);font-size:var(--fs-xs);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.kind small{font-size:var(--fs-sm);font-weight:500;letter-spacing:0;text-transform:none}
+.ticket h1{margin:var(--s-1) 0 var(--s-3)}
+.why{margin:0 0 var(--s-4)}
+.amount{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s-2) var(--s-4);margin:var(--s-2) 0 var(--s-4);padding:var(--s-3) 0;border-top:1px solid var(--c-divider);border-bottom:1px solid var(--c-divider)}
+.amount b{font-size:var(--fs-amount);font-weight:800;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.amount span{color:var(--c-muted);font-size:var(--fs-sm)}
+.ticket .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:var(--s-3) var(--s-6);margin:0 0 var(--s-4)}
+.ticket .fact-row{display:block;padding:0;border:0;min-width:0}
+.ticket .fact-row dt{font-size:var(--fs-xs);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.ticket .fact-row dd{margin-top:2px;line-height:1.3}
+.ticket pre.letter{margin:0 0 var(--s-4);padding:var(--s-3) var(--s-4);border:0;border-left:3px solid var(--c-border);border-radius:0 var(--r-md) var(--r-md) 0;line-height:1.5}
+.hand{margin:0 0 var(--s-4);color:var(--c-muted);font-size:var(--fs-sm)}
+.hand b{color:var(--c-att);font-weight:700}
+.decide{position:static;z-index:2;display:flex;flex-wrap:nowrap;align-items:center;gap:var(--s-2) var(--s-3);margin:0 calc(-1 * var(--s-4));padding:var(--s-3) var(--s-4) max(12px,env(safe-area-inset-bottom));border-top:1px solid var(--c-divider);background:rgba(255,255,255,.94);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.decide button{flex:1 1 auto;min-width:0;min-height:56px;margin:0;font-size:var(--fs-lg)}
+.decide button.text{flex:0 0 auto;min-height:var(--tap);font-size:var(--fs-md);white-space:nowrap}
+@media (min-width:600px){.decide{margin:0 calc(-1 * var(--s-6));padding-left:var(--s-6);padding-right:var(--s-6)}}
+@media (max-width:879px){.decide{position:sticky;bottom:0}html:has(.decide){scroll-padding-bottom:88px}}
+@media (max-width:479px){.decide button{padding-left:12px;padding-right:12px;font-size:var(--fs-md)}}
+@media (max-width:339px){.decide{flex-wrap:wrap}}
+.fine{margin:var(--s-3) 0 0;color:var(--c-muted);font-size:var(--fs-sm)}
+.turn{margin:var(--s-1) 0 var(--s-4)}
+.turn strong{display:block;margin-bottom:var(--s-2);font-size:var(--fs-h1);font-weight:800;line-height:1.1;letter-spacing:-.025em}
+.callout{margin:0 0 var(--s-4);padding:var(--s-3) var(--s-4);border:1px solid var(--c-att-bd);border-radius:var(--r-md);background:var(--c-att-bg)}
+.callout p{margin:var(--s-1) 0}
+.callout code{padding:0 4px;border:1px solid var(--c-att-bd);border-radius:4px;background:#fff;font:inherit;font-weight:800}
+.standing-offer{margin:0 0 var(--s-4);padding:var(--s-4);border:2px solid var(--c-primary);border-radius:var(--r-lg);background:var(--c-surface)}
+.standing-offer h2{margin:0 0 var(--s-2)}
+.standing-offer .limits{margin:0 0 var(--s-2)}
+.standing-offer details{margin:var(--s-1) 0 0;padding:0;border:0;background:none}
+.standing-offer summary{color:var(--c-primary)}
+.standing-offer summary::after{margin-left:2px}
+/* QA M1: with „Muuda piire” open, the field is the cap and its own button submits; the sentence's cap and the outer button step aside. */
+:is(.standing-offer,.ho-next):has(details[open]) .cap-now,:is(.standing-offer,.ho-next) form:has(>details[open])>button{display:none}
+:is(.standing-offer,.ho-next) details>button{margin-top:var(--s-3)}
+
 /* --- .status-chip (connect, aria-live) --- */
 .status-chip{display:flex;align-items:center;gap:var(--s-3);min-height:52px;margin:var(--s-3) 0;padding:var(--s-3) var(--s-4);border:1px solid var(--st-waiting-bd);border-radius:14px;background:var(--st-waiting-bg);color:var(--st-waiting-fg);font-weight:700}
 .status-dot{flex:none;width:12px;height:12px;border-radius:50%;background:var(--c-pulse);animation:lp-pulse 1.6s ease-in-out infinite}
+/* Sample workspace: nothing to wait for, so no attention amber and no pulse (QA M2). */
+.status-chip[data-state="sample"]{border-color:var(--c-divider);background:var(--c-surface-2);color:var(--c-text);font-weight:600}
+.status-chip[data-state="sample"] .status-dot{background:var(--c-muted);animation:none}
 .status-chip[data-state="connected"]{border-color:var(--st-approved-bg);background:var(--st-approved-bg);color:var(--st-approved-fg)}
 .status-chip[data-state="connected"] .status-dot{width:7px;height:13px;margin:0 3px 3px;border:solid currentColor;border-width:0 3px 3px 0;border-radius:0;background:none;transform:rotate(45deg);animation:none}
 @keyframes lp-pulse{50%{opacity:.3}}
@@ -234,21 +305,48 @@ details.tech-details{margin:var(--s-2) 0 0;padding:0;border:0;background:none}
 .ai-block>.labels:first-child{margin-top:0}
 .receipt-head{margin:2px 0 4px;font-size:var(--fs-xl);font-weight:800;line-height:1.2;color:var(--c-primary)}
 /* ===== Proposed v2 additions (ux-revisit.md). Two components only. ===== */
-/* .today-sum: the three counts on the Täna hero, each a ≥44px anchor */
-.today-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:var(--s-3) 0 var(--s-2)}
-.today-sum a{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;min-height:64px;padding:8px 10px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface-2);color:var(--c-text);text-decoration:none;line-height:1.2}
-.today-sum b{font-size:var(--fs-xl);font-weight:800;font-variant-numeric:tabular-nums}
-.today-sum span{font-size:var(--fs-sm);font-weight:650;color:var(--c-muted)}
-.today-sum a.needs{border-color:var(--st-waiting-bd);background:var(--st-waiting-bg)}
-.today-sum a.needs b,.today-sum a.needs span{color:var(--st-waiting-fg)}
+/* .today-sum: the three counts on the Täna hero as pills, each a ≥44px anchor; amber only when something needs the owner */
+.today-sum{display:flex;flex-wrap:wrap;gap:6px;margin:var(--s-4) 0 var(--s-2)}
+.today-sum a{display:inline-flex;align-items:center;gap:5px;min-height:var(--tap);padding:4px 12px 4px 10px;border:1px solid var(--c-border);border-radius:999px;background:var(--c-surface);color:var(--c-text);font-size:var(--fs-sm);font-weight:650;line-height:1.2;text-decoration:none;transition:background var(--t-fast) var(--ease)}
+.today-sum a:hover{background:var(--c-surface-2)}
+.today-sum b{font-size:var(--fs-md);font-weight:800;font-variant-numeric:tabular-nums}
+.today-sum a.needs{border-color:var(--st-waiting-bd);background:var(--st-waiting-bg);color:var(--st-waiting-fg)}
 /* .handoff: who does what for one job (deadline row, unmet need, receipt) */
 .handoff{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 10px;margin:var(--s-2) 0 var(--s-1);padding:10px 12px;border:1px solid var(--c-divider);border-radius:var(--r-md);background:var(--c-surface-2);font-size:.9375rem;line-height:1.4}
 .handoff dt{font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}
 .handoff dd{margin:0}
 .handoff dt.me{color:var(--st-waiting-fg)}
-.deadline-row>.handoff,.deadline-row>.deadline-offer{grid-column:1/-1;margin-top:0}
 .ask-row{padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider)}
 .ask-row:last-child{border-bottom:0}
+/* --- T3 Täna: one page, sections not cards, one elevated object (.ask) --- */
+@media (min-width:960px){.wrap:has(.tana-grid){max-width:1040px}}
+.hero:not(.card){padding:var(--s-2) 0 var(--s-4)}
+.hero:not(.card) h1{margin:var(--s-1) 0 var(--s-2)}
+@media (min-width:600px){.hero:not(.card) .btn{width:auto;padding:12px 32px}}
+.section{padding:var(--s-6) 0;border-top:1px solid var(--c-divider)}
+.section>h2:first-child{margin-top:0}
+.tana-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:0 var(--s-12)}
+/* T4: the three sections enter in turn (from direction C); the global reduced-motion rule turns it off and leaves the final state. */
+#ootab,#tegi,#tulekul{animation:lp-enter var(--t-med) var(--ease) both}#tegi{animation-delay:60ms}#tulekul{animation-delay:120ms}
+@keyframes lp-enter{from{opacity:0;transform:translateY(8px)}}
+.tana-grid>.col:first-child>.section:first-child{padding-top:var(--s-2);border-top:0}
+@media (min-width:960px){.tana-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.tana-grid>.col>.section:first-child{padding-top:var(--s-2);border-top:0}}
+.ask{position:relative;display:flex;align-items:center;gap:var(--s-3);min-height:var(--tap);margin:0 0 var(--s-3);padding:var(--s-4) var(--s-4) var(--s-4) var(--s-6);border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface);color:inherit;text-decoration:none;box-shadow:0 1px 2px rgba(20,32,26,.04),0 8px 24px -16px rgba(20,32,26,.25);transition:box-shadow var(--t-fast) var(--ease),transform var(--t-fast) var(--ease)}
+.ask::before{content:"";position:absolute;left:0;top:var(--s-3);bottom:var(--s-3);width:4px;border-radius:0 4px 4px 0;background:var(--c-att-bd)}
+.ask--note::before{background:var(--c-border)}
+a.ask:hover{box-shadow:0 1px 2px rgba(20,32,26,.06),0 12px 28px -14px rgba(20,32,26,.35);transform:translateY(-1px)}
+.ask-body{display:block;flex:1 1 auto;min-width:0}
+.ask .labels{margin:0 0 var(--s-1)}
+.ask-title{display:block;font-size:var(--fs-lg);font-weight:750;line-height:1.3;color:var(--c-text)}
+.ask-meta,.ask p{display:block;margin:2px 0 0;color:var(--c-muted);font-size:var(--fs-sm)}
+.ask .chev{flex:none;width:10px;height:10px;border-top:2px solid var(--c-muted);border-right:2px solid var(--c-muted);transform:rotate(45deg)}
+details.plain,.deadline-row details{margin:var(--s-1) 0 0;padding:0;border:0;border-radius:0;background:none}
+details.plain>summary,.deadline-row details>summary{padding:0;font-size:var(--fs-sm)}
+details.plain>summary{color:var(--c-muted)}
+.deadline-row details>summary{color:var(--c-primary)}
+details.plain>summary::after,.deadline-row details>summary::after{margin:0 4px 0 2px}
+details.plain>summary>h2{margin:0;font:inherit;color:inherit}
+.tana-grid~details.plain{margin-top:var(--s-4)}
 /* ===== Issue #21 implementation additions ===== */
 pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(--c-surface-2);border-color:var(--c-divider);font:inherit;font-size:var(--fs-md);white-space:pre-wrap;overflow-wrap:anywhere}
 .big-url{margin:var(--s-2) 0;font-size:var(--fs-lg);font-weight:750;overflow-wrap:anywhere}
@@ -268,12 +366,13 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .legend{list-style:none;margin:var(--s-2) 0 0;padding:0;font-size:var(--fs-sm)}.legend li{margin:4px 0}.ico{vertical-align:-3px;flex:none}
 /* ===== Landing with the chat teaser (owner request 2026-10-30) ===== */
 .wrap:has(.landing){max-width:1040px}
-.landing-hero{display:grid;gap:var(--s-8);align-items:center;margin:var(--s-5) 0 var(--s-8)}
-.landing-hero h1{margin:0 0 var(--s-4);font-size:clamp(1.85rem,7vw,3rem);font-weight:800;line-height:1.1;letter-spacing:-.035em;color:#12291a}
+.landing-hero{display:grid;grid-template-areas:"text" "phone" "jobs";gap:var(--s-8);align-items:start;margin:var(--s-5) 0 var(--s-8)}
+.landing-hero>div{grid-area:text}.landing-hero>.teaser{grid-area:phone}.landing-hero>.hero-jobs{grid-area:jobs}
+.landing-hero h1{margin:0 0 var(--s-4);font-size:var(--fs-display);font-weight:800;line-height:1.05;letter-spacing:-.03em;color:#12291a}
 .landing-hero h1 span{color:var(--c-primary);background:linear-gradient(transparent 68%,#cfe3c6 68%,#cfe3c6 92%,transparent 92%)}
 .landing-hero .lede{max-width:34rem;margin:0 0 var(--s-5);font-size:var(--fs-lg);line-height:1.5}
 .landing-hero .btn{width:100%;font-size:var(--fs-lg)}
-@media (min-width:880px){.landing-hero{grid-template-columns:minmax(0,1fr) 360px;gap:56px;margin-top:var(--s-8)}.landing-hero .btn{width:auto;padding:12px 32px}}
+@media (min-width:880px){.landing-hero{grid-template-areas:"text phone" "jobs phone";grid-template-columns:minmax(0,1fr) 360px;grid-template-rows:auto 1fr;gap:var(--s-6) 56px;margin-top:var(--s-6)}.landing-hero .btn{width:auto;padding:12px 32px}}
 .teaser{position:relative;width:100%;max-width:360px;margin:0 auto}
 .teaser::before{content:"";position:absolute;inset:8% 0 4%;z-index:-1;border-radius:50%;background:radial-gradient(closest-side,#c9dcbf,transparent);opacity:.9}
 .teaser figcaption{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:var(--s-2);margin-top:var(--s-3)}
@@ -284,7 +383,7 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 #teaser-pause:checked~.phone *{animation-play-state:paused!important}
 @media (prefers-reduced-motion:reduce){.teaser-pause,.vh-input{display:none}}
 .phone{height:640px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
-@media (max-width:380px){.phone{height:700px}}
+@media (max-width:380px){.phone{height:700px}}@media (min-width:880px){.phone{height:600px}}
 .phone-screen{display:flex;flex-direction:column;height:100%;overflow:hidden;border-radius:36px;background:var(--c-surface-2)}
 .phone-bar{display:flex;align-items:center;gap:10px;padding:22px 16px 10px;background:#fff;border-bottom:1px solid var(--c-divider)}
 .phone-ava{flex:none;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1a4d2e,#6f9c63)}
@@ -321,17 +420,100 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 ${TEASER_CSS}
 .landing h2{margin:0 0 var(--s-4);font-size:var(--fs-xl);letter-spacing:-.02em}
 .how,.jobs{display:grid;gap:var(--s-3);margin:0;padding:0;list-style:none;counter-reset:how}
-.jobs{margin-bottom:var(--s-8)}
-.how li,.jobs li{counter-increment:how;display:flex;align-items:flex-start;gap:var(--s-4);padding:var(--s-4);border:1px solid var(--c-border);border-radius:var(--r-xl);background:#fff;font-size:var(--fs-lg);font-weight:650;line-height:1.35}
-.jobs li{font-size:var(--fs-md);font-weight:500}.jobs strong{display:block;font-size:var(--fs-lg);font-weight:750}
+.how li{counter-increment:how;display:flex;align-items:flex-start;gap:var(--s-4);padding:var(--s-4);border:1px solid var(--c-border);border-radius:var(--r-xl);background:#fff;font-size:var(--fs-lg);font-weight:650;line-height:1.35}
+.jobs{gap:0 var(--s-6)}
+.jobs li{display:flex;align-items:flex-start;gap:var(--s-3);padding:var(--s-3) 0;border-top:1px solid var(--c-divider);color:var(--c-muted);font-size:var(--fs-sm);line-height:1.45}
+.jobs strong{display:block;color:var(--c-text);font-size:var(--fs-md);font-weight:750}
+.jobs .how-ico{width:40px;height:40px;border-radius:12px}.jobs .how-ico svg{width:22px;height:22px}
 .how-ico{position:relative;flex:none;display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:14px;background:var(--c-surface-3);color:var(--c-primary)}
 .how-ico svg{width:26px;height:26px}
 .how .how-ico::after{content:counter(how);position:absolute;top:-6px;right:-6px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--c-primary);color:#fff;font-size:.75rem;font-weight:800}
-.trust{display:grid;gap:var(--s-2);margin:var(--s-6) 0;padding:var(--s-4);list-style:none;border-radius:var(--r-xl);background:var(--c-primary);color:#fff}
+.trust{display:grid;gap:var(--s-2);margin:var(--s-6) 0;padding:var(--s-4);list-style:none;border-radius:var(--r-xl);background:var(--c-deep);color:#fff}
 .trust li{display:flex;align-items:center;gap:var(--s-3);min-height:var(--tap);font-weight:700}
-.trust li::before{content:"";flex:none;width:9px;height:16px;margin:0 9px 4px 7px;border:solid #b9dbad;border-width:0 3px 3px 0;transform:rotate(45deg)}
+.trust li::before{content:"";flex:none;width:9px;height:16px;margin:0 9px 4px 7px;border:solid var(--c-mint);border-width:0 3px 3px 0;transform:rotate(45deg)}
 @media (min-width:760px){.how,.trust{grid-template-columns:repeat(3,minmax(0,1fr))}.jobs{grid-template-columns:repeat(2,minmax(0,1fr))}.how li{flex-direction:column}.trust{padding:var(--s-4) var(--s-6)}}
-.landing-foot{margin:0}`;
+.landing-foot{margin:0}
+/* --- T5 (#61) „Käest ära”: the handover bar (docs/design/progress). One segment = one job; prefix ho-. --- */
+:root{--ho-prep:#3F8A5E}
+/* Compact strip: lives in the Täna hero under the three pills. One tappable line + bar. */
+.ho-strip{display:block;margin:var(--s-3) 0 0;padding:var(--s-2) 0 var(--s-3);border-top:1px solid var(--c-divider);color:inherit;text-decoration:none}
+.ho-strip:hover .ho-line b{text-decoration:underline;text-underline-offset:.15em}
+.ho-line{display:flex;align-items:baseline;gap:2px var(--s-3);flex-wrap:wrap;margin:0 0 var(--s-2);font-size:var(--fs-md);line-height:1.35}
+.ho-line b{font-weight:750;color:var(--c-primary)}
+.ho-line .num{font-weight:800}
+.ho-line span{color:var(--c-muted);font-size:var(--fs-sm)}
+.ho-line .go{color:var(--c-primary);font-weight:650;font-size:var(--fs-sm)}
+/* Phones: the whole strip is the link; the „Vaata →” word goes so the first ask card stays in the first viewport. */
+@media (max-width:599px){.ho-line .go{display:none}}
+@media (min-width:600px){.ho-line .go{margin-left:auto}}
+.ho-bar{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;height:14px;margin:0;padding:0;list-style:none}
+.ho-seg{position:relative;border-radius:5px;border:2px solid var(--c-muted);background:#fff}
+.ho-seg--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
+.ho-seg--done{border-color:var(--c-primary);background:var(--c-primary)}
+.ho-seg--other{border-style:dashed;border-color:var(--c-muted);background:repeating-linear-gradient(135deg,transparent 0 4px,var(--c-divider) 4px 8px)}
+.ho-seg--wait::after{content:"";position:absolute;right:-3px;top:-6px;width:10px;height:10px;border-radius:50%;background:var(--c-att);border:2px solid #fff}
+.ho-bar--lg{height:20px;gap:6px}
+.ho-bar--lg .ho-seg{border-radius:6px}
+
+/* Full section (Ühendus → Käest ära). */
+.ho h2{margin-bottom:var(--s-1)}
+.ho .ho-sum{margin:0 0 var(--s-3);font-size:var(--fs-h2);font-weight:750;line-height:1.3;letter-spacing:-.01em}
+.ho .ho-sum .num{font-size:var(--fs-h1);font-weight:800;line-height:1;letter-spacing:-.025em;color:var(--c-primary);font-variant-numeric:tabular-nums}
+.ho .ho-sum small{display:block;margin-top:var(--s-1);font-size:var(--fs-md);font-weight:400;color:var(--c-muted)}
+.ho-month{margin:var(--s-3) 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
+.ho-month b{color:var(--c-text);font-weight:750;font-variant-numeric:tabular-nums}
+.ho-legend{display:flex;flex-wrap:wrap;gap:var(--s-2) var(--s-4);margin:var(--s-3) 0 0;padding:0;list-style:none;font-size:var(--fs-xs);color:var(--c-muted)}
+.ho-legend li{display:inline-flex;align-items:center;gap:6px}
+.ho-legend i{width:14px;height:10px;border-radius:3px;border:2px solid var(--c-muted);background:#fff}
+.ho-legend i.ho-seg--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
+.ho-legend i.ho-seg--done{border-color:var(--c-primary);background:var(--c-primary)}
+.ho-legend i.ho-seg--other{border-style:dashed}
+
+.ho-jobs{list-style:none;margin:var(--s-4) 0 0;padding:0;border-top:1px solid var(--c-divider)}
+.ho-job{display:grid;grid-template-columns:28px minmax(0,1fr);gap:var(--s-2) var(--s-3);padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider);color:inherit;text-decoration:none}
+.ho-job:hover .ho-title{text-decoration:underline;text-underline-offset:.15em}
+.ho-mark{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-top:2px;border:2px solid var(--c-muted);border-radius:50%;background:#fff;color:#fff;font-style:normal;font-weight:800;font-size:.8rem;line-height:1}
+.ho-mark--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
+.ho-mark--done{border-color:var(--c-primary);background:var(--c-primary)}
+.ho-mark--other{border-style:dashed;color:var(--c-muted)}
+.ho-mark svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.ho-title{display:block;font-size:var(--fs-lg);font-weight:750;line-height:1.3}
+.ho-rung{margin:2px 0 0;font-size:var(--fs-md);font-weight:600}
+.ho-rung--done{color:var(--c-primary)}
+.ho-rung--prep{color:#2F6E49}
+.ho-rung--mine{color:var(--c-muted)}
+.ho-ev{margin:2px 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
+.ho-ev .num{font-variant-numeric:tabular-nums}
+.ho-ev .label-chip{vertical-align:1px;margin-left:4px}
+.ho-job .ho-ev .state-chip{margin-top:4px}
+
+/* The one next step: the only elevated object in the section; reuses .ask. */
+.ho-next{margin:var(--s-6) 0 0}
+.ho-next h3{margin:0 0 var(--s-3);font-size:var(--fs-h2);font-weight:750;letter-spacing:-.01em}
+.ho-next .ask{display:block;padding:var(--s-4) var(--s-4) var(--s-4) var(--s-6)}
+.ho-next .ask::before{background:var(--c-primary)}
+.ho-next .ask .ask-title{margin:0 0 var(--s-1)}
+.ho-next h3,.ho-next .ask-title{overflow-wrap:break-word}
+.ho-next .ask p{margin:0 0 var(--s-2)}
+.ho-next .ask .btn{margin-top:var(--s-3)}
+.ho-next .ask .limits{font-size:var(--fs-md)}
+.ho-next .ask .limits b{font-weight:750}
+.ho-next .quote{margin:var(--s-2) 0 0;padding:var(--s-3) var(--s-4);border-left:3px solid var(--c-border);border-radius:0 var(--r-md) var(--r-md) 0;background:var(--c-surface-2);font-size:var(--fs-md)}
+.ho-next .quote span{display:block;color:var(--c-muted);font-size:var(--fs-sm);margin-bottom:2px}
+.ho-next .ask .tap-link{margin-top:var(--s-1)}
+.ho-note{margin:var(--s-4) 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
+.ho-finding{display:flex;gap:var(--s-2);align-items:flex-start;margin:var(--s-4) 0 0;padding:var(--s-3) var(--s-4);border:1px solid var(--c-att-bd);border-radius:var(--r-md);background:var(--c-att-bg);color:var(--c-att-dark);font-size:var(--fs-sm)}
+.ho-finding b{font-weight:750}
+.ho-finding a{color:inherit;font-weight:650}
+.ho-finding .tap-link{display:inline-flex;min-height:var(--tap);align-items:center;margin:-10px 0}
+
+@media (min-width:960px){
+  /* Two equal columns, 32 px apart; the next-step title steps down to --fs-md so a long Estonian compound such as
+     „raamatupidamisprogramm” fits on one line, and the job titles keep their width (QA M3). */
+  .ho-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--s-8);align-items:start}
+  .ho-next .ask .ask-title{font-size:var(--fs-md)}
+  .ho-grid>.ho-next{margin-top:0;position:sticky;top:var(--s-4)}
+}`;
 
 // --- Locale (issue #21): Estonian first, English on request. No framework. ---
 export type Lang = "et" | "en";
@@ -410,15 +592,18 @@ export function shell(o: ShellOpts): string {
   const l = o.lang ?? "et", t = tr(l), other: Lang = l === "et" ? "en" : "et", owner = o.csrf !== "";
   const nav = [["/", t("Täna", "Today"), "tana"], ["/activity", t("Tehtud", "Done"), "tehtud"], ["/uhenda", t("Ühendus", "Connection"), "uhendus"]] as const;
   const toggle = `<a class="lang-toggle" href="${esc(o.toggle ?? `?lang=${other}`)}" hreflang="${other}" lang="${other}">${other.toUpperCase()}<span class="vh"> · ${other === "en" ? "in English" : "eesti keeles"}</span></a>`;
+  // The bare consent page keeps the brand as text: nothing invites leaving the flow.
+  const brand = `<span class="mark" aria-hidden="true"></span>${t("AI-hüppelaud", "AI Launchpad")}`;
   const main = o.bodyLang && o.bodyLang !== l ? `<div lang="${o.bodyLang}">${o.body}</div>` : o.body;
   const footer = o.bare ? ""
     : owner
-    ? `<footer><details><summary>${t("Abi ja lisad", "Help and resources")}</summary><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/approvals">${t("Kinnitused", "Approvals")}</a><a href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/playbooks">Playbooks</a><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/setup">${t("Abi alustamiseks", "Setup helper")}</a></nav></details>
-<form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(o.csrf)}"><button type="submit" class="secondary">${t("Logi välja", "Log out")}</button></form></footer>`
+    ? `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/approvals">${t("Kinnitused", "Approvals")}</a><a href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/playbooks">Playbooks</a><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/setup">${t("Abi alustamiseks", "Setup helper")}</a></nav>
+<form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(o.csrf)}"><button type="submit">${t("Logi välja", "Log out")}</button></form></footer>`
     : `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/login">${t("Logi sisse", "Sign in")}</a></nav></footer>`;
   return `<!doctype html><html lang="${l}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${o.head ?? ""}<title>${esc(o.title)} · ${t("AI-hüppelaud", "AI Launchpad")}</title><style>${CSS}</style></head><body><div class="wrap">
-<header class="top"><span class="mark" aria-hidden="true"></span><span class="brand">${t("AI-hüppelaud", "AI Launchpad")}</span>${o.sample ? sampleChip(l) : ""}${toggle}</header>
+<header class="top">${o.bare ? `<span class="brand">${brand}</span>` : `<a class="brand" href="/">${brand}</a>`}${toggle}</header>
 ${owner && !o.bare ? `<nav class="main" aria-label="${t("Peamenüü", "Main")}">${nav.map(([href, label, key]) => `<a href="${href}"${o.active === key ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>` : ""}
+${o.sample ? `<p class="sample-bar">${sampleChip(l)}<span>${t("päriselt midagi ei saadeta", "nothing is really sent")}</span></p>` : ""}
 <main>${main}</main>
 ${footer}
 </div></body></html>`;
@@ -643,18 +828,29 @@ function stateLine(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, 
 }
 
 const NO_ADDRESS = (l: Lang) => tr(l)("Aadress puudub — seda kinnitust ei saa kasutada", "Address missing — this approval cannot be used");
-function approvalFacts(v: ReturnType<typeof approvalView>, l: Lang): string {
+/** Recipient, amount and period. On the pending ticket the amount and period are the hero figure instead (`heroAmount`). */
+function approvalFacts(v: ReturnType<typeof approvalView>, l: Lang, heroAmount = false): string {
   const t = tr(l);
   const row = (k: string, val: string | null | undefined, sub?: string | null, cls = "") => val ? `<div class="fact-row${cls}"><dt>${esc(k)}</dt><dd>${esc(val)}${sub ? `<span class="fact-sub">${esc(sub)}</span>` : ""}</dd></div>` : "";
-  return `<dl class="facts">${row(t("Saaja", "To"), v.recipient.name, v.noAddress ? NO_ADDRESS(l) : v.recipient.address)}${row(t("Summa", "Amount"), v.amount, null, " fact-row--amount")}${row(t("Periood", "Period"), v.p.period ? fmtPeriod(v.p.period, l) : null)}</dl>`;
+  return `<dl class="facts">${row(t("Saaja", "To"), v.recipient.name, v.noAddress ? NO_ADDRESS(l) : v.recipient.address)}${heroAmount ? "" : `${row(t("Summa", "Amount"), v.amount, null, " fact-row--amount")}${row(t("Periood", "Period"), v.p.period ? fmtPeriod(v.p.period, l) : null)}`}</dl>`;
+}
+const amountHero = (v: ReturnType<typeof approvalView>, l: Lang) => v.amount ? `<div class="amount"><b>${esc(v.amount)}</b>${v.p.period ? `<span>${esc(fmtPeriod(v.p.period, l))}</span>` : ""}</div>` : "";
+
+/** Who does what for this approval, as one sentence; the owner's part in bold. */
+function handLine(kindKey: string, l: Lang): string {
+  const t = tr(l), me = `<b>${t("Sina", "You")}</b>`, ai = t("Assistent", "Your assistant");
+  if (kindKey === "prepare_payment") return `<p class="hand">${ai} ${t("valmistab makse ette", "prepares the payment")}; ${me} ${t("maksad oma pangas", "pay in your bank")}.</p>`;
+  if (kindKey === "prepare_filing") return `<p class="hand">${ai} ${t("valmistab ette", "prepares it")}; ${me} ${t("esitad e-MTA-s", "file it in e-MTA")}.</p>`;
+  return `<p class="hand">${me} ${t("kontrollid ja kinnitad, ainult see", "check and approve, nothing else")}. ${ai} ${t("saadab selle oma tööriistadega ja annab siia tulemuse teada", "sends it with its own tools and reports the result here")}.</p>`;
 }
 
-function handoffBox(kindKey: string, l: Lang): string {
-  const t = tr(l), me = t("Sina", "You"), ai = t("Assistent", "Your assistant");
-  if (kindKey === "prepare_payment") return `<dl class="handoff"><dt>${ai}</dt><dd>${t("valmistab makse ette", "prepares the payment")}</dd><dt class="me">${me}</dt><dd>${t("maksad oma pangas", "pay in your bank")}</dd></dl>`;
-  if (kindKey === "prepare_filing") return `<dl class="handoff"><dt>${ai}</dt><dd>${t("valmistab ette", "prepares it")}</dd><dt class="me">${me}</dt><dd>${t("esitad e-MTA-s", "file it in e-MTA")}</dd></dl>`;
-  return `<dl class="handoff"><dt class="me">${me}</dt><dd>${t("kontrollid ja kinnitad, ainult see", "check and approve, nothing else")}</dd><dt>${ai}</dt><dd>${t("saadab selle oma tööriistadega ja annab siia tulemuse teada", "sends it with its own tools and reports the result here")}</dd></dl>`;
+/** Ticket head: the request type („Maksemeeldetuletus: …”) moves to the kind line, so the h1 holds only the object and never breaks mid-word. */
+function ticketHead(v: ReturnType<typeof approvalView>, kindExtra = ""): string {
+  const m = /^([^:]{1,40}):\s+(\S[\s\S]*)$/.exec(v.title), type = m?.[1], head = m ? m[2][0].toUpperCase() + m[2].slice(1) : v.title;
+  return `<p class="kind">${esc(v.kind)}${type ? ` · ${esc(type)}` : ""}${kindExtra}</p>
+<h1 id="a-h">${esc(head)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}</h1>`;
 }
+const STAMP = '<span class="stamp" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 4.5"/></svg></span>';
 
 // --- Standing approvals (#45): the owner sets a rule once; matching sends need no new tap. ---
 const ruleChip = (l: Lang) => labelChip("owner", tr(l)("Püsiloaga", "Standing approval"));
@@ -665,20 +861,23 @@ const csrfInput = (csrf: string) => `<input type="hidden" name="csrf" value="${e
 const capEur = (cents: number) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 const ruleLimits = (l: Lang) => tr(l)(`Kuni ${STANDING_DEFAULTS.maxPerDay} päevas · kehtib ${STANDING_DEFAULTS.days} päeva · saad igal ajal lõpetada`, `Up to ${STANDING_DEFAULTS.maxPerDay} a day · valid ${STANDING_DEFAULTS.days} days · end it any time`);
 /** Offer on an approved send: approve similar ones automatically from now on (or say a rule already does). */
-function standingOffer(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, csrf: string, rules: StandingRule[], now: Date): string {
+function standingOffer(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, csrf: string, rules: StandingRule[], now: Date, capCents?: number): string {
   if (a.approved_by_rule || !STANDING_KINDS.includes(v.kindKey) || v.noAddress || !v.recipient.address) return "";
   const t = tr(l), address = normAddress(v.recipient.address), amount = typeof v.p.amount_cents === "number" ? v.p.amount_cents : 0;
   const covering = rules.find((r) => ruleLive(r, now) && r.kind === v.kindKey && r.max_amount_cents >= amount && (standingRecipients(r)?.includes(address) ?? true));
   if (covering) return `<div class="note" id="pusiluba" role="status"><p><strong><span aria-hidden="true">✓ </span>${t("Püsiluba on olemas", "Standing approval is on")}: ${esc(standingRuleName(covering, l))}.</strong></p><p class="small">${t("Järgmised sarnased saadab assistent ilma sinult küsimata.", "Your assistant sends similar ones without asking you.")} <a href="/uhenda#pusiload">${t("Püsiload", "Standing approvals")}</a></p></div>`;
-  const cap = Math.max(STANDING_DEFAULTS.maxAmountCents, amount);
-  return `<section class="standing-offer" id="pusiluba" aria-labelledby="so-h"><h2 id="so-h">${t("Luba edaspidi sarnased automaatselt", "Allow similar ones automatically from now on")}</h2>
-<p class="small">${t("Siis ei pea assistent sinult iga kord küsima. Deklaratsioone ja makseid kinnitad alati ise.", "Then your assistant does not have to ask you every time. You always confirm filings and payments yourself.")}</p>
+  const cap = capCents ?? offerCapCents(amount), who = v.recipient.name ?? address;
+  return `<section class="standing-offer" id="pusiluba" aria-labelledby="so-h"><h2 id="so-h">${esc(t(`Luba edaspidi sarnased automaatselt: ainult ${who}`, `Allow similar ones automatically from now on: only ${who}`))}<span class="cap-now">${esc(t(`, kuni ${capEur(cap)}\u00a0€`, `, up to ${capEur(cap)}\u00a0€`))}</span></h2>
+<p class="limits">${esc(ruleLimits(l))}</p>
+<p class="small muted">${t("Siis ei pea assistent sinult iga kord küsima. Deklaratsioone ja makseid kinnitad alati ise.", "Then your assistant does not have to ask you every time. You always confirm filings and payments yourself.")}</p>
 <form method="post" action="/standing-approvals">${csrfInput(csrf)}<input type="hidden" name="approval_id" value="${esc(a.id)}">
-<div role="radiogroup" aria-label="${t("Kellele", "To whom")}"><label class="check"><input type="radio" name="scope" value="recipient" checked> <span>${esc(t(`Ainult ${v.recipient.name ?? address}`, `Only ${v.recipient.name ?? address}`))} <span class="small muted">${esc(v.recipient.address)}</span></span></label>
+<button type="submit">${t("Luba automaatselt", "Allow automatically")}</button>
+<details><summary>${t("Muuda piire", "Change the limits")}</summary>
+<div role="radiogroup" aria-label="${t("Kellele", "To whom")}"><label class="check"><input type="radio" name="scope" value="recipient" checked> <span>${esc(t(`Ainult ${who}`, `Only ${who}`))} <span class="small muted">${esc(v.recipient.address)}</span></span></label>
 <label class="check"><input type="radio" name="scope" value="any"> <span>${t("Kõik saajad (ka uued)", "Any recipient (including new ones)")}</span></label></div>
 <label for="so-max">${t("Summa ülempiir (€)", "Amount cap (€)")}</label><input id="so-max" name="max_eur" inputmode="decimal" autocomplete="off" value="${esc(capEur(cap))}">
-<p class="small muted">${esc(ruleLimits(l))}</p>
-<button type="submit">${t("Luba automaatselt", "Allow automatically")}</button></form></section>`;
+<button type="submit">${t("Luba automaatselt", "Allow automatically")}</button>
+</details></form></section>`;
 }
 /** Ühendus → Püsiload: live rules with Lõpeta, and one short form to add a rule. */
 function standingSection(l: Lang, o: { csrf: string; rules: StandingRule[] }, now: Date): string {
@@ -697,69 +896,169 @@ ${rows || `<p class="muted">${t("Püsiload puuduvad: iga saatmine ootab sinu kin
 <button type="submit">${t("Lisa püsiluba", "Add standing approval")}</button></form></details></section>`;
 }
 
+// --- „Käest ära” (#61): one segment per job; fills only from stored done work or a live rule that fired. ---
+const HO_MONTH_IN = ["jaanuaris", "veebruaris", "märtsis", "aprillis", "mais", "juunis", "juulis", "augustis", "septembris", "oktoobris", "novembris", "detsembris"];
+const hoMonth = (ym: string, l: Lang) => { const m = Number(ym.slice(5, 7)) - 1; return l === "en" ? `In ${C_PERIOD.en.format(civil(`${ym}-01`)).split(" ")[0]}` : cap(HO_MONTH_IN[m] ?? ""); };
+const hoJobTitle = (j: Job, l: Lang) => (l === "en" ? j.title_en : j.title_et);
+const hoCount = (h: Handover, l: Lang) => tr(l)(`${h.off} ${h.off === 1 ? "töö" : "tööd"} ${h.total}-st`, `${h.off} of ${h.total} ${h.total === 1 ? "job" : "jobs"}`);
+/** „1 ilma sinuta, 1 sinu kinnitusega, 1 teeb keegi teine”: how the counted jobs split. */
+function hoSplit(h: Handover, l: Lang): string {
+  const t = tr(l), withYou = h.jobs.filter((j) => j.rung === "prep" || (j.rung === "done" && j.ceiling === "law")).length, other = h.jobs.filter((j) => j.rung === "other").length;
+  return [h.withoutYou ? t(`${h.withoutYou} ilma sinuta`, `${h.withoutYou} without you`) : "", withYou ? t(`${withYou} sinu kinnitusega`, `${withYou} with your approval`) : "", other ? t(`${other} teeb keegi teine`, `${other} done by someone else`) : ""].filter(Boolean).join(", ");
+}
+const hoSeg = (j: Job) => `ho-seg${j.rung === "mine" ? "" : ` ho-seg--${j.rung}`}${j.evidence.pending ? " ho-seg--wait" : ""}`;
+const HO_RUNG: Record<string, [string, string]> = { mine: ["sinu käes", "yours"], other: ["teeb keegi teine", "done by someone else"], prep: ["assistent valmistab ette, sina kinnitad", "your assistant prepares, you approve"], done: ["assistent teeb ise või lagi käes", "your assistant does it, or at its ceiling"] };
+/** Täna hero: the count and the small bar, one tap to the full section on Ühendus. Not a card. */
+export function handoverStrip(h: Handover, l: Lang): string {
+  const t = tr(l), pending = h.jobs.reduce((n, j) => n + j.evidence.pending, 0);
+  const wait = pending ? t(`${pending} ootab sinu kinnitust`, `${pending} waiting for your approval`) : "";
+  const sub = h.off ? [hoSplit(h, l), wait].filter(Boolean).join(", ") : wait || t("alusta ühest", "start with one");
+  return `<a class="ho-strip" href="/uhenda#kaest-ara" aria-label="${esc(t(`Käest ära: ${hoCount(h, l)}. ${sub}. Vaata lähemalt.`, `Off your plate: ${hoCount(h, l)}. ${sub}. See more.`))}"><p class="ho-line"><b>${t("Käest ära:", "Off your plate:")} <span class="num">${h.off}</span> ${esc(t(`${h.off === 1 ? "töö" : "tööd"} ${h.total}-st`, `of ${h.total}`))}</b><span>${esc(sub)}</span><span class="go">${t("Vaata →", "See →")}</span></p>
+<ul class="ho-bar" aria-hidden="true">${h.jobs.map((j) => `<li class="${hoSeg(j)}"></li>`).join("")}</ul></a>`;
+}
+const HO_CAN: Record<string, [string, string]> = {
+  "payment-reminder": ["Assistent oskab: leiab tasumata arved ja koostab kirja; sina kinnitad iga kirja täpselt sellisena.", "Your assistant can find unpaid invoices and draft the letter; you approve each letter exactly as it goes."],
+  "vat-return-prep": ["Lagi: esitad alati ise e-MTA-s oma Smart-ID-ga; assistent paneb numbrid valmis.", "Ceiling: you always file in e-MTA with your own Smart-ID; your assistant prepares the figures."],
+  "annual-report": ["Lagi: allkirjastad ja esitad ise e-äriregistris; assistent paneb aruande andmed valmis.", "Ceiling: you sign and submit in the e-Business Register; your assistant prepares the figures."],
+  invoicing: ["Assistent saab arve ette valmistada ja sinu kinnitusel saata.", "Your assistant can prepare an invoice and send it once you approve."],
+};
+const HO_CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>', HO_ARROW = '<svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg>';
+function handoverRow(j: Job, l: Lang, now: Date): string {
+  const t = tr(l), e = j.evidence, assessedChip = labelChip("assistant", t("Assistendi hinnang", "Your assistant's assessment"));
+  const mark = j.rung === "done" ? HO_CHECK : j.rung === "prep" ? HO_ARROW : j.rung === "other" ? "R" : "";
+  const rung = j.rung === "done" ? (j.ceiling === "rule" ? `${t("Assistent teeb ise", "Your assistant does it")} ${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}` : `${t("Assistent valmistab ette, sina esitad", "Your assistant prepares, you file")} ${labelChip("official", t("Lagi käes: seadus", "At its ceiling: the law"))}`)
+    : j.rung === "prep" ? t("Assistent valmistab ette, sina kinnitad", "Your assistant prepares, you approve")
+    : j.rung === "other" ? `${esc(t(`Teeb ${j.assessed?.executor}`, `Done by ${j.assessed?.executor}`))} ${assessedChip}` : t("Teed ise", "You do it");
+  const verb = j.ceiling === "law" ? t("esitatud", "filed") : t("saadetud", "sent");
+  const lines: string[] = [];
+  if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.auto ? t(`, neist <span class="num">${e.auto}</span> ilma sinuta`, `, <span class="num">${e.auto}</span> without you`) : ""}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
+  if (e.rule) lines.push(esc(t(`Püsiluba: ${standingRuleName(e.rule, l)} · aegub ${DAY.et.format(new Date(e.rule.expires_at))}`, `Standing approval: ${standingRuleName(e.rule, l)} · ends ${DAY.en.format(new Date(e.rule.expires_at))}`)));
+  if (j.due) lines.push(`${esc(t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}`);
+  if (j.source === "assessment" && j.rung !== "other" && j.assessed) lines.push(`„${esc(j.assessed.reason)}” ${assessedChip}`);
+  if (j.rung === "mine" && HO_CAN[j.id]) lines.push(esc(t(...HO_CAN[j.id])));
+  if (e.pending) lines.push(stateChip("waiting", t(`${e.pending} ootab sinu kinnitust`, `${e.pending} waiting for your approval`)));
+  return `<li class="ho-job"><i class="ho-mark${j.rung === "mine" ? "" : ` ho-mark--${j.rung}`}" aria-hidden="true">${mark}</i><div><span class="ho-title">${esc(hoJobTitle(j, l))}</span><p class="ho-rung ho-rung--${j.rung === "other" ? "mine" : j.rung}">${rung}</p>${lines.length ? `<p class="ho-ev">${lines.join("<br>")}</p>` : ""}</div></li>`;
+}
+const HO_CONNECTOR = (l: Lang) => `<a class="tap-link" href="/kataloog?g=raamatupidamine">${tr(l)("Raamatupidamise ühendused → Kataloog", "Accounting connectors → Catalogue")}</a>`;
+const HO_REMINDER_PROMPT: [string, string] = ["Vaata, millised minu arved on tasumata, ja koosta esimesele meeldetuletus. Küsi minult kinnitust enne saatmist.", "Check which of my invoices are unpaid and draft a reminder for the first one. Ask me to approve it before sending."];
+/** The one next step, as the section's only elevated object. A standing offer posts to the existing /standing-approvals form. */
+function handoverNext(h: Handover, l: Lang, csrf: string): string {
+  const t = tr(l), n = h.next;
+  const card = (head: string, inner: string) => `<div class="ho-next"><h3>${esc(head)}</h3><div class="ask">${inner}</div></div>`;
+  const quote = (text: string) => `<p class="quote"><span>${t("Palu assistendilt:", "Ask your assistant:")}</span>„${esc(text)}”</p>`;
+  if (n.type === "standing") {
+    const what = hoJobTitle(n.job, l).toLowerCase(), per = n.kind === "send_invoice" ? t("arve kohta", "per invoice") : t("kirja kohta", "per letter");
+    const who = n.recipients.length <= 2 ? n.recipients.map((r) => `<b>${esc(r.name)}</b>`).join(t(" ja ", " and ")) : `<b>${esc(t(`${n.recipients.length} senist saajat`, `${n.recipients.length} past recipients`))}</b>`;
+    return card(t(`Järgmine samm: anna ${what} täiesti käest ära`, `Next step: take ${what} off your plate completely`), `<span class="labels">${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}</span>
+<span class="ask-title">${esc(t(`Luba edaspidi ${what} automaatselt`, `Allow ${what} automatically from now on`))}</span>
+<p class="limits">${t("Ainult", "Only")} ${who}${n.recipients.length <= 2 ? t(" (senised saajad)", " (past recipients)") : ""}<span class="cap-now">, ${t("kuni", "up to")} <b>${esc(capEur(n.capCents))} €</b> ${per}</span>, ${t(`kuni <b>${STANDING_DEFAULTS.maxPerDay}</b> päevas, <b>${STANDING_DEFAULTS.days} päeva</b>. Lõpetad millal tahes.`, `up to <b>${STANDING_DEFAULTS.maxPerDay}</b> a day, <b>${STANDING_DEFAULTS.days} days</b>. End it any time.`)}</p>
+<p class="muted small${n.basis.maxCents ? "" : " cap-now"}">${esc(n.basis.maxCents ? t(`Piirid on võetud sinu ${n.basis.count} senisest kinnitusest (suurim ${fmtEur(n.basis.maxCents, l)}). Assistent saadab ise ja annab iga saatmise kohta siia teada.`, `The limits come from your ${n.basis.count} past approvals (largest ${fmtEur(n.basis.maxCents, l)}). Your assistant sends and reports each one here.`) : t(`Senistel kinnitustel summat polnud, seega ülempiir on vaikimisi ${capEur(n.capCents)} €.`, `Your past approvals had no amount, so the cap is the default ${capEur(n.capCents)} €.`))}</p>
+<form method="post" action="/standing-approvals">${csrfInput(csrf)}<input type="hidden" name="kind" value="${esc(n.kind)}">
+<button type="submit">${t("Luba automaatselt", "Allow automatically")}</button>
+<details><summary>${t("Muuda piire", "Change the limits")}</summary>
+<div role="radiogroup" aria-label="${t("Kellele", "To whom")}"><label class="check"><input type="radio" name="scope" value="approved" checked> <span>${t("Ainult senised saajad", "Only past recipients")} <span class="small muted">${esc(n.recipients.map((r) => r.address).join(", "))}</span></span></label>
+<label class="check"><input type="radio" name="scope" value="any"> <span>${t("Kõik saajad (ka uued)", "Any recipient (including new ones)")}</span></label></div>
+<label for="ho-max">${t("Summa ülempiir (€)", "Amount cap (€)")}</label><input id="ho-max" name="max_eur" inputmode="decimal" autocomplete="off" value="${esc(capEur(n.capCents))}">
+<button type="submit">${t("Luba automaatselt", "Allow automatically")}</button>
+</details></form>`);
+  }
+  if (n.type === "playbook") {
+    const reminder = n.playbookId === "payment-reminder", title = hoJobTitle(n.job, l);
+    const prompt = reminder ? t(...HO_REMINDER_PROMPT) : n.obligation ? t(n.obligation.handoff.prompt_et, n.obligation.handoff.prompt_en) : t(`Valmista ette: ${title}. Küsi minult kinnitust enne, kui midagi esitan.`, `Prepare: ${title}. Ask me to approve before I file anything.`);
+    return card(t("Järgmine samm: anna üks töö ära", "Next step: hand over one job"), `<span class="labels">${labelChip("rule", t("Mängukava", "Playbook"))}</span>
+<span class="ask-title">${esc(reminder ? t("Lase assistendil koostada esimene maksemeeldetuletus", "Let your assistant draft the first payment reminder") : t(`Lase assistendil ette valmistada: ${title}`, `Let your assistant prepare: ${title}`))}</span>
+<p class="muted">${esc(reminder ? t("Kõige kiirem võit: see on ainus igakuine töö, mille saab hiljem püsiloaga täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.", "The quickest win: the only monthly job a standing approval can later take off your plate completely. It needs your unpaid invoices: your accounting connector or a file you share with your assistant.") : t("Vajab kuu arveid: sinu raamatupidamisprogrammi ühendust või faile, mille assistendile jagad.", "It needs the period's invoices: your accounting connector or files you share with your assistant."))}</p>
+${quote(prompt)}
+${HO_CONNECTOR(l)}`);
+  }
+  return card(t("Järgmine samm: ühenda raamatupidamine", "Next step: connect your accounting"), `<span class="ask-title">${t("Ühenda oma raamatupidamisprogramm assistendiga", "Connect your accounting software to your assistant")}</span>
+<p>${t("Siis leiab assistent ise arved ja numbrid, mida tööd vajavad.", "Then your assistant finds the invoices and figures the jobs need.")}</p>
+${HO_CONNECTOR(l)}`);
+}
+/** Ühendus → Käest ära: count, bar, one row per job with its evidence, one next step, and the expired-unused finding. */
+export function handoverSection(h: Handover, l: Lang, csrf: string, now = new Date()): string {
+  const t = tr(l), split = hoSplit(h, l), ex = h.findings.expiredUnused;
+  const sub = h.off ? `${split}.${h.fromAssessment ? ` ${t(`Assistendi hinnang lisas nimekirja ${h.fromAssessment} ${h.fromAssessment === 1 ? "töö" : "tööd"}.`, `Your assistant's assessment added ${h.fromAssessment} ${h.fromAssessment === 1 ? "job" : "jobs"} to the list.`)}` : ""}` : t("Siia tulevad tööd, mille assistent on päriselt ära teinud, mitte klikid ega lubadused.", "Jobs land here only when your assistant has really done them, not clicks or promises.");
+  const month = h.month.done ? `${esc(hoMonth(h.month.ym, l))}: ${t(`<b>${h.month.done}</b> ${h.month.done === 1 ? "töö" : "tööd"} tehtud, <b>${h.month.auto}</b> ilma sinuta.`, `<b>${h.month.done}</b> done, <b>${h.month.auto}</b> without you.`)}` : `${esc(hoMonth(h.month.ym, l))}: ${t("assistent pole veel ühtegi tööd lõpetanud.", "your assistant has not finished a job yet.")}`;
+  const finding = ex.count && ex.last ? `<p class="ho-finding"><span aria-hidden="true">!</span><span><b>${esc(t(`${ex.count} ${ex.count === 1 ? "kinnitus aegus" : "kinnitust aegusid"} kasutamata`, `${ex.count} ${ex.count === 1 ? "approval" : "approvals"} expired unused`))}</b> (${esc(DAY[l].format(new Date(ex.last.expires_at)))}). ${t("Palu assistendil pärast sinu kinnitust kohe saata ja tulemus kirja panna.", "Ask your assistant to send right after you approve and record the outcome.")} <a class="tap-link" href="/approvals/${esc(encodeURIComponent(ex.last.id))}">${t("Vaata kinnitust", "See the approval")}</a></span></p>` : "";
+  return `<section class="section ho" id="kaest-ara" aria-labelledby="ho-h"><h2 id="ho-h">${t("Käest ära", "Off your plate")}</h2>
+<p class="ho-sum"><span class="num">${h.off}</span> ${esc(t(`${h.off === 1 ? "töö" : "tööd"} ${h.total}-st on sinu käest ära`, `of ${h.total} ${h.total === 1 ? "job is" : "jobs are"} off your plate`))}<small>${esc(sub)}</small></p>
+<ul class="ho-bar ho-bar--lg" aria-label="${esc(t(`${h.total} tööd`, `${h.total} jobs`))}">${h.jobs.map((j) => `<li class="${hoSeg(j)}"><span class="vh">${esc(`${hoJobTitle(j, l)}: ${t(...HO_RUNG[j.rung] as [string, string])}${j.evidence.pending ? t(`; ${j.evidence.pending} ootab praegu`, `; ${j.evidence.pending} waiting now`) : ""}`)}</span></li>`).join("")}</ul>
+<ul class="ho-legend" aria-hidden="true">${(["mine", "prep", "done", "other"] as const).map((r) => `<li><i${r === "mine" ? "" : ` class="ho-seg--${r}"`}></i>${esc(t(...HO_RUNG[r] as [string, string]))}</li>`).join("")}</ul>
+<p class="ho-month">${month}</p>
+<div class="ho-grid"><div><ul class="ho-jobs">${h.jobs.map((j) => handoverRow(j, l, now)).join("")}</ul>${finding}</div>
+${handoverNext(h, l, csrf)}</div>
+<details class="plain"><summary>${t("Kuidas see arvutatakse", "How this is calculated")}</summary><div class="boxed small"><p>${t("Üks lahter = üks töö. Lahter täitub ainult salvestatud kinnitusest, mille tulemus on saadetud, esitatud või makstud (assistendi teade, AI-hüppelaud seda ei kontrollinud), või kehtivast püsiloast, mis on juba korra töötanud. Ootel kinnitused, lugemised ja sisselogimised lahtrit ei täida. „Teeb raamatupidaja” on assistendi hinnang. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.", "One cell = one job. A cell fills only from a stored approval whose outcome is sent, filed or paid (your assistant's report, not checked by AI Launchpad), or from a live standing approval that has already worked once. Pending approvals, reads and sign-ins fill nothing. “Done by the accountant” is your assistant's assessment. No percentage and no hours saved, because we don't measure them.")}</p></div></details>
+</section>`;
+}
+
 const approvalTech = (a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang) => techDetails(l, `${techList([[tr(l)("Räsi (SHA-256)", "Digest (SHA-256)"), a.digest], [tr(l)("Liik", "Kind"), v.kindKey || "—"], ["ID", a.id], [tr(l)("Koostatud", "Created"), a.created_at], [tr(l)("Kehtib kuni", "Valid until"), a.expires_at], ...(a.decided_at ? [[tr(l)("Otsustatud", "Decided"), a.decided_at]] as [string, string][] : [])])}<pre class="tech-pre">${esc(JSON.stringify({ action: v.p, outcome: v.outcome }, null, 1))}</pre>`);
 
-export function approvalCardBody(opts: { csrf: string; a: ApprovalRow; lang: Lang; sample: boolean; now?: Date; rules?: StandingRule[] }): string {
+export function approvalCardBody(opts: { csrf: string; a: ApprovalRow; lang: Lang; sample: boolean; now?: Date; rules?: StandingRule[]; capCents?: number }): string {
   const { a, lang: l, sample } = opts, t = tr(l), v = approvalView(a, l), now = opts.now ?? new Date(), rules = opts.rules ?? [];
   const content = v.p.document?.content ? `<h2>${esc(t(...(CONTENT_HEAD[v.kindKey] ?? CONTENT_HEAD.send_message)))}</h2><pre class="letter" tabindex="0">${esc(v.p.document.content)}</pre>` : "";
-  const back = `<a class="btn secondary" href="/">${t("Tagasi: Täna", "Back: Today")}</a>`;
-  const sampleC = sample ? sampleChip(l) : "";
+  const what = `${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}${v.amount ? ` · <b>${esc(v.amount)}</b>` : ""}`;
+  const decidedAt = () => esc(fmtWhen(a.decided_at, l, now).replace(/^(täna|today), /, ""));
+  const foot = (back = true) => `<div class="ticket-foot">${approvalTech(a, v, l)}${back ? `<a class="btn secondary" href="/">${t("Tagasi: Täna", "Back: Today")}</a>` : ""}</div>`;
   if (a.state === "pending") {
-    return `<article class="card" aria-labelledby="a-h">
-<div class="labels">${stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))}${labelChip("assistant", v.kind)}${sampleC}</div>
-<p class="small muted">${t("Assistent valmistas ette", "Prepared by your assistant")} · ${timeEl(a.created_at, fmtWhen(a.created_at, l, now))}</p>
-<h1 id="a-h">${esc(v.title)}</h1>
-${v.p.summary ? `<p><strong>${t("Miks:", "Why:")}</strong> ${esc(v.p.summary)}</p>` : ""}
-${approvalFacts(v, l)}
+    return `<article class="card ticket" aria-labelledby="a-h">
+<div class="strip strip--wait"><span class="dot" aria-hidden="true"></span>${t("Ootab sinu kinnitust", "Waiting for your approval")}</div>
+<div class="ticket-body">
+${ticketHead(v, `<small> · ${t("Assistent valmistas ette", "Prepared by your assistant")} · ${timeEl(a.created_at, fmtWhen(a.created_at, l, now))}</small>`)}
+${v.p.summary ? `<p class="why"><strong>${t("Miks:", "Why:")}</strong> ${esc(v.p.summary)}</p>` : ""}
+${amountHero(v, l)}
+${approvalFacts(v, l, !!v.amount)}
 ${content}
-${handoffBox(v.kindKey, l)}
-<form method="post" action="/approvals/${esc(encodeURIComponent(a.id))}/decide"><input type="hidden" name="csrf" value="${esc(opts.csrf)}"><input type="hidden" name="digest" value="${esc(a.digest)}">
-${v.noAddress ? `<div class="notice" role="alert"><p><strong>${esc(NO_ADDRESS(l))}.</strong> ${t("Assistent ei märkinud, kuhu see läheb. Keeldu ja palu assistendil küsida uus kinnitus koos saaja aadressiga.", "Your assistant did not say where this goes. Decline it and ask your assistant for a new approval with the recipient's address.")}</p></div>` : `<button name="decision" value="approve">${t("Kinnita täpselt see", "Approve exactly this")}</button>`}<button class="secondary" name="decision" value="decline">${t("Keeldu", "Decline")}</button></form>
-<p class="small muted">${esc(t(`Kui assistent muudab midagi, küsib ta uue kinnituse. Kehtib 24 tundi, kuni ${fmtUntil(a.expires_at, l, now)}.`, `If your assistant changes anything, it asks again. Valid for 24 hours, until ${fmtUntil(a.expires_at, l, now)}.`))}</p>
-<p class="small muted">${t("AI-hüppelaud ise ei saada, maksa ega esita midagi; seda teeb sinu assistent oma tööriistadega ja ainult täpselt selle sisuga.", "AI Launchpad itself never sends, pays or files; your assistant does this with its own tools, and only with exactly this content.")}${sample ? ` ${t("Näidis: päriselt ei saadeta.", "Sample: nothing is really sent.")}` : ""}</p>
-${approvalTech(a, v, l)}
+${handLine(v.kindKey, l)}
+${v.noAddress ? `<div class="notice" role="alert"><p><strong>${esc(NO_ADDRESS(l))}.</strong> ${t("Assistent ei märkinud, kuhu see läheb. Keeldu ja palu assistendil küsida uus kinnitus koos saaja aadressiga.", "Your assistant did not say where this goes. Decline it and ask your assistant for a new approval with the recipient's address.")}</p></div>` : ""}
+<form class="decide" method="post" action="/approvals/${esc(encodeURIComponent(a.id))}/decide"><input type="hidden" name="csrf" value="${esc(opts.csrf)}"><input type="hidden" name="digest" value="${esc(a.digest)}">${v.noAddress ? "" : `<button name="decision" value="approve">${t("Kinnita täpselt see", "Approve exactly this")}</button>`}<button class="text danger" name="decision" value="decline">${t("Keeldu", "Decline")}</button></form>
+<p class="fine">${esc(t(`Kui assistent muudab midagi, küsib ta uue kinnituse. Kehtib 24 tundi, kuni ${fmtUntil(a.expires_at, l, now)}.`, `If your assistant changes anything, it asks again. Valid for 24 hours, until ${fmtUntil(a.expires_at, l, now)}.`))}</p>
+<p class="fine">${t("AI-hüppelaud ise ei saada, maksa ega esita midagi; seda teeb sinu assistent oma tööriistadega ja ainult täpselt selle sisuga.", "AI Launchpad itself never sends, pays or files; your assistant does this with its own tools, and only with exactly this content.")}${sample ? ` ${t("Näidis: päriselt ei saadeta.", "Sample: nothing is really sent.")}` : ""}</p>
+</div>
+${foot(false)}
 </article>
 <p><a class="tap-link" href="/approvals">${t("Kõik kinnitused", "All approvals")}</a></p>`;
   }
   if (a.state === "approved" && a.approved_by_rule) {
-    return `<article class="card" aria-labelledby="a-h">
-<div class="labels">${ruleChip(l)}${sampleC}</div>
-<h1 class="receipt-head" id="a-h"><span aria-hidden="true">✓ </span>${t("Kinnitatud püsiloaga", "Approved by standing approval")} ${esc(fmtWhen(a.decided_at, l, now).replace(/^(täna|today), /, ""))}</h1>
-<p role="status"><strong>${t("Kinnitatud püsiloaga", "Approved by your standing approval")} „${esc(ruleTitle(a, rules, l))}”.</strong> ${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}${v.amount ? ` · ${esc(v.amount)}` : ""}</p>
+    return `<article class="card ticket" aria-labelledby="a-h">
+<div class="strip strip--ok">${STAMP}<h1 class="receipt-head" id="a-h">${t("Kinnitatud püsiloaga", "Approved by standing approval")} ${decidedAt()}</h1>${ruleChip(l)}</div>
+<div class="ticket-body">
+<p class="why" role="status"><strong>${t("Kinnitatud püsiloaga", "Approved by your standing approval")} „${esc(ruleTitle(a, rules, l))}”.</strong> ${what}</p>
 <p class="small">${t("Assistent ei pidanud sinult küsima: ta saadab selle ise ja annab siia tulemuse teada.", "Your assistant did not have to ask you: it sends this itself and reports the result here.")} <a href="/uhenda#pusiload">${t("Püsiload", "Standing approvals")}</a></p>
 ${stateLine(a, v, l, sample)}
 ${approvalFacts(v, l)}
 ${content}
-${approvalTech(a, v, l)}
-${back}
+</div>
+${foot()}
 </article>`;
   }
   if (a.state === "approved") {
-    return `<article class="card" aria-labelledby="a-h">
-<div class="labels">${labelChip("owner", t("Sinu kinnitus", "You approved"))}${sampleC}</div>
-<h1 class="receipt-head" id="a-h"><span aria-hidden="true">✓ </span>${t("Kinnitatud", "Approved")} ${esc(fmtWhen(a.decided_at, l, now).replace(/^(täna|today), /, ""))}</h1>
-<p role="status"><strong>${t("Nüüd on assistendi kord.", "Now it's your assistant's turn.")}</strong> ${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}${v.amount ? ` · ${esc(v.amount)}` : ""}</p>
-<div class="notice"><p><strong>${t("Mine tagasi ChatGPT-sse või Claude'i ja kirjuta „<code>Kinnitasin</code>”.", "Go back to ChatGPT or Claude and write “<code>Approved</code>” (“Kinnitasin” works too).")}</strong></p><p class="small">${t("Assistent näeb sinu kinnitust alles siis, kui talle kirjutad.", "Your assistant only sees your approval when you write to it.")}</p></div>
-${standingOffer(a, v, l, opts.csrf, rules, now)}
+    return `<article class="card ticket" aria-labelledby="a-h">
+<div class="strip strip--ok">${STAMP}<h1 class="receipt-head" id="a-h">${t("Kinnitatud", "Approved")} ${decidedAt()}</h1>${labelChip("owner", t("Sinu kinnitus", "You approved"))}</div>
+<div class="ticket-body">
+<p class="turn" role="status"><strong>${t("Nüüd on assistendi kord.", "Now it's your assistant's turn.")}</strong> ${what}</p>
+<div class="callout"><p><strong>${t("Mine tagasi ChatGPT-sse või Claude'i ja kirjuta „<code>Kinnitasin</code>”.", "Go back to ChatGPT or Claude and write “<code>Approved</code>” (“Kinnitasin” works too).")}</strong></p><p class="small">${t("Assistent näeb sinu kinnitust alles siis, kui talle kirjutad.", "Your assistant only sees your approval when you write to it.")}</p></div>
+${standingOffer(a, v, l, opts.csrf, rules, now, opts.capCents)}
 ${stateLine(a, v, l, sample)}
-<p class="small muted">${esc(t(`Kui assistent ei teata tulemusest ${fmtUntil(a.expires_at, l, now)}, kinnitus aegub ja ta peab uuesti küsima.`, `If your assistant does not report an outcome by ${fmtUntil(a.expires_at, l, now)}, the approval expires and it must ask again.`))}</p>
-${approvalTech(a, v, l)}
-${back}
+<p class="fine">${esc(t(`Kui assistent ei teata tulemusest ${fmtUntil(a.expires_at, l, now)}, kinnitus aegub ja ta peab uuesti küsima.`, `If your assistant does not report an outcome by ${fmtUntil(a.expires_at, l, now)}, the approval expires and it must ask again.`))}</p>
+</div>
+${foot()}
 </article>`;
   }
   if (a.state === "consumed" && v.outcome) {
     const last = v.outcome.outcome, ok = last !== "failed" && last !== "rejected";
     const head = ok ? `<span aria-hidden="true">✓ </span>${esc(t(OUTCOME[last]?.[1] ?? last, OUTCOME[last]?.[2] ?? last))}${sample ? ": demo" : ""}` : esc(t(OUTCOME[last]?.[1] ?? last, OUTCOME[last]?.[2] ?? last));
-    return `<article class="card" aria-labelledby="a-h">
-<div class="labels">${outcomeChip(last, l, sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}${a.approved_by_rule ? ruleChip(l) : ""}${sampleC}</div>
+    return `<article class="card ticket" aria-labelledby="a-h">
+<div class="strip"><div class="labels">${outcomeChip(last, l, sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}${a.approved_by_rule ? ruleChip(l) : ""}</div></div>
+<div class="ticket-body">
 <h1 class="receipt-head" id="a-h">${head}</h1>
-<p>${[v.recipient.name, v.amount].filter(Boolean).map(esc).join(" · ")}${v.recipient.name || v.amount ? " · " : ""}${esc(v.title)}</p>
+<p class="why">${[v.recipient.name, v.amount].filter(Boolean).map(esc).join(" · ")}${v.recipient.name || v.amount ? " · " : ""}${esc(v.title)}</p>
 ${a.approved_by_rule ? `<p class="small"><strong>${t("Kinnitatud püsiloaga", "Approved by your standing approval")} „${esc(ruleTitle(a, rules, l))}”.</strong></p>` : ""}
 <p class="small"><strong>${esc(t(`Sinu kinnitusi selles töös: ${a.decided_at && !a.approved_by_rule ? 1 : 0}.`, `Your approvals in this job: ${a.decided_at && !a.approved_by_rule ? 1 : 0}.`))}</strong> ${t("Töö tegi assistent; tulemus on tema teade, AI-hüppelaud seda ei kontrollinud.", "Your assistant did the work; the result is its report, not checked by AI Launchpad.")}</p>
 ${stateLine(a, v, l, sample)}
 ${content ? `<details><summary>${t("Mida sa kinnitasid", "What you approved")}</summary>${approvalFacts(v, l)}${content}</details>` : ""}
-${approvalTech(a, v, l)}
-${back}
+</div>
+${foot()}
 </article>`;
   }
   const status = a.state === "declined"
@@ -770,19 +1069,23 @@ ${back}
     : a.state === "expired" && a.decided_at
       ? t(`Kinnitasid ${fmtWhen(a.decided_at, l, now)}, aga assistent ei teatanud tulemusest enne aegumist. Selle kinnituse alusel ei tohi midagi teha; assistent peab uuesti küsima.`, `You approved ${fmtWhen(a.decided_at, l, now)}, but your assistant reported no outcome before it expired. Nothing may be done under it; your assistant must ask again.`)
       : t(`Aegus ${fmtWhen(a.expires_at, l, now)}. Midagi ei kinnitatud ega saadetud. Palu assistendil uus koostada.`, `Expired ${fmtWhen(a.expires_at, l, now)}. Nothing was approved or sent. Ask your assistant for a new one.`);
-  return `<article class="card" aria-labelledby="a-h">
-<div class="labels">${status}${labelChip("assistant", v.kind)}${sampleC}</div>
-<h1 id="a-h">${esc(v.title)}</h1>
-<p role="status">${esc(line)}</p>
+  return `<article class="card ticket" aria-labelledby="a-h">
+<div class="strip"><div class="labels">${status}</div></div>
+<div class="ticket-body">
+${ticketHead(v)}
+<p class="why" role="status">${esc(line)}</p>
 ${approvalFacts(v, l)}
 ${content}
-${approvalTech(a, v, l)}
-${back}
+</div>
+${foot()}
 </article>`;
 }
 
-/** Pending approval as a whole-row link (Täna, approvals list). */
-function approvalLinkRow(a: ApprovalRow, l: Lang, now: Date, sample: boolean): string {
+/** Täna's elevated object: one thing that needs the owner, the whole card a link. */
+const askLink = (href: string, labels: string, title: string, meta: string) => `<a class="ask" href="${href}"><span class="ask-body"><span class="labels">${labels}</span><span class="ask-title">${title}</span><span class="ask-meta">${meta}</span></span><span class="chev" aria-hidden="true"></span></a>`;
+
+/** Approval as a whole-row link (approvals list), or as an ask card (Täna). */
+function approvalLinkRow(a: ApprovalRow, l: Lang, now: Date, sample: boolean, ask = false): string {
   const t = tr(l), v = approvalView(a, l);
   const sub = [v.amount, a.state === "pending" ? t(`kehtib kuni ${fmtUntil(a.expires_at, l, now)}`, `valid until ${fmtUntil(a.expires_at, l, now)}`) : fmtWhen(a.decided_at ?? a.created_at, l, now)].filter(Boolean).join(" · ");
   const chip = a.state === "pending" ? stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))
@@ -790,14 +1093,15 @@ function approvalLinkRow(a: ApprovalRow, l: Lang, now: Date, sample: boolean): s
     : a.state === "approved" ? stateChip("approved", t("Kinnitatud", "Approved"))
     : a.state === "declined" ? stateChip("rejected", t("Keeldusid", "Declined"))
     : stateChip("void", t("Aegunud", "Expired"));
-  return `<a class="link-row" href="/approvals/${esc(encodeURIComponent(a.id))}"><span><span class="labels">${chip}${a.approved_by_rule ? ruleChip(l) : ""}</span><span class="link-row-title">${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}</span><span class="small muted">${esc(sub)}</span></span></a>`;
+  const href = `/approvals/${esc(encodeURIComponent(a.id))}`, labels = `${chip}${a.approved_by_rule ? ruleChip(l) : ""}`, title = `${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}`;
+  return ask ? askLink(href, labels, title, esc(sub)) : `<a class="link-row" href="${href}"><span><span class="labels">${labels}</span><span class="link-row-title">${title}</span><span class="small muted">${esc(sub)}</span></span></a>`;
 }
 
 export function approvalsListBody(rows: ApprovalRow[], l: Lang, sample: boolean, now = new Date()): string {
   const t = tr(l), pending = rows.filter((a) => a.state === "pending"), history = rows.filter((a) => a.state !== "pending");
   return `<h1>${t("Kinnitused", "Approvals")}</h1><p class="lede">${t("Tööd, mille jaoks sinu assistent küsis sinu kinnitust. AI-hüppelaud ise ei saada, maksa ega esita midagi.", "Work your assistant asked you to approve. AI Launchpad itself never sends, pays or files.")}</p>
-<section class="card" aria-labelledby="ap-w"><h2 id="ap-w">${t("Ootab sinult", "Needs you")} (${pending.length})</h2>${pending.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Praegu ei oota sinult midagi.", "Nothing is waiting for you right now.")}</p>`}</section>
-<section class="card" aria-labelledby="ap-h"><h2 id="ap-h">${t("Ajalugu", "History")}</h2>${history.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Otsustatud kinnitusi veel pole.", "No decided approvals yet.")}</p>`}</section>`;
+<section class="section" aria-labelledby="ap-w"><h2 id="ap-w">${t("Ootab sinult", "Needs you")} (${pending.length})</h2>${pending.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Praegu ei oota sinult midagi.", "Nothing is waiting for you right now.")}</p>`}</section>
+<section class="section" aria-labelledby="ap-h"><h2 id="ap-h">${t("Ajalugu", "History")}</h2>${history.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Otsustatud kinnitusi veel pole.", "No decided approvals yet.")}</p>`}</section>`;
 }
 
 export interface PublicCardViewOpts { topicId: string; locale: string; state: string; output: string | null; replayed: boolean; }
@@ -983,7 +1287,8 @@ export function unmetNeedsBody(opts: { csrf: string; needs: OwnerNeed[]; lang: L
   const open = opts.needs.filter((n) => ["received", "classifying", "classification_failed"].includes(n.state));
   const decided = opts.needs.filter((n) => n.state === "published" || n.state === "kept_private");
   const decide = (n: OwnerNeed, decision: string, label: string, cls: string) => `<form method="post" action="/unmet-needs/decide"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="need_id" value="${esc(n.id)}"><input type="hidden" name="decision" value="${decision}"><button type="submit"${cls ? ` class="${cls}"` : ""}>${label}</button></form>`;
-  return `<section class="card" id="soovid" aria-labelledby="soovid-h"><h2 id="soovid-h">${t("Seda ei saa assistent sinu eest teha", "Your assistant can't do this for you")}</h2>
+  // Open while an optional decision waits: Ootab sinult links into it.
+  return `<details class="plain" id="soovid"${awaiting.length ? " open" : ""}><summary><h2 id="soovid-h">${t("Seda ei saa assistent sinu eest teha", "Your assistant can't do this for you")}</h2></summary>
 ${awaiting.map((n) => `<div class="row" id="soov-${esc(n.id)}"><div class="labels">${stateChip("waiting", t("Valikuline", "Optional"))}</div>
 <p>„${esc(n.need_redacted)}”</p>
 <dl class="facts facts--stacked"><div class="fact-row"><dt>${t("Miks:", "Why:")}</dt><dd>${esc(blockerLabel(n.blocker, l))}</dd></div><div class="fact-row"><dt>${t("Mida assistent saab teha:", "What your assistant can do:")}</dt><dd>${esc(BLOCKER_HANDOFF[n.blocker as Blocker] ? t(BLOCKER_HANDOFF[n.blocker as Blocker].et, BLOCKER_HANDOFF[n.blocker as Blocker].en) : "—")}</dd></div></dl>
@@ -995,7 +1300,7 @@ ${decide(n, "publish", t("Avalda anonüümselt", "Publish anonymously"), "")}${d
 ${techDetails(l, techList([[t("Liigitaja", "Classified by"), classifierName(n.classified_by, l)], ["ID", n.id]]))}</div>`).join("")}
 ${open.map((n) => needRow(n, l)).join("")}
 ${decided.length ? `<details><summary>${t("Otsustatud soovid", "Decided requests")} (${decided.length})</summary>${decided.map((n) => needRow(n, l)).join("")}</details>` : ""}
-</section>`;
+</details>`;
 }
 
 /** Public, login-free Open demand list. Only aggregated, owner-approved
@@ -1034,10 +1339,10 @@ function deadlineRow(o: Obligation, l: Lang, opts: { now: Date; prompts: boolean
   return `<li class="deadline-row">${tile}
 <div><h3 class="deadline-title">${o.kind === "risk" && cond ? t("Võimalik: ", "Possible: ") : ""}${esc(t(o.title_et, o.title_en))} · ${esc(t(o.period_label_et, o.period_label_en))}</h3>
 ${cond ? `<p class="deadline-cond"><strong>${esc(cond)}</strong></p>` : ""}<p class="deadline-reason">${lead ? `<strong>${esc(lead)}</strong> ` : ""}${reason !== cond ? esc(reason) : ""}${esc(shifted)}</p>
-<div class="deadline-meta">${labelChip("rule", t("Arvutatud reeglist", "Calculated by rule"))}<a class="tap-link" href="${esc(o.source.url)}" rel="noopener noreferrer"><span>${t("Allikas", "Source")}: <span lang="et">${esc(o.source.act_et)} ${esc(o.source.section)}</span><span aria-hidden="true">&nbsp;↗</span></span></a></div></div>
-<div class="deadline-offer">${qualify ? `<p class="small"><strong>${qualify.slice(0, -2)}</strong></p>` : ""}<dl class="handoff"><dt>${t("Assistent", "Your assistant")}</dt><dd>${esc(t(h.assistant_et, h.assistant_en))}</dd><dt class="me">${t("Sina", "You")}</dt><dd>${esc(t(h.owner_et, h.owner_en))}</dd></dl>
+<div class="deadline-meta">${labelChip("rule", t("Arvutatud reeglist", "Calculated by rule"))}<a class="tap-link" href="${esc(o.source.url)}" rel="noopener noreferrer"><span>${t("Allikas", "Source")}: <span lang="et">${esc(o.source.act_et)} ${esc(o.source.section)}</span><span aria-hidden="true">&nbsp;↗</span></span></a></div>
+<details><summary>${t("Kes mida teeb", "Who does what")}</summary>${qualify ? `<p class="small"><strong>${qualify.slice(0, -2)}</strong></p>` : ""}<dl class="handoff"><dt>${t("Assistent", "Your assistant")}</dt><dd>${esc(t(h.assistant_et, h.assistant_en))}</dd><dt class="me">${t("Sina", "You")}</dt><dd>${esc(t(h.owner_et, h.owner_en))}</dd></dl>
 ${o.rule_id === "vat-return-kmd" ? `<p class="small muted">${t("Summad arvutab sinu raamatupidamisprogramm, mitte tehisaru.", "Your accounting software calculates the amounts, not AI.")}</p>` : ""}
-${opts.prompts ? `<div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(qualify + t(h.prompt_et, h.prompt_en))}”</p></div>` : ""}</div></li>`;
+${opts.prompts ? `<div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(qualify + t(h.prompt_et, h.prompt_en))}”</p></div>` : ""}</details></div></li>`;
 }
 
 export function deadlinesList(r: DeadlinesView, l: Lang, opts: { now?: Date; prompts?: boolean } = {}): string {
@@ -1079,7 +1384,7 @@ export function landingBody(o: { lang: Lang }): string {
   const owed = t(`Kolm arvet on üle tähtaja, kokku ${total}. Koostasin igale viisaka meeldetuletuse.`, `Three invoices are overdue, ${total} in total. I drafted a polite reminder for each.`);
   const card = t("Maksemeeldetuletus · 1/3", "Payment reminder · 1/3"), client = "Demo Klient OÜ";
   const approve = t("Kinnita täpselt see", "Approve exactly this"), done = `✓ ${t("Kinnitatud", "Approved")} · ${t("Saadetud: demo", "Sent: demo")}`;
-  const allow = t("Luba sarnased automaatselt", "Allow similar ones automatically"), standing = t("Püsiluba: meeldetuletused kuni 500\u00a0€", "Standing approval: reminders up to 500\u00a0€");
+  const allow = t("Luba sarnased automaatselt", "Allow similar ones automatically"), standing = t("Püsiluba: meeldetuletused kuni 500\u00a0€", `Standing approval: reminders up to ${fmtEur(50000, l)}`);
   const kmdDue = t("20.\u00a0nov", "20\u00a0Nov");
   const next = t("Järgmised saadan ise.", "I'll send the next ones myself.");
   const kmd: [string, string] = [t("Muide,", "By the way, the VAT return is due"), t("on KMD — kas valmistan oktoobri arved ette?", "— shall I prepare October's invoices?")];
@@ -1135,9 +1440,9 @@ export function landingBody(o: { lang: Lang }): string {
 <div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${t("ühendatud: AI-hüppelaud", "connected: AI Launchpad")}</small></span></div>
 <div class="chat">${chat}</div></div></div>
 <figcaption>${sampleChip(l)}<span class="small muted">${t("Vestlus sinu ChatGPT-s või Claude'is", "A conversation in your ChatGPT or Claude")}</span><label class="teaser-pause" for="teaser-pause">${t("Peata animatsioon", "Pause animation")}</label></figcaption>
-</figure></section>
-<section aria-labelledby="jobs-h"><h2 id="jobs-h">${t("Mida assistent sinu eest ära teeb", "What your assistant takes off your plate")}</h2>
-<ul class="jobs">${jobs.map(([h, s], i) => `<li>${icon(JOB_ICONS[i])}<span><strong>${esc(h)}</strong>${esc(s)}</span></li>`).join("")}</ul></section>
+</figure>
+<section class="hero-jobs" aria-labelledby="jobs-h"><h2 id="jobs-h" class="vh">${t("Mida assistent sinu eest ära teeb", "What your assistant takes off your plate")}</h2>
+<ul class="jobs">${jobs.map(([h, s], i) => `<li>${icon(JOB_ICONS[i])}<span><strong>${esc(h)}</strong>${esc(s)}</span></li>`).join("")}</ul></section></section>
 <section aria-labelledby="how-h"><h2 id="how-h">${t("Alusta 2 minutiga", "Start in 2 minutes")}</h2>
 <ol class="how">${steps.map((s, i) => `<li>${icon(STEP_ICONS[i])}<span>${esc(s)}</span></li>`).join("")}</ol></section>
 <ul class="trust" aria-label="${t("Mida me lubame", "What we promise")}">${trust.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
@@ -1159,6 +1464,8 @@ export interface TanaOpts {
   reportCount: number;
   /** The owner's standing approvals, to name the rule behind an auto-approved row. */
   rules?: StandingRule[];
+  /** „Käest ära” (#61): the strip under the pills. */
+  handover?: Handover;
   now?: Date;
 }
 /** The register lookup is unavailable: ask the assistant instead, with the plain reason. */
@@ -1179,14 +1486,14 @@ export function tanaBody(o: TanaOpts): string {
 
   // Ootab sinult
   const askRows = [
-    ...pending.map((x) => approvalLinkRow(x, l, now, o.sample)),
-    ...failed.map((x) => { const v = approvalView(x, l); return `<a class="link-row" href="/approvals/${esc(encodeURIComponent(x.id))}"><span><span class="labels">${stateChip("rejected", t("Ei õnnestunud — vaata üle", "Did not work — review it"))}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</span><span class="link-row-title">${esc([v.title, v.recipient.name].filter(Boolean).join(" · "))}</span><span class="small muted">${esc(fmtWhen(v.outcome?.observed_at ?? x.consumed_at, l, now))}</span></span></a>`; }),
-    ...qs.map((x) => `<div class="ask-row"><strong>${t("Vasta assistendile ühele küsimusele:", "Answer one question for your assistant:")}</strong><p class="small">„${esc(x.q)}” ${esc(x.then)}</p></div>`),
-    // Rationale and any effort estimate are the assistant's words, labelled as such; never in the hero or the counts.
-    ...(next ? [`<div class="ask-row"><strong>${t("Järgmine samm:", "Next step:")} ${esc(next.title)}</strong><p class="small"><span class="muted">${t("Assistendi hinnang:", "Your assistant's estimate:")}</span> ${esc([next.rationale, next.estimated_effort_saved?.trim()].filter(Boolean).join(" "))}</p><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(t(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale} Palun aita mul see ära teha või ütle, mida sinult vaja on.`, `Next step from my AI Launchpad assessment: "${next.title}". Why: ${next.rationale} Please help me do this, or tell me what you need from me.`))}”</p></div></div>`] : []),
-    // Unknowns stay in the main view (never only behind a disclosure); not counted as asks.
+    ...pending.map((x) => approvalLinkRow(x, l, now, o.sample, true)),
+    ...failed.map((x) => { const v = approvalView(x, l); return askLink(`/approvals/${esc(encodeURIComponent(x.id))}`, `${stateChip("rejected", t("Ei õnnestunud — vaata üle", "Did not work — review it"))}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`, esc([v.title, v.recipient.name].filter(Boolean).join(" · ")), esc(fmtWhen(v.outcome?.observed_at ?? x.consumed_at, l, now))); }),
+    ...qs.map((x) => `<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Vasta assistendile ühele küsimusele:", "Answer one question for your assistant:")}</span><p class="small">„${esc(x.q)}” ${esc(x.then)}</p></div></div>`),
+    // Unknowns stay in the main view, before any disclosure; not counted as asks.
     ...(a && (o.coverage.unresolved || a.gaps.length) ? [`<div class="ask-row"><strong>${t("Assistent pole veel kõike hinnanud:", "Your assistant has not assessed everything yet:")}</strong><ul class="tight">${[...(o.coverage.unresolved ? [t(`${o.coverage.unresolved} kohustus(t) on veel lahtised`, `${o.coverage.unresolved} item(s) still unresolved`)] : []), ...a.gaps].map((g) => `<li class="small">${esc(g)}</li>`).join("")}</ul></div>`] : []),
-    ...optional.map((x) => `<div class="ask-row"><a class="tap-link" href="#soov-${esc(x.id)}"><strong>${t("Valikuline:", "Optional:")}</strong> ${esc(needLabel(x, l) ?? x.need_redacted)}</a><p class="small muted">${t("Seda ei saa assistent sinu eest teha. Võid soovi anonüümselt avaldada.", "Your assistant can't do this for you. You may publish it anonymously.")}</p></div>`),
+    // Rationale and any effort estimate are the assistant's words, labelled as such; never in the hero or the counts.
+    ...(next ? [`<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Järgmine samm:", "Next step:")} ${esc(next.title)}</span><p class="small"><span class="muted">${t("Assistendi hinnang:", "Your assistant's estimate:")}</span> ${esc([next.rationale, next.estimated_effort_saved?.trim()].filter(Boolean).join(" "))}</p><details class="plain"><summary>${t("Mida assistendile öelda", "What to tell your assistant")}</summary><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(t(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale} Palun aita mul see ära teha või ütle, mida sinult vaja on.`, `Next step from my AI Launchpad assessment: "${next.title}". Why: ${next.rationale} Please help me do this, or tell me what you need from me.`))}”</p></div></details></div></div>`] : []),
+    ...optional.map((x) => `<div class="ask ask--note"><div class="ask-body"><a class="tap-link" href="#soov-${esc(x.id)}"><span><strong>${t("Valikuline:", "Optional:")}</strong> ${esc(needLabel(x, l) ?? x.need_redacted)}</span></a><p class="small">${t("Seda ei saa assistent sinu eest teha. Võid soovi anonüümselt avaldada.", "Your assistant can't do this for you. You may publish it anonymously.")}</p></div></div>`),
   ];
 
   // Assistent tegi: finished or prepared work only, never reads. Approved work still waiting for
@@ -1227,6 +1534,8 @@ export function tanaBody(o: TanaOpts): string {
     : !a && !o.approvals.length ? `<a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a>` : "";
   const h1 = n === 0 ? (open ? t("Täna ei oota sinult ükski kinnitus", "No approval is waiting for you today") : t("Täna pole sinult midagi vaja", "Nothing needs you today")) : n === 1 ? t("Sinult on täna vaja üht asja", "You're needed for 1 thing today") : t(`Sinult on täna vaja ${n} asja`, `You're needed for ${n} things today`);
 
+  // One sample marker per page: with the sample bar shown, a synthetic company keeps only its source line here.
+  const sourceChip = !deadlines ? "" : deadlines.company.synthetic ? (o.sample ? "" : sampleChip(l)) : labelChip(deadlines.company.provenance === "public_register" ? "official" : "assistant", t(deadlines.company.label_et, deadlines.company.label_en));
   const tulekul = deadlines ? deadlinesList(deadlines, l, { now, prompts: true })
     : o.deadlines === "not_cached" ? `<p class="muted">${t("Registri andmeid laaditakse. Värskenda lehte hetke pärast.", "Register facts are loading. Refresh the page in a moment.")}</p>`
     : o.deadlines === "invalid_code" ? deadlinesHint(l, t("Registrikood ei ole korrektne — palu assistendil see üle kontrollida.", "The registry code is not valid — ask your assistant to check it."), l)
@@ -1235,32 +1544,37 @@ export function tanaBody(o: TanaOpts): string {
     : `<p class="muted">${t(`Tähtajad ilmuvad siia, kui assistent teab sinu registrikoodi. Küsi temalt: „${TRY_PROMPT[0]}”`, `Deadlines appear here once your assistant knows your registry code. Ask it: “${TRY_PROMPT[1]}”`)}</p>`;
 
   const c = o.coverage;
-  const how = `<details><summary>${t("Kuidas see kokku pandi", "How this was put together")}</summary>
+  const how = `<details class="plain"><summary>${t("Kuidas see kokku pandi", "How this was put together")}</summary><div class="note">
 <p class="small">${deadlines?.company.synthetic ? t("Tähtajad: reeglistik ja näidisandmed.", "Deadlines: rules and sample data.") : deadlines?.company.provenance === "public_register" ? t("Tähtajad: reeglistik ja avalikud avaandmed (Ärikratt).", "Deadlines: rules and public open data (Ärikratt).") : t("Tähtajad: reeglistik ja sinu assistendi teated.", "Deadlines: rules and your assistant's reports.")} ${esc(t(`Assistendi teated: ${o.reportCount}, AI-hüppelaud neid ei kontrollinud. Allikast kontrollitud tulemusi: ${c.independently_verified_outcomes}.`, `Assistant reports: ${o.reportCount}, not checked by AI Launchpad. Outcomes verified at the source: ${c.independently_verified_outcomes}.`))} ${t("Säästetud aega ei ole mõõdetud, seega me seda ei näita.", "Time saved is not measured, so we don't show it.")}</p>
 ${a ? `<p class="small">${esc(t(`Assistendi hinnangul on ${c.covered} kohustust ${c.denominator}-st kaardistatust korras${c.percent != null ? ` (${c.percent}%)` : ""}.`, `Your assistant assesses ${c.covered} of ${c.denominator} mapped responsibilities as handled${c.percent != null ? ` (${c.percent}%)` : ""}.`))}${o.assessedAt ? ` ${t("Hinnatud", "Assessed")} ${esc(fmtWhen(o.assessedAt, l, now))}.` : ""}</p>
 <p class="small muted">${a.company_label ? t("Ettevõtte nime andis sinu assistent", "Company label supplied by your assistant") : t("Tööruumi nimi", "Workspace label")}${a.company_registry_ref ? ` · ${t("registriviide", "registry ref")} ${esc(a.company_registry_ref)}` : ""} — ${t("seda ei ole avalikust registrist kontrollitud ja see ei tõenda volitust.", "not verified against a public register, and not a mandate.")}</p>
 <p class="small">${esc(a.conclusion)}</p>
 <ul class="tight">${a.responsibilities.map((r) => `<li class="small">${esc(r.label)} — ${r.is_core ? t("sinu põhitöö", "your core work") : isHandled(r) ? esc(t(`teeb ${r.executor} (assistendi hinnang)`, `handled by ${r.executor} (your assistant's assessment)`)) : r.applicability === "unresolved" ? t("lahtine", "unresolved") : t("teed praegu ise", "you do it yourself now")}<br><span class="muted">${esc(r.reason)}</span></li>`).join("")}</ul>` : ""}
 ${o.exclusions.length ? `<p class="small muted">${t("Varasematest hinnangutest eemaldatud:", "Removed since earlier assessments:")} ${o.exclusions.map((x) => esc(x.label)).join(", ")}</p>` : ""}
-</details>`;
+</div></details>`;
 
-  return `<section class="card hero" aria-labelledby="t-h">
+  // T5 (#61) puts its progress strip directly under the pills, before the primary action.
+  return `<section class="hero" aria-labelledby="t-h">
 <p class="company">${esc(a?.company_label ?? deadlines?.company.name ?? o.label)}</p>
 <h1 id="t-h">${esc(h1)}</h1>
 <p class="lede">${esc(lede)} <span class="small muted">${timeEl(tallinnYmd(now), TODAY[l].format(now))}</span></p>
 <nav class="today-sum" aria-label="${t("Kokkuvõte", "Summary")}"><a${n ? ' class="needs"' : ""} href="#ootab"><b>${n}</b><span>${t("ootab sinult", "need you")}</span></a><a href="#tegi"><b>${doneCount}</b><span>${t("assistent tegi", "done for you")}</span></a><a href="#tulekul"><b>${upcoming}</b><span>${t("tulekul", "coming up")}</span></a></nav>
+${o.handover ? handoverStrip(o.handover, l) : ""}
 ${primary}
 </section>
-<section class="card" id="ootab" aria-labelledby="ootab-h"><h2 id="ootab-h">${t("Ootab sinult", "Needs you")} (${n})</h2>
+<div class="tana-grid"><div class="col">
+<section class="section" id="ootab" aria-labelledby="ootab-h"><h2 id="ootab-h">${t("Ootab sinult", "Needs you")} (${n})</h2>
 ${askRows.join("") || `<p class="muted">${t("Praegu ei oota sinult midagi.", "Nothing is waiting for you right now.")}</p>`}</section>
-<section class="card timeline" id="tegi" aria-labelledby="tegi-h"><h2 id="tegi-h">${t("Assistent tegi", "Done for you")} (${doneCount})</h2>
+<section class="section timeline" id="tegi" aria-labelledby="tegi-h"><h2 id="tegi-h">${t("Assistent tegi", "Done for you")} (${doneCount})</h2>
 ${doneRows.join("") || `<p class="muted">${t(`Veel pole midagi tehtud. Proovi assistendile öelda: „${TRY_PROMPT[0]}”`, `Nothing done yet. Try telling your assistant: “${TRY_PROMPT[1]}”`)}</p>`}
 ${handledLine}
 <a class="tap-link" href="/activity">${t("Kõik tehtud tööd", "Everything done")}</a></section>
-<section class="card" id="tulekul" aria-labelledby="tulekul-h"><h2 id="tulekul-h">${t("Tulekul", "Coming up")} (${upcoming})</h2>
-${deadlines ? `<div class="labels">${deadlines.company.synthetic ? sampleChip(l) : deadlines.company.provenance === "public_register" ? labelChip("official", t(deadlines.company.label_et, deadlines.company.label_en)) : labelChip("assistant", t(deadlines.company.label_et, deadlines.company.label_en))}<span class="small muted">${esc([deadlines.company.name, deadlines.company.registry_code].filter(Boolean).join(" · "))}</span></div>` : ""}
+</div><div class="col">
+<section class="section" id="tulekul" aria-labelledby="tulekul-h"><h2 id="tulekul-h">${t("Tulekul", "Coming up")} (${upcoming})</h2>
+${deadlines ? `<div class="labels">${sourceChip}<span class="small muted">${esc([deadlines.company.name, deadlines.company.registry_code].filter(Boolean).join(" · "))}</span></div>` : ""}
 ${tulekul}
 ${deadlines ? `<p class="small muted">${t("Tähtajad arvutab reeglistik, mitte tehisaru. Kuupäevad on arvutatud, mitte esitatud ega makstud.", "Deadlines are calculated by rules, not AI. Dates are computed, not filed or paid.")}${deadlines.company.attribution && !deadlines.company.synthetic ? ` ${esc(deadlines.company.attribution)}` : ""}</p>` : ""}</section>
+</div></div>
 ${unmetNeedsBody({ csrf: o.csrf, needs: o.needs, lang: l })}
 ${how}`;
 }
@@ -1295,7 +1609,7 @@ ${calendarSetup(l)}
 <p><a class="tap-link" href="/uhenda">${t("Tagasi: Ühendus", "Back: Connection")}</a></p></section>`;
 }
 
-export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; now?: Date; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] } }): string {
+export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; now?: Date; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] }; handover?: Handover }): string {
   const l = o.lang, t = tr(l), now = o.now ?? new Date();
   const base = String(o.baseUrl ?? "").replace(/\/+$/, ""), endpoint = `${base}/mcp`, here = `${base}/uhenda?a=${o.assistant}`;
   let parsed: URL | null = null;
@@ -1308,13 +1622,16 @@ export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgp
     : t("ChatGPT Pro paketis töötavad tähtajad ja juhised (ainult lugemine). Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", "On ChatGPT Pro, deadlines and guidance work (read-only). Approvals (“Approve exactly this”) need ChatGPT Business.");
   const which = t("Kumba valida? Kõige lihtsam algus on Claude: ühendus ja kinnitused töötavad ka tasuta paketis (testitud 30.10.2026). ChatGPT-s vajavad kinnitused Business paketti.", "Which one? The easiest start is Claude: the connection and approvals work on the free plan too (tested 30 Oct 2026). In ChatGPT, approvals need the Business plan.");
   const address = remoteReady ? `<div class="endpoint"><code>${wbr(endpoint)}</code></div><p class="small muted">${t("Vali aadress ja kopeeri see.", "Select the address and copy it.")}</p>`
-    : `<div class="notice"><p class="small">${t("Avalik HTTPS-aadress pole selles serveris veel seadistatud, seega pilves töötav assistent ei saa veel ühenduda.", "A public HTTPS address is not configured on this server yet, so a cloud assistant cannot connect yet.")}</p></div>`;
+    : `<div class="note"><p class="small">${t("Avalik HTTPS-aadress pole selles serveris veel seadistatud, seega pilves töötav assistent ei saa veel ühenduda.", "A public HTTPS address is not configured on this server yet, so a cloud assistant cannot connect yet.")}</p></div>`;
   const s = o.state;
   const chip = s.kind === "connected"
     ? (() => { const d = new Date(s.at), time = TIME[l].format(d), sameDay = tallinnYmd(d) === tallinnYmd(now); const who = s.who ?? t("Sinu assistent", "Your assistant"); return `<div class="status-chip" id="connect-status" data-state="connected" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${esc(t(`Ühendatud · ${who} jõudis kohale ${sameDay ? "" : `${DAY.et.format(d)} `}kell ${time}`, `Connected · ${who} reached AI Launchpad ${sameDay ? "" : `on ${DAY.en.format(d)} `}at ${time}`))}</span></div>`; })()
-    : `<div class="status-chip" id="connect-status" data-state="waiting" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${s.kind === "anon" ? `${t("Logi sisse, et näha, kas sinu assistent on ühendatud.", "Sign in to see whether your assistant is connected.")} <a href="/login">${t("Logi sisse", "Sign in")}</a>` : s.kind === "sample" ? t("Näidistööruumis ühenduse olekut ei jälgita.", "Connection status is not tracked in a sample workspace.") : esc(t(`Ootan, et ${name} ühenduks…`, `Waiting for ${name} to connect…`))}</span></div>`;
+    : `<div class="status-chip" id="connect-status" data-state="${s.kind === "sample" ? "sample" : "waiting"}" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${s.kind === "anon" ? `${t("Logi sisse, et näha, kas sinu assistent on ühendatud.", "Sign in to see whether your assistant is connected.")} <a href="/login">${t("Logi sisse", "Sign in")}</a>` : s.kind === "sample" ? t("Näidistööruumis ühenduse olekut ei jälgita.", "Connection status is not tracked in a sample workspace.") : esc(t(`Ootan, et ${name} ühenduks…`, `Waiting for ${name} to connect…`))}</span></div>`;
+  // A sample workspace has nothing to set up, so „Käest ära” comes first (QA M2).
+  const handover = o.standing && o.handover ? handoverSection(o.handover, l, o.standing.csrf, now) : "", sampleFirst = s.kind === "sample";
   return `<h1>${t("Ühenda oma assistent", "Connect your assistant")}</h1>
 <p class="lede">${t("Sinu ChatGPT või Claude näeb sinu tähtaegu ja valmistab töid ette. Sina kinnitad ainult selle, mis sind seob.", "Your ChatGPT or Claude sees your deadlines and prepares work for you. You approve only what binds you.")}</p>
+${sampleFirst ? handover : ""}
 <p class="small">${esc(which)}</p>
 <nav class="choice" aria-label="${t("Vali assistent", "Choose your assistant")}"><a href="/uhenda?a=chatgpt"${o.assistant === "chatgpt" ? ' aria-current="true"' : ""}>ChatGPT</a><a href="/uhenda?a=claude"${o.assistant === "claude" ? ' aria-current="true"' : ""}>Claude</a></nav>
 <p class="small">${esc(plan)}</p>
@@ -1332,6 +1649,7 @@ ${o.owner ? `<p class="small"><a class="tap-link" href="/setup">${t("Pole veel a
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p><p><a class="tap-link" href="/kataloog?g=raamatupidamine">${t("Järgmine samm: ühenda oma raamatupidamine → Kataloog", "Next step: connect your accounting → Catalogue")}</a></p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
 ${o.calendar ? calendarSection(l, o.calendar) : ""}
+${sampleFirst ? "" : handover}
 ${o.standing ? standingSection(l, o.standing, now) : ""}
 ${remoteReady ? `<section class="card" aria-labelledby="phone-h"><h2 id="phone-h">${t("Jätka telefonis", "Continue on your phone")}</h2><p class="small muted">${t("Ava see aadress oma telefonis:", "Open this address on your phone:")}</p><p class="big-url">${wbr(here)}</p></section>` : ""}
 ${techDetails(l, `${techList([[t("MCP-aadress", "MCP address"), endpoint], [t("Sisselogimine", "Sign-in"), "OAuth 2.1 + PKCE"], [t("Õigused", "Scopes"), "progress:read · progress:report (Jah-linnukesega)"], [t("Kliendi nimi", "Client name"), t("kliendi enda antud, kontrollimata", "supplied by the client, not verified")]])}
@@ -1378,7 +1696,7 @@ export function activityBody(opts: { rows: Record<string, string>[]; receipts: R
   });
   return `<h1>${t("Tehtud", "Done")}</h1><p class="lede">${t("Mida sinu assistent sinu eest tegi ja mida sina otsustasid.", "What your assistant did for you and what you decided.")}</p>
 <div class="note"><p class="small">${t("See pole täielik auditilogi: ebaõnnestunud päringud võivad puududa. Tööd, mida assistent teeb teistes teenustes, siin ei nähta — see paistab ainult assistendi teatena ja on nii ka märgitud.", "Not a complete audit trail: failed requests may be missing. Work your assistant does with other providers is not observed here — it appears only as assistant reports, labelled as such.")}</p></div>
-<section class="card timeline" aria-labelledby="done-h"><h2 id="done-h">${t("Viimati tehtud", "Recently done")}</h2>${done.join("") || `<p>${t("Veel pole midagi tehtud.", "Nothing done yet.")}</p>`}</section>
+<section class="section timeline" aria-labelledby="done-h"><h2 id="done-h">${t("Viimati tehtud", "Recently done")}</h2>${done.join("") || `<p>${t("Veel pole midagi tehtud.", "Nothing done yet.")}</p>`}</section>
 ${techDetails(l, `<h2>${t("Kogu logi", "Full log")}</h2>${opts.rows.map((r) => `<div class="row"><code>${esc(r.action)}</code> · ${esc(r.actor)} · ${esc(r.outcome)}<br><span class="small muted">${esc(r.created_at)} · ${esc(r.summary)}</span></div>`).join("") || `<p>${t("Logi on tühi.", "No activity yet.")}</p>`}
 <h2>${t("Salvestatud teated (täpselt nagu salvestati)", "Accepted report payloads (exactly as saved)")}</h2>
 ${opts.receipts.map((r) => `<details><summary>${esc(r.kind)} ${esc(r.report_id)} · ${esc(r.created_at)}</summary><pre>${esc(r.payload_json)}</pre><pre>${esc(r.receipt_json)}</pre></details>`).join("") || `<p>${t("Teateid veel pole.", "No reports yet.")}</p>`}

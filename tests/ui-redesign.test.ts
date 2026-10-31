@@ -4,6 +4,7 @@ import { computeObligations } from "../src/obligations.js";
 import { SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import type { ApprovalRow } from "../src/mcp.js";
 import { assessmentSchema, computeCoverage } from "../src/core.js";
+import { computeHandover } from "../src/handover.js";
 
 // Pure view tests for the coherent mobile redesign. Browser geometry and
 // interaction live in tests/ui-redesign.browser.mjs.
@@ -42,6 +43,32 @@ describe("shell, locale and login", () => {
     expect(en).toContain('<html lang="en">'); expect(en).toContain(">Today</a>"); expect(en).toContain('href="/?lang=et" hreflang="et" lang="et">ET');
     // English-only owner pages declare their language inside an Estonian shell.
     expect(shell({ title: "C", active: "none", csrf: "c", body: "<p>English</p>", bodyLang: "en" })).toContain('<div lang="en"><p>English</p></div>');
+  });
+
+  test("a sample owner page carries exactly one Näidis marker, in the bar above the content", () => {
+    const html = shell({ title: "Kinnitus", active: "none", csrf: "csrf-x", body: approvalCardBody({ csrf: "csrf-x", a: approval(), lang: "et", sample: true, now: NOW }), sample: true });
+    expect(html.match(/class="label-chip label-chip--sample"/g)).toHaveLength(1);
+    expect(html).toMatch(/<p class="sample-bar"><span class="label-chip label-chip--sample">Näidis<\/span>[^]*<\/p>\n<main>/);
+    expect(html).toContain('<a class="brand" href="/">');
+    expect(shell({ title: "Täna", active: "tana", csrf: "csrf-x", body: "<p>x</p>" })).not.toContain('class="sample-bar"');
+    // Täna with a synthetic company: the bar is the only marker; Tulekul keeps its source line.
+    const tanaPage = shell({ title: "Täna", active: "tana", csrf: "csrf-x", body: tana({ deadlines: mariDeadlines, approvals: [approval()] }), sample: true });
+    expect(tanaPage.match(/class="label-chip label-chip--sample"/g)).toHaveLength(1);
+    expect(tanaPage).toContain('<span class="small muted">Mari Disain OÜ · 19990001</span>');
+  });
+
+  test("direction A tokens: every text/background pair is at least 4.5:1", () => {
+    const root = shell({ title: "x", active: "none", csrf: "", body: "" }).match(/:root\{([^}]*)\}/)![1];
+    const vars = Object.fromEntries([...root.matchAll(/--([\w-]+):([^;]+)/g)].map((m) => [m[1], m[2].trim()]));
+    const hex = (v: string): string => (v.startsWith("var(--") ? hex(vars[v.slice(6, -1)]) : v);
+    const lum = (h: string) => { const c = hex(h).replace("#", ""), f = c.length === 3 ? [...c].map((x) => x + x) : c.match(/../g)!; return f.map((x) => { const s = parseInt(x, 16) / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }).reduce((a, s, i) => a + s * [0.2126, 0.7152, 0.0722][i], 0); };
+    const ratio = (fg: string, bg: string) => { const [a, b] = [lum(vars[fg]), lum(vars[bg] === "transparent" ? "#fff" : vars[bg])].sort((x, y) => y - x); return (a + 0.05) / (b + 0.05); };
+    const pairs: [string, string][] = [["c-text", "c-bg"], ["c-text", "c-surface-2"], ["c-muted", "c-bg"], ["c-muted", "c-surface-2"], ["c-on-primary", "c-primary"], ["c-primary", "c-bg"], ["c-link", "c-surface-2"],
+      ["c-on-primary", "c-deep"], ["c-mint", "c-deep"], ["c-att", "c-bg"], ["c-att-dark", "c-att-bg"], ["c-danger", "c-bg"], ["c-focus", "c-bg"],
+      ...["official", "rule", "assistant", "owner", "ai", "sample", "where"].map((k) => [`lbl-${k}-fg`, `lbl-${k}-bg`] as [string, string]),
+      ...["drafted", "waiting", "approved", "sent", "accepted", "rejected", "paid", "void"].map((k) => [`st-${k}-fg`, `st-${k}-bg`] as [string, string])];
+    for (const [fg, bg] of pairs) expect(ratio(fg, bg), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+    expect(vars["c-bg"]).toBe("#fff");
   });
 
   test("public shell has no nav and no logout form", () => {
@@ -207,7 +234,11 @@ describe("Täna", () => {
     expect(tul).toContain('<dt class="me">Sina</dt><dd>esitad KMD e-MTA-s oma Smart-ID-ga</dd>');
     expect(tul).toContain("Summad arvutab sinu raamatupidamisprogramm, mitte tehisaru.");
     expect(tul).toContain("Valmista oktoobri KMD jaoks arved ette ja küsi minult kinnitust enne, kui midagi saadad.");
-    expect(tul).toContain('<span class="label-chip label-chip--sample">Näidis</span>');
+    expect(tul).toContain("Kes mida teeb");
+    // The sample bar already says Näidis; without it (a non-demo owner) the synthetic company carries its own chip.
+    expect(tul).not.toContain("label-chip--sample");
+    expect(tul).toContain('<span class="small muted">Mari Disain OÜ · 19990001</span>');
+    expect(tana({ deadlines: mariDeadlines, sample: false })).toContain('<span class="label-chip label-chip--sample">Näidis</span>');
     expect(html).not.toContain("Ametlik allikas");
   });
 
@@ -247,7 +278,7 @@ describe("landing and connect", () => {
       "<strong>Aastaaruanne</strong>Paneb kokku, mida aruandeks vaja. Allkirjastad ise.", "<strong>Tähtajad</strong>Teab sinu ettevõtte tähtaegu ja tuletab meelde.",
       "Alusta 2 minutiga", "Ühenda oma ChatGPT või Claude", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega — või luba edaspidi automaatselt", 'href="/demand"']) expect(et, s).toContain(s);
     for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Reminders to customers who owe you, invoices for the VAT return, the annual-report checklist", "Connect your assistant", ">Sample<",
-      "Who owes me money?", `Three invoices are overdue, ${fmtEur(72000, "en")} in total.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "Allow similar ones automatically", "Standing approval: reminders up to 500\u00a0€",
+      "Who owes me money?", `Three invoices are overdue, ${fmtEur(72000, "en")} in total.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "Allow similar ones automatically", `Standing approval: reminders up to ${fmtEur(50000, "en")}`,
       "I&#39;ll send the next ones myself.", "By the way, the VAT return is due <b>20\u00a0Nov</b> — shall I prepare October&#39;s invoices?", "What your assistant takes off your plate", "Start in 2 minutes", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
     // Four jobs, three steps, three trust items in the owner's order; no TSD bubble and no deadline-led copy.
     expect(et.match(/<ul class="jobs">.*?<\/ul>/s)![0].match(/<li>/g)).toHaveLength(4);
@@ -293,7 +324,7 @@ describe("landing and connect", () => {
 
   test("landing transcript: the owner approves and allows, the assistant sends (tribunal T-003)", () => {
     expect(landingBody({ lang: "et" })).toContain("<li>Sina: Kinnitatud</li><li>Assistent: Saadetud (näidis)</li><li>Sina: Luba sarnased automaatselt</li><li>Assistent: Püsiluba: meeldetuletused kuni 500\u00a0€. Järgmised saadan ise.");
-    expect(landingBody({ lang: "en" })).toContain("<li>You: Approved</li><li>Assistant: Sent (sample)</li><li>You: Allow similar ones automatically</li><li>Assistant: Standing approval: reminders up to 500\u00a0€. I&#39;ll send the next ones myself.");
+    expect(landingBody({ lang: "en" })).toContain(`<li>You: Approved</li><li>Assistant: Sent (sample)</li><li>You: Allow similar ones automatically</li><li>Assistant: Standing approval: reminders up to ${fmtEur(50000, "en")}. I&#39;ll send the next ones myself.`);
   });
 
   test("landing teaser: the KMD date is the engine's for November 2026 (20.11)", () => {
@@ -314,7 +345,7 @@ describe("landing and connect", () => {
     for (const k of ["approve", "allow"]) for (const p of ["out", "in", "tap"]) expect(css, `${k}-${p}`).toContain(`@keyframes lp-${k}-${p}{`);
   });
 
-  test("connect: ChatGPT first, honest plan lines, phone URL without QR, technical words only under Tehniline info", () => {
+  test("connect (ChatGPT tab): honest plan lines, phone URL without QR, technical words only under Tehniline info", () => {
     const html = connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
     expect(html).toContain('<a href="/uhenda?a=chatgpt" aria-current="true">ChatGPT</a>');
     expect(html).toContain("ChatGPT Pro paketis töötavad tähtajad ja juhised (ainult lugemine). Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.");
@@ -354,7 +385,15 @@ describe("landing and connect", () => {
 
   test("approval card: H1 is the document, why, period, 24 h validity, decided states hand the turn back", () => {
     const pending = approvalCardBody({ csrf: "c", a: approval(), lang: "et", sample: true, now: NOW });
-    expect(pending).toContain('<h1 id="a-h">Maksemeeldetuletus: arve 2026-014</h1>');
+    // T2 ticket: the request type sits on the kind line, the h1 holds the object; the amount is the hero figure.
+    expect(pending).toContain('<p class="kind">Sõnum · Maksemeeldetuletus<small>');
+    expect(pending).toContain('<h1 id="a-h">Arve 2026-014 · Demo Klient OÜ</h1>');
+    expect(pending).toMatch(/<div class="amount"><b>240,00\u00a0€<\/b><span>oktoober 2026<\/span><\/div>/);
+    // One decision form, pinned as the .decide bar: approve, then decline as a text button.
+    expect(pending.match(/name="decision"/g)).toHaveLength(2);
+    expect(pending).toMatch(/<form class="decide" method="post" action="\/approvals\/appr_1\/decide">.*<button name="decision" value="approve">Kinnita täpselt see<\/button><button class="text danger" name="decision" value="decline">Keeldu<\/button><\/form>/);
+    expect(pending.indexOf('<dl class="facts">')).toBeLessThan(pending.indexOf('<pre class="letter" tabindex="0">'));
+    expect(pending.indexOf('<pre class="letter" tabindex="0">')).toBeLessThan(pending.indexOf('value="approve"'));
     expect(pending).toContain("<strong>Miks:</strong> Demo Klient OÜ pole arvet tasunud.");
     expect(pending).toContain("oktoober 2026");
     expect(pending).toContain("Kiri, täpselt sellisena");
@@ -363,7 +402,13 @@ describe("landing and connect", () => {
     expect(pending).not.toContain("14:31-ni");
     expect(pending).not.toContain("15 minutit");
     const approved = approvalCardBody({ csrf: "c", a: approval({ state: "approved", decided_at: "2026-11-03T12:36:00Z" }), lang: "et", sample: true, now: NOW });
-    expect(approved).toContain("Kinnitatud 14:36");
+    expect(approved).toContain('<div class="strip strip--ok"><span class="stamp" aria-hidden="true"><svg');
+    expect(approved).toContain('<h1 class="receipt-head" id="a-h">Kinnitatud 14:36</h1>');
+    expect(approved).toContain('<p class="turn" role="status"><strong>Nüüd on assistendi kord.</strong>');
+    // Standing offer: one sentence + one primary; the scope radios and cap sit under „Muuda piire”, same fields and endpoint.
+    // The cap sits in .cap-now, hidden while „Muuda piire” is open; the inner button after the field submits an edited cap (QA M1).
+    expect(approved).toContain('<h2 id="so-h">Luba edaspidi sarnased automaatselt: ainult Demo Klient OÜ<span class="cap-now">, kuni 300\u00a0€</span></h2>');
+    expect(approved).toMatch(/<form method="post" action="\/standing-approvals">[^]*<button type="submit">Luba automaatselt<\/button>\n<details><summary>Muuda piire<\/summary>[^]*name="scope" value="recipient" checked[^]*name="max_eur"[^]*>\n<button type="submit">Luba automaatselt<\/button>\n<\/details><\/form>/);
     expect(approved).toContain("Nüüd on assistendi kord.");
     expect(approved).toContain("Kinnitasin");
     expect(approved).toContain("Saadetud: ootab assistendi teadet");
@@ -457,7 +502,7 @@ describe("activity and setup", () => {
       { action: "get_obligations", actor: "assistant", outcome: "ok", created_at: "2026-11-03T12:30:00Z", summary: "Read deadlines" },
     ];
     const html = activityBody({ rows, receipts: [], exclusions: [], lang: "et", now: NOW });
-    expect(html).toContain('class="card timeline"');
+    expect(html).toContain('class="section timeline"');
     expect(html).toContain("See pole täielik auditilogi");
     const main = html.slice(0, html.indexOf('<details class="tech-details">'));
     expect(main).toContain("Assistent teatas, mis kinnitatud tööga juhtus");
@@ -475,5 +520,37 @@ describe("activity and setup", () => {
     expect(html).toContain("No live model is called");
     expect(html).toContain('<form method="post" action="/setup">');
     expect(html).toContain('name="csrf" value="csrf-x"');
+  });
+});
+
+describe("„Käest ära” (#61)", () => {
+  const consumed = approval({ id: "appr_done", state: "consumed", decided_at: "2026-11-02T09:00:00Z", consumed_at: "2026-11-02T10:00:00Z", outcome_json: JSON.stringify({ outcome: "sent", history: [] }) });
+  const h = computeHandover({ assessment, obligations: mari.obligations, approvals: [consumed, approval()], rules: [], now: NOW });
+
+  test("Täna: one strip under the pills with the count, linking to Ühendus, before the primary action; no percentage", () => {
+    const html = tana({ handover: h, approvals: [approval()] });
+    const strip = html.match(/<a class="ho-strip"[^]*?<\/a>/)![0];
+    expect(strip).toContain('href="/uhenda#kaest-ara"');
+    expect(strip).toContain(`<b>Käest ära: <span class="num">1</span> töö ${h.total}-st</b>`);
+    expect(strip).not.toContain("%");
+    expect(strip.match(/<li class="ho-seg/g)).toHaveLength(h.total);
+    expect(html.indexOf('class="today-sum"')).toBeLessThan(html.indexOf('class="ho-strip"'));
+    expect(html.indexOf('class="ho-strip"')).toBeLessThan(html.indexOf('class="btn" href="/approvals/'));
+    expect(tana()).not.toContain("ho-strip");
+  });
+
+  test("Ühendus: #kaest-ara above Püsiload, one .ask, at most one filled button, the rule explained; owner-only", () => {
+    const html = connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: "csrf-x", rules: [] }, handover: h });
+    const section = html.match(/<section class="section ho" id="kaest-ara"[^]*?<\/section>/)![0];
+    expect(html.indexOf('id="kaest-ara"')).toBeLessThan(html.indexOf('id="pusiload"'));
+    expect(section.match(/class="ask"/g)).toHaveLength(1);
+    // One filled button outside „Muuda piire”; its twin inside submits an edited cap (QA M1).
+    expect((section.replace(/<details>[\s\S]*?<\/details>/g, "").match(/<button type="submit">/g) ?? []).length).toBeLessThanOrEqual(1);
+    expect(section).not.toContain("%");
+    expect(section).toContain("Kuidas see arvutatakse");
+    expect(section).toContain("Assistendi hinnang");
+    const en = connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: "csrf-x", rules: [] }, handover: h });
+    expect(en).toContain(`of ${h.total} jobs are off your plate`);
+    expect(connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "anon" }, owner: false, handover: h })).not.toContain("kaest-ara");
   });
 });

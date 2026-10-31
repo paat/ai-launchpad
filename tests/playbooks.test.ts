@@ -33,6 +33,8 @@ describe("executable job playbooks (#26)", () => {
 
   test("no playbook says Launchpad does not compute deadlines; the owner does PIN, signature and submission", () => {
     for (const p of PLAYBOOKS) expect(JSON.stringify(p), p.id).not.toMatch(/does not compute|fabricate/i);
+    // EMTA moved its tax pages; the old /taxes-and-payment hub returns 404 (QA m10). Checked 200 on 2026-10-31.
+    expect(byId("deadlines-check").source).toBe("https://www.emta.ee/en/business-client/taxes-and-payment/payment-arrears/payment-taxes");
     expect(byId("deadlines-check").steps[0]).toBe("Call get_obligations. Rules compute every date; quote them with each row's source link and never compute a deadline yourself.");
     const vat = byId("vat-return-prep").steps.join(" ");
     expect(vat).toContain("accounting software's own VAT report");

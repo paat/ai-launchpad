@@ -150,7 +150,7 @@ describe("approval cards over MCP", () => {
     expect(status).toContain('href="/approvals"');
     // The card: document title as H1, kind chip, recipient, EUR amount, period, escaped full content, digest (technical), the promise line.
     const card = await (await fetch(`${base}/approvals/${req.approval_id}`, { headers: { cookie: o.cookie } })).text();
-    for (const s of ["Arve", "Synthetic Client OÜ", "billing@client.example", "1240,00\u00a0€", "oktoober 2026", "<h1 id=\"a-h\">Payment reminder: invoice 2026-014</h1>", "Reminder for overdue invoice 2026-014", req.digest, "Kinnita täpselt see", "Keeldu", "Assistent valmistas ette",
+    for (const s of ["Arve", "Synthetic Client OÜ", "billing@client.example", "1240,00\u00a0€", "oktoober 2026", "Payment reminder", "<h1 id=\"a-h\">Invoice 2026-014 · Synthetic Client OÜ</h1>", "Reminder for overdue invoice 2026-014", req.digest, "Kinnita täpselt see", "Keeldu", "Assistent valmistas ette",
       "AI-hüppelaud ise ei saada, maksa ega esita midagi; seda teeb sinu assistent oma tööriistadega ja ainult täpselt selle sisuga."]) expect(card).toContain(s);
     // Besides the hidden form binding, the digest is shown only under Tehniline info.
     const visible = card.replace(`name="digest" value="${req.digest}"`, "");
@@ -178,7 +178,7 @@ describe("approval cards over MCP", () => {
     expect(row(req.approval_id).state).toBe("approved");
     expect((await decide(o, req.approval_id, { decision: "decline", digest: req.digest })).status).toBe(409);
     const decided = await (await fetch(`${base}/approvals/${req.approval_id}`, { headers: { cookie: o.cookie } })).text();
-    expect(decided).not.toContain("Kinnita täpselt see"); expect(decided).toMatch(/✓ <\/span>Kinnitatud \d{2}:\d{2}/); expect(decided).toContain("Kinnitasin"); expect(decided).not.toMatch(/UTC/);
+    expect(decided).not.toContain("Kinnita täpselt see"); expect(decided).toMatch(/<span class="stamp" aria-hidden="true">.*<\/span><h1 class="receipt-head" id="a-h">Kinnitatud \d{2}:\d{2}<\/h1>/); expect(decided).toContain("Kinnitasin"); expect(decided).not.toMatch(/UTC/);
     const after = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
     expect(after).toContain("Täna pole sinult midagi vaja"); expect(after).toContain("Pooleli · ootab assistendi teadet");
     const approved = parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: req.approval_id } }));
@@ -532,7 +532,8 @@ describe("standing approvals (#45)", () => {
     expect((await decide(o, first.approval_id, { decision: "approve", digest: first.digest })).status).toBe(302);
     const card = await html(o, `/approvals/${first.approval_id}`);
     expect(card).toContain("Luba edaspidi sarnased automaatselt");
-    expect(card).toContain('value="2000"');
+    // The default cap is the largest approved amount up to the next 100 € (QA m4): 1 240 € → 1 300 €.
+    expect(card).toContain('<input id="so-max" name="max_eur" inputmode="decimal" autocomplete="off" value="1300">');
     const made = await post(o, "/standing-approvals", { approval_id: first.approval_id, scope, max_eur });
     expect(made.status).toBe(302);
     expect(made.headers.get("location")).toBe(`/approvals/${first.approval_id}#pusiluba`);
@@ -677,6 +678,17 @@ describe("standing approvals (#45)", () => {
     expect((await ask(c, reminder({ kind: "send_message", amount_cents: undefined, summary: "no amount" }))).state).toBe("pending");
   });
 
+  test("„only past recipients” draws from reminder sends, not an untagged thank-you note (tribunal T-003)", async () => {
+    const o = owner("std-thanks"), c = await client(o.token);
+    const thanks = await ask(c, reminder({ kind: "send_message", recipient: { name: "Uus Klient OÜ", address: "info@uus-klient.example" }, document: { title: "Aitäh koostöö eest", content: "Tere!" }, summary: "Thank-you note" }));
+    await decide(o, thanks.approval_id, { decision: "approve", digest: thanks.digest });
+    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "300" })).status).toBe(409);
+    const real = await ask(c, reminder({ kind: "send_message" }));
+    await decide(o, real.approval_id, { decision: "approve", digest: real.digest });
+    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "300" })).status).toBe(302);
+    expect(rules("std-thanks")[0]).toMatchObject({ recipients_json: JSON.stringify(["billing@client.example"]) });
+  });
+
   test("create and revoke need the CSRF token and the exact Origin; another owner cannot revoke", async () => {
     const { o, first, rule } = await ruleFromCard("std-csrf");
     for (const [path, body] of [["/standing-approvals", { approval_id: first.approval_id, scope: "any", max_eur: "2000" }], ["/standing-approvals/revoke", { rule_id: String(rule.id) }]] as const) {
@@ -690,5 +702,58 @@ describe("standing approvals (#45)", () => {
     expect((await post(other, "/standing-approvals", { approval_id: first.approval_id, scope: "any", max_eur: "2000" })).status).toBe(404);
     expect(rules("std-csrf")[0].revoked_at).toBeNull();
     expect(rules("std-csrf-other")).toHaveLength(0);
+  });
+});
+
+describe("playbook_id on approvals („Käest ära”, #61)", () => {
+  const post = (o: { cookie: string; csrf: string }, path: string, body: Record<string, string>) =>
+    fetch(`${base}${path}`, { method: "POST", redirect: "manual", headers: { cookie: o.cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: new URLSearchParams({ csrf: o.csrf, ...body }) });
+  const page = async (o: { cookie: string }, path: string) => (await fetch(`${base}${path}`, { headers: { cookie: o.cookie } })).text();
+  const msg = (extra: Record<string, unknown> = {}) => reminder({ kind: "send_message", amount_cents: 24000, ...extra });
+
+  test("request_approval stores an optional playbook_id in both branches and get_approval echoes it; unknown or mismatched ids save nothing", async () => {
+    const o = owner("pb"), c = await client(o.token);
+    const plain = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-1", action: msg() } }));
+    expect(row(plain.approval_id).playbook_id).toBeNull();
+    expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: plain.approval_id } })).playbook_id).toBeNull();
+    const tagged = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-2", action: msg({ summary: "tagged" }), playbook_id: "payment-reminder" } }));
+    expect(row(tagged.approval_id).playbook_id).toBe("payment-reminder");
+    expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: tagged.approval_id } })).playbook_id).toBe("payment-reminder");
+    const before = (db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='pb'").get() as { n: number }).n;
+    expect((await c.callTool({ name: "request_approval", arguments: { report_id: "pb-3", action: msg(), playbook_id: "made-up" } }) as { isError?: boolean }).isError).toBe(true);
+    expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-4", action: msg(), playbook_id: "vat-return-prep" } }))).toMatch(/prepares action kind prepare_filing, not send_message\. Nothing was saved/);
+    expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-5", action: msg(), playbook_id: "deadlines-check" } }))).toMatch(/needs no approval/);
+    expect((db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='pb'").get() as { n: number }).n).toBe(before);
+    // Auto-approved under a standing rule: stored too.
+    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "any", max_eur: "2000" })).status).toBe(302);
+    const auto = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-6", action: msg({ summary: "auto" }), playbook_id: "payment-reminder" } }));
+    expect(auto.auto_approved).toBe(true);
+    expect(row(auto.approval_id).playbook_id).toBe("payment-reminder");
+  });
+
+  test("reads, logins and requests fill nothing; only a recorded done outcome fills a segment", async () => {
+    const o = owner("pb-fill"), c = await client(o.token);
+    const count = async () => (await page(o, "/uhenda")).match(/<p class="ho-sum"><span class="num">(\d+)<\/span>/)?.[1];
+    expect(await count()).toBe("0");
+    for (const [name, args] of [["get_started", {}], ["get_progress", {}], ["search_services", { query: "arve" }], ["get_obligations", { registry_code: "19990001" }]] as const) await c.callTool({ name, arguments: args });
+    const req = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "fill-1", action: msg(), playbook_id: "payment-reminder" } }));
+    expect(await count()).toBe("0");
+    const tana = await page(o, "/");
+    expect(tana).toContain('class="ho-strip" href="/uhenda#kaest-ara"');
+    expect(tana).toContain('<span class="num">0</span> tööd 1-st');
+    await decide(o, req.approval_id, { decision: "approve", digest: req.digest });
+    expect(await count()).toBe("0");
+    await c.callTool({ name: "record_action_outcome", arguments: { report_id: "fill-o", approval_id: req.approval_id, digest: req.digest, outcome: "sent", observed_at: new Date().toISOString() } });
+    expect(await count()).toBe("1");
+    const uhendus = await page(o, "/uhenda");
+    const section = uhendus.slice(uhendus.indexOf('id="kaest-ara"'), uhendus.indexOf('id="pusiload"'));
+    expect(section).not.toContain("%");
+    expect(section.match(/class="ask"/g)).toHaveLength(1);
+    // One filled button outside „Muuda piire”; its twin inside submits an edited cap (QA M1).
+    expect(section.replace(/<details>[\s\S]*?<\/details>/g, "").match(/<button type="submit">/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    // The offer posts to the existing endpoint and creates the rule for the approved recipient.
+    expect(section).toContain('<input type="hidden" name="kind" value="send_message">');
+    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "300" })).status).toBe(302);
+    expect(db.prepare("SELECT recipients_json, max_amount_cents FROM standing_approvals WHERE owner_id='pb-fill'").get()).toEqual({ recipients_json: JSON.stringify(["billing@client.example"]), max_amount_cents: 30000 });
   });
 });

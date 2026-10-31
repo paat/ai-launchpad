@@ -22,7 +22,7 @@ for (const width of [390, 320]) {
     await expect(page.locator("main h2").nth(1)).toHaveText(/^Assistent tegi/);
     await expect(page.locator("main h2").nth(2)).toHaveText(/^Tulekul/);
     await expect(page.getByText("Lase assistendil tasumata arvetele meeldetuletused koostada", { exact: false }).first()).toBeVisible();
-    await expect(page.locator("header .label-chip--sample")).toHaveText("Näidis");
+    await expect(page.locator(".sample-bar .label-chip--sample")).toHaveText("Näidis");
     await expect(page.getByText("Lisaks teeb raamatupidaja: KMD ettevalmistus (assistendi hinnang).")).toBeVisible();
     // No horizontal overflow at phone widths.
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

@@ -119,9 +119,16 @@ const known = <T>(f: Fact<T> | undefined): f is Fact<T> => f !== undefined && f.
 /** Default FY end per RPS § 13 lg 3 (U4); an assumption, never a register fact. */
 export const DEFAULT_FY_END: Fact<string> = { value: "12-31", provenance: "assumption", source: "RPS § 13 lg 3 default (U4)" };
 
-export function computeObligations(facts: CompanyFacts, opts: { today: Date; months: number }): { obligations: Obligation[]; facts_needed: FactNeeded[]; window: { from: string; to: string } } {
-  const months = Math.min(3, Math.max(1, Math.trunc(opts.months)));
-  const from = tallinnDate(opts.today);
+export function computeObligations(facts: CompanyFacts, opts: { today: Date; months: number }) {
+  return compute(facts, opts.today, Math.min(3, Math.max(1, Math.trunc(opts.months))));
+}
+/** The next annual-report row (ÄS § 179 lg 4), at most 12 months out: an executable job outside the 1–3 month window (tribunal T-001). Internal, not the get_obligations window. */
+export function nextAnnualReport(facts: CompanyFacts, today: Date): Obligation | null {
+  return compute(facts, today, 12).obligations.find((x) => x.rule_id === "annual-report") ?? null;
+}
+
+function compute(facts: CompanyFacts, today: Date, months: number): { obligations: Obligation[]; facts_needed: FactNeeded[]; window: { from: string; to: string } } {
+  const from = tallinnDate(today);
   const f0 = parse(from);
   const to = iso(utc(f0.getUTCFullYear(), f0.getUTCMonth() + months, 0));
   const inWindow = (d: string) => d >= from && d <= to;
