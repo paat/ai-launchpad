@@ -69,7 +69,7 @@ describe("executable job playbooks (#26)", () => {
     expect(bank[0]).toMatch(/^Bank: only LHV can be linked, through LHV's own read-only connection \(no payments\)\./);
     expect(bank[0]).toContain("quote only the entry with id lhv-ai; the connector address is https://mcp.lhv.ai/mcp");
     expect(bank[0]).toContain("own Smart-ID (never automate it)");
-    expect(bank[0]).toContain("Any other bank: say plainly that it cannot be linked yet and stop here without the last step. Never start a bank key, credential or payment setup, and never offer community bank tools.");
+    expect(bank[0]).toContain("Any other bank: say plainly that it cannot be linked live yet and offer the statement route instead: the owner downloads the account statement for the needed period from their internet bank (CSV or CAMT.053 XML) and shares the file here, and you use it only to match payments to invoices. Then stop here without the last step. Never start a bank key, credential or payment setup, and never offer community bank tools.");
     expect(verify).toContain("LHV, only the date of the latest transaction, with no amounts.");
     for (const s of ["paste the key values", "Add custom connector", "API access permits", "search_services with \"werkzeug\""]) {
       expect(branch.filter((x) => x.includes(s)).every((x) => x.startsWith("Accounting:")), s).toBe(true);
