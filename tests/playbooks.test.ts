@@ -244,6 +244,7 @@ describe("agent-facing copy over MCP", () => {
     expect(i).not.toMatch(/CAMT|ISO|XML/);
     expect(i).toContain("Before asking the owner for any fact or document, check both public data (get_obligations public_facts) and the owner's own connected files, such as Google Drive; ask only if neither has it. Always ask the facts_needed questions from get_obligations, and never let a file stand in for the owner's answer to them.");
     expect(i).toContain("call connect_my_services and follow the connect-service playbook it returns before answering from your own connector directory; it says which lookups are allowed.");
+    expect(i).toContain("When the owner asks how far their books are for a period, what is missing from those books, or to close a month or year in the books, call get_started and follow the books-catch-up playbook: an accounting tool's own month-close check cannot see bank accounts the books do not have yet.");
     const tools = (await c.listTools()).tools;
     expect(tools.find((x) => x.name === "search_services")?.description).toMatch(/^Research catalogue behind the connect-service playbook: when linking a service, query only as that playbook's branch says\./);
   });
