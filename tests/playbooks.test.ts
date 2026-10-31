@@ -16,7 +16,7 @@ const byId = (id: string) => PLAYBOOKS.find((p) => p.id === id)!;
 
 describe("executable job playbooks (#26)", () => {
   test("shape: every field present, deterministic copy, known approval kind", () => {
-    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-accounting", "payment-reminder", "vat-return-prep", "annual-report"]);
+    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-service", "payment-reminder", "vat-return-prep", "annual-report"]);
     for (const p of PLAYBOOKS) {
       for (const k of ["id", "title", "title_et", "summary", "source", "source_label", "done_when", "verify_with"] as const) expect(p[k], `${p.id}.${k}`).toMatch(/\S/);
       expect(p.steps.length, p.id).toBeGreaterThan(0);
@@ -47,11 +47,13 @@ describe("executable job playbooks (#26)", () => {
     expect(remind).toMatch(/request_approval with action kind send_message.*get_approval.*record_action_outcome with outcome sent.*Record paid only after a sent outcome, with a NEW report_id.*only if you see the payment/s);
   });
 
-  test("connect-accounting: owner does the login, keys never go through the chat, read-only check only", () => {
-    const p = byId("connect-accounting");
+  test("connect-service: owner does the login, keys never go through the chat, read-only check only", () => {
+    const p = byId("connect-service");
     expect(p).toMatchObject({ approval_kind: null, triggers: [] });
     const steps = p.steps.join(" ");
     expect(steps).toMatch(/Check your own connectors first.*ask one question/s);
+    expect(p.steps[0]).toMatch(/^Speak plainly: the owner may not know what MCP, a connector or an API is/);
+    expect(steps).toContain("Proton Mail has no connector: prepare each message here and open it in the owner's mail app, where the owner presses Send.");
     expect(steps).toContain("own Smart-ID or ID-card (never automate the login)");
     expect(steps).toContain("Never ask for keys, passwords or PINs in the chat. If the owner pastes one here, do not repeat, store or pass it to any tool; tell them to delete that permit, create a new one and delete the chat message.");
     expect(p.needs.join(" ")).toContain("never ask for, repeat or accept a password or PIN in the chat");
@@ -176,6 +178,15 @@ describe("agent-facing copy over MCP", () => {
     await Promise.all([server.connect(a), c.connect(b)]);
     return c;
   }
+
+  test("server instructions send 'connect my e-mail / accounting' to Launchpad first, in plain words", async () => {
+    const c = await connect(["progress:read"]);
+    const i = c.getInstructions() ?? "";
+    expect(i).toContain("may not know technical words such as MCP, connector or API");
+    expect(i).toContain("follow the connect-service playbook and look the service up with search_services before answering from your own connector directory");
+    const tools = (await c.listTools()).tools;
+    expect(tools.find((x) => x.name === "search_services")?.description).toMatch(/^Find how to connect a service the owner names/);
+  });
 
   test("read-only errors: no consent label, request progress:report, tool-accurate copy", async () => {
     const c = await connect(["progress:read"]);

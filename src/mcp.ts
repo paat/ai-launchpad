@@ -253,8 +253,10 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
   annual_next: annual && withPlaybook(annual) };
 }
 
+/** Sent at connect time, so the owner's assistant routes "connect my e-mail / accounting" here instead of guessing. */
+export const SERVER_INSTRUCTIONS = "AI Launchpad helps a small-business owner who may not know technical words such as MCP, connector or API. Start with get_started. Whenever the owner wants to link a service to you (their accounting software, e-mail or bank), follow the connect-service playbook and look the service up with search_services before answering from your own connector directory. Speak plainly and name buttons exactly as the screen shows them.";
 export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {}), hooks: { onUnmetNeed?: () => void } = {}) {
-  const server = new McpServer({ name: "ai-launchpad", version: "0.2.0" });
+  const server = new McpServer({ name: "ai-launchpad", version: "0.2.0" }, { instructions: SERVER_INSTRUCTIONS });
   const need = (scope: string) => ctx.scopes.includes(scope);
   /** Tools that need progress:report and sharing on: a read-only connection gets the same reconnect guidance everywhere. */
   const sharingGate = (nothing: string) => !need("progress:report") ? readOnly(nothing) : !ctx.reportingEnabled ? `Progress sharing is stopped by the owner (it is off by default). ${nothing}` : null;
@@ -331,7 +333,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     return json(receipt);
   });
 
-  server.registerTool("search_services", { description: `Search the ${loadCatalog().length}-record Estonian business services research catalog. Entries are documented leads with connection guidance and primary sources, NOT runtime-verified connections. Public catalogue data: available to any authenticated connection; never contains owner data.`, inputSchema: { query: z.string().max(120), limit: z.number().int().min(1).max(25).optional() }, annotations: { readOnlyHint: true } }, async (args) => {
+  server.registerTool("search_services", { description: `Find how to connect a service the owner names (their accounting software, e-mail or bank): use this before your own connector directory. Searches the ${loadCatalog().length}-record Estonian business services research catalog. Entries are documented leads with connection guidance and primary sources, NOT runtime-verified connections. Public catalogue data: available to any authenticated connection; never contains owner data.`, inputSchema: { query: z.string().max(120), limit: z.number().int().min(1).max(25).optional() }, annotations: { readOnlyHint: true } }, async (args) => {
     const results = searchServices(args.query, args.limit ?? 10);
     logActivity(db, ctx.ownerId, "assistant", "search_services", "ok", `Catalog search returned ${results.length}.`);
     return json({ catalog_size: loadCatalog().length, disclaimer: "Research snapshot (27 Oct 2026). None of these services were runtime-tested by Launchpad.", results });
