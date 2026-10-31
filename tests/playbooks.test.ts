@@ -55,7 +55,9 @@ describe("executable job playbooks (#26)", () => {
     expect(all).toContain("For any other code or a foreign account, say you cannot tell the bank and ask once whose account it is.");
     expect(all).toContain("If it can only read");
     expect(all).toContain("never ask for a key with more rights");
-    expect(all).toContain("Use the public register totals in get_obligations only to cross-check it, never as the entry itself.");
+    expect(all).toContain("Use the public register totals in get_obligations only to cross-check it, never as the entry itself. Enter it only under its own post_entries approval");
+    expect(all).toContain("amount_cents: REQUIRED, the sum of the entries' amounts without signs, in euro cents (453,20 € → 45320)");
+    expect(all).toContain("split a longer month into parts, each with its own approval");
     expect(all).toContain("as a draft (unconfirmed) bank entry");
     expect(all).toContain("never post during this step");
     expect(all).toContain("every connected mailbox, searched by the vendor's name and the amount");

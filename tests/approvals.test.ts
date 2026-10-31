@@ -303,6 +303,8 @@ describe("approval cards over MCP", () => {
     expect(parsed(await call(f, "f-failed", "failed")).outcome).toBe("failed");
     const i = await approve("i", reminder());
     expect(errText(await call(i, "i-submitted", "submitted"))).toMatch(/send_invoice.*sent or failed\. Nothing was recorded/);
+    expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: "b-noamount", action: reminder({ kind: "post_entries", amount_cents: undefined }) } }))).toMatch(/amount_cents is required for post_entries\. Nothing was saved/);
+    expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: "b-noperiod", action: reminder({ kind: "post_entries", period: undefined }) } }))).toMatch(/period is required for post_entries.*Nothing was saved/);
     const b = await approve("b", reminder({ kind: "post_entries", period: "2026-10" }));
     expect(errText(await call(b, "b-sent", "sent"))).toMatch(/post_entries.*posted or failed\. Nothing was recorded/);
     expect(parsed(await call(b, "b-posted", "posted")).outcome).toBe("posted");
