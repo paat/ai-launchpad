@@ -1562,9 +1562,8 @@ const STEP_ICONS = [
 
 /** After scrolling or resizing, preserve the active card when it is wholly in view. */
 export function jobCardAfterScroll(active: number, track: { left: number; right: number }, cards: readonly { left: number; right: number }[]): number {
-  const fullyVisible = (i: number) => cards[i].left >= track.left - 1 && cards[i].right <= track.right + 1;
-  if (fullyVisible(active)) return active;
-  for (let i = 0; i < cards.length; i++) if (fullyVisible(i)) return i;
+  if (cards[active].left >= track.left - 1 && cards[active].right <= track.right + 1) return active;
+  for (let i = 0; i < cards.length; i++) if (cards[i].left >= track.left - 1 && cards[i].right <= track.right + 1) return i;
   let nearest = 0, distance = Infinity;
   for (let i = 0; i < cards.length; i++) {
     const d = Math.abs(cards[i].left - track.left);

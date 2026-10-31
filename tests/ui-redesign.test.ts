@@ -448,6 +448,7 @@ describe("landing and connect", () => {
   });
 
   test("landing carousel: scroll end preserves a visible active card, then prefers the first visible or nearest card (#69)", () => {
+    expect(String(jobCardAfterScroll)).not.toContain("__name");
     const track = { left: 0, right: 300 };
     expect(jobCardAfterScroll(2, track, [{ left: 0, right: 100 }, { left: 100, right: 200 }, { left: 200, right: 300 }])).toBe(2);
     expect(jobCardAfterScroll(2, track, [{ left: 0, right: 100 }, { left: 110, right: 210 }, { left: 220, right: 320 }])).toBe(0);

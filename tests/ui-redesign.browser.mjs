@@ -115,8 +115,6 @@ const browser = await chromium.launch({
 const geometry = {};
 try {
   const context = await browser.newContext({ serviceWorkers: "block" });
-  // tsx decorates the exported carousel helper with esbuild's __name; the real server is plain tsc output.
-  await context.addInitScript(() => { window.__name = (fn) => fn; });
   const attempts = [];
   await context.route("**/*", (route) => { attempts.push(route.request().url()); return route.abort(); });
   const page = await context.newPage();
