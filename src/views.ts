@@ -956,8 +956,8 @@ export function tokenOnceBody(raw: string): string {
 }
 
 // --- Approvals (#18, ux2 change 4): the assistant did the work; the owner's part is one decision. ---
-const KIND: Record<string, [string, string]> = { send_message: ["Sõnum", "Message"], send_invoice: ["Arve", "Invoice"], prepare_payment: ["Makse ettevalmistus", "Payment preparation"], prepare_filing: ["Deklaratsiooni ettevalmistus", "Filing preparation"] };
-const CONTENT_HEAD: Record<string, [string, string]> = { send_message: ["Kiri, täpselt sellisena", "The message, exactly as it will go"], send_invoice: ["Arve, täpselt sellisena", "The invoice, exactly as it will go"], prepare_payment: ["Makse, täpselt sellisena", "The payment, exactly as prepared"], prepare_filing: ["Deklaratsioon, täpselt sellisena", "The filing, exactly as prepared"] };
+const KIND: Record<string, [string, string]> = { send_message: ["Sõnum", "Message"], send_invoice: ["Arve", "Invoice"], prepare_payment: ["Makse ettevalmistus", "Payment preparation"], prepare_filing: ["Deklaratsiooni ettevalmistus", "Filing preparation"], post_entries: ["Raamatupidamise kanded", "Book entries"] };
+const CONTENT_HEAD: Record<string, [string, string]> = { send_message: ["Kiri, täpselt sellisena", "The message, exactly as it will go"], send_invoice: ["Arve, täpselt sellisena", "The invoice, exactly as it will go"], prepare_payment: ["Makse, täpselt sellisena", "The payment, exactly as prepared"], prepare_filing: ["Deklaratsioon, täpselt sellisena", "The filing, exactly as prepared"], post_entries: ["Kanded, täpselt sellisena", "The entries, exactly as they will be posted"] };
 interface ApprovalPayload { kind?: string; recipient?: { name?: string; address?: string } | string; amount_cents?: number; period?: string; document?: { title?: string; content?: string }; document_ref?: string; summary?: string; }
 interface OutcomeEntry { outcome: string; observed_at?: string; recorded_at?: string }
 /** Stored payloads are parsed leniently so earlier synthetic rows still render. */
@@ -970,16 +970,16 @@ function approvalView(a: ApprovalRow, l: Lang) {
   const recipient = typeof p.recipient === "string" ? { name: p.recipient } : p.recipient ?? {};
   const kindKey = a.kind ?? p.kind ?? "";
   const kind = KIND[kindKey] ? t(...KIND[kindKey]) : t("Varasem näidiskinnitus", "Earlier synthetic approval");
-  return { p, recipient, noAddress: approvalAddressMissing(a), kindKey, kind, title: p.document?.title ?? p.document_ref ?? kind, amount: typeof p.amount_cents === "number" ? fmtEur(p.amount_cents, l) : null, outcome, history: outcome?.history ?? (outcome ? [outcome] : []) };
+  return { p, recipient, noAddress: approvalAddressMissing(a), kindKey, kind, title: p.document?.title ?? p.document_ref ?? kind, amount: typeof p.amount_cents === "number" ? (kindKey === "post_entries" ? t(`${fmtEur(p.amount_cents, l)} kontrollsumma`, `${fmtEur(p.amount_cents, l)} check total`) : fmtEur(p.amount_cents, l)) : null, outcome, history: outcome?.history ?? (outcome ? [outcome] : []) };
 }
 /** Per-outcome receipt words: [state-chip kind, ET, EN]. */
-const OUTCOME: Record<string, [string, string, string]> = { sent: ["sent", "Saadetud", "Sent"], submitted: ["sent", "Esitatud", "Submitted"], accepted: ["accepted", "Vastu võetud", "Accepted"], rejected: ["rejected", "Tagasi lükatud", "Rejected"], paid: ["paid", "Makstud", "Paid"], failed: ["rejected", "Ei õnnestunud", "Failed"] };
+const OUTCOME: Record<string, [string, string, string]> = { sent: ["sent", "Saadetud", "Sent"], submitted: ["sent", "Esitatud", "Submitted"], accepted: ["accepted", "Vastu võetud", "Accepted"], rejected: ["rejected", "Tagasi lükatud", "Rejected"], paid: ["paid", "Makstud", "Paid"], posted: ["sent", "Kirjendatud", "Posted"], failed: ["rejected", "Ei õnnestunud", "Failed"] };
 const outcomeChip = (o: string, l: Lang, sample: boolean) => { const [k, et, en] = OUTCOME[o] ?? ["drafted", o, o]; const demo = sample && o !== "failed"; return stateChip(k, demo ? tr(l)(`${et}: demo`, `${en}: demo`) : tr(l)(et, en), demo); };
 
 function stateLine(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, sample: boolean): string {
   const t = tr(l), seen = (o: string) => v.history.find((h) => h.outcome === o);
-  const act: [string, string, string] = v.kindKey === "prepare_payment" ? ["paid", "Makstud", "Paid"] : v.kindKey === "prepare_filing" ? ["submitted", "Esitatud", "Submitted"] : ["sent", "Saadetud", "Sent"];
-  const follow: [string, string, string] | null = v.kindKey === "prepare_filing" ? ["accepted", "Vastu võetud", "Accepted"] : v.kindKey === "prepare_payment" ? null : ["paid", "Makstud", "Paid"];
+  const act: [string, string, string] = v.kindKey === "prepare_payment" ? ["paid", "Makstud", "Paid"] : v.kindKey === "prepare_filing" ? ["submitted", "Esitatud", "Submitted"] : v.kindKey === "post_entries" ? ["posted", "Kirjendatud", "Posted"] : ["sent", "Saadetud", "Sent"];
+  const follow: [string, string, string] | null = v.kindKey === "prepare_filing" ? ["accepted", "Vastu võetud", "Accepted"] : v.kindKey === "prepare_payment" || v.kindKey === "post_entries" ? null : ["paid", "Makstud", "Paid"];
   const steps: { cls: string; mark: string; text: string; note?: string }[] = [
     { cls: "done", mark: "✓", text: t("Koostatud", "Drafted"), note: `${t("Assistent", "Your assistant")} · ${fmtWhen(a.created_at, l)}` },
   ];
@@ -1005,15 +1005,16 @@ const NO_ADDRESS = (l: Lang) => tr(l)("Aadress puudub — seda kinnitust ei saa 
 function approvalFacts(v: ReturnType<typeof approvalView>, l: Lang, heroAmount = false): string {
   const t = tr(l);
   const row = (k: string, val: string | null | undefined, sub?: string | null, cls = "") => val ? `<div class="fact-row${cls}"><dt>${esc(k)}</dt><dd>${esc(val)}${sub ? `<span class="fact-sub">${esc(sub)}</span>` : ""}</dd></div>` : "";
-  return `<dl class="facts">${row(t("Saaja", "To"), v.recipient.name, v.noAddress ? NO_ADDRESS(l) : v.recipient.address)}${heroAmount ? "" : `${row(t("Summa", "Amount"), v.amount, null, " fact-row--amount")}${row(t("Periood", "Period"), v.p.period ? fmtPeriod(v.p.period, l) : null)}`}</dl>`;
+  return `<dl class="facts">${row(t("Saaja", "To"), v.recipient.name, v.noAddress ? NO_ADDRESS(l) : v.recipient.address)}${heroAmount ? "" : `${row(v.kindKey === "post_entries" ? t("Kannete summa (märgita)", "Entries total (unsigned)") : t("Summa", "Amount"), v.amount, v.kindKey === "post_entries" ? t("Kontrollsumma, mitte makse", "A check total, not a payment") : null, " fact-row--amount")}${row(t("Periood", "Period"), v.p.period ? fmtPeriod(v.p.period, l) : null)}`}</dl>`;
 }
-const amountHero = (v: ReturnType<typeof approvalView>, l: Lang) => v.amount ? `<div class="amount"><b>${esc(v.amount)}</b>${v.p.period ? `<span>${esc(fmtPeriod(v.p.period, l))}</span>` : ""}</div>` : "";
+const amountHero = (v: ReturnType<typeof approvalView>, l: Lang) => v.amount ? `<div class="amount"><b>${esc(v.amount)}</b>${v.p.period ? `<span>${esc(fmtPeriod(v.p.period, l))}</span>` : ""}${v.kindKey === "post_entries" ? `<span>${esc(tr(l)("Kannete summa märgita: kontrollsumma, mitte makse", "Entries total, unsigned: a check total, not a payment"))}</span>` : ""}</div>` : "";
 
 /** Who does what for this approval, as one sentence; the owner's part in bold. */
 function handLine(kindKey: string, l: Lang): string {
   const t = tr(l), me = `<b>${t("Sina", "You")}</b>`, ai = t("Assistent", "Your assistant");
   if (kindKey === "prepare_payment") return `<p class="hand">${ai} ${t("valmistab makse ette", "prepares the payment")}; ${me} ${t("maksad oma pangas", "pay in your bank")}.</p>`;
   if (kindKey === "prepare_filing") return `<p class="hand">${ai} ${t("valmistab ette", "prepares it")}; ${me} ${t("esitad e-MTA-s", "file it in e-MTA")}.</p>`;
+  if (kindKey === "post_entries") return `<p class="hand">${me} ${t("kontrollid ja kinnitad kanded", "check and approve the entries")}. ${ai} ${t("kirjendab need sinu raamatupidamisprogrammis ja annab siia tulemuse teada", "posts them in your accounting software and reports the result here")}.</p>`;
   return `<p class="hand">${me} ${t("kontrollid ja kinnitad, ainult see", "check and approve, nothing else")}. ${ai} ${t("saadab selle oma tööriistadega ja annab siia tulemuse teada", "sends it with its own tools and reports the result here")}.</p>`;
 }
 
@@ -1105,7 +1106,7 @@ function handoverRow(j: Job, l: Lang, now: Date, sample: boolean): string {
   const rung = j.rung === "done" ? (j.ceiling === "rule" ? `${t("Assistent teeb ise", "Your assistant does it")} ${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}` : `${t("Assistent valmistab ette, sina esitad", "Your assistant prepares, you file")} ${labelChip("official", t("Lagi käes: seadus", "At its ceiling: the law"))}`)
     : j.rung === "prep" ? t("Assistent valmistab ette, sina kinnitad", "Your assistant prepares, you approve")
     : j.rung === "other" ? `${esc(t(`Teeb ${j.assessed?.executor}`, `Done by ${fx.plain(j.assessed?.executor ?? "")}`))} ${assessedChip}` : t("Teed ise", "You do it");
-  const verb = j.ceiling === "law" ? t("esitatud", "filed") : t("saadetud", "sent");
+  const verb = j.kind === "post_entries" ? t("kirjendatud", "posted") : j.ceiling === "law" ? t("esitatud", "filed") : t("saadetud", "sent");
   const lines: string[] = [];
   if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.auto ? t(`, neist <span class="num">${e.auto}</span> ilma sinuta`, `, <span class="num">${e.auto}</span> without you`) : ""}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
   if (e.rule) lines.push(esc(t(`Püsiluba: ${standingRuleName(e.rule, l)} · aegub ${DAY.et.format(new Date(e.rule.expires_at))}`, `Standing approval: ${standingRuleName(e.rule, l)} · ends ${DAY.en.format(new Date(e.rule.expires_at))}`)));
@@ -1140,10 +1141,10 @@ function handoverNext(h: Handover, l: Lang, csrf: string): string {
   }
   if (n.type === "playbook") {
     const reminder = n.playbookId === "payment-reminder", title = hoJobTitle(n.job, l);
-    const prompt = reminder ? t(...HO_REMINDER_PROMPT) : n.obligation ? t(n.obligation.handoff.prompt_et, n.obligation.handoff.prompt_en) : t(`Valmista ette: ${title}. Küsi minult kinnitust enne, kui midagi esitan.`, `Prepare: ${title}. Ask me to approve before I file anything.`);
+    const prompt = reminder ? t(...HO_REMINDER_PROMPT) : n.obligation ? t(n.obligation.handoff.prompt_et, n.obligation.handoff.prompt_en) : n.job.kind === "post_entries" ? t(`Valmista ette: ${title}. Küsi minult iga kuu kannete kohta kinnitust enne kirjendamist.`, `Prepare: ${title}. Ask me to approve each month's entries before you post them.`) : t(`Valmista ette: ${title}. Küsi minult kinnitust enne, kui midagi esitan.`, `Prepare: ${title}. Ask me to approve before I file anything.`);
     return card(t("Järgmine samm: anna üks töö ära", "Next step: hand over one job"), `<span class="labels">${labelChip("rule", t("Mängukava", "Playbook"))}</span>
 <span class="ask-title">${esc(reminder ? t("Lase assistendil koostada esimene maksemeeldetuletus", "Let your assistant draft the first payment reminder") : t(`Lase assistendil ette valmistada: ${title}`, `Let your assistant prepare: ${title}`))}</span>
-<p class="muted">${esc(reminder ? t("Kõige kiirem võit: see on ainus igakuine töö, mille saab hiljem püsiloaga täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.", "The quickest win: the only monthly job a standing approval can later take off your plate completely. It needs your unpaid invoices: your accounting connector or a file you share with your assistant.") : t("Vajab kuu arveid: sinu raamatupidamisprogrammi ühendust või faile, mille assistendile jagad.", "It needs the period's invoices: your accounting connector or files you share with your assistant."))}</p>
+<p class="muted">${esc(reminder ? t("Kõige kiirem võit: see on ainus igakuine töö, mille saab hiljem püsiloaga täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.", "The quickest win: the only monthly job a standing approval can later take off your plate completely. It needs your unpaid invoices: your accounting connector or a file you share with your assistant.") : n.job.kind === "post_entries" ? t("Vajab iga kuu pangaliikumisi (LHV ühendus või pangast alla laaditud väljavõte) ja sinu raamatupidamisprogrammi ühendust. Iga kuu kirjendatakse alles pärast sinu kinnitust.", "It needs each month's bank movements (your LHV connector or a statement you download from your bank) and your accounting connector. Each month is posted only after you approve it.") : t("Vajab kuu arveid: sinu raamatupidamisprogrammi ühendust või faile, mille assistendile jagad.", "It needs the period's invoices: your accounting connector or files you share with your assistant."))}</p>
 ${quote(prompt)}
 ${HO_CONNECTOR(l)}`);
   }
@@ -1165,7 +1166,7 @@ export function handoverSection(h: Handover, l: Lang, csrf: string, now = new Da
 <p class="ho-month">${month}</p>
 <div class="ho-grid"><div><ul class="ho-jobs">${h.jobs.map((j) => handoverRow(j, l, now, sample)).join("")}</ul>${finding}</div>
 ${handoverNext(h, l, csrf)}</div>
-<details class="plain"><summary>${t("Kuidas see arvutatakse", "How this is calculated")}</summary><div class="boxed small"><p>${t("Üks lahter = üks töö. Lahter täitub ainult salvestatud kinnitusest, mille tulemus on saadetud, esitatud või makstud (assistendi teade, AI-hüppelaud seda ei kontrollinud), või kehtivast püsiloast, mis on juba korra töötanud. Ootel kinnitused, lugemised ja sisselogimised lahtrit ei täida. „Teeb raamatupidaja” on assistendi hinnang. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.", "One cell = one job. A cell fills only from a stored approval whose outcome is sent, filed or paid (your assistant's report, not checked by AI Launchpad), or from a live standing approval that has already worked once. Pending approvals, reads and sign-ins fill nothing. “Done by the accountant” is your assistant's assessment. No percentage and no hours saved, because we don't measure them.")}</p></div></details>
+<details class="plain"><summary>${t("Kuidas see arvutatakse", "How this is calculated")}</summary><div class="boxed small"><p>${t("Üks lahter = üks töö. Lahter täitub ainult salvestatud kinnitusest, mille tulemus on saadetud, esitatud, makstud või kirjendatud (assistendi teade, AI-hüppelaud seda ei kontrollinud), või kehtivast püsiloast, mis on juba korra töötanud. Ootel kinnitused, lugemised ja sisselogimised lahtrit ei täida. „Teeb raamatupidaja” on assistendi hinnang. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.", "One cell = one job. A cell fills only from a stored approval whose outcome is sent, filed, paid or posted (your assistant's report, not checked by AI Launchpad), or from a live standing approval that has already worked once. Pending approvals, reads and sign-ins fill nothing. “Done by the accountant” is your assistant's assessment. No percentage and no hours saved, because we don't measure them.")}</p></div></details>
 </section>`;
 }
 
@@ -1757,7 +1758,7 @@ export function tanaBody(o: TanaOpts): string {
   for (const x of o.approvals) {
     const v = approvalView(x, l);
     const who = v.recipient.name ? ` · ${esc(v.recipient.name)}` : "";
-    if (x.state === "consumed" && v.outcome && ["sent", "paid", "submitted", "accepted"].includes(v.outcome.outcome)) {
+    if (x.state === "consumed" && v.outcome && ["sent", "paid", "submitted", "accepted", "posted"].includes(v.outcome.outcome)) {
       doneCount++;
       doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${outcomeChip(v.outcome.outcome, l, o.sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}${x.approved_by_rule ? ruleChip(l) : ""}</div><span class="small muted">${x.approved_by_rule ? esc(t(`Püsiloaga: ${ruleTitle(x, o.rules, l)}`, `Standing approval: ${ruleTitle(x, o.rules, l)}`)) : t("1 sinu kinnitus", "1 approval from you")} · ${timeEl(v.outcome.observed_at ?? x.consumed_at ?? x.created_at, fmtWhen(v.outcome.observed_at ?? x.consumed_at, l, now))}${v.amount ? ` · ${esc(v.amount)}` : ""}</span></div>`);
     } else if (x.state === "approved") {

@@ -41,8 +41,9 @@ export const JOB_TITLES: Record<string, [string, string]> = {
   "vat-return-prep": ["KMD ettevalmistus", "VAT return (KMD)"],
   "annual-report": ["Majandusaasta aruanne", "Annual report"],
   invoicing: ["Arvete koostamine", "Invoicing"],
+  "books-catch-up": ["Raamatupidamine korras", "Books brought up to date"],
 };
-export const DONE_OUTCOMES = ["sent", "submitted", "paid", "accepted"];
+export const DONE_OUTCOMES = ["sent", "submitted", "paid", "accepted", "posted"];
 const RANK: Record<Rung, number> = { done: 0, prep: 1, other: 2, mine: 3 };
 const norm = (s: string) => s.trim().toLowerCase();
 const payloadOf = (a: ApprovalRow): { kind?: string; recipient?: { name?: string; address?: string }; amount_cents?: number; summary?: string; document?: { title?: string } } => { try { return JSON.parse(a.payload_json); } catch { return {}; } };
@@ -61,6 +62,7 @@ export function jobOfApproval(a: ApprovalRow): string | null {
   const p = payloadOf(a), kind = a.kind ?? p.kind;
   if (kind === "send_message") return REMINDER.test(`${p.summary ?? ""} ${p.document?.title ?? ""}`) ? "payment-reminder" : null;
   if (kind === "send_invoice") return "invoicing";
+  if (kind === "post_entries") return "books-catch-up";
   if (kind === "prepare_filing") return /äriregist|business register/i.test(p.recipient?.name ?? "") ? "annual-report" : "vat-return-prep";
   return null;
 }
@@ -80,7 +82,8 @@ export function computeHandover(o: { assessment: Assessment | null; obligations:
     const ceiling = kind && STANDING_KINDS.includes(kind) ? "rule" as const : "law" as const;
     // Deep green under a rule only once a live rule of this kind has approved a done outcome.
     const rule = ceiling === "rule" ? live.find((r) => r.kind === kind && done.some((a) => a.approved_by_rule === r.id)) : undefined;
-    const rung: Rung = done.length && (rule || ceiling === "law") ? "done" : done.length ? "prep" : assessed?.executor ? "other" : "mine";
+    // Book entries need the owner's yes for every month, so posted months keep the job at prep, never done.
+    const rung: Rung = done.length && kind !== "post_entries" && (rule || ceiling === "law") ? "done" : done.length ? "prep" : assessed?.executor ? "other" : "mine";
     const last = done.map((a) => a.consumed_at ?? "").sort().pop() || null;
     return { id, title_et: titles[0], title_en: titles[1], kind, rung, ceiling, source, due: dueRow?.effective_due ?? null, dueSource: dueRow?.source ?? null, ...(assessed ? { assessed } : {}),
       evidence: { done: done.length, auto: done.filter((a) => a.approved_by_rule).length, paid: done.filter((a) => outcomeOf(a) === "paid").length, last, pending: mine.filter((a) => a.state === "pending").length, ...(rule ? { rule } : {}) } };

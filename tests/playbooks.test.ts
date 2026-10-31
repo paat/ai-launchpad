@@ -16,7 +16,7 @@ const byId = (id: string) => PLAYBOOKS.find((p) => p.id === id)!;
 
 describe("executable job playbooks (#26)", () => {
   test("shape: every field present, deterministic copy, known approval kind", () => {
-    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-service", "payment-reminder", "vat-return-prep", "annual-report"]);
+    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-service", "books-catch-up", "payment-reminder", "vat-return-prep", "annual-report"]);
     for (const p of PLAYBOOKS) {
       for (const k of ["id", "title", "title_et", "summary", "source", "source_label", "done_when", "verify_with"] as const) expect(p[k], `${p.id}.${k}`).toMatch(/\S/);
       expect(p.steps.length, p.id).toBeGreaterThan(0);
@@ -45,6 +45,32 @@ describe("executable job playbooks (#26)", () => {
     expect(remind).toContain("Do not cite the statute or interest in the reminder unless the owner asks.");
     expect(remind).not.toMatch(/threaten|viivis/);
     expect(remind).toMatch(/request_approval with action kind send_message.*get_approval.*record_action_outcome with outcome sent.*Record paid only after a sent outcome, with a NEW report_id.*only if you see the payment/s);
+  });
+
+  test("books-catch-up: drafts first, documents before posting, each month posted under an exact approval", () => {
+    const p = byId("books-catch-up");
+    expect(p).toMatchObject({ approval_kind: "post_entries", triggers: [], source: "https://www.riigiteataja.ee/akt/107012025012?leiaKehtiv=" });
+    const all = p.steps.join(" ");
+    expect(all).toContain("22 Swedbank, 10 SEB, 77 LHV, 42 Coop Pank, 17 or 96 Luminor");
+    expect(all).toContain("For any other code or a foreign account, say you cannot tell the bank and ask once whose account it is.");
+    expect(all).toContain("If it can only read");
+    expect(all).toContain("never ask for a key with more rights");
+    expect(all).toContain("Use the public register totals in get_obligations only to cross-check it, never as the entry itself. Enter it only under its own post_entries approval");
+    expect(all).toContain("amount_cents: REQUIRED, the sum of the entries' amounts without signs, in euro cents (453,20 € → 45320)");
+    expect(all).toContain("split a longer month into parts, each with its own approval");
+    expect(all).toContain("as a draft (unconfirmed) bank entry");
+    expect(all).toContain("never post during this step");
+    expect(all).toContain("every connected mailbox, searched by the vendor's name and the amount");
+    expect(all).toContain("never from the payment reference");
+    expect(all).toContain("only as an unconfirmed draft. It is confirmed only as a line in that month's post_entries approval");
+    expect(all).toContain("without request_approval (you change nothing, the owner does)");
+    expect(all).toContain("with read-only access the owner enters the list themselves, so request no approval and record nothing");
+    expect(all).toContain("one movement per question");
+    expect(all).toContain("Never guess.");
+    expect(all).toMatch(/request_approval with action kind post_entries.*owner_confirmation: their words, verbatim.*Post exactly the approved entries, nothing else, then call record_action_outcome with outcome posted/s);
+    expect(p.needs.join(" ")).not.toContain("follow the connect-service playbook");
+    expect(p.done_when).toContain("equals the bank statement's balance");
+    expect(byId("annual-report").steps.join(" ")).toContain("follow the books-catch-up playbook first");
   });
 
   test("connect-service: plain words, one branch per service, owner does logins, keys never in chat, read-only", () => {
@@ -178,7 +204,7 @@ describe("executable job playbooks (#26)", () => {
   });
 
   test("approval steps name the full action shape with a concrete recipient", () => {
-    const recipient: Record<string, string> = { "payment-reminder": "the customer", "vat-return-prep": "\"EMTA (e-MTA)\"", "annual-report": "\"Äriregister (e-äriregister)\"" };
+    const recipient: Record<string, string> = { "payment-reminder": "the customer", "vat-return-prep": "\"EMTA (e-MTA)\"", "annual-report": "\"Äriregister (e-äriregister)\"", "books-catch-up": "the company and its accounting software" };
     for (const p of PLAYBOOKS.filter((x) => x.approval_kind)) {
       const step = p.steps.find((x) => x.includes("request_approval with action kind"))!;
       expect(step, p.id).toContain(`kind ${p.approval_kind}`);

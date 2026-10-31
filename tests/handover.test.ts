@@ -127,6 +127,17 @@ describe("„Käest ära” honesty rules", () => {
     for (const id of ["Arvete koostamine", "KMD ettevalmistus"]) expect(rows.find((r) => r.includes(id))).toContain("Assistendi hinnang");
   });
 
+  test("books-catch-up: a posted month joins the job at prep, never done, and reads as posted, not filed", () => {
+    const month = appr({ kind: "post_entries", outcome: "posted", cents: 45_320, to: { name: "Näidis OÜ, e-arveldaja" }, title: "Oktoober 2026", summary: "October entries" });
+    expect(jobOfApproval(month)).toBe("books-catch-up");
+    const h = computeHandover({ assessment: null, obligations, approvals: [month], rules: [], now: NOW });
+    expect(rungs(h)["books-catch-up"]).toBe("prep");
+    const row = handoverSection(h, "en", "c", NOW).match(/<li class="ho-job">[^]*?<\/li>/g)!.find((r) => r.includes("Books brought up to date"))!;
+    expect(row).toContain("Your assistant prepares, you approve");
+    expect(row).toContain("posted");
+    expect(row).not.toMatch(/filed|ceiling: the law/i);
+  });
+
   test("job attribution: playbook_id first, then kind plus the filing recipient", () => {
     expect(jobOfApproval(appr({ kind: "prepare_filing", to: { name: "Äriregister (e-äriregister)" } }))).toBe("annual-report");
     expect(jobOfApproval(appr({ kind: "prepare_filing", to: { name: "EMTA (e-MTA)" } }))).toBe("vat-return-prep");

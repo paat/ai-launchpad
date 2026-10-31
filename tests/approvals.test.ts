@@ -303,6 +303,28 @@ describe("approval cards over MCP", () => {
     expect(parsed(await call(f, "f-failed", "failed")).outcome).toBe("failed");
     const i = await approve("i", reminder());
     expect(errText(await call(i, "i-submitted", "submitted"))).toMatch(/send_invoice.*sent or failed\. Nothing was recorded/);
+    expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: "b-noamount", action: reminder({ kind: "post_entries", amount_cents: undefined }) } }))).toMatch(/amount_cents is required for post_entries\. Nothing was saved/);
+    expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: "b-noperiod", action: reminder({ kind: "post_entries", period: undefined }) } }))).toMatch(/period is required for post_entries.*Nothing was saved/);
+    for (const period of ["2026-13", "oktoober"]) expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: `b-${period}`, action: reminder({ kind: "post_entries", period }) } }))).toMatch(/period is required for post_entries.*Nothing was saved/);
+    const b = await approve("b", reminder({ kind: "post_entries", period: "2026-10" }));
+    expect(errText(await call(b, "b-sent", "sent"))).toMatch(/post_entries.*posted or failed\. Nothing was recorded/);
+    expect(parsed(await call(b, "b-posted", "posted")).outcome).toBe("posted");
+  });
+
+  test("a month's book entries (books-catch-up): the chat yes approves, posted is recorded and shown as done", async () => {
+    const o = owner("books-month");
+    const c = await client(o.token);
+    const action = reminder({ kind: "post_entries", recipient: { name: "Näidis OÜ, e-arveldaja" }, period: "2026-10", amount_cents: 45320, document: { title: "Oktoober 2026", content: "2026-10-08 Sünteetiline Tarkvara OÜ 229,00 tarkvara (arve 1)\n2026-10-30 Sünteetiline Majutus OÜ 224,20 majutus (arve 2)" }, summary: "October 2026 entries for Näidis OÜ" });
+    const r = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "bm-1", action, owner_confirmation: "jah, kirjenda", playbook_id: "books-catch-up" } }));
+    expect(r).toMatchObject({ state: "approved", approved_in_assistant: true });
+    expect(row(r.approval_id)).toMatchObject({ kind: "post_entries", playbook_id: "books-catch-up" });
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "bm-o1", approval_id: r.approval_id, digest: r.digest, outcome: "posted", observed_at: new Date().toISOString() } }))).toMatchObject({ state: "consumed" });
+    const card = await (await fetch(`${base}/approvals/${r.approval_id}?lang=en`, { headers: { cookie: o.cookie } })).text();
+    expect(card).toContain("The entries, exactly as they will be posted");
+    expect(card).toContain(">Posted<");
+    expect(card).toContain("A check total, not a payment");
+    expect(card).toContain("€453.20 check total");
+    expect(await (await fetch(`${base}/activity?lang=en`, { headers: { cookie: o.cookie } })).text()).toContain("Oktoober 2026");
   });
 
   test("a replayed request_approval reports the live state, not the stale creation state", async () => {
@@ -654,12 +676,13 @@ describe("standing approvals (#45)", () => {
     expect(rules("std-any")[0]).toMatchObject({ recipients_json: null, max_amount_cents: 500_000 });
     expect((await ask(c, reminder({ recipient: { name: "New Client OÜ", address: "ap@new.example" } }))).auto_approved).toBe(true);
     const now = new Date().toISOString(), later = new Date(Date.now() + 86_400_000).toISOString();
-    for (const kind of ["prepare_payment", "prepare_filing"]) db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,?,NULL,999999999,99,?,?)").run(`rule_forged_${kind}`, "std-any", kind, later, now);
+    for (const kind of ["prepare_payment", "prepare_filing", "post_entries"]) db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,?,NULL,999999999,99,?,?)").run(`rule_forged_${kind}`, "std-any", kind, later, now);
     expect(await ask(c, reminder({ kind: "prepare_payment", recipient: { name: "Synthetic Client OÜ" } }))).toMatchObject({ state: "pending" });
     expect(await ask(c, reminder({ kind: "prepare_filing", amount_cents: undefined, recipient: { name: "EMTA (e-MTA)" } }))).toMatchObject({ state: "pending" });
+    expect(await ask(c, reminder({ kind: "post_entries", recipient: { name: "Näidis OÜ, e-arveldaja" } }))).toMatchObject({ state: "pending" });
     // Nor can the owner create one.
-    for (const kind of ["prepare_payment", "prepare_filing"]) expect((await post(o, "/standing-approvals", { kind, scope: "any", max_eur: "2000" })).status, kind).toBe(400);
-    expect(rules("std-any")).toHaveLength(3);
+    for (const kind of ["prepare_payment", "prepare_filing", "post_entries"]) expect((await post(o, "/standing-approvals", { kind, scope: "any", max_eur: "2000" })).status, kind).toBe(400);
+    expect(rules("std-any")).toHaveLength(4);
   });
 
   test("Ühendus creates a rule for already-approved recipients or any; the card offer is only for owner-approved sends", async () => {
