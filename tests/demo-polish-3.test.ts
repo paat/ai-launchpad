@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { Server } from "node:http";
 import { createApp, type Config } from "../src/app.js";
 import { openDb } from "../src/db.js";
-import { shell, approvalCardBody } from "../src/views.js";
+import { shell, approvalCardBody, connectionBody, playbooksBody } from "../src/views.js";
 import type { ApprovalRow } from "../src/mcp.js";
 
 // Demo polish 3 (#63): the last QA items from PR #62.
@@ -76,5 +76,16 @@ describe("#63 nit: the „Saadetud: demo” chip is in direction A's palette", (
     expect(et).not.toMatch(/„<code>|<\/code>”/);
     const en = approvalCardBody({ csrf: "c", a, lang: "en", sample: true, now: new Date("2026-11-03T10:00:00Z") });
     expect(en).toContain("write <code>Approved</code> (“Kinnitasin” works too).");
+  });
+});
+
+// Fix cycle 1 (review-polish3-grok): copy on /connection and /playbooks says what the server enforces.
+const conn = (lang: "et" | "en", candidates: Record<string, string>[] = []) => connectionBody({ lang, csrf: "c", baseUrl: "https://launchpad.example.com", reportingEnabled: false, tokens: [], grants: [], candidates });
+const para = (html: string, needle: string) => [...html.matchAll(/<p[^>]*>(.*?)<\/p>/g)].map((m) => m[1]).find((p) => p.includes(needle)) ?? "";
+
+describe("grok high: the retention sentence matches reportCapacityError", () => {
+  test("refusal starts when 500 are stored and lasts until progress is deleted", () => {
+    expect(para(conn("et"), "500")).toContain("Aruandeid säilitatakse kuni 500; kui see piir on täis, uusi aruandeid vastu ei võeta, kuni töö käigu kustutad.");
+    expect(para(conn("en"), "500")).toContain("Up to 500 reports are retained; once that limit is reached, new reports are refused until you delete progress.");
   });
 });
