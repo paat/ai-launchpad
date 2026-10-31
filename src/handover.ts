@@ -45,7 +45,7 @@ export const JOB_TITLES: Record<string, [string, string]> = {
 export const DONE_OUTCOMES = ["sent", "submitted", "paid", "accepted"];
 const RANK: Record<Rung, number> = { done: 0, prep: 1, other: 2, mine: 3 };
 const norm = (s: string) => s.trim().toLowerCase();
-const payloadOf = (a: ApprovalRow): { kind?: string; recipient?: { name?: string; address?: string }; amount_cents?: number } => { try { return JSON.parse(a.payload_json); } catch { return {}; } };
+const payloadOf = (a: ApprovalRow): { kind?: string; recipient?: { name?: string; address?: string }; amount_cents?: number; summary?: string; document?: { title?: string } } => { try { return JSON.parse(a.payload_json); } catch { return {}; } };
 const outcomeOf = (a: ApprovalRow): string | null => { try { return a.outcome_json ? (JSON.parse(a.outcome_json) as { outcome?: string }).outcome ?? null : null; } catch { return null; } };
 export const isDone = (a: ApprovalRow) => a.state === "consumed" && DONE_OUTCOMES.includes(outcomeOf(a) ?? "");
 
@@ -53,11 +53,13 @@ export const isDone = (a: ApprovalRow) => a.state === "consumed" && DONE_OUTCOME
 export const handoverObligations = (r: { result: { obligations: Obligation[]; next_deadline: Obligation | null }; annual_next: Obligation | null }): Obligation[] =>
   [...r.result.obligations, ...(r.result.next_deadline ? [r.result.next_deadline] : []), ...(r.annual_next ? [r.annual_next] : [])];
 
-/** Which job an approval belongs to: its playbook_id, else kind plus the recipient name for filings. */
+// An untagged message counts as a payment reminder only when it reads like one (tribunal T-003).
+const REMINDER = /meeldetuletu|tasumata|võlg|võla|reminder|overdue|unpaid/i;
+/** Which job an approval belongs to: its playbook_id, else kind (messages only if they read like a reminder) plus the recipient name for filings. */
 export function jobOfApproval(a: ApprovalRow): string | null {
   if (a.playbook_id && JOB_TITLES[a.playbook_id]) return a.playbook_id;
   const p = payloadOf(a), kind = a.kind ?? p.kind;
-  if (kind === "send_message") return "payment-reminder";
+  if (kind === "send_message") return REMINDER.test(`${p.summary ?? ""} ${p.document?.title ?? ""}`) ? "payment-reminder" : null;
   if (kind === "send_invoice") return "invoicing";
   if (kind === "prepare_filing") return /äriregist|business register/i.test(p.recipient?.name ?? "") ? "annual-report" : "vat-return-prep";
   return null;
@@ -108,12 +110,18 @@ export function computeHandover(o: { assessment: Assessment | null; obligations:
   };
 }
 
+/** The sends a standing offer for this kind is built from, and POST /standing-approvals (scope "approved") draws its recipients from:
+ * owner-decided, not declined, not by a rule, and attributed to the kind's job (tribunal T-003). */
+export function standingBasis(approvals: ApprovalRow[], kind: string): ApprovalRow[] {
+  const job = KNOWN.find((k) => k.kind === kind)?.id;
+  return approvals.filter((a) => a.kind === kind && a.decided_at && a.state !== "declined" && !a.approved_by_rule && jobOfApproval(a) === job);
+}
+
 /** One next step, first match wins: standing offer → playbook prompt → connector. */
 function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], obligations: Obligation[]): NextStep {
   for (const j of jobs) {
     if (j.rung !== "prep" || !j.kind || !STANDING_KINDS.includes(j.kind) || live.some((r) => r.kind === j.kind)) continue;
-    // The same sends POST /standing-approvals (scope "approved") draws its recipients from: owner-decided, not declined, not by a rule.
-    const basis = approvals.filter((a) => a.kind === j.kind && a.decided_at && a.state !== "declined" && !a.approved_by_rule);
+    const basis = standingBasis(approvals, j.kind);
     const recipients = new Map<string, string>();
     for (const a of basis) { const r = payloadOf(a).recipient; if (r?.address?.trim()) recipients.set(normAddress(r.address), r.name ?? r.address); }
     if (!recipients.size) continue;

@@ -6,7 +6,7 @@ import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
 import { arikratt } from "./arikratt.js";
 import { approvalAddressMissing, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, liveStandingRules, logActivity, normAddress, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, TOOL_ARG_KEYS, type ApprovalRow, type StandingRule } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
-import { computeHandover, handoverObligations } from "./handover.js";
+import { computeHandover, handoverObligations, standingBasis } from "./handover.js";
 import type { Assessment } from "./core.js";
 import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
@@ -633,7 +633,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       if (body.scope === "any") recipients = null;
       else if (body.scope === "approved") {
         // The recipients the owner has already approved once for this kind.
-        const rows = db.prepare("SELECT payload_json FROM approvals WHERE owner_id=? AND kind=? AND decided_at IS NOT NULL AND state!='declined' AND approved_by_rule IS NULL").all(oid(req), kind) as { payload_json: string }[];
+        const rows = standingBasis(db.prepare("SELECT * FROM approvals WHERE owner_id=? AND kind=?").all(oid(req), kind) as ApprovalRow[], kind);
         recipients = [...new Set(rows.flatMap((r) => { try { const x = (JSON.parse(r.payload_json) as { recipient?: { address?: unknown } }).recipient?.address; return typeof x === "string" && x.trim() ? [normAddress(x)] : []; } catch { return []; } }))];
         if (!recipients.length) return bad(409, t("Sa pole sellist saatmist veel kinnitanud. Vali „Kõik saajad (ka uued)” või kinnita enne üks saatmine.", "You have not approved such a send yet. Choose “Any recipient (including new ones)” or approve one send first."));
       } else return bad(400, t("Vali, kellele püsiluba kehtib.", "Choose who the standing approval covers."));

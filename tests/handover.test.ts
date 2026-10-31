@@ -17,12 +17,12 @@ const obligations = [...kmd, annual];
 const CLIENTS = [{ name: "Demo Klient OÜ", address: "arved@demo-klient.example" }, { name: "Põhja Puit OÜ", address: "raamat@pohja-puit.example" }];
 
 let seq = 0;
-function appr(o: { kind?: string; state?: string; outcome?: string; to?: { name: string; address?: string }; cents?: number; at?: string; rule?: string; decided?: boolean; playbook?: string }): ApprovalRow {
+function appr(o: { kind?: string; state?: string; outcome?: string; to?: { name: string; address?: string }; cents?: number; at?: string; rule?: string; decided?: boolean; playbook?: string; title?: string; summary?: string }): ApprovalRow {
   const kind = o.kind ?? "send_message", at = o.at ?? "2026-11-05T09:00:00Z", state = o.state ?? (o.outcome ? "consumed" : "pending");
   return { id: `appr_${++seq}`, kind, report_id: `r${seq}`, digest: "d".repeat(64), state, created_at: at, expires_at: "2026-11-30T00:00:00Z",
     decided_at: o.decided === false || state === "pending" ? null : at, consumed_at: state === "consumed" ? at : null,
     outcome_json: o.outcome ? JSON.stringify({ outcome: o.outcome, history: [] }) : null, approved_by_rule: o.rule ?? null, playbook_id: o.playbook ?? null,
-    payload_json: JSON.stringify({ kind, recipient: o.to ?? CLIENTS[0], ...(o.cents ? { amount_cents: o.cents } : {}), document: { title: "x", content: "y" }, summary: "s" }) };
+    payload_json: JSON.stringify({ kind, recipient: o.to ?? CLIENTS[0], ...(o.cents ? { amount_cents: o.cents } : {}), document: { title: o.title ?? "Meeldetuletus: tasumata arve", content: "y" }, summary: o.summary ?? "Payment reminder" }) };
 }
 const rule = (over: Partial<StandingRule> = {}): StandingRule => ({ id: "rule_1", owner_id: "o", kind: "send_message", recipients_json: JSON.stringify(CLIENTS.map((c) => c.address)), max_amount_cents: 30_000, max_per_day: 10, expires_at: "2027-02-10T00:00:00Z", created_at: "2026-11-20T00:00:00Z", revoked_at: null, ...over });
 const rungs = (h: Handover) => Object.fromEntries(h.jobs.map((j) => [j.id, j.rung]));
@@ -179,5 +179,20 @@ describe("„Käest ära” fix cycle 2", () => {
     const h = computeHandover({ assessment: null, obligations: handoverObligations(r), approvals: [], rules: [], now: today });
     const job = h.jobs.find((j) => j.id === "annual-report");
     expect(job?.due).toBe("2027-06-30");
+  });
+
+  test("an untagged thank-you send fills no reminder segment and feeds no standing offer (tribunal T-003)", () => {
+    const thanks = appr({ outcome: "sent", cents: 90_000, to: { name: "Uus Klient OÜ", address: "info@uus-klient.example" }, title: "Aitäh koostöö eest", summary: "Thank-you note" });
+    expect(jobOfApproval(thanks)).toBeNull();
+    const alone = computeHandover({ assessment: null, obligations, approvals: [thanks], rules: [], now: NOW });
+    expect(rungs(alone)["payment-reminder"]).toBe("mine");
+    expect(alone.next.type).not.toBe("standing");
+    // With real reminders: the offer's recipients and cap come only from them.
+    const h = computeHandover({ assessment: null, obligations, approvals: [...week2(), thanks], rules: [], now: NOW });
+    expect(h.jobs.find((j) => j.id === "payment-reminder")!.evidence.done).toBe(3);
+    expect(h.next).toMatchObject({ type: "standing", capCents: 30_000, basis: { count: 4, maxCents: 24_000 } });
+    expect(h.next.type === "standing" && h.next.recipients.map((r) => r.address)).not.toContain("info@uus-klient.example");
+    for (const words of [{ title: "Võlg 120 €" }, { summary: "Overdue invoice 7" }, { title: "Tasumata arve nr 3" }, { summary: "unpaid" }])
+      expect(jobOfApproval(appr({ outcome: "sent", ...words, ...("title" in words ? { summary: "x" } : { title: "x" }) }))).toBe("payment-reminder");
   });
 });

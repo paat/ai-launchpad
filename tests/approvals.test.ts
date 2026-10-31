@@ -677,6 +677,17 @@ describe("standing approvals (#45)", () => {
     expect((await ask(c, reminder({ kind: "send_message", amount_cents: undefined, summary: "no amount" }))).state).toBe("pending");
   });
 
+  test("„only past recipients” draws from reminder sends, not an untagged thank-you note (tribunal T-003)", async () => {
+    const o = owner("std-thanks"), c = await client(o.token);
+    const thanks = await ask(c, reminder({ kind: "send_message", recipient: { name: "Uus Klient OÜ", address: "info@uus-klient.example" }, document: { title: "Aitäh koostöö eest", content: "Tere!" }, summary: "Thank-you note" }));
+    await decide(o, thanks.approval_id, { decision: "approve", digest: thanks.digest });
+    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "300" })).status).toBe(409);
+    const real = await ask(c, reminder({ kind: "send_message" }));
+    await decide(o, real.approval_id, { decision: "approve", digest: real.digest });
+    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "300" })).status).toBe(302);
+    expect(rules("std-thanks")[0]).toMatchObject({ recipients_json: JSON.stringify(["billing@client.example"]) });
+  });
+
   test("create and revoke need the CSRF token and the exact Origin; another owner cannot revoke", async () => {
     const { o, first, rule } = await ruleFromCard("std-csrf");
     for (const [path, body] of [["/standing-approvals", { approval_id: first.approval_id, scope: "any", max_eur: "2000" }], ["/standing-approvals/revoke", { rule_id: String(rule.id) }]] as const) {
