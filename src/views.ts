@@ -384,8 +384,9 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .tp-resume,#teaser-pause:checked~figcaption .tp-pause{display:none}#teaser-pause:checked~figcaption .tp-resume{display:inline}
 #teaser-pause:checked~.phone *{animation-play-state:paused!important}
 @media (prefers-reduced-motion:reduce){.teaser-pause,.vh-input{display:none}}
-.phone{height:640px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
-@media (max-width:380px){.phone{height:700px}}@media (min-width:880px){.phone{height:600px}}
+/* Heights fit the final frame from the owner's opening question to the last bubble, in ET and EN (#63 m1); the beat timing is unchanged. */
+.phone{height:672px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
+@media (max-width:380px){.phone{height:700px}}@media (max-width:359px){.phone{height:772px}}@media (min-width:880px){.phone{height:656px}}
 .phone-screen{display:flex;flex-direction:column;height:100%;overflow:hidden;border-radius:36px;background:var(--c-surface-2)}
 .phone-bar{display:flex;align-items:center;gap:10px;padding:22px 16px 10px;background:#fff;border-bottom:1px solid var(--c-divider)}
 .phone-ava{flex:none;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1a4d2e,#6f9c63)}

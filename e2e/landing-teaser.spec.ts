@@ -11,11 +11,11 @@ const overflow = (page: Page) => page.evaluate(() => document.documentElement.sc
 /** Pause every CSS animation at one moment of the 18 s loop. */
 const seek = (page: Page, ms: number) => page.evaluate((t) => document.getAnimations().forEach((a) => { a.pause(); a.currentTime = t; }), ms);
 const opacity = (page: Page, sel: string) => page.locator(sel).evaluateAll((els) => els.map((e) => Number(getComputedStyle(e).opacity)));
-/** The final frame: the whole card (with the standing-approval chip) and the last bubble sit inside the visible chat. */
+/** The final frame: the owner's opening question (#63 m1), the whole card (with the standing-approval chip) and the last bubble sit inside the visible chat. */
 const finalFrameFits = async (page: Page) => {
   const box = (sel: string) => page.locator(sel).evaluate((e) => { const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
   const chat = await box(".chat");
-  for (const sel of [".b-card", ".mock-rule", ".b-ai2", ".b-ai3"]) {
+  for (const sel of [".b-me1", ".b-card", ".mock-rule", ".b-ai2", ".b-ai3"]) {
     const b = await box(sel);
     expect(b.top, sel).toBeGreaterThanOrEqual(chat.top - 1);
     expect(b.bottom, sel).toBeLessThanOrEqual(chat.bottom + 1);
@@ -76,6 +76,21 @@ for (const width of [880, 960, 1024, 1094, 1200]) {
     await page.goto("/");
     expect(await overflow(page)).toBeLessThanOrEqual(0);
   });
+}
+
+// #63 m1: the opening question „Kes mulle võlgu on?” stays clear of the chat header in the final frame, in both languages.
+for (const [width, height] of [[320, 568], [880, 800], [1280, 800], [1440, 900]] as const) {
+  for (const lang of ["et", "en"] as const) {
+    test(`final frame at ${width}px (${lang}) shows the opening question under the chat header`, async ({ page }) => {
+      await page.setViewportSize({ width, height });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/?lang=${lang}`);
+      await expect(page.locator(".b-me1")).toHaveText(lang === "et" ? "Kes mulle võlgu on?" : "Who owes me money?");
+      await finalFrameFits(page);
+      expect(await overflow(page)).toBeLessThanOrEqual(0);
+      if (width === 1280 || width === 320) await page.locator(".phone").screenshot({ path: `${SHOTS}/teaser-final-${width}-${lang}.png` });
+    });
+  }
 }
 
 test("pause toggle: keyboard-focusable, 44 px, stops the animation without script (tribunal T-004)", async ({ page }) => {

@@ -366,15 +366,15 @@ try {
   await page.screenshot({ path: path.join(T2_SHOTS, "receipt-strip-390.png") });
   geometry.receiptStrip = receiptStrip;
 
-  // --- T4 (#59) landing fold: header, headline, button and the four jobs in the first 1280×800 viewport beside a 600 px phone
-  // whose last bubble is not clipped; at 390 the fold shows the headline, the button and the top of the phone ---
+  // --- T4 (#59) landing fold: header, headline, button and the four jobs in the first 1280×800 viewport beside a 656 px phone
+  // whose first and last bubbles are not clipped (#63 m1); at 390 the fold shows the headline, the button and the top of the phone ---
   const landingFold = () => page.evaluate(() => {
     document.getAnimations().forEach((a) => { a.pause(); a.currentTime = 14000; }); // the teaser's final frame
     window.scrollTo(0, 0);
     const box = (el) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), h: Math.round(r.height) }; };
     const q = (s) => box(document.querySelector(s));
     const teaser = document.querySelector(".teaser");
-    return { innerH: window.innerHeight, header: q("header"), h1: q("h1"), btn: q(".landing-hero .btn"), phone: q(".phone"), chat: q(".chat"), last: q(".b-ai3"),
+    return { innerH: window.innerHeight, header: q("header"), h1: q("h1"), btn: q(".landing-hero .btn"), phone: q(".phone"), chat: q(".chat"), first: q(".b-me1"), last: q(".b-ai3"),
       jobs: [...document.querySelectorAll(".landing-hero .jobs li")].map(box), pause: q(".teaser-pause"),
       transcriptFirst: teaser.firstElementChild.matches("div.vh") && teaser.firstElementChild.querySelector("ol") !== null,
       h1Size: getComputedStyle(document.querySelector("h1")).fontSize, trustBg: getComputedStyle(document.querySelector(".trust")).backgroundColor };
@@ -384,8 +384,9 @@ try {
   const fold1280 = await landingFold();
   const inFold = (b) => b.top >= 0 && b.bottom <= fold1280.innerH;
   assert.ok([fold1280.header, fold1280.h1, fold1280.btn, ...fold1280.jobs].every(inFold) && fold1280.jobs.length === 4, `t4 landing@1280: header, headline, button, 4 jobs in 800 px ${JSON.stringify(fold1280)}`);
-  assert.ok(fold1280.phone.h === 600 && fold1280.phone.left > fold1280.h1.left + 300, `t4 landing@1280: 600 px phone beside the text ${JSON.stringify(fold1280.phone)}`);
+  assert.ok(fold1280.phone.h === 656 && fold1280.phone.bottom <= fold1280.innerH && fold1280.phone.left > fold1280.h1.left + 300, `t4 landing@1280: 656 px phone in the fold beside the text ${JSON.stringify(fold1280.phone)}`);
   assert.ok(fold1280.last.top >= fold1280.chat.top - 1 && fold1280.last.bottom <= fold1280.chat.bottom + 1, `t4 landing@1280: last bubble not clipped ${JSON.stringify(fold1280)}`);
+  assert.ok(fold1280.first.top >= fold1280.chat.top - 1, `t4 landing@1280: the opening question is not under the chat header ${JSON.stringify(fold1280)}`);
   assert.equal(fold1280.h1Size, "52px", "t4 landing@1280: --fs-display headline");
   assert.equal(fold1280.trustBg, "rgb(15, 61, 37)", "t4 landing: .trust on --c-deep");
   assert.ok(fold1280.transcriptFirst, "t4 landing: the transcript <ol> stays first in the teaser");
