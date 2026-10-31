@@ -57,15 +57,15 @@ describe("executable job playbooks (#26)", () => {
     expect(rules).toContain("Never ask for keys, passwords or PINs in the chat; if the owner pastes one here, do not repeat, store or pass it to any tool");
     expect(p.needs.join(" ")).toContain("never ask for, repeat or accept a password or PIN in the chat");
     expect(ask).toMatch(/^Ask one question unless the owner already said it: what should be linked \(accounting software, e-mail or bank\)/);
-    expect(ask).toContain("Follow only the steps that start with that service's name, then the last step.");
+    expect(ask).toContain("Follow only the steps that start with that service's name; each one says how to finish.");
     // Branch-specific steps are scoped by their prefix; each non-accounting branch ends explicitly.
     const branch = rest.slice(0, -1);
     for (const x of branch) expect(x).toMatch(/^(E-mail|Bank|Accounting): /);
     const email = branch.filter((x) => x.startsWith("E-mail:")), bank = branch.filter((x) => x.startsWith("Bank:")), acc = branch.filter((x) => x.startsWith("Accounting:"));
     expect([email.length, bank.length]).toEqual([1, 1]);
-    expect(email[0]).toContain("offer your built-in connector for it; once the owner has connected it, go to the last step.");
-    expect(email[0]).toMatch(/do not search or quote catalogue entries for it.*Then stop: skip the last step\.$/);
-    expect(bank[0]).toMatch(/Never start a bank key, credential or payment setup\. Then stop: skip the last step\.$/);
+    expect(email[0]).toContain("if it is Gmail or Microsoft 365, offer your built-in connector, and once the owner has connected it, go to the last step.");
+    expect(email[0]).toContain("say plainly that it cannot be linked, do not search or quote catalogue entries for it, and stop here without the last step");
+    expect(bank[0]).toBe("Bank: say plainly that linking a bank is not offered yet, and stop here without the last step. Do not search the catalogue, and never start a bank key, credential or payment setup.");
     for (const s of ["paste the key values", "Add custom connector", "API access permits", "search_services with \"werkzeug\""]) {
       expect(branch.filter((x) => x.includes(s)).every((x) => x.startsWith("Accounting:")), s).toBe(true);
       expect(acc.some((x) => x.includes(s)), s).toBe(true);
@@ -74,7 +74,8 @@ describe("executable job playbooks (#26)", () => {
     const create = acc.findIndex((x) => x.includes("guide the owner to create the key"));
     expect(readOnly).toBeGreaterThanOrEqual(0);
     expect(readOnly).toBeLessThan(create);
-    expect(acc[readOnly]).toContain("then stop and wait: continue only after the owner explicitly agrees. If they decline, explain that it cannot be linked read-only yet and stop: skip all remaining steps.");
+    expect(acc[readOnly]).toContain("If the product or the connector offers no read-only key, say plainly that it cannot be linked safely yet, because the key could also change the books, and stop here: skip all remaining steps.");
+    expect(acc.at(-1)).toMatch(/Once the connector is added, go to the last step\.$/);
     expect(acc.join(" ")).toContain("own Smart-ID or ID-card (never automate the login)");
     expect(acc.join(" ")).toContain("never offer community or local servers from the catalogue");
     expect(acc.join(" ")).toContain("in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.");
