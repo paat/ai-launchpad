@@ -27,7 +27,7 @@ function owner(id: string, scopes = "progress:read,progress:report", sharing = 1
 }
 async function client(token: string) {
   const c = new Client({ name: "synthetic-approvals", version: "1" });
-  await c.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } }));
+  await c.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}`, connection: "close" } } }));
   clients.push(c); return c;
 }
 const parsed = (r: unknown) => { const x = r as { structuredContent?: Record<string, any>; content: { text: string }[] }; return x.structuredContent ?? JSON.parse(x.content[0].text); };
