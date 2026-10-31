@@ -307,8 +307,7 @@ try {
     });
     assert.ok(ho.scrollW <= ho.clientW + 1, `uhenda-ho@${vp.width}: no h-overflow ${JSON.stringify(ho)}`);
     assert.ok(ho.asks === 1 && ho.aboveRules && ho.jobs.every((h) => h >= 44), `uhenda-ho@${vp.width}: one ask, above Püsiload, rows ≥ 44 px ${JSON.stringify(ho)}`);
-    // Two columns: jobs (≥ 240 px) | next step, which takes 1.3 of the grid so long compounds fit its title (QA M3).
-    if (vp.width === 1280) assert.ok(ho.nextLeft >= ho.jobsLeft + 240, `uhenda-ho@1280: jobs | next step ${JSON.stringify(ho)}`);
+    if (vp.width === 1280) assert.ok(ho.nextLeft > ho.jobsLeft + 300, `uhenda-ho@1280: jobs | next step ${JSON.stringify(ho)}`);
     const g = await overflowAndTargets(true);
     assert.deepEqual(g.targets.filter((t) => t.h < 44), [], `uhenda-ho@${vp.width}: targets >= 44px`);
     await page.locator("#kaest-ara").scrollIntoViewIfNeeded();

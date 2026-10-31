@@ -508,8 +508,10 @@ ${TEASER_CSS}
 .ho-finding .tap-link{display:inline-flex;min-height:var(--tap);align-items:center;margin:-10px 0}
 
 @media (min-width:960px){
-  /* The next step gets the wider column so a long Estonian compound in its title fits on one line (QA M3). */
-  .ho-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:var(--s-8);align-items:start}
+  /* Two equal columns, 32 px apart; the next-step title steps down to --fs-md so a long Estonian compound such as
+     „raamatupidamisprogramm” fits on one line, and the job titles keep their width (QA M3). */
+  .ho-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--s-8);align-items:start}
+  .ho-next .ask .ask-title{font-size:var(--fs-md)}
   .ho-grid>.ho-next{margin-top:0;position:sticky;top:var(--s-4)}
 }`;
 
