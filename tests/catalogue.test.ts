@@ -200,6 +200,14 @@ describe("catalogue polish (#52)", () => {
     expect(chatgpt).not.toContain("<h3>Ärikratt</h3>");
   });
 
+  test("a URL template is never a provider link: the next https URL is used", async () => {
+    const html = cards(await page("/kataloog?q=Riigi%20Teataja%20public%20API"));
+    const rt = html.find((c) => c.id === "rt-official")!;
+    expect(rt.html).toContain('href="https://www.riigiteataja.ee/kkk"');
+    expect(rt.html).not.toContain("{id}");
+    expect(rt.html).not.toContain("%7Bid%7D");
+  });
+
   test("3: the provider link prefers the connection URL over research citations", async () => {
     const html = cards(await page("/kataloog?q=Riigi%20Teataja%20MCP%20(dustinest)"));
     const dustin = html.find((c) => c.id === "rt-dustinest")!;

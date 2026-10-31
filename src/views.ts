@@ -1198,7 +1198,8 @@ const fmtYmd = (ymd: string) => /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd.split("-")
 function serviceCard(r: ServiceRecord, l: Lang): string {
   const t = tr(l), conn = CONN[r.interface_class as Conn];
   // The provider's own connection URL first; research citations only when there is none (#52).
-  const link = [r.connection, ...(r.sources ?? [])].map(safeHttps).find((u): u is string => !!u) ?? null;
+  // A URL template ({id}) is an API pattern, not a page to open: skip it for the next https URL.
+  const link = [r.connection, ...(r.sources ?? [])].map(safeHttps).find((u): u is string => !!u && !/\{|%7B/i.test(new URL(u).pathname)) ?? null;
   // Research text is English; mark it so screen readers switch voice on the Estonian page.
   const en = l === "en" ? "" : ' lang="en"';
   return `<article class="card svc" data-service="${esc(r.id)}"><h3>${esc(r.name)}</h3>
