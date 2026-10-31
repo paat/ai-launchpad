@@ -46,9 +46,14 @@ test("owner approves a card, allows similar ones automatically, and the next rem
     await offer.scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${SHOTS}/standing-offer-390.png`, fullPage: true });
 
+    // QA M1: a new cap is saved with the button inside „Muuda piire”, and no visible text still names the old cap.
+    const old = await offer.getByLabel("Summa ülempiir (€)").inputValue();
+    await offer.getByLabel("Summa ülempiir (€)").fill("2500");
+    await expect(offer).not.toContainText(`${old}\u00a0€`, { useInnerText: true });
+    await expect(offer.getByRole("button", { name: "Luba automaatselt" })).toHaveCount(1);
     // Genuine same-origin form POST with the CSRF field.
-    await offer.getByRole("button", { name: "Luba automaatselt" }).click();
-    await expect(page.getByText(/Püsiluba on olemas: Sõnumid: billing@client\.example, kuni 2000/)).toBeVisible();
+    await offer.locator("details").getByRole("button", { name: "Luba automaatselt" }).click();
+    await expect(page.getByText(/Püsiluba on olemas: Sõnumid: billing@client\.example, kuni 2500/)).toBeVisible();
 
     // The assistant's next reminder is approved at once: no card waits for the owner.
     const next = (await client.callTool({ name: "request_approval", arguments: { report_id: "std-2", action: reminder("2026-015", 86000) } })).structuredContent as { approval_id: string; state: string; auto_approved?: boolean; rule_name: string };
@@ -109,9 +114,14 @@ test("„Käest ära” (#61): the pre-filled offer on Ühendus creates the rule
     await expect(ho.locator(".ho-bar .ho-seg--prep")).toHaveCount(1);
     await expect(ho.locator(".ask")).toContainText("Ainult Synthetic Client OÜ (senised saajad), kuni 300 € kirja kohta");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
-    await ho.getByRole("button", { name: "Luba automaatselt" }).click();
+    // QA M1: the same on Ühendus.
+    await ho.getByText("Muuda piire").click();
+    await ho.getByLabel("Summa ülempiir (€)").fill("350");
+    await expect(ho.locator(".ho-next")).not.toContainText("300 €", { useInnerText: true });
+    await expect(ho.getByRole("button", { name: "Luba automaatselt" })).toHaveCount(1);
+    await ho.locator("details").getByRole("button", { name: "Luba automaatselt" }).click();
     await expect(page).toHaveURL(/\/uhenda#pusiload$/);
-    await expect(page.locator("#pusiload")).toContainText("Sõnumid: billing@client.example, kuni 300");
+    await expect(page.locator("#pusiload")).toContainText("Sõnumid: billing@client.example, kuni 350");
     // A live rule that has not fired yet does not fill the top rung.
     await expect(ho.locator(".ho-bar .ho-seg--prep")).toHaveCount(1);
 

@@ -258,6 +258,9 @@ article.card.ticket{margin:0 0 var(--s-6);padding:0;border-radius:var(--r-xl);bo
 .standing-offer details{margin:var(--s-1) 0 0;padding:0;border:0;background:none}
 .standing-offer summary{color:var(--c-primary)}
 .standing-offer summary::after{margin-left:2px}
+/* QA M1: with „Muuda piire” open, the field is the cap and its own button submits; the sentence's cap and the outer button step aside. */
+:is(.standing-offer,.ho-next):has(details[open]) .cap-now,:is(.standing-offer,.ho-next) form:has(>details[open])>button{display:none}
+:is(.standing-offer,.ho-next) details>button{margin-top:var(--s-3)}
 
 /* --- .status-chip (connect, aria-live) --- */
 .status-chip{display:flex;align-items:center;gap:var(--s-3);min-height:52px;margin:var(--s-3) 0;padding:var(--s-3) var(--s-4);border:1px solid var(--st-waiting-bd);border-radius:14px;background:var(--st-waiting-bg);color:var(--st-waiting-fg);font-weight:700}
@@ -857,7 +860,7 @@ function standingOffer(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: La
   const covering = rules.find((r) => ruleLive(r, now) && r.kind === v.kindKey && r.max_amount_cents >= amount && (standingRecipients(r)?.includes(address) ?? true));
   if (covering) return `<div class="note" id="pusiluba" role="status"><p><strong><span aria-hidden="true">✓ </span>${t("Püsiluba on olemas", "Standing approval is on")}: ${esc(standingRuleName(covering, l))}.</strong></p><p class="small">${t("Järgmised sarnased saadab assistent ilma sinult küsimata.", "Your assistant sends similar ones without asking you.")} <a href="/uhenda#pusiload">${t("Püsiload", "Standing approvals")}</a></p></div>`;
   const cap = Math.max(STANDING_DEFAULTS.maxAmountCents, amount), who = v.recipient.name ?? address;
-  return `<section class="standing-offer" id="pusiluba" aria-labelledby="so-h"><h2 id="so-h">${esc(t(`Luba edaspidi sarnased automaatselt: ainult ${who}, kuni ${capEur(cap)}\u00a0€`, `Allow similar ones automatically from now on: only ${who}, up to ${capEur(cap)}\u00a0€`))}</h2>
+  return `<section class="standing-offer" id="pusiluba" aria-labelledby="so-h"><h2 id="so-h">${esc(t(`Luba edaspidi sarnased automaatselt: ainult ${who}`, `Allow similar ones automatically from now on: only ${who}`))}<span class="cap-now">${esc(t(`, kuni ${capEur(cap)}\u00a0€`, `, up to ${capEur(cap)}\u00a0€`))}</span></h2>
 <p class="limits">${esc(ruleLimits(l))}</p>
 <p class="small muted">${t("Siis ei pea assistent sinult iga kord küsima. Deklaratsioone ja makseid kinnitad alati ise.", "Then your assistant does not have to ask you every time. You always confirm filings and payments yourself.")}</p>
 <form method="post" action="/standing-approvals">${csrfInput(csrf)}<input type="hidden" name="approval_id" value="${esc(a.id)}">
@@ -866,6 +869,7 @@ function standingOffer(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: La
 <div role="radiogroup" aria-label="${t("Kellele", "To whom")}"><label class="check"><input type="radio" name="scope" value="recipient" checked> <span>${esc(t(`Ainult ${who}`, `Only ${who}`))} <span class="small muted">${esc(v.recipient.address)}</span></span></label>
 <label class="check"><input type="radio" name="scope" value="any"> <span>${t("Kõik saajad (ka uued)", "Any recipient (including new ones)")}</span></label></div>
 <label for="so-max">${t("Summa ülempiir (€)", "Amount cap (€)")}</label><input id="so-max" name="max_eur" inputmode="decimal" autocomplete="off" value="${esc(capEur(cap))}">
+<button type="submit">${t("Luba automaatselt", "Allow automatically")}</button>
 </details></form></section>`;
 }
 /** Ühendus → Püsiload: live rules with Lõpeta, and one short form to add a rule. */
@@ -940,14 +944,15 @@ function handoverNext(h: Handover, l: Lang, csrf: string): string {
     const who = n.recipients.length <= 2 ? n.recipients.map((r) => `<b>${esc(r.name)}</b>`).join(t(" ja ", " and ")) : `<b>${esc(t(`${n.recipients.length} senist saajat`, `${n.recipients.length} past recipients`))}</b>`;
     return card(t(`Järgmine samm: anna ${what} täiesti käest ära`, `Next step: take ${what} off your plate completely`), `<span class="labels">${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}</span>
 <span class="ask-title">${esc(t(`Luba edaspidi ${what} automaatselt`, `Allow ${what} automatically from now on`))}</span>
-<p class="limits">${t("Ainult", "Only")} ${who}${n.recipients.length <= 2 ? t(" (senised saajad)", " (past recipients)") : ""}, ${t("kuni", "up to")} <b>${esc(capEur(n.capCents))} €</b> ${per}, ${t(`kuni <b>${STANDING_DEFAULTS.maxPerDay}</b> päevas, <b>${STANDING_DEFAULTS.days} päeva</b>. Lõpetad millal tahes.`, `up to <b>${STANDING_DEFAULTS.maxPerDay}</b> a day, <b>${STANDING_DEFAULTS.days} days</b>. End it any time.`)}</p>
-<p class="muted small">${esc(n.basis.maxCents ? t(`Piirid on võetud sinu ${n.basis.count} senisest kinnitusest (suurim ${fmtEur(n.basis.maxCents, l)}). Assistent saadab ise ja annab iga saatmise kohta siia teada.`, `The limits come from your ${n.basis.count} past approvals (largest ${fmtEur(n.basis.maxCents, l)}). Your assistant sends and reports each one here.`) : t(`Senistel kinnitustel summat polnud, seega ülempiir on vaikimisi ${capEur(n.capCents)} €.`, `Your past approvals had no amount, so the cap is the default ${capEur(n.capCents)} €.`))}</p>
+<p class="limits">${t("Ainult", "Only")} ${who}${n.recipients.length <= 2 ? t(" (senised saajad)", " (past recipients)") : ""}<span class="cap-now">, ${t("kuni", "up to")} <b>${esc(capEur(n.capCents))} €</b> ${per}</span>, ${t(`kuni <b>${STANDING_DEFAULTS.maxPerDay}</b> päevas, <b>${STANDING_DEFAULTS.days} päeva</b>. Lõpetad millal tahes.`, `up to <b>${STANDING_DEFAULTS.maxPerDay}</b> a day, <b>${STANDING_DEFAULTS.days} days</b>. End it any time.`)}</p>
+<p class="muted small${n.basis.maxCents ? "" : " cap-now"}">${esc(n.basis.maxCents ? t(`Piirid on võetud sinu ${n.basis.count} senisest kinnitusest (suurim ${fmtEur(n.basis.maxCents, l)}). Assistent saadab ise ja annab iga saatmise kohta siia teada.`, `The limits come from your ${n.basis.count} past approvals (largest ${fmtEur(n.basis.maxCents, l)}). Your assistant sends and reports each one here.`) : t(`Senistel kinnitustel summat polnud, seega ülempiir on vaikimisi ${capEur(n.capCents)} €.`, `Your past approvals had no amount, so the cap is the default ${capEur(n.capCents)} €.`))}</p>
 <form method="post" action="/standing-approvals">${csrfInput(csrf)}<input type="hidden" name="kind" value="${esc(n.kind)}">
 <button type="submit">${t("Luba automaatselt", "Allow automatically")}</button>
 <details><summary>${t("Muuda piire", "Change the limits")}</summary>
 <div role="radiogroup" aria-label="${t("Kellele", "To whom")}"><label class="check"><input type="radio" name="scope" value="approved" checked> <span>${t("Ainult senised saajad", "Only past recipients")} <span class="small muted">${esc(n.recipients.map((r) => r.address).join(", "))}</span></span></label>
 <label class="check"><input type="radio" name="scope" value="any"> <span>${t("Kõik saajad (ka uued)", "Any recipient (including new ones)")}</span></label></div>
 <label for="ho-max">${t("Summa ülempiir (€)", "Amount cap (€)")}</label><input id="ho-max" name="max_eur" inputmode="decimal" autocomplete="off" value="${esc(capEur(n.capCents))}">
+<button type="submit">${t("Luba automaatselt", "Allow automatically")}</button>
 </details></form>`);
   }
   if (n.type === "playbook") {

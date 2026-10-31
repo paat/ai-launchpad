@@ -748,7 +748,8 @@ describe("playbook_id on approvals („Käest ära”, #61)", () => {
     const section = uhendus.slice(uhendus.indexOf('id="kaest-ara"'), uhendus.indexOf('id="pusiload"'));
     expect(section).not.toContain("%");
     expect(section.match(/class="ask"/g)).toHaveLength(1);
-    expect(section.match(/<button type="submit">/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    // One filled button outside „Muuda piire”; its twin inside submits an edited cap (QA M1).
+    expect(section.replace(/<details>[\s\S]*?<\/details>/g, "").match(/<button type="submit">/g)?.length ?? 0).toBeLessThanOrEqual(1);
     // The offer posts to the existing endpoint and creates the rule for the approved recipient.
     expect(section).toContain('<input type="hidden" name="kind" value="send_message">');
     expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "300" })).status).toBe(302);

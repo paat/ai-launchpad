@@ -406,8 +406,9 @@ describe("landing and connect", () => {
     expect(approved).toContain('<h1 class="receipt-head" id="a-h">Kinnitatud 14:36</h1>');
     expect(approved).toContain('<p class="turn" role="status"><strong>Nüüd on assistendi kord.</strong>');
     // Standing offer: one sentence + one primary; the scope radios and cap sit under „Muuda piire”, same fields and endpoint.
-    expect(approved).toContain('<h2 id="so-h">Luba edaspidi sarnased automaatselt: ainult Demo Klient OÜ, kuni 2000\u00a0€</h2>');
-    expect(approved).toMatch(/<form method="post" action="\/standing-approvals">[^]*<button type="submit">Luba automaatselt<\/button>\n<details><summary>Muuda piire<\/summary>[^]*name="scope" value="recipient" checked[^]*name="max_eur"[^]*<\/details><\/form>/);
+    // The cap sits in .cap-now, hidden while „Muuda piire” is open; the inner button after the field submits an edited cap (QA M1).
+    expect(approved).toContain('<h2 id="so-h">Luba edaspidi sarnased automaatselt: ainult Demo Klient OÜ<span class="cap-now">, kuni 2000\u00a0€</span></h2>');
+    expect(approved).toMatch(/<form method="post" action="\/standing-approvals">[^]*<button type="submit">Luba automaatselt<\/button>\n<details><summary>Muuda piire<\/summary>[^]*name="scope" value="recipient" checked[^]*name="max_eur"[^]*>\n<button type="submit">Luba automaatselt<\/button>\n<\/details><\/form>/);
     expect(approved).toContain("Nüüd on assistendi kord.");
     expect(approved).toContain("Kinnitasin");
     expect(approved).toContain("Saadetud: ootab assistendi teadet");
@@ -543,7 +544,8 @@ describe("„Käest ära” (#61)", () => {
     const section = html.match(/<section class="section ho" id="kaest-ara"[^]*?<\/section>/)![0];
     expect(html.indexOf('id="kaest-ara"')).toBeLessThan(html.indexOf('id="pusiload"'));
     expect(section.match(/class="ask"/g)).toHaveLength(1);
-    expect((section.match(/<button type="submit">/g) ?? []).length).toBeLessThanOrEqual(1);
+    // One filled button outside „Muuda piire”; its twin inside submits an edited cap (QA M1).
+    expect((section.replace(/<details>[\s\S]*?<\/details>/g, "").match(/<button type="submit">/g) ?? []).length).toBeLessThanOrEqual(1);
     expect(section).not.toContain("%");
     expect(section).toContain("Kuidas see arvutatakse");
     expect(section).toContain("Assistendi hinnang");
