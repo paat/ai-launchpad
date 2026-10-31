@@ -83,8 +83,8 @@ const LANDING_CARDS: readonly LandingCase[] = [
     connectors: [DEADLINES, CALENDAR], registerData: true,
     ask: { et: "Pane mu tähtajad kalendrisse.", en: "Put my deadlines in my calendar." },
     answer: {
-      et: "Lisasin 4 tähtaega: TSD 10. nov, KMD 20. nov, TSD 10. dets, KMD 20. dets.",
-      en: "Added 4 deadlines: TSD 10 Nov, VAT 20 Nov, TSD 10 Dec, VAT 20 Dec.",
+      et: "Lisasin 4 tähtaega: TSD 10. nov, KMD 20. nov, TSD 10. dets, KMD 21. dets.",
+      en: "Added 4 deadlines: TSD 10 Nov, VAT 20 Nov, TSD 10 Dec, VAT 21 Dec.",
     },
     chips: [RULE],
   },

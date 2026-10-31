@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { esc, shell, loginBody, tanaBody, deadlinesList, approvalsListBody, activityBody, connectionBody, setupBody, landingBody, connectBody, approvalCardBody, fmtEur, fmtDeadline, fmtPeriod, fmtWhen, jobCardAfterScroll, type TanaOpts } from "../src/views.js";
+import { esc, shell, loginBody, tanaBody, deadlinesList, approvalsListBody, activityBody, connectionBody, setupBody, landingBody, connectBody, approvalCardBody, fmtEur, fmtDeadline, deadlineParts, fmtPeriod, fmtWhen, jobCardAfterScroll, type TanaOpts } from "../src/views.js";
 import { computeObligations } from "../src/obligations.js";
 import { SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import type { ApprovalRow } from "../src/mcp.js";
@@ -298,7 +298,7 @@ describe("landing and connect", () => {
         ["Kes mulle võlgu on?", `Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${fmtEur(72000, "et")}. Koostasin igale viisaka meeldetuletuse.`],
         ["Kas oktoobri KMD on valmis?", "Raamatupidamise järgi on oktoobris 14 müügi- ja 9 ostuarvet. Andmed on valmis, esitad e-maksuametis ise. Tähtaeg on 20. nov."],
         ["Mis aastaaruandest puudu on?", "Puudu on inventuuri kokkuvõte ja kasumi jaotamise otsus. Muu on raamatupidamises olemas. Allkirjastad e-äriregistris ise. Tähtaeg on 30. juuni."],
-        ["Pane mu tähtajad kalendrisse.", "Lisasin 4 tähtaega: TSD 10. nov, KMD 20. nov, TSD 10. dets, KMD 20. dets."],
+        ["Pane mu tähtajad kalendrisse.", "Lisasin 4 tähtaega: TSD 10. nov, KMD 20. nov, TSD 10. dets, KMD 21. dets."],
         ["Tee Demo Klient OÜ-le arve oktoobri töö eest.", "Koostasin arve tehtud töö põhjal."],
         ["Kes on oktoobris maksnud?", `Pangas on 5 laekumist, 4 sobivad arvetega. Maksmata: Demo Partner OÜ, ${fmtEur(31000, "et")}.`],
         ["Kontrolli Näidis Ehitus OÜ enne pakkumist.", "Registris aktiivne, maksuvõlga pole, eelmise aasta aruanne on esitatud."],
@@ -308,7 +308,7 @@ describe("landing and connect", () => {
         ["Who owes me money?", `Your accounting software shows three invoices overdue, ${fmtEur(72000, "en")} in total. I drafted a polite reminder for each.`],
         ["Is October's VAT return ready?", "Your books show 14 sales and 9 purchase invoices for October. The figures are ready; you file in e-MTA yourself. Due 20 Nov."],
         ["What's missing from the annual report?", "Missing: the stock-take summary and the profit-distribution decision. Everything else is in your books. You sign in the e-Business Register yourself. Due 30 Jun."],
-        ["Put my deadlines in my calendar.", "Added 4 deadlines: TSD 10 Nov, VAT 20 Nov, TSD 10 Dec, VAT 20 Dec."],
+        ["Put my deadlines in my calendar.", "Added 4 deadlines: TSD 10 Nov, VAT 20 Nov, TSD 10 Dec, VAT 21 Dec."],
         ["Invoice Demo Klient OÜ for October's work.", "I drafted the invoice from the work done."],
         ["Who paid in October?", `5 payments arrived; 4 match invoices. Unpaid: Demo Partner OÜ, ${fmtEur(31000, "en")}.`],
         ["Check Näidis Ehitus OÜ before I quote.", "Active in the register, no tax debt, last year's report filed."],
@@ -528,6 +528,23 @@ describe("landing and connect", () => {
     const m = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2026-11-01T10:00:00Z"), months: 1 });
     const due = Object.fromEntries(m.obligations.map((o) => [o.rule_id, o.effective_due]));
     expect(due["vat-return-kmd"]).toBe("2026-11-20");
+  });
+
+  test("landing calendar answer: the four dates are the engine's first two TSD and KMD effective_due dates (tribunal T-001)", () => {
+    const m = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: NOW, months: 2 });
+    const due = (rule: string) => m.obligations.filter((o) => o.rule_id === rule).map((o) => o.effective_due as string);
+    const [tsdNov, tsdDec] = due("tsd-monthly-return"), [kmdNov, kmdDec] = due("vat-return-kmd");
+    expect([tsdNov, tsdDec]).toEqual(["2026-11-10", "2026-12-10"]);
+    expect([kmdNov, kmdDec]).toEqual(["2026-11-20", "2026-12-21"]); // 2026-12-20 is a Sunday
+    // The landing writes civil dates with a non-breaking space: "21. dets" / "21 Dec".
+    const date = (ymd: string, l: "et" | "en") => { const p = deadlineParts(ymd, l); return l === "et" ? `${p.day}.\u00a0${p.mon}` : `${p.day}\u00a0${p.mon}`; };
+    for (const [l, tsd, kmd] of [["et", "TSD", "KMD"], ["en", "TSD", "VAT"]] as const) {
+      const html = landingBody({ lang: l, demo: false, rand: () => 0 });
+      const at = html.indexOf('data-job-conversation="calendar"');
+      const calendar = html.slice(at, html.indexOf("</ol>", at)); // that case's rendered transcript
+      expect(calendar).toContain(`${tsd} ${date(tsdNov, l)}, ${kmd} ${date(kmdNov, l)}, ${tsd} ${date(tsdDec, l)}, ${kmd} ${date(kmdDec, l)}.`);
+      expect(calendar).not.toContain(`${kmd} ${date("2026-12-20", l)}`); // the old Sunday date
+    }
   });
 
   test("landing teaser CSS: final frame is the base state, so reduced motion shows it statically", () => {
