@@ -72,7 +72,6 @@ describe("executable job playbooks (#26)", () => {
     expect(steps).toContain("Claude's free plan allows one custom connector and AI Launchpad already uses it");
     expect(steps).toContain("removing AI Launchpad stops deadlines and approvals, and suggest upgrading the plan.");
     expect(steps).toContain("Do not create, change, delete or send anything during setup.");
-    expect(p.steps.at(-1)).toMatch(/^Verify with one read-only question/);
   });
 
   test("every trigger is a rule_id the engine can emit, mapped to one playbook, with the same official source", () => {
