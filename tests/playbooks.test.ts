@@ -63,7 +63,8 @@ describe("executable job playbooks (#26)", () => {
     for (const x of branch) expect(x).toMatch(/^(E-mail|Bank|Accounting): /);
     const email = branch.filter((x) => x.startsWith("E-mail:")), bank = branch.filter((x) => x.startsWith("Bank:")), acc = branch.filter((x) => x.startsWith("Accounting:"));
     expect([email.length, bank.length]).toEqual([1, 1]);
-    expect(email[0]).toMatch(/do not search or quote catalogue entries for it.*Then go to the last step\.$/);
+    expect(email[0]).toContain("offer your built-in connector for it; once the owner has connected it, go to the last step.");
+    expect(email[0]).toMatch(/do not search or quote catalogue entries for it.*Then stop: skip the last step\.$/);
     expect(bank[0]).toMatch(/Never start a bank key, credential or payment setup\. Then stop: skip the last step\.$/);
     for (const s of ["paste the key values", "Add custom connector", "API access permits", "search_services with \"werkzeug\""]) {
       expect(branch.filter((x) => x.includes(s)).every((x) => x.startsWith("Accounting:")), s).toBe(true);
@@ -196,9 +197,9 @@ describe("agent-facing copy over MCP", () => {
     const c = await connect(["progress:read"]);
     const i = c.getInstructions() ?? "";
     expect(i).toContain("may not know technical words such as MCP, connector or API");
-    expect(i).toContain("follow the connect-service playbook and look the service up with search_services before answering from your own connector directory");
+    expect(i).toContain("follow the connect-service playbook before answering from your own connector directory; it says which lookups are allowed.");
     const tools = (await c.listTools()).tools;
-    expect(tools.find((x) => x.name === "search_services")?.description).toMatch(/^Find how to connect a service the owner names/);
+    expect(tools.find((x) => x.name === "search_services")?.description).toMatch(/^Research catalogue behind the connect-service playbook: when linking a service, query only as that playbook's branch says\./);
   });
 
   test("read-only errors: no consent label, request progress:report, tool-accurate copy", async () => {
