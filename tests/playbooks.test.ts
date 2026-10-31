@@ -16,12 +16,12 @@ const byId = (id: string) => PLAYBOOKS.find((p) => p.id === id)!;
 
 describe("executable job playbooks (#26)", () => {
   test("shape: every field present, deterministic copy, known approval kind", () => {
-    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "payment-reminder", "vat-return-prep", "annual-report"]);
+    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-accounting", "payment-reminder", "vat-return-prep", "annual-report"]);
     for (const p of PLAYBOOKS) {
       for (const k of ["id", "title", "title_et", "summary", "source", "source_label", "done_when", "verify_with"] as const) expect(p[k], `${p.id}.${k}`).toMatch(/\S/);
       expect(p.steps.length, p.id).toBeGreaterThan(0);
       expect(p.needs.length, p.id).toBeGreaterThan(0);
-      expect(p.source).toMatch(/^https:\/\/www\.(riigiteataja|emta)\.ee\//);
+      expect(p.source).toMatch(/^https:\/\/(www\.(riigiteataja|emta)|abiinfo\.rik)\.ee\//);
       if (p.approval_kind !== null) expect(APPROVAL_KINDS).toContain(p.approval_kind);
     }
     expect(byId("deadlines-check").approval_kind).toBeNull();
@@ -45,6 +45,17 @@ describe("executable job playbooks (#26)", () => {
     expect(remind).toContain("Do not cite the statute or interest in the reminder unless the owner asks.");
     expect(remind).not.toMatch(/threaten|viivis/);
     expect(remind).toMatch(/request_approval with action kind send_message.*get_approval.*record_action_outcome with outcome sent.*Record paid only after a sent outcome, with a NEW report_id.*only if you see the payment/s);
+  });
+
+  test("connect-accounting: owner does the login, keys never go through the chat, read-only check only", () => {
+    const p = byId("connect-accounting");
+    expect(p).toMatchObject({ approval_kind: null, triggers: [] });
+    const steps = p.steps.join(" ");
+    expect(steps).toMatch(/Check your own connectors first.*ask one question/s);
+    expect(steps).toContain("own Smart-ID or ID-card (never automate the login)");
+    expect(steps).toContain("Never ask for keys in the chat; if the owner pastes one here, tell them to delete that permit and create a new one.");
+    expect(steps).toContain("Do not create, change or delete anything in the books during setup.");
+    expect(p.steps.at(-1)).toMatch(/^Verify with one read-only question/);
   });
 
   test("every trigger is a rule_id the engine can emit, mapped to one playbook, with the same official source", () => {

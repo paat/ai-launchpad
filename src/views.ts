@@ -994,6 +994,7 @@ ${HO_CONNECTOR(l)}`);
   }
   return card(t("Järgmine samm: ühenda raamatupidamine", "Next step: connect your accounting"), `<span class="ask-title">${t("Ühenda oma raamatupidamisprogramm assistendiga", "Connect your accounting software to your assistant")}</span>
 <p>${t("Siis leiab assistent ise arved ja numbrid, mida tööd vajavad.", "Then your assistant finds the invoices and figures the jobs need.")}</p>
+${quote(t("Aita mul ühendada minu raamatupidamisprogramm.", "Help me connect my accounting software."))}
 ${HO_CONNECTOR(l)}`);
 }
 /** Ühendus → Käest ära: count, bar, one row per job with its evidence, one next step, and the expired-unused finding. */
