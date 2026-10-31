@@ -3,9 +3,10 @@ import { isHandled } from "./core.js";
 import { isDone, offerCapCents, type Handover, type Job } from "./handover.js";
 import { approvalAddressMissing, normAddress, standingRecipients, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type AssistantMilestones, type Exclusion, type StandingRule } from "./mcp.js";
 import type { CompanyCard } from "./arikratt.js";
-import { ET_OF, tallinnDate, type FactNeeded, type Obligation } from "./obligations.js";
+import { ET_OF, tallinnDate, type FactNeeded, type Obligation, type Source } from "./obligations.js";
 import { BASETEN_MODEL } from "./model-quality.js";
-import { safeHttps, type ServiceRecord } from "./catalog.js";
+import { DEMO_LABELS_EN } from "./fixtures.js";
+import { PLAYBOOKS, safeHttps, type ServiceRecord } from "./catalog.js";
 import { BLOCKER_HANDOFF, BLOCKER_LABELS, BLOCKER_LABELS_ET, CATEGORY_LABELS, CATEGORY_LABELS_ET, classifiedByLabel, type Blocker, type Category, type DemandItem, type OwnerNeed } from "./unmet-needs.js";
 
 export const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -243,10 +244,11 @@ article.card.ticket{margin:0 0 var(--s-6);padding:0;border-radius:var(--r-xl);bo
 .decide button{flex:1 1 auto;min-width:0;min-height:56px;margin:0;font-size:var(--fs-lg)}
 .decide button.text{flex:0 0 auto;min-height:var(--tap);font-size:var(--fs-md);white-space:nowrap}
 @media (min-width:600px){.decide{margin:0 calc(-1 * var(--s-6));padding-left:var(--s-6);padding-right:var(--s-6)}}
-/* Scroll padding = the bar (1px border + 12px top + 56px button + bottom inset) + 8px air; below 340px it wraps to a second 8px + 44px row. */
+/* Scroll padding = the bar (1px border + 12px top + 56px button + bottom inset) + 8px air. It stays one row from 300px (#63 m8):
+   on narrow phones „Keeldu” is a compact text button and a long approve label may take two 1.2-line rows inside its 56px button. */
 html:has(.decide){scroll-padding-bottom:calc(77px + max(12px,env(safe-area-inset-bottom)))}
 @media (max-width:479px){.decide button{padding-left:12px;padding-right:12px;font-size:var(--fs-md)}}
-@media (max-width:339px){.decide{flex-wrap:wrap}html:has(.decide){scroll-padding-bottom:calc(129px + max(12px,env(safe-area-inset-bottom)))}}
+@media (max-width:379px){.decide{gap:var(--s-2)}.decide button{padding:6px 10px;line-height:1.2}.decide button.text{padding:6px 8px}}
 .fine{margin:var(--s-3) 0 0;color:var(--c-muted);font-size:var(--fs-sm)}
 .turn{margin:var(--s-1) 0 var(--s-4)}
 .turn strong{display:block;margin-bottom:var(--s-2);font-size:var(--fs-h1);font-weight:800;line-height:1.1;letter-spacing:-.025em}
@@ -384,8 +386,9 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .tp-resume,#teaser-pause:checked~figcaption .tp-pause{display:none}#teaser-pause:checked~figcaption .tp-resume{display:inline}
 #teaser-pause:checked~.phone *{animation-play-state:paused!important}
 @media (prefers-reduced-motion:reduce){.teaser-pause,.vh-input{display:none}}
-.phone{height:640px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
-@media (max-width:380px){.phone{height:700px}}@media (min-width:880px){.phone{height:600px}}
+/* Heights fit the final frame from the owner's opening question to the last bubble, in ET and EN (#63 m1); the beat timing is unchanged. */
+.phone{height:672px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
+@media (max-width:380px){.phone{height:700px}}@media (max-width:359px){.phone{height:772px}}@media (min-width:880px){.phone{height:656px}}
 .phone-screen{display:flex;flex-direction:column;height:100%;overflow:hidden;border-radius:36px;background:var(--c-surface-2)}
 .phone-bar{display:flex;align-items:center;gap:10px;padding:22px 16px 10px;background:#fff;border-bottom:1px solid var(--c-divider)}
 .phone-ava{flex:none;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1a4d2e,#6f9c63)}
@@ -569,6 +572,8 @@ const fmtUntil = (iso: string, l: Lang, now = new Date()) => {
   if (diff === 1) return t(`homme kella ${time}\u2011ni`, `${time} tomorrow`);
   return t(`${DAY.et.format(d)} kella ${time}\u2011ni`, `${DAY.en.format(d)}, ${time}`);
 };
+/** The official source of a rule: the same link on Tulekul and in „Käest ära”. */
+const sourceLink = (src: Source, l: Lang) => `<a class="tap-link" href="${esc(src.url)}" rel="noopener noreferrer"><span>${tr(l)("Allikas", "Source")}: <span lang="et">${esc(src.act_et)} ${esc(src.section)}</span><span aria-hidden="true">&nbsp;↗</span></span></a>`;
 const timeEl = (iso: string, text: string) => `<time datetime="${esc(iso)}">${esc(text)}</time>`;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -928,17 +933,17 @@ const HO_CAN: Record<string, [string, string]> = {
   invoicing: ["Assistent saab arve ette valmistada ja sinu kinnitusel saata.", "Your assistant can prepare an invoice and send it once you approve."],
 };
 const HO_CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>', HO_ARROW = '<svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg>';
-function handoverRow(j: Job, l: Lang, now: Date): string {
-  const t = tr(l), e = j.evidence, assessedChip = labelChip("assistant", t("Assistendi hinnang", "Your assistant's assessment"));
+function handoverRow(j: Job, l: Lang, now: Date, sample: boolean): string {
+  const t = tr(l), fx = fixtureText(l, sample), e = j.evidence, assessedChip = labelChip("assistant", t("Assistendi hinnang", "Your assistant's assessment"));
   const mark = j.rung === "done" ? HO_CHECK : j.rung === "prep" ? HO_ARROW : j.rung === "other" ? "R" : "";
   const rung = j.rung === "done" ? (j.ceiling === "rule" ? `${t("Assistent teeb ise", "Your assistant does it")} ${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}` : `${t("Assistent valmistab ette, sina esitad", "Your assistant prepares, you file")} ${labelChip("official", t("Lagi käes: seadus", "At its ceiling: the law"))}`)
     : j.rung === "prep" ? t("Assistent valmistab ette, sina kinnitad", "Your assistant prepares, you approve")
-    : j.rung === "other" ? `${esc(t(`Teeb ${j.assessed?.executor}`, `Done by ${j.assessed?.executor}`))} ${assessedChip}` : t("Teed ise", "You do it");
+    : j.rung === "other" ? `${esc(t(`Teeb ${j.assessed?.executor}`, `Done by ${fx.plain(j.assessed?.executor ?? "")}`))} ${assessedChip}` : t("Teed ise", "You do it");
   const verb = j.ceiling === "law" ? t("esitatud", "filed") : t("saadetud", "sent");
   const lines: string[] = [];
   if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.auto ? t(`, neist <span class="num">${e.auto}</span> ilma sinuta`, `, <span class="num">${e.auto}</span> without you`) : ""}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
   if (e.rule) lines.push(esc(t(`Püsiluba: ${standingRuleName(e.rule, l)} · aegub ${DAY.et.format(new Date(e.rule.expires_at))}`, `Standing approval: ${standingRuleName(e.rule, l)} · ends ${DAY.en.format(new Date(e.rule.expires_at))}`)));
-  if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${C_DAY_MON_YEAR.et.format(civil(j.due))}`, `Was due ${C_DAY_MON_YEAR.en.format(civil(j.due))}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}`);
+  if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${C_DAY_MON_YEAR.et.format(civil(j.due))}`, `Was due ${C_DAY_MON_YEAR.en.format(civil(j.due))}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}${j.dueSource ? ` ${sourceLink(j.dueSource, l)}` : ""}`);
   if (j.source === "assessment" && j.rung !== "other" && j.assessed) lines.push(`„${esc(j.assessed.reason)}” ${assessedChip}`);
   if (j.rung === "mine" && HO_CAN[j.id]) lines.push(esc(t(...HO_CAN[j.id])));
   if (e.pending) lines.push(stateChip("waiting", t(`${e.pending} ootab sinu kinnitust`, `${e.pending} waiting for your approval`)));
@@ -981,7 +986,7 @@ ${HO_CONNECTOR(l)}`);
 ${HO_CONNECTOR(l)}`);
 }
 /** Ühendus → Käest ära: count, bar, one row per job with its evidence, one next step, and the expired-unused finding. */
-export function handoverSection(h: Handover, l: Lang, csrf: string, now = new Date()): string {
+export function handoverSection(h: Handover, l: Lang, csrf: string, now = new Date(), sample = false): string {
   const t = tr(l), split = hoSplit(h, l), ex = h.findings.expiredUnused;
   const sub = h.off ? `${split}.${h.fromAssessment ? ` ${t(`Assistendi hinnang lisas nimekirja ${h.fromAssessment} ${h.fromAssessment === 1 ? "töö" : "tööd"}.`, `Your assistant's assessment added ${h.fromAssessment} ${h.fromAssessment === 1 ? "job" : "jobs"} to the list.`)}` : ""}` : t("Siia tulevad tööd, mille assistent on päriselt ära teinud, mitte klikid ega lubadused.", "Jobs land here only when your assistant has really done them, not clicks or promises.");
   const month = h.month.done ? `${esc(hoMonth(h.month.ym, l))}: ${t(`<b>${h.month.done}</b> ${h.month.done === 1 ? "töö" : "tööd"} tehtud, <b>${h.month.auto}</b> ilma sinuta.`, `<b>${h.month.done}</b> done, <b>${h.month.auto}</b> without you.`)}` : `${esc(hoMonth(h.month.ym, l))}: ${t("assistent pole veel ühtegi tööd lõpetanud.", "your assistant has not finished a job yet.")}`;
@@ -991,7 +996,7 @@ export function handoverSection(h: Handover, l: Lang, csrf: string, now = new Da
 <ul class="ho-bar ho-bar--lg" aria-label="${esc(t(`${h.total} tööd`, `${h.total} jobs`))}">${h.jobs.map((j) => `<li class="${hoSeg(j)}"><span class="vh">${esc(`${hoJobTitle(j, l)}: ${t(...HO_RUNG[j.rung] as [string, string])}${j.evidence.pending ? t(`; ${j.evidence.pending} ootab praegu`, `; ${j.evidence.pending} waiting now`) : ""}`)}</span></li>`).join("")}</ul>
 <ul class="ho-legend" aria-hidden="true">${(["mine", "prep", "done", "other"] as const).map((r) => `<li><i${r === "mine" ? "" : ` class="ho-seg--${r}"`}></i>${esc(t(...HO_RUNG[r] as [string, string]))}</li>`).join("")}</ul>
 <p class="ho-month">${month}</p>
-<div class="ho-grid"><div><ul class="ho-jobs">${h.jobs.map((j) => handoverRow(j, l, now)).join("")}</ul>${finding}</div>
+<div class="ho-grid"><div><ul class="ho-jobs">${h.jobs.map((j) => handoverRow(j, l, now, sample)).join("")}</ul>${finding}</div>
 ${handoverNext(h, l, csrf)}</div>
 <details class="plain"><summary>${t("Kuidas see arvutatakse", "How this is calculated")}</summary><div class="boxed small"><p>${t("Üks lahter = üks töö. Lahter täitub ainult salvestatud kinnitusest, mille tulemus on saadetud, esitatud või makstud (assistendi teade, AI-hüppelaud seda ei kontrollinud), või kehtivast püsiloast, mis on juba korra töötanud. Ootel kinnitused, lugemised ja sisselogimised lahtrit ei täida. „Teeb raamatupidaja” on assistendi hinnang. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.", "One cell = one job. A cell fills only from a stored approval whose outcome is sent, filed or paid (your assistant's report, not checked by AI Launchpad), or from a live standing approval that has already worked once. Pending approvals, reads and sign-ins fill nothing. “Done by the accountant” is your assistant's assessment. No percentage and no hours saved, because we don't measure them.")}</p></div></details>
 </section>`;
@@ -1162,19 +1167,25 @@ ${opts.result ? `<section class="card" role="status"><p>${esc(opts.result)}</p><
 // --- Kataloog (/kataloog): public research catalogue, ET first, zero JS. ---
 type Conn = "hosted_mcp" | "local_mcp" | "self_hosted_mcp" | "ordinary_api";
 const CONN: Record<Conn, [string, string]> = { hosted_mcp: ["MCP · pilves", "MCP · cloud"], local_mcp: ["MCP · sinu arvutis", "MCP · on your computer"], self_hosted_mcp: ["MCP · ise majutatud", "MCP · self-hosted"], ordinary_api: ["API", "API"] };
-/** Job groups in display order; `sector` (free text in the research data) maps to the first match. */
+/** Job groups in display order; `sector` (free text in the research data) maps to every group it names, so a compound sector
+ * („payments/shipping”, „legal/public data”) is found under each (#52). Õigus comes before the generic data group. */
 export const CATALOGUE_GROUPS = [
   { id: "raamatupidamine", et: "Raamatupidamine ja arved", en: "Accounting and invoices", match: /accounting|invoic|payroll/ },
   { id: "pank", et: "Pank ja maksed", en: "Bank and payments", match: /bank|payment/ },
   { id: "epost", et: "E-post ja kalender", en: "Email and calendar", match: /email|calendar|scheduling/ },
   { id: "kullerid", et: "Kullerid", en: "Couriers", match: /courier|logistics|shipping/ },
-  { id: "andmed", et: "Avalikud ja äriandmed", en: "Public and business data", match: /public|business data|government|statistics|^procurement$|tax/ },
   { id: "oigus", et: "Õigus", en: "Legal", match: /legal|contract/ },
+  { id: "andmed", et: "Avalikud ja äriandmed", en: "Public and business data", match: /public|business data|government|statistics|^procurement$|tax/ },
   { id: "brauser", et: "Brauser ja automaatika", en: "Browser and automation", match: /browser/ },
   { id: "muu", et: "Muu", en: "Other", match: /(?:)/ },
 ] as const;
 export type CatalogueGroup = (typeof CATALOGUE_GROUPS)[number]["id"];
-export const catalogueGroup = (sector: string | undefined): CatalogueGroup => CATALOGUE_GROUPS.find((g) => g.match.test((sector ?? "").toLowerCase()))!.id;
+/** Every job group a sector names (Muu only when none does); the first is where the full list shows the service. */
+export const catalogueGroups = (sector: string | undefined): CatalogueGroup[] => {
+  const hits = CATALOGUE_GROUPS.filter((g) => g.id !== "muu" && g.match.test((sector ?? "").toLowerCase())).map((g) => g.id);
+  return hits.length ? hits : ["muu"];
+};
+export const catalogueGroup = (sector: string | undefined): CatalogueGroup => catalogueGroups(sector)[0];
 /** Where a connection works, from its interface class: hosted MCP everywhere, local MCP on a computer, self-hosted MCP on your own server, the rest needs a connector. */
 export const whereItWorks = (ic: string | undefined): [string, string] =>
   ic === "hosted_mcp" ? ["Kõikjal · veeb, telefon, arvuti", "Anywhere · web, phone, computer"]
@@ -1186,7 +1197,9 @@ const fmtYmd = (ymd: string) => /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd.split("-")
 
 function serviceCard(r: ServiceRecord, l: Lang): string {
   const t = tr(l), conn = CONN[r.interface_class as Conn];
-  const link = [...(r.sources ?? []), r.connection].map(safeHttps).find((u): u is string => !!u) ?? null;
+  // The provider's own connection URL first; research citations only when there is none (#52).
+  // A URL template ({id}) is an API pattern, not a page to open: skip it for the next https URL.
+  const link = [r.connection, ...(r.sources ?? [])].map(safeHttps).find((u): u is string => !!u && !/\{|%7B/i.test(new URL(u).pathname)) ?? null;
   // Research text is English; mark it so screen readers switch voice on the Estonian page.
   const en = l === "en" ? "" : ' lang="en"';
   return `<article class="card svc" data-service="${esc(r.id)}"><h3>${esc(r.name)}</h3>
@@ -1204,30 +1217,43 @@ export function catalogueBody(o: { lang: Lang; q: string; g: CatalogueGroup | nu
   // Ärikratt is pinned above with what Launchpad actually does with it.
   const listed = all.filter((r) => r.id !== "arikratt" && (!o.matched || o.matched.has(r.id)));
   const href = (g: string | null) => { const p = new URLSearchParams(); if (g) p.set("g", g); if (o.q) p.set("q", o.q); const s = p.toString(); return s ? `/kataloog?${s}` : "/kataloog"; };
-  const counts = new Map<string, number>(); for (const r of listed) { const g = catalogueGroup(r.sector); counts.set(g, (counts.get(g) ?? 0) + 1); }
+  const counts = new Map<string, number>(); for (const r of listed) for (const g of catalogueGroups(r.sector)) counts.set(g, (counts.get(g) ?? 0) + 1);
   const chips = `<nav class="chips" aria-label="${t("Tööde rühmad", "Job groups")}"><a href="${esc(href(null))}"${o.g ? "" : ' aria-current="page"'}>${t("Kõik", "All")}</a>${CATALOGUE_GROUPS.map((g) => `<a href="${esc(href(g.id))}"${o.g === g.id ? ' aria-current="page"' : ""}>${esc(t(g.et, g.en))} <span>${counts.get(g.id) ?? 0}</span></a>`).join("")}</nav>`;
   const sections = CATALOGUE_GROUPS.filter((g) => !o.g || o.g === g.id).map((g) => {
-    const rows = listed.filter((r) => catalogueGroup(r.sector) === g.id);
+    // A group filter shows every service in the group; the full list shows each service once, under its first group.
+    const rows = listed.filter((r) => (o.g ? catalogueGroups(r.sector).includes(g.id) : catalogueGroup(r.sector) === g.id));
     return rows.length ? `<section aria-labelledby="g-${g.id}"><h2 id="g-${g.id}" class="svc-group">${esc(t(g.et, g.en))} <span class="muted">${rows.length}</span></h2>${rows.map((r) => serviceCard(r, l)).join("")}</section>` : "";
   }).join("");
   const kratt = `https://arikratt.ee/${l === "en" ? "en" : "et"}/mcp`;
+  // Pinned above the list with what Launchpad does with them; a search hides a card it does not match (#52), as searchServices matches the list.
+  const what = { launchpad: ["Näeb sinu ettevõtte tähtaegu koos ametliku allikaga, valmistab töid ette ja küsib enne saatmist või esitamist sinu kinnitust täpselt sellele sisule.", "Sees your company's deadlines with their official sources, prepares the work and asks you to approve the exact content before anything is sent or filed."], arikratt: ["Avalikud ettevõtteandmed äriregistrist ja maksuametist. AI-hüppelaud arvutab nende põhjal sinu tähtajad.", "Public company data from the Business Register and the Tax Board. AI Launchpad computes your deadlines from it."] } as const;
+  // Each pinned card's visible strings as language pairs, so the search reads exactly what the card shows, in both languages.
+  const MCP_CLOUD: [string, string] = ["MCP · pilves", "MCP · cloud"], WHAT_K: [string, string] = ["Mida assistent selle abil teha saab", "What your assistant can do with it"];
+  const card = {
+    launchpad: { name: ["AI-hüppelaud", "AI Launchpad"], tested: ["Testitud: ChatGPT 28.10.2026 · Claude 30.10.2026", "Tested: ChatGPT 28 Oct 2026 · Claude 30 Oct 2026"], link: ["Ühenda oma assistent", "Connect your assistant"] },
+    arikratt: { name: ["Ärikratt", "Ärikratt"], tested: ["AI-hüppelaud kasutab seda", "Used by AI Launchpad"], link: ["Ärikratti avalik MCP", "Ärikratt public MCP"] },
+  } as const;
+  const shows = (c: typeof card[keyof typeof card], body: readonly string[]) => !o.q || [...c.name, ...c.tested, ...c.link, ...MCP_CLOUD, ...WHAT_K, ...whereItWorks("hosted_mcp"), ...body].join(" ").toLowerCase().includes(o.q.trim().toLowerCase());
+  const pinned = [
+    shows(card.launchpad, what.launchpad) ? `<article class="card svc svc--pinned"><h3>${t(...card.launchpad.name)}</h3><div class="labels">${labelChip("rule", t(...MCP_CLOUD))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t(...card.launchpad.tested))}</div>
+<p class="svc-k">${t(...WHAT_K)}</p><p class="svc-v">${t(...what.launchpad)}</p>
+<a class="tap-link" href="/uhenda">${t(...card.launchpad.link)}</a></article>` : "",
+    shows(card.arikratt, what.arikratt) ? `<article class="card svc svc--pinned"><h3>Ärikratt</h3><div class="labels">${labelChip("rule", t(...MCP_CLOUD))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t(...card.arikratt.tested))}</div>
+<p class="svc-k">${t(...WHAT_K)}</p><p class="svc-v">${t(...what.arikratt)}</p>
+<a class="tap-link" href="${esc(kratt)}" rel="noopener noreferrer">${t(...card.arikratt.link)}: arikratt.ee</a></article>` : "",
+  ].filter(Boolean).join("\n");
+  const pinnedSection = pinned ? `<section aria-labelledby="pin-h"><h2 id="pin-h" class="svc-group">${t("Alusta siit", "Start here")}</h2>${pinned}</section>` : "";
   return `<section class="card hero"><h1>${t("Teenused, mida sinu AI-assistent saab kasutada", "Services your AI assistant can use")}</h1>
 <p class="lede">${t(`<strong>${mcp} MCP-ühendust ja ${api} API-t</strong> (kokku ${o.records.length} uuritud teenusest) Eesti ettevõtja tööde jaoks.`, `<strong>${mcp} MCP connections and ${api} APIs</strong> (out of ${o.records.length} researched services) for the jobs of an Estonian business owner.`)}</p>
 <ul class="legend" aria-label="${t("Kus ühendus töötab", "Where a connection works")}"><li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 8.5 4.75 4.75 0 0 1 17.5 18z"/></svg> <strong>${t(...whereItWorks("hosted_mcp"))}</strong>: ${t("töötab ka assistendi telefonirakenduses: telefonis küsid ja kinnitad liikvel olles.", "also works in the assistant's phone app: ask and approve on the go.")}</li>
 <li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 20h20"/></svg> <strong>${t(...whereItWorks("local_mcp"))}</strong>: ${t("raskemaks tööks oma failide ja rakendustega (Claude Desktop/Cowork või ChatGPT töölauarakendus).", "for heavier work with your own files and apps (Claude Desktop/Cowork or the ChatGPT desktop app).")}</li>
 <li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/></svg> <strong>${t(...whereItWorks("self_hosted_mcp"))}</strong>: ${t("teenuse paigaldad ise (või IT-partner) oma serverisse; seejärel töötab ka veebis ja telefonis, kui assistent lubab lisada MCP aadressi.", "you (or an IT partner) install it on your own server; then it also works on web and phone if your assistant lets you add an MCP address.")}</li>
 <li><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4"/></svg> <strong>${t(...whereItWorks("ordinary_api"))}</strong>: ${t("teenusel on API või integratsioon, aga valmis assistendi ühendust veel pole.", "the service has an API or an integration, but no ready assistant connection yet.")}</li></ul>
-<p class="small muted">${esc(t(`Iga ühendus laseb sinu assistendil teha rohkem töid sinu eest. Ühendad need oma assistendis ise; AI-hüppelaud neid ei vahenda. Allikas: avalikud dokumendid, kontrollitud ${fmtYmd(checked)}.`, `Each connection lets your assistant take more jobs off you. You connect them in your own assistant; AI Launchpad does not broker them. Source: public documentation, checked ${checked}.`))}</p></section>
-<section aria-label="${t("Kinnitatud", "Pinned")}">
-<article class="card svc svc--pinned"><h3>${t("AI-hüppelaud", "AI Launchpad")}</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t("Testitud: ChatGPT 28.10.2026 · Claude 30.10.2026", "Tested: ChatGPT 28 Oct 2026 · Claude 30 Oct 2026"))}</div>
-<p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v">${t("Näeb sinu ettevõtte tähtaegu koos ametliku allikaga, valmistab töid ette ja küsib enne saatmist või esitamist sinu kinnitust täpselt sellele sisule.", "Sees your company's deadlines with their official sources, prepares the work and asks you to approve the exact content before anything is sent or filed.")}</p>
-<a class="tap-link" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a></article>
-<article class="card svc svc--pinned"><h3>Ärikratt</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t("AI-hüppelaud kasutab seda", "Used by AI Launchpad"))}</div>
-<p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v">${t("Avalikud ettevõtteandmed äriregistrist ja maksuametist. AI-hüppelaud arvutab nende põhjal sinu tähtajad.", "Public company data from the Business Register and the Tax Board. AI Launchpad computes your deadlines from it.")}</p>
-<a class="tap-link" href="${esc(kratt)}" rel="noopener noreferrer">${t("Ärikratti avalik MCP", "Ärikratt public MCP")}: arikratt.ee</a></article></section>
+<p class="small muted">${esc(t(`Iga ühendus laseb sinu assistendil teha rohkem töid sinu eest. Ühendad need oma assistendis ise; AI-hüppelaud neid ei vahenda. Allikas: avalikud dokumendid, kontrollitud ${fmtYmd(checked)}.`, `Each connection lets your assistant take more jobs off you. You connect them in your own assistant; AI Launchpad does not broker them. Source: public documentation, checked ${/^\d{4}-\d{2}-\d{2}$/.test(checked) ? C_DAY_MON_YEAR.en.format(civil(checked)) : checked}.`))}</p></section>
+${pinnedSection}
 <form method="get" action="/kataloog" role="search" class="search">${o.g ? `<input type="hidden" name="g" value="${esc(o.g)}">` : ""}<label>${t("Otsi nime või töö järgi", "Search by name or job")} <input name="q" value="${esc(o.q)}" maxlength="120"></label><button type="submit">${t("Otsi", "Search")}</button></form>
 ${chips}
-${sections || `<p class="card">${o.q ? esc(t(`„${o.q}” kohta ei leidnud midagi.`, `Nothing found for “${o.q}”.`)) : t("Selles rühmas pole teenuseid.", "No services in this group.")} <a class="tap-link" href="/kataloog">${t("Näita kõiki", "Show all")}</a></p>`}`;
+${sections || (o.q && pinned) ? sections : `<p class="card">${o.q ? esc(t(`„${o.q}” kohta ei leidnud midagi.`, `Nothing found for “${o.q}”.`)) : t("Selles rühmas pole teenuseid.", "No services in this group.")} <a class="tap-link" href="/kataloog">${t("Näita kõiki", "Show all")}</a></p>`}`;
 }
 
 export function playbooksBody(items: { title: string; summary: string; source: string; source_label: string }[], frictionCards?: (PublicCardViewOpts & { label: string })[]): string {
@@ -1324,7 +1350,7 @@ ${items.length ? items.map((i) => `<section class="card"><h2>${esc(i.label)}</h2
 // --- Deadlines (#19) with handoffs (ux2 change 2): date first, rule label, source, who does what. ---
 export interface DeadlinesView { company: CompanyCard & { unavailable?: string }; obligations: Obligation[]; facts_needed: FactNeeded[] }
 
-function deadlineRow(o: Obligation, l: Lang, opts: { now: Date; prompts: boolean }): string {
+function deadlineRow(o: Obligation, l: Lang, opts: { now: Date; prompts: boolean; others?: Record<string, string> }): string {
   const t = tr(l), today = tallinnYmd(opts.now);
   let tile: string, lead = "";
   if (o.effective_due) {
@@ -1342,19 +1368,22 @@ function deadlineRow(o: Obligation, l: Lang, opts: { now: Date; prompts: boolean
   const cond = o.applies === "if" && o.condition_et && o.kind !== "warning" ? t(o.condition_et, o.condition_en ?? o.condition_et) : "";
   const reason = t(o.reason_et, o.reason_en);
   const qualify = cond && o.rule_id !== "tsd-monthly-return" ? t("Kui see kehtib: ", "If this applies: ") : "";
+  // #63 m5: when the assistant's assessment says someone else prepares this job, the row says so too, once.
+  const other = opts.others?.[o.rule_id];
+  const doer = other ? `<dt>${esc(cap(other))}</dt><dd>${t("valmistab ette", "prepares it")} ${labelChip("assistant", t("Assistendi hinnang", "Your assistant's assessment"))}</dd>` : `<dt>${t("Assistent", "Your assistant")}</dt><dd>${esc(t(h.assistant_et, h.assistant_en))}</dd>`;
   return `<li class="deadline-row">${tile}
 <div><h3 class="deadline-title">${o.kind === "risk" && cond ? t("Võimalik: ", "Possible: ") : ""}${esc(t(o.title_et, o.title_en))} · ${esc(t(o.period_label_et, o.period_label_en))}</h3>
 ${cond ? `<p class="deadline-cond"><strong>${esc(cond)}</strong></p>` : ""}<p class="deadline-reason">${lead ? `<strong>${esc(lead)}</strong> ` : ""}${reason !== cond ? esc(reason) : ""}${esc(shifted)}</p>
-<div class="deadline-meta">${labelChip("rule", t("Arvutatud reeglist", "Calculated by rule"))}<a class="tap-link" href="${esc(o.source.url)}" rel="noopener noreferrer"><span>${t("Allikas", "Source")}: <span lang="et">${esc(o.source.act_et)} ${esc(o.source.section)}</span><span aria-hidden="true">&nbsp;↗</span></span></a></div>
-<details><summary>${t("Kes mida teeb", "Who does what")}</summary>${qualify ? `<p class="small"><strong>${qualify.slice(0, -2)}</strong></p>` : ""}<dl class="handoff"><dt>${t("Assistent", "Your assistant")}</dt><dd>${esc(t(h.assistant_et, h.assistant_en))}</dd><dt class="me">${t("Sina", "You")}</dt><dd>${esc(t(h.owner_et, h.owner_en))}</dd></dl>
+<div class="deadline-meta">${labelChip("rule", t("Arvutatud reeglist", "Calculated by rule"))}${sourceLink(o.source, l)}</div>
+<details><summary>${t("Kes mida teeb", "Who does what")}</summary>${qualify ? `<p class="small"><strong>${qualify.slice(0, -2)}</strong></p>` : ""}<dl class="handoff">${doer}<dt class="me">${t("Sina", "You")}</dt><dd>${esc(t(h.owner_et, h.owner_en))}</dd></dl>
 ${o.rule_id === "vat-return-kmd" ? `<p class="small muted">${t("Summad arvutab sinu raamatupidamisprogramm, mitte tehisaru.", "Your accounting software calculates the amounts, not AI.")}</p>` : ""}
-${opts.prompts ? `<div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(qualify + t(h.prompt_et, h.prompt_en))}”</p></div>` : ""}</details></div></li>`;
+${opts.prompts && !other ? `<div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(qualify + t(h.prompt_et, h.prompt_en))}”</p></div>` : ""}</details></div></li>`;
 }
 
-export function deadlinesList(r: DeadlinesView, l: Lang, opts: { now?: Date; prompts?: boolean } = {}): string {
+export function deadlinesList(r: DeadlinesView, l: Lang, opts: { now?: Date; prompts?: boolean; others?: Record<string, string> } = {}): string {
   const now = opts.now ?? new Date();
   if (!r.obligations.length) return `<p class="muted">${tr(l)("Selles vahemikus tähtaegu pole.", "No deadlines in this period.")}</p>`;
-  return `<ul class="deadlines">${r.obligations.map((o) => deadlineRow(o, l, { now, prompts: !!opts.prompts })).join("")}</ul>`;
+  return `<ul class="deadlines">${r.obligations.map((o) => deadlineRow(o, l, { now, prompts: !!opts.prompts, others: opts.others })).join("")}</ul>`;
 }
 
 /** Which rule a missing fact can change: a question is shown only when it can change a row on screen. */
@@ -1478,10 +1507,16 @@ export interface TanaOpts {
 /** The register lookup is unavailable: ask the assistant instead, with the plain reason. */
 export const deadlinesHint = (l: Lang, reason: string, reasonLang: Lang = "en") => `<p class="small">${tr(l)("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?”", "Deadlines: ask your assistant \"What are my deadlines?\"")} <span class="muted"${reasonLang !== l ? ` lang="${reasonLang}"` : ""}>${esc(reason)}</span></p>`;
 const TRY_PROMPT: [string, string] = ["Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?", "What admin do I have this month, and what can you do yourself?"];
+/** English Täna on a sample workspace (#63 m13): the fixture labels we wrote show in English (plain);
+ * the rest of the assistant's text stays as written and is marked Estonian (html). */
+const fixtureText = (l: Lang, sample: boolean) => {
+  const on = l === "en" && sample, plain = (s: string) => (on && DEMO_LABELS_EN[s]) || s;
+  return { plain, html: (s: string) => (on && !DEMO_LABELS_EN[s] ? `<span lang="et">${esc(s)}</span>` : esc(plain(s))) };
+};
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function tanaBody(o: TanaOpts): string {
-  const l = o.lang, t = tr(l), now = o.now ?? new Date(), a = o.assessment;
+  const l = o.lang, t = tr(l), now = o.now ?? new Date(), a = o.assessment, fx = fixtureText(l, o.sample);
   const deadlines = o.deadlines && typeof o.deadlines === "object" && "obligations" in o.deadlines ? o.deadlines : null;
   const pending = o.approvals.filter((x) => x.state === "pending");
   // A failed or rejected outcome is not done work: it needs the owner.
@@ -1497,15 +1532,15 @@ export function tanaBody(o: TanaOpts): string {
     ...failed.map((x) => { const v = approvalView(x, l); return askLink(`/approvals/${esc(encodeURIComponent(x.id))}`, `${stateChip("rejected", t("Ei õnnestunud — vaata üle", "Did not work — review it"))}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`, esc([v.title, v.recipient.name].filter(Boolean).join(" · ")), esc(fmtWhen(v.outcome?.observed_at ?? x.consumed_at, l, now))); }),
     ...qs.map((x) => `<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Vasta assistendile ühele küsimusele:", "Answer one question for your assistant:")}</span><p class="small">„${esc(x.q)}” ${esc(x.then)}</p></div></div>`),
     // Unknowns stay in the main view, before any disclosure; not counted as asks.
-    ...(a && (o.coverage.unresolved || a.gaps.length) ? [`<div class="ask-row"><strong>${t("Assistent pole veel kõike hinnanud:", "Your assistant has not assessed everything yet:")}</strong><ul class="tight">${[...(o.coverage.unresolved ? [t(`${o.coverage.unresolved} kohustus(t) on veel lahtised`, `${o.coverage.unresolved} item(s) still unresolved`)] : []), ...a.gaps].map((g) => `<li class="small">${esc(g)}</li>`).join("")}</ul></div>`] : []),
+    ...(a && (o.coverage.unresolved || a.gaps.length) ? [`<div class="ask-row"><strong>${t("Assistent pole veel kõike hinnanud:", "Your assistant has not assessed everything yet:")}</strong><ul class="tight">${[...(o.coverage.unresolved ? [esc(t(`${o.coverage.unresolved} kohustus(t) on veel lahtised`, `${o.coverage.unresolved} item(s) still unresolved`))] : []), ...a.gaps.map(fx.html)].map((g) => `<li class="small">${g}</li>`).join("")}</ul></div>`] : []),
     // Rationale and any effort estimate are the assistant's words, labelled as such; never in the hero or the counts.
-    ...(next ? [`<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Järgmine samm:", "Next step:")} ${esc(next.title)}</span><p class="small"><span class="muted">${t("Assistendi hinnang:", "Your assistant's estimate:")}</span> ${esc([next.rationale, next.estimated_effort_saved?.trim()].filter(Boolean).join(" "))}</p><details class="plain"><summary>${t("Mida assistendile öelda", "What to tell your assistant")}</summary><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(t(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale} Palun aita mul see ära teha või ütle, mida sinult vaja on.`, `Next step from my AI Launchpad assessment: "${next.title}". Why: ${next.rationale} Please help me do this, or tell me what you need from me.`))}”</p></div></details></div></div>`] : []),
+    ...(next ? [`<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Järgmine samm:", "Next step:")} ${fx.html(next.title)}</span><p class="small"><span class="muted">${t("Assistendi hinnang:", "Your assistant's estimate:")}</span> ${[next.rationale, next.estimated_effort_saved?.trim()].filter((x): x is string => !!x).map(fx.html).join(" ")}</p><details class="plain"><summary>${t("Mida assistendile öelda", "What to tell your assistant")}</summary><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${t(`${esc(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale}`)} Palun aita mul see ära teha või ütle, mida sinult vaja on.`, `Next step from my AI Launchpad assessment: "${fx.html(next.title)}". Why: ${fx.html(next.rationale)} Please help me do this, or tell me what you need from me.`)}”</p></div></details></div></div>`] : []),
     ...optional.map((x) => `<div class="ask ask--note"><div class="ask-body"><a class="tap-link" href="#soov-${esc(x.id)}"><span><strong>${t("Valikuline:", "Optional:")}</strong> ${esc(needLabel(x, l) ?? x.need_redacted)}</span></a><p class="small">${t("Seda ei saa assistent sinu eest teha. Võid soovi anonüümselt avaldada.", "Your assistant can't do this for you. You may publish it anonymously.")}</p></div></div>`),
   ];
 
   // Assistent tegi: finished or prepared work only, never reads. Approved work still waiting for
   // the assistant's report is listed but not counted.
-  const titleOf = (id: string) => a?.responsibilities.find((r) => r.id === id)?.label ?? id;
+  const titleOf = (id: string) => fx.html(a?.responsibilities.find((r) => r.id === id)?.label ?? id);
   const doneRows: string[] = [];
   let doneCount = 0;
   for (const x of o.approvals) {
@@ -1520,12 +1555,12 @@ export function tanaBody(o: TanaOpts): string {
   }
   for (const p of o.progress) {
     if (p.milestone !== "draft_prepared" && p.milestone !== "external_completion_reported") continue;
-    const verb = p.milestone === "draft_prepared" ? t("Valmistas ette:", "Prepared:") : t("Teatas tehtuks:", "Reported done:");
+    const verb = t(...PROGRESS_VERB[p.milestone]);
     doneCount++;
-    doneRows.push(`<div class="row"><strong>${verb} ${esc(titleOf(p.task_id))}</strong><div class="labels">${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${esc(fmtWhen(p.observed_at, l, now))}</span></div>`);
+    doneRows.push(`<div class="row"><strong>${verb} ${titleOf(p.task_id)}</strong><div class="labels">${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${esc(fmtWhen(p.observed_at, l, now))}</span></div>`);
   }
   const handled = (a?.responsibilities ?? []).filter(isHandled);
-  const handledLine = handled.length ? `<p class="small muted">${handled.map((r) => esc(t(`Lisaks teeb ${r.executor}: ${r.label} (assistendi hinnang).`, `Also handled by ${r.executor}: ${r.label} (your assistant's assessment).`))).join(" ")}</p>` : "";
+  const handledLine = handled.length ? `<p class="small muted">${handled.map((r) => `${t("Lisaks teeb", "Also handled by")} ${fx.html(r.executor!)}: ${fx.html(r.label)} ${esc(t("(assistendi hinnang).", "(your assistant's assessment)."))}`).join(" ")}</p>` : "";
 
   // A known unknown is never hidden behind "nothing needs you".
   const open = !!a && (o.coverage.unresolved > 0 || a.gaps.length > 0);
@@ -1543,7 +1578,10 @@ export function tanaBody(o: TanaOpts): string {
 
   // One sample marker per page: with the sample bar shown, a synthetic company keeps only its source line here.
   const sourceChip = !deadlines ? "" : deadlines.company.synthetic ? (o.sample ? "" : sampleChip(l)) : labelChip(deadlines.company.provenance === "public_register" ? "official" : "assistant", t(deadlines.company.label_et, deadlines.company.label_en));
-  const tulekul = deadlines ? deadlinesList(deadlines, l, { now, prompts: true })
+  // Rule rows whose job „Käest ära” gives to someone else (e.g. the accountant does the KMD), from the same handover.
+  const others = Object.fromEntries((o.handover?.jobs ?? []).filter((j) => j.rung === "other" && j.assessed?.executor)
+    .flatMap((j) => (PLAYBOOKS.find((p) => p.id === j.id)?.triggers ?? []).map((rule) => [rule, fx.plain(j.assessed!.executor!)])));
+  const tulekul = deadlines ? deadlinesList(deadlines, l, { now, prompts: true, others })
     : o.deadlines === "not_cached" ? `<p class="muted">${t("Registri andmeid laaditakse. Värskenda lehte hetke pärast.", "Register facts are loading. Refresh the page in a moment.")}</p>`
     : o.deadlines === "invalid_code" ? deadlinesHint(l, t("Registrikood ei ole korrektne — palu assistendil see üle kontrollida.", "The registry code is not valid — ask your assistant to check it."), l)
     : o.deadlines === "not_found" ? deadlinesHint(l, t("Registrikoodiga ettevõtet registrist ei leitud — palu assistendil kood üle kontrollida.", "No company with this registry code in the register — ask your assistant to check the code."), l)
@@ -1555,14 +1593,14 @@ export function tanaBody(o: TanaOpts): string {
 <p class="small">${deadlines?.company.synthetic ? t("Tähtajad: reeglistik ja näidisandmed.", "Deadlines: rules and sample data.") : deadlines?.company.provenance === "public_register" ? t("Tähtajad: reeglistik ja avalikud avaandmed (Ärikratt).", "Deadlines: rules and public open data (Ärikratt).") : t("Tähtajad: reeglistik ja sinu assistendi teated.", "Deadlines: rules and your assistant's reports.")} ${esc(t(`Assistendi teated: ${o.reportCount}, AI-hüppelaud neid ei kontrollinud. Allikast kontrollitud tulemusi: ${c.independently_verified_outcomes}.`, `Assistant reports: ${o.reportCount}, not checked by AI Launchpad. Outcomes verified at the source: ${c.independently_verified_outcomes}.`))} ${t("Säästetud aega ei ole mõõdetud, seega me seda ei näita.", "Time saved is not measured, so we don't show it.")}</p>
 ${a ? `<p class="small">${esc(t(`Assistendi hinnangul on ${c.covered} kohustust ${c.denominator}-st kaardistatust korras${c.percent != null ? ` (${c.percent}%)` : ""}.`, `Your assistant assesses ${c.covered} of ${c.denominator} mapped responsibilities as handled${c.percent != null ? ` (${c.percent}%)` : ""}.`))}${o.assessedAt ? ` ${t("Hinnatud", "Assessed")} ${esc(fmtWhen(o.assessedAt, l, now))}.` : ""}</p>
 <p class="small muted">${a.company_label ? t("Ettevõtte nime andis sinu assistent", "Company label supplied by your assistant") : t("Tööruumi nimi", "Workspace label")}${a.company_registry_ref ? ` · ${t("registriviide", "registry ref")} ${esc(a.company_registry_ref)}` : ""} — ${t("seda ei ole avalikust registrist kontrollitud ja see ei tõenda volitust.", "not verified against a public register, and not a mandate.")}</p>
-<p class="small">${esc(a.conclusion)}</p>
-<ul class="tight">${a.responsibilities.map((r) => `<li class="small">${esc(r.label)} — ${r.is_core ? t("sinu põhitöö", "your core work") : isHandled(r) ? esc(t(`teeb ${r.executor} (assistendi hinnang)`, `handled by ${r.executor} (your assistant's assessment)`)) : r.applicability === "unresolved" ? t("lahtine", "unresolved") : t("teed praegu ise", "you do it yourself now")}<br><span class="muted">${esc(r.reason)}</span></li>`).join("")}</ul>` : ""}
-${o.exclusions.length ? `<p class="small muted">${t("Varasematest hinnangutest eemaldatud:", "Removed since earlier assessments:")} ${o.exclusions.map((x) => esc(x.label)).join(", ")}</p>` : ""}
+<p class="small">${fx.html(a.conclusion)}</p>
+<ul class="tight">${a.responsibilities.map((r) => `<li class="small">${fx.html(r.label)} — ${r.is_core ? t("sinu põhitöö", "your core work") : isHandled(r) ? `${t("teeb", "handled by")} ${fx.html(r.executor!)} ${esc(t("(assistendi hinnang)", "(your assistant's assessment)"))}` : r.applicability === "unresolved" ? t("lahtine", "unresolved") : t("teed praegu ise", "you do it yourself now")}<br><span class="muted">${fx.html(r.reason)}</span></li>`).join("")}</ul>` : ""}
+${o.exclusions.length ? `<p class="small muted">${t("Varasematest hinnangutest eemaldatud:", "Removed since earlier assessments:")} ${o.exclusions.map((x) => fx.html(x.label)).join(", ")}</p>` : ""}
 </div></details>`;
 
   // T5 (#61) puts its progress strip directly under the pills, before the primary action.
   return `<section class="hero" aria-labelledby="t-h">
-<p class="company">${esc(a?.company_label ?? deadlines?.company.name ?? o.label)}</p>
+<p class="company">${fx.html(a?.company_label ?? deadlines?.company.name ?? o.label)}</p>
 <h1 id="t-h">${esc(h1)}</h1>
 <p class="lede">${esc(lede)} <span class="small muted">${timeEl(tallinnYmd(now), TODAY[l].format(now))}</span></p>
 <nav class="today-sum" aria-label="${t("Kokkuvõte", "Summary")}"><a${n ? ' class="needs"' : ""} href="#ootab"><b>${n}</b><span>${t("ootab sinult", "need you")}</span></a><a href="#tegi"><b>${doneCount}</b><span>${t("assistent tegi", "done for you")}</span></a><a href="#tulekul"><b>${upcoming}</b><span>${t("tulekul", "coming up")}</span></a></nav>
@@ -1635,7 +1673,7 @@ export function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgp
     ? (() => { const d = new Date(s.at), time = TIME[l].format(d), sameDay = tallinnYmd(d) === tallinnYmd(now); const who = s.who ?? t("Sinu assistent", "Your assistant"); return `<div class="status-chip" id="connect-status" data-state="connected" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${esc(t(`Ühendatud · ${who} jõudis kohale ${sameDay ? "" : `${DAY.et.format(d)} `}kell ${time}`, `Connected · ${who} reached AI Launchpad ${sameDay ? "" : `on ${DAY.en.format(d)} `}at ${time}`))}</span></div>`; })()
     : `<div class="status-chip" id="connect-status" data-state="${s.kind === "sample" ? "sample" : "waiting"}" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${s.kind === "anon" ? `${t("Logi sisse, et näha, kas sinu assistent on ühendatud.", "Sign in to see whether your assistant is connected.")} <a href="/login">${t("Logi sisse", "Sign in")}</a>` : s.kind === "sample" ? t("Näidistööruumis ühenduse olekut ei jälgita.", "Connection status is not tracked in a sample workspace.") : esc(t(`Ootan, et ${name} ühenduks…`, `Waiting for ${name} to connect…`))}</span></div>`;
   // A sample workspace has nothing to set up, so „Käest ära” comes first (QA M2).
-  const handover = o.standing && o.handover ? handoverSection(o.handover, l, o.standing.csrf, now) : "", sampleFirst = s.kind === "sample";
+  const handover = o.standing && o.handover ? handoverSection(o.handover, l, o.standing.csrf, now, s.kind === "sample") : "", sampleFirst = s.kind === "sample";
   return `<h1>${t("Ühenda oma assistent", "Connect your assistant")}</h1>
 <p class="lede">${t("Sinu ChatGPT või Claude näeb sinu tähtaegu ja valmistab töid ette. Sina kinnitad ainult selle, mis sind seob.", "Your ChatGPT or Claude sees your deadlines and prepares work for you. You approve only what binds you.")}</p>
 ${sampleFirst ? handover : ""}
@@ -1664,6 +1702,12 @@ ${techDetails(l, `${techList([[t("MCP-aadress", "MCP address"), endpoint], [t("S
 ${o.owner ? `<p><a class="tap-link" href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a></p>` : ""}`;
 }
 
+/** report_progress milestones as a verb before the job's name, on Täna and Tehtud alike (#63 m12). */
+const PROGRESS_VERB: Record<string, [string, string]> = {
+  started: ["Alustas:", "Started:"], draft_prepared: ["Valmistas ette:", "Prepared:"], waiting_for_owner: ["Ootab sinu otsust:", "Waiting for you:"],
+  blocked: ["Jäi kinni:", "Blocked:"], external_completion_reported: ["Teatas tehtuks:", "Reported done:"],
+};
+const PROGRESS_SUMMARY = new RegExp(`^(.+): (${Object.keys(PROGRESS_VERB).join("|")}) \\(assistant reported\\)\\.$`);
 // --- Tehtud (/activity): finished work in plain verbs; raw log under Tehniline info. ---
 const DONE_VERBS: Record<string, [string, string]> = {
   request_approval: ["Assistent valmistas töö ette ja palus sinu kinnitust", "Your assistant prepared work and asked for your approval"],
@@ -1681,8 +1725,8 @@ const DONE_VERBS: Record<string, [string, string]> = {
   standing_rule_revoked: ["Sina lõpetasid püsiloa", "You ended a standing approval"],
   standing_auto_approved: ["Püsiluba kinnitas assistendi töö", "Your standing approval approved your assistant's work"],
 };
-export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date; approvals?: ApprovalRow[]; rules?: StandingRule[] }): string {
-  const l = opts.lang, t = tr(l), now = opts.now ?? new Date();
+export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date; approvals?: ApprovalRow[]; rules?: StandingRule[]; assessment?: Assessment | null; sample?: boolean }): string {
+  const l = opts.lang, t = tr(l), now = opts.now ?? new Date(), fx = fixtureText(l, !!opts.sample);
   // Approval rows name their object (title · recipient): the log summary carries the approval id or digest prefix.
   const approvalOf = (summary: string) => (opts.approvals ?? []).find((x) => summary.includes(x.id) || summary.includes(`digest ${x.digest.slice(0, 12)}`));
   const objectOf = (summary: string) => {
@@ -1695,7 +1739,9 @@ export function activityBody(opts: { rows: Record<string, string>[]; receipts: R
     // A send under a standing approval reads as such (#45).
     const byRule = r.action === "standing_auto_approved" || (r.action === "record_action_outcome" && !!approvalOf(r.summary ?? "")?.approved_by_rule);
     const ruleSent = r.action === "record_action_outcome" && byRule && /^Outcome sent /.test(r.summary ?? "");
-    const verb = ruleSent ? t("Assistent saatis püsiloa alusel:", "Your assistant sent under a standing approval:") : r.action === "approval_decided" ? (r.outcome === "approved" ? t("Sina kinnitasid", "You approved") : r.outcome === "declined" ? t("Sina keeldusid", "You declined") : null) : DONE_VERBS[r.action] ? t(...DONE_VERBS[r.action]) : null;
+    // A progress row names its job by the assessment's label, as Täna does.
+    const progress = r.action === "report_progress" ? PROGRESS_SUMMARY.exec(r.summary ?? "") : null;
+    const verb = progress ? `${t(...PROGRESS_VERB[progress[2]])} ${fx.plain(opts.assessment?.responsibilities.find((x) => x.id === progress[1])?.label ?? progress[1])}` : ruleSent ? t("Assistent saatis püsiloa alusel:", "Your assistant sent under a standing approval:") : r.action === "approval_decided" ? (r.outcome === "approved" ? t("Sina kinnitasid", "You approved") : r.outcome === "declined" ? t("Sina keeldusid", "You declined") : null) : DONE_VERBS[r.action] ? t(...DONE_VERBS[r.action]) : null;
     if (!verb || (r.outcome !== "ok" && r.action !== "approval_decided")) return [];
     const chip = `${r.actor === "assistant" ? labelChip("assistant", t("Assistent teatas", "Your assistant reports")) : r.action === "approval_decided" && r.outcome === "approved" ? labelChip("owner", t("Sinu kinnitus", "You approved")) : ""}${byRule ? ruleChip(l) : ""}`;
     const object = objectOf(r.summary ?? "");

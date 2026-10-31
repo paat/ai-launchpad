@@ -46,6 +46,17 @@ const beta: Assessment = assessmentSchema.parse({
 
 export const DEMO_FIXTURES: Record<string, Assessment> = { alpha, beta };
 
+/** English twins of the labels we wrote in the fixtures above, for ?lang=en on a sample workspace (#63 m13).
+ * Only labels: the fixtures' free text (reasons, conclusions, gaps) stays as written. */
+export const DEMO_LABELS_EN: Record<string, string> = {
+  "Mari Disain OÜ (näidis)": "Mari Disain OÜ (sample)", "Kase Konsult OÜ (näidis)": "Kase Konsult OÜ (sample)",
+  Disainitööd: "Design work", "Arvete koostamine": "Invoicing", Maksemeeldetuletused: "Payment reminders", "KMD ettevalmistus": "VAT return (KMD)",
+  "Palgaarvestus ja TSD andmed": "Payroll and TSD data", "Raamatupidamise ühendus": "Accounting connection", Konsultatsioonitööd: "Consulting work",
+  raamatupidaja: "the accountant",
+  "Lase assistendil tasumata arvetele meeldetuletused koostada": "Let your assistant draft reminders for unpaid invoices",
+  "Taasta raamatupidamise ühendus": "Restore the accounting connection",
+};
+
 /** SYNTHETIC register facts for the deadlines demo. The codes deliberately FAIL
  * the RIK checksum, so they can never match a real company. Their facts are
  * shaped like public-register facts but always carry provenance synthetic

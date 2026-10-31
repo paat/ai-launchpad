@@ -3,7 +3,7 @@ import type { Server } from "node:http";
 import { createApp, type Config } from "../src/app.js";
 import { openDb } from "../src/db.js";
 import { loadCatalog, safeHttps, searchServices } from "../src/catalog.js";
-import { CATALOGUE_GROUPS, catalogueBody, catalogueGroup, connectBody, whereItWorks } from "../src/views.js";
+import { CATALOGUE_GROUPS, catalogueBody, catalogueGroup, catalogueGroups, connectBody, whereItWorks } from "../src/views.js";
 
 // Public /kataloog over real HTTP: no login, ET first, server-side filters, zero JS.
 let server: Server, db: ReturnType<typeof openDb>, base: string;
@@ -103,9 +103,9 @@ describe("public catalogue", () => {
     const html = await page("/kataloog?g=raamatupidamine");
     expect(html).toContain('href="/kataloog?g=raamatupidamine" aria-current="page"');
     const ids = cards(html).map((c) => c.id);
-    expect(ids.length).toBe(listed.filter((r) => catalogueGroup(r.sector) === "raamatupidamine").length);
+    expect(ids.length).toBe(listed.filter((r) => catalogueGroups(r.sector).includes("raamatupidamine")).length);
     expect(ids).toContain("werkzeug");
-    expect(cards(await page("/kataloog?g=kullerid")).every((c) => catalogueGroup(loadCatalog().find((r) => r.id === c.id)!.sector) === "kullerid")).toBe(true);
+    expect(cards(await page("/kataloog?g=kullerid")).every((c) => catalogueGroups(loadCatalog().find((r) => r.id === c.id)!.sector).includes("kullerid"))).toBe(true);
     // Unknown group shows everything.
     expect(cards(await page("/kataloog?g=bogus")).length).toBe(listed.length);
   });
@@ -157,4 +157,73 @@ test("/uhenda links to the catalogue once the assistant is connected", () => {
   const body = (kind: "connected" | "waiting") => connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "claude", owner: true, state: kind === "connected" ? { kind, who: "Claude", at: "2026-10-30T10:00:00Z" } : { kind } });
   expect(body("connected")).toContain('<a class="tap-link" href="/kataloog?g=raamatupidamine">Järgmine samm: ühenda oma raamatupidamine → Kataloog</a>');
   expect(body("waiting")).not.toContain("/kataloog?g=");
+});
+
+describe("catalogue polish (#52)", () => {
+  const rec = (id: string) => loadCatalog().find((r) => r.id === id)!;
+  test("1: compound sectors land in every job group they name; the legal ones lead with Õigus", async () => {
+    expect(catalogueGroups(rec("lahend").sector)).toEqual(["oigus", "andmed"]);
+    expect(catalogueGroups(rec("rt-official").sector)).toEqual(["oigus", "andmed"]);
+    expect(catalogueGroups(rec("montonio").sector)).toEqual(["pank", "kullerid"]);
+    expect(catalogueGroups("dance lessons")).toEqual(["muu"]);
+    for (const id of ["lahend", "rt-official"]) expect(catalogueGroup(rec(id).sector)).toBe("oigus");
+    const oigus = cards(await page("/kataloog?g=oigus")).map((c) => c.id);
+    expect(oigus).toEqual(expect.arrayContaining(["lahend", "rt-official", "rt-dustinest"]));
+    expect(cards(await page("/kataloog?g=kullerid")).map((c) => c.id)).toContain("montonio");
+    expect(cards(await page("/kataloog?g=pank")).map((c) => c.id)).toContain("montonio");
+    // The full list shows each service once, under its first group; each chip counts what its filter shows.
+    const all = await page("/kataloog");
+    expect(cards(all).filter((c) => c.id === "montonio")).toHaveLength(1);
+    expect(all).toContain(`href="/kataloog?g=kullerid">Kullerid <span>${cards(await page("/kataloog?g=kullerid")).length}</span>`);
+  });
+
+  test("2: the pinned section has an <h2>, and a search that matches neither pinned card hides them", async () => {
+    const all = await page("/kataloog");
+    expect(all).toMatch(/<section aria-labelledby="pin-h"><h2 id="pin-h"[^>]*>Alusta siit<\/h2><article class="card svc svc--pinned">/);
+    const none = await page("/kataloog?q=zzzz-nothing");
+    expect(none).not.toContain('class="card svc svc--pinned"');
+    expect(none).not.toContain('id="pin-h"');
+    expect(none).toContain("„zzzz-nothing” kohta ei leidnud midagi.");
+    const kratt = await page("/kataloog?q=%C3%A4rikratt");
+    expect(kratt.match(/class="card svc svc--pinned"/g)).toHaveLength(1);
+    expect(kratt).not.toContain("ei leidnud midagi");
+    expect((await page("/kataloog?q=approve&lang=en")).match(/class="card svc svc--pinned"/g)).toHaveLength(1);
+  });
+
+  test("a search reads the whole pinned card: chip labels in both languages and the Testitud line", async () => {
+    const mcp = await page("/kataloog?q=MCP");
+    expect(mcp).toContain("svc--pinned");
+    expect(mcp).toContain("<h3>AI-hüppelaud</h3>");
+    const chatgpt = await page("/kataloog?q=ChatGPT&lang=en");
+    expect(chatgpt).toContain("svc--pinned");
+    expect(chatgpt).toContain("<h3>AI Launchpad</h3>");
+    expect(chatgpt).not.toContain("<h3>Ärikratt</h3>");
+  });
+
+  test("a URL template is never a provider link: the next https URL is used", async () => {
+    const html = cards(await page("/kataloog?q=Riigi%20Teataja%20public%20API"));
+    const rt = html.find((c) => c.id === "rt-official")!;
+    expect(rt.html).toContain('href="https://www.riigiteataja.ee/kkk"');
+    expect(rt.html).not.toContain("{id}");
+    expect(rt.html).not.toContain("%7Bid%7D");
+  });
+
+  test("3: the provider link prefers the connection URL over research citations", async () => {
+    const html = cards(await page("/kataloog?q=Riigi%20Teataja%20MCP%20(dustinest)"));
+    const dustin = html.find((c) => c.id === "rt-dustinest")!;
+    expect(dustin.html).toContain('href="https://github.com/dustinest/riigiteataja_ee_ai_mcp"');
+    expect(dustin.html).not.toContain("README_en.md");
+    const montonio = cards(await page("/kataloog?q=montonio")).find((c) => c.id === "montonio")!;
+    expect(montonio.html).toContain('href="https://docs.montonio.com/"');
+    // Without a usable connection URL the first source still links.
+    const lahend = cards(await page("/kataloog?q=lahend")).find((c) => c.id === "lahend")!;
+    expect(lahend.html).toContain('href="https://lahend.ee/mcp"');
+  });
+
+  test("4: the English hero date is formatted with Intl, never ISO", async () => {
+    const en = await page("/kataloog?lang=en");
+    expect(en).toContain("checked 28 Oct 2026.");
+    expect(en).not.toMatch(/checked \d{4}-\d{2}-\d{2}/);
+    expect(await page("/kataloog")).toContain("kontrollitud 28.10.2026.");
+  });
 });

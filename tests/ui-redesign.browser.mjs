@@ -210,7 +210,7 @@ try {
   await page.keyboard.press("Tab");
   assert.equal(await page.evaluate(() => document.activeElement.value), "decline", "then decline");
   geometry.ticket = ticket;
-  // review-polish-grok medium: at 320 the bar wraps to two rows, and scroll-padding must still cover all of it.
+  // review-polish-grok medium: at 320 scroll-padding must cover the whole bar.
   // Tab from the top to approve, then decline: nothing focused before the bar ends under it, and both buttons are fully on screen.
   await page.setViewportSize({ width: 320, height: 740 });
   await page.setContent(pageHtml["approval-pending"]());
@@ -230,6 +230,23 @@ try {
     else assert.ok(s.bottom <= s.barTop + 0.5, `320: focused ${s.tag} ends above the bar ${JSON.stringify(s)}`);
   }
   geometry.focus320 = stops.map(({ tag, value, bottom, barTop, barH, pad }) => ({ tag, value, bottom, barTop, barH, pad }));
+  // #63 m8: from 300 px up, the bar is one row in ET and EN: „Keeldu” is a compact text button beside the approve button, both ≥44 px, and scroll-padding covers the bar.
+  for (const width of [300, 320]) for (const lang of ["et", "en"]) {
+    await page.setViewportSize({ width, height: 568 });
+    await page.setContent(shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, lang, body: approvalCardBody({ csrf: CSRF, a: pendingApproval, lang, sample: true, now: NOW }) }));
+    const bar = await page.evaluate(() => {
+      const box = (sel) => document.querySelector(sel).getBoundingClientRect(), ap = box("button[value=approve]"), de = box("button[value=decline]"), b = box("form.decide");
+      return { barH: Math.round(b.height), apTop: ap.top, apBottom: ap.bottom, deTop: de.top, deBottom: de.bottom, apH: ap.height, deH: de.height, apW: ap.width, deW: de.width,
+        pad: parseFloat(getComputedStyle(document.documentElement).scrollPaddingBottom), scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth };
+    });
+    assert.ok(bar.deTop < bar.apBottom && bar.apTop < bar.deBottom, `m8 ${width}/${lang}: approve and decline share one row ${JSON.stringify(bar)}`);
+    assert.ok(bar.barH <= 100, `m8 ${width}/${lang}: one-row bar, not two (${bar.barH}px)`);
+    assert.ok(bar.apH >= 44 && bar.deH >= 44, `m8 ${width}/${lang}: targets >= 44px ${JSON.stringify(bar)}`);
+    assert.ok(bar.barH <= bar.pad, `m8 ${width}/${lang}: scroll-padding ${bar.pad}px covers the ${bar.barH}px bar`);
+    assert.ok(bar.scrollW <= bar.clientW + 1, `m8 ${width}/${lang}: no overflow ${JSON.stringify(bar)}`);
+    if (width === 320) await page.screenshot({ path: path.join(T2_SHOTS, `t2-approval-pending-320x568-${lang}.png`) });
+    (geometry.bar568 ??= {})[`${width}-${lang}`] = bar;
+  }
 
   await page.setContent(pageHtml["approval-approved"]());
   const approvedState = await page.evaluate(() => ({ status: [...document.querySelectorAll("main [role=status]")].map((el) => el.textContent.slice(0, 24)),
@@ -366,15 +383,15 @@ try {
   await page.screenshot({ path: path.join(T2_SHOTS, "receipt-strip-390.png") });
   geometry.receiptStrip = receiptStrip;
 
-  // --- T4 (#59) landing fold: header, headline, button and the four jobs in the first 1280×800 viewport beside a 600 px phone
-  // whose last bubble is not clipped; at 390 the fold shows the headline, the button and the top of the phone ---
+  // --- T4 (#59) landing fold: header, headline, button and the four jobs in the first 1280×800 viewport beside a 656 px phone
+  // whose first and last bubbles are not clipped (#63 m1); at 390 the fold shows the headline, the button and the top of the phone ---
   const landingFold = () => page.evaluate(() => {
     document.getAnimations().forEach((a) => { a.pause(); a.currentTime = 14000; }); // the teaser's final frame
     window.scrollTo(0, 0);
     const box = (el) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), h: Math.round(r.height) }; };
     const q = (s) => box(document.querySelector(s));
     const teaser = document.querySelector(".teaser");
-    return { innerH: window.innerHeight, header: q("header"), h1: q("h1"), btn: q(".landing-hero .btn"), phone: q(".phone"), chat: q(".chat"), last: q(".b-ai3"),
+    return { innerH: window.innerHeight, header: q("header"), h1: q("h1"), btn: q(".landing-hero .btn"), phone: q(".phone"), chat: q(".chat"), first: q(".b-me1"), last: q(".b-ai3"),
       jobs: [...document.querySelectorAll(".landing-hero .jobs li")].map(box), pause: q(".teaser-pause"),
       transcriptFirst: teaser.firstElementChild.matches("div.vh") && teaser.firstElementChild.querySelector("ol") !== null,
       h1Size: getComputedStyle(document.querySelector("h1")).fontSize, trustBg: getComputedStyle(document.querySelector(".trust")).backgroundColor };
@@ -384,8 +401,9 @@ try {
   const fold1280 = await landingFold();
   const inFold = (b) => b.top >= 0 && b.bottom <= fold1280.innerH;
   assert.ok([fold1280.header, fold1280.h1, fold1280.btn, ...fold1280.jobs].every(inFold) && fold1280.jobs.length === 4, `t4 landing@1280: header, headline, button, 4 jobs in 800 px ${JSON.stringify(fold1280)}`);
-  assert.ok(fold1280.phone.h === 600 && fold1280.phone.left > fold1280.h1.left + 300, `t4 landing@1280: 600 px phone beside the text ${JSON.stringify(fold1280.phone)}`);
+  assert.ok(fold1280.phone.h === 656 && fold1280.phone.bottom <= fold1280.innerH && fold1280.phone.left > fold1280.h1.left + 300, `t4 landing@1280: 656 px phone in the fold beside the text ${JSON.stringify(fold1280.phone)}`);
   assert.ok(fold1280.last.top >= fold1280.chat.top - 1 && fold1280.last.bottom <= fold1280.chat.bottom + 1, `t4 landing@1280: last bubble not clipped ${JSON.stringify(fold1280)}`);
+  assert.ok(fold1280.first.top >= fold1280.chat.top - 1, `t4 landing@1280: the opening question is not under the chat header ${JSON.stringify(fold1280)}`);
   assert.equal(fold1280.h1Size, "52px", "t4 landing@1280: --fs-display headline");
   assert.equal(fold1280.trustBg, "rgb(15, 61, 37)", "t4 landing: .trust on --c-deep");
   assert.ok(fold1280.transcriptFirst, "t4 landing: the transcript <ol> stays first in the teaser");
