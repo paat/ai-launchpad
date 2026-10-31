@@ -493,6 +493,7 @@ ${TEASER_CSS}
 .ho-next .ask{display:block;padding:var(--s-4) var(--s-4) var(--s-4) var(--s-6)}
 .ho-next .ask::before{background:var(--c-primary)}
 .ho-next .ask .ask-title{margin:0 0 var(--s-1)}
+.ho-next h3,.ho-next .ask-title{overflow-wrap:break-word}
 .ho-next .ask p{margin:0 0 var(--s-2)}
 .ho-next .ask .btn{margin-top:var(--s-3)}
 .ho-next .ask .limits{font-size:var(--fs-md)}
@@ -507,7 +508,8 @@ ${TEASER_CSS}
 .ho-finding .tap-link{display:inline-flex;min-height:var(--tap);align-items:center;margin:-10px 0}
 
 @media (min-width:960px){
-  .ho-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--s-8) var(--s-12);align-items:start}
+  /* The next step gets the wider column so a long Estonian compound in its title fits on one line (QA M3). */
+  .ho-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:var(--s-8);align-items:start}
   .ho-grid>.ho-next{margin-top:0;position:sticky;top:var(--s-4)}
 }`;
 
