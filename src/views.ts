@@ -1226,14 +1226,20 @@ export function catalogueBody(o: { lang: Lang; q: string; g: CatalogueGroup | nu
   const kratt = `https://arikratt.ee/${l === "en" ? "en" : "et"}/mcp`;
   // Pinned above the list with what Launchpad does with them; a search hides a card it does not match (#52), as searchServices matches the list.
   const what = { launchpad: ["Näeb sinu ettevõtte tähtaegu koos ametliku allikaga, valmistab töid ette ja küsib enne saatmist või esitamist sinu kinnitust täpselt sellele sisule.", "Sees your company's deadlines with their official sources, prepares the work and asks you to approve the exact content before anything is sent or filed."], arikratt: ["Avalikud ettevõtteandmed äriregistrist ja maksuametist. AI-hüppelaud arvutab nende põhjal sinu tähtajad.", "Public company data from the Business Register and the Tax Board. AI Launchpad computes your deadlines from it."] } as const;
-  const shows = (text: string) => !o.q || text.toLowerCase().includes(o.q.trim().toLowerCase());
+  // Each pinned card's visible strings as language pairs, so the search reads exactly what the card shows, in both languages.
+  const MCP_CLOUD: [string, string] = ["MCP · pilves", "MCP · cloud"], WHAT_K: [string, string] = ["Mida assistent selle abil teha saab", "What your assistant can do with it"];
+  const card = {
+    launchpad: { name: ["AI-hüppelaud", "AI Launchpad"], tested: ["Testitud: ChatGPT 28.10.2026 · Claude 30.10.2026", "Tested: ChatGPT 28 Oct 2026 · Claude 30 Oct 2026"], link: ["Ühenda oma assistent", "Connect your assistant"] },
+    arikratt: { name: ["Ärikratt", "Ärikratt"], tested: ["AI-hüppelaud kasutab seda", "Used by AI Launchpad"], link: ["Ärikratti avalik MCP", "Ärikratt public MCP"] },
+  } as const;
+  const shows = (c: typeof card[keyof typeof card], body: readonly string[]) => !o.q || [...c.name, ...c.tested, ...c.link, ...MCP_CLOUD, ...WHAT_K, ...whereItWorks("hosted_mcp"), ...body].join(" ").toLowerCase().includes(o.q.trim().toLowerCase());
   const pinned = [
-    shows(`AI-hüppelaud AI Launchpad ${what.launchpad.join(" ")}`) ? `<article class="card svc svc--pinned"><h3>${t("AI-hüppelaud", "AI Launchpad")}</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t("Testitud: ChatGPT 28.10.2026 · Claude 30.10.2026", "Tested: ChatGPT 28 Oct 2026 · Claude 30 Oct 2026"))}</div>
-<p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v">${t(...what.launchpad)}</p>
-<a class="tap-link" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a></article>` : "",
-    shows(`Ärikratt ${what.arikratt.join(" ")}`) ? `<article class="card svc svc--pinned"><h3>Ärikratt</h3><div class="labels">${labelChip("rule", t("MCP · pilves", "MCP · cloud"))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t("AI-hüppelaud kasutab seda", "Used by AI Launchpad"))}</div>
-<p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v">${t(...what.arikratt)}</p>
-<a class="tap-link" href="${esc(kratt)}" rel="noopener noreferrer">${t("Ärikratti avalik MCP", "Ärikratt public MCP")}: arikratt.ee</a></article>` : "",
+    shows(card.launchpad, what.launchpad) ? `<article class="card svc svc--pinned"><h3>${t(...card.launchpad.name)}</h3><div class="labels">${labelChip("rule", t(...MCP_CLOUD))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t(...card.launchpad.tested))}</div>
+<p class="svc-k">${t(...WHAT_K)}</p><p class="svc-v">${t(...what.launchpad)}</p>
+<a class="tap-link" href="/uhenda">${t(...card.launchpad.link)}</a></article>` : "",
+    shows(card.arikratt, what.arikratt) ? `<article class="card svc svc--pinned"><h3>Ärikratt</h3><div class="labels">${labelChip("rule", t(...MCP_CLOUD))}${labelChip("where", t(...whereItWorks("hosted_mcp")))}${labelChip("official", t(...card.arikratt.tested))}</div>
+<p class="svc-k">${t(...WHAT_K)}</p><p class="svc-v">${t(...what.arikratt)}</p>
+<a class="tap-link" href="${esc(kratt)}" rel="noopener noreferrer">${t(...card.arikratt.link)}: arikratt.ee</a></article>` : "",
   ].filter(Boolean).join("\n");
   const pinnedSection = pinned ? `<section aria-labelledby="pin-h"><h2 id="pin-h" class="svc-group">${t("Alusta siit", "Start here")}</h2>${pinned}</section>` : "";
   return `<section class="card hero"><h1>${t("Teenused, mida sinu AI-assistent saab kasutada", "Services your AI assistant can use")}</h1>

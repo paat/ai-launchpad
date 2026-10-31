@@ -190,6 +190,16 @@ describe("catalogue polish (#52)", () => {
     expect((await page("/kataloog?q=approve&lang=en")).match(/class="card svc svc--pinned"/g)).toHaveLength(1);
   });
 
+  test("a search reads the whole pinned card: chip labels in both languages and the Testitud line", async () => {
+    const mcp = await page("/kataloog?q=MCP");
+    expect(mcp).toContain("svc--pinned");
+    expect(mcp).toContain("<h3>AI-hüppelaud</h3>");
+    const chatgpt = await page("/kataloog?q=ChatGPT&lang=en");
+    expect(chatgpt).toContain("svc--pinned");
+    expect(chatgpt).toContain("<h3>AI Launchpad</h3>");
+    expect(chatgpt).not.toContain("<h3>Ärikratt</h3>");
+  });
+
   test("3: the provider link prefers the connection URL over research citations", async () => {
     const html = cards(await page("/kataloog?q=Riigi%20Teataja%20MCP%20(dustinest)"));
     const dustin = html.find((c) => c.id === "rt-dustinest")!;
