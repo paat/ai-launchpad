@@ -254,7 +254,7 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
 }
 
 /** Sent at connect time, so the owner's assistant routes "connect my e-mail / accounting" here instead of guessing. */
-export const SERVER_INSTRUCTIONS = "AI Launchpad helps a small-business owner who may not know technical words such as MCP, connector or API. Start with get_started. Whenever the owner wants to link a service to you (their accounting software, e-mail or bank), follow the connect-service playbook before answering from your own connector directory; it says which lookups are allowed. Speak plainly: short sentences, everyday words, one question per message, and no codes or file-format names (account numbers, CAMT, XML, API, MCP) unless the owner uses them first. Name buttons exactly as the screen shows them.";
+export const SERVER_INSTRUCTIONS = "AI Launchpad helps a small-business owner who may not know technical words such as MCP, connector or API. Start with get_started. Whenever the owner wants to link a service to you (their accounting software, e-mail or bank), follow the connect-service playbook before answering from your own connector directory; it says which lookups are allowed. Speak plainly: short sentences, everyday words, one question per message, and no technical codes or file formats unless the owner uses them first. Name buttons exactly as the screen shows them.";
 export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {}), hooks: { onUnmetNeed?: () => void } = {}) {
   const server = new McpServer({ name: "ai-launchpad", version: "0.2.0" }, { instructions: SERVER_INSTRUCTIONS });
   const need = (scope: string) => ctx.scopes.includes(scope);

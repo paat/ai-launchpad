@@ -206,7 +206,8 @@ describe("agent-facing copy over MCP", () => {
     const c = await connect(["progress:read"]);
     const i = c.getInstructions() ?? "";
     expect(i).toContain("may not know technical words such as MCP, connector or API");
-    expect(i).toContain("short sentences, everyday words, one question per message, and no codes or file-format names (account numbers, CAMT, XML, API, MCP) unless the owner uses them first.");
+    expect(i).toContain("short sentences, everyday words, one question per message, and no technical codes or file formats unless the owner uses them first.");
+    expect(i).not.toMatch(/CAMT|ISO|XML/);
     expect(i).toContain("follow the connect-service playbook before answering from your own connector directory; it says which lookups are allowed.");
     const tools = (await c.listTools()).tools;
     expect(tools.find((x) => x.name === "search_services")?.description).toMatch(/^Research catalogue behind the connect-service playbook: when linking a service, query only as that playbook's branch says\./);
