@@ -181,6 +181,19 @@ describe("„Käest ära” fix cycle 2", () => {
     expect(job?.due).toBe("2027-06-30");
   });
 
+  test("an overdue annual report binds the job: its date and handoff win over next year's deadline (#64)", () => {
+    const late = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2027-07-05T10:00:00Z"), months: 2 }).obligations.find((x) => x.rule_id === "annual-report-overdue")!;
+    const overdue = { ...late, effective_due: "2026-06-30", statutory_due: "2026-06-30" } as Obligation;
+    const h = computeHandover({ assessment: null, obligations: [overdue, annual], approvals: [], rules: [], now: NOW });
+    const job = h.jobs.find((j) => j.id === "annual-report")!;
+    expect(job.due).toBe("2026-06-30");
+    const next = computeHandover({ assessment: null, obligations: [overdue, annual], approvals: [appr({ outcome: "sent" }), appr({ outcome: "sent", rule: "rule_1" })], rules: [rule()], now: NOW }).next;
+    expect(next).toMatchObject({ type: "playbook", playbookId: "annual-report", obligation: { rule_id: "annual-report-overdue" } });
+    const page = handoverSection(h, "et", "c", NOW);
+    expect(page).toContain("Tähtaeg oli 30. juuni");
+    expect(page).not.toContain("Järgmine tähtaeg 30. juuni");
+  });
+
   test("an untagged thank-you send fills no reminder segment and feeds no standing offer (tribunal T-003)", () => {
     const thanks = appr({ outcome: "sent", cents: 90_000, to: { name: "Uus Klient OÜ", address: "info@uus-klient.example" }, title: "Aitäh koostöö eest", summary: "Thank-you note" });
     expect(jobOfApproval(thanks)).toBeNull();
@@ -194,5 +207,32 @@ describe("„Käest ära” fix cycle 2", () => {
     expect(h.next.type === "standing" && h.next.recipients.map((r) => r.address)).not.toContain("info@uus-klient.example");
     for (const words of [{ title: "Võlg 120 €" }, { summary: "Overdue invoice 7" }, { title: "Tasumata arve nr 3" }, { summary: "unpaid" }])
       expect(jobOfApproval(appr({ outcome: "sent", ...words, ...("title" in words ? { summary: "x" } : { title: "x" }) }))).toBe("payment-reminder");
+  });
+});
+
+describe("„Käest ära” fix cycle 3 (review-polish-grok)", () => {
+  const reminded = () => [appr({ outcome: "sent" }), appr({ outcome: "sent", rule: "rule_1" })];
+  test("a cold cache's conditional overdue row binds neither the annual-report date nor the next step (high)", async () => {
+    const today = new Date("2026-10-31T10:00:00Z");
+    const r = await companyObligations(arikratt(openDb(":memory:"), {}), { registryCode: "12345678", months: 2, today, cacheOnly: true });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.result.obligations.find((x) => x.rule_id === "annual-report-overdue")).toMatchObject({ applies: "if", effective_due: "2026-06-30" });
+    const h = computeHandover({ assessment: null, obligations: handoverObligations(r), approvals: reminded(), rules: [rule()], now: today });
+    expect(h.jobs.find((j) => j.id === "annual-report")?.due).toBe(r.annual_next?.effective_due);
+    expect(h.next.type === "playbook" && h.next.obligation?.rule_id).not.toBe("annual-report-overdue");
+    expect(handoverSection(h, "et", "c", today)).not.toContain("Tähtaeg oli");
+    // Without next year's row the job stays listed, but the conditional overdue handoff is still not the next step.
+    const alone = computeHandover({ assessment: null, obligations: r.result.obligations.filter((x) => x.rule_id === "annual-report-overdue"), approvals: reminded(), rules: [rule()], now: today });
+    expect(alone.next).toMatchObject({ type: "playbook", playbookId: "annual-report", obligation: null });
+  });
+
+  test("a definite overdue row binds the job and its past date carries the year (high)", () => {
+    const late = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2027-07-05T10:00:00Z"), months: 2 }).obligations.find((x) => x.rule_id === "annual-report-overdue")!;
+    const overdue = { ...late, applies: "yes", effective_due: "2026-06-30", statutory_due: "2026-06-30" } as Obligation;
+    const h = computeHandover({ assessment: null, obligations: [overdue, annual], approvals: reminded(), rules: [rule()], now: NOW });
+    expect(h.jobs.find((j) => j.id === "annual-report")?.due).toBe("2026-06-30");
+    expect(h.next).toMatchObject({ type: "playbook", playbookId: "annual-report", obligation: { rule_id: "annual-report-overdue" } });
+    expect(handoverSection(h, "et", "c", NOW)).toContain("Tähtaeg oli 30. juuni 2026");
+    expect(handoverSection(h, "en", "c", NOW)).toContain("Was due 30 Jun 2026");
   });
 });

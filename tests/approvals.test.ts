@@ -157,6 +157,7 @@ describe("approval cards over MCP", () => {
     expect(visible.indexOf(req.digest)).toBeGreaterThan(visible.indexOf("Tehniline info"));
     expect(card).toMatch(/<pre[^>]*>Tere!\n\nInvoice 2026-014 \(€1,240.00\) is overdue. &lt;script&gt;alert\(1\)&lt;\/script&gt;/);
     expect(card).not.toContain("<script>alert(1)");
+    expect(card).not.toContain('class="ho-strip"');
     expect(card).toMatch(/Kehtib 24 tundi, kuni (homme|täna) kella \d{2}:\d{2}\u2011ni\./);
     expect(card).not.toMatch(/15 minutit|UTC/);
     const list = await (await fetch(`${base}/approvals`, { headers: { cookie: o.cookie } })).text();
@@ -206,6 +207,10 @@ describe("approval cards over MCP", () => {
     const consumedCard = await (await fetch(`${base}/approvals/${req.approval_id}`, { headers: { cookie: o.cookie } })).text();
     expect(consumedCard).not.toContain("Kinnita täpselt see"); expect(consumedCard).toContain("Assistent teatas"); expect(consumedCard).toContain("Sinu kinnitusi selles töös: 1.");
     expect(consumedCard.indexOf("receipt-head")).toBeLessThan(consumedCard.indexOf("Sinu kinnitusi selles töös"));
+    // Wow (#63): once „Saadetud” is recorded, the receipt shows the „Käest ära” strip, a count without a percentage.
+    expect(decided).not.toContain('class="ho-strip"');
+    expect(consumedCard).toContain('<a class="ho-strip" href="/uhenda#kaest-ara"');
+    expect(consumedCard).toMatch(/Käest ära: <span class="num">1<\/span> töö \d+-st/); expect(consumedCard.match(/<a class="ho-strip"[\s\S]*?<\/a>/)![0]).not.toMatch(/%/);
 
     // Tehtud rows name their object, and the time never runs into the verb (QA D-15, D-17).
     const tehtud = await (await fetch(`${base}/activity`, { headers: { cookie: o.cookie } })).text();

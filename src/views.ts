@@ -1,9 +1,9 @@
 import type { Assessment, Coverage } from "./core.js";
 import { isHandled } from "./core.js";
-import { offerCapCents, type Handover, type Job } from "./handover.js";
+import { isDone, offerCapCents, type Handover, type Job } from "./handover.js";
 import { approvalAddressMissing, normAddress, standingRecipients, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type AssistantMilestones, type Exclusion, type StandingRule } from "./mcp.js";
 import type { CompanyCard } from "./arikratt.js";
-import { ET_OF, type FactNeeded, type Obligation } from "./obligations.js";
+import { ET_OF, tallinnDate, type FactNeeded, type Obligation } from "./obligations.js";
 import { BASETEN_MODEL } from "./model-quality.js";
 import { safeHttps, type ServiceRecord } from "./catalog.js";
 import { BLOCKER_HANDOFF, BLOCKER_LABELS, BLOCKER_LABELS_ET, CATEGORY_LABELS, CATEGORY_LABELS_ET, classifiedByLabel, type Blocker, type Category, type DemandItem, type OwnerNeed } from "./unmet-needs.js";
@@ -239,13 +239,14 @@ article.card.ticket{margin:0 0 var(--s-6);padding:0;border-radius:var(--r-xl);bo
 .ticket pre.letter{margin:0 0 var(--s-4);padding:var(--s-3) var(--s-4);border:0;border-left:3px solid var(--c-border);border-radius:0 var(--r-md) var(--r-md) 0;line-height:1.5}
 .hand{margin:0 0 var(--s-4);color:var(--c-muted);font-size:var(--fs-sm)}
 .hand b{color:var(--c-att);font-weight:700}
-.decide{position:static;z-index:2;display:flex;flex-wrap:nowrap;align-items:center;gap:var(--s-2) var(--s-3);margin:0 calc(-1 * var(--s-4));padding:var(--s-3) var(--s-4) max(12px,env(safe-area-inset-bottom));border-top:1px solid var(--c-divider);background:rgba(255,255,255,.94);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.decide{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:nowrap;align-items:center;gap:var(--s-2) var(--s-3);margin:0 calc(-1 * var(--s-4));padding:var(--s-3) var(--s-4) max(12px,env(safe-area-inset-bottom));border-top:1px solid var(--c-divider);background:rgba(255,255,255,.94);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 .decide button{flex:1 1 auto;min-width:0;min-height:56px;margin:0;font-size:var(--fs-lg)}
 .decide button.text{flex:0 0 auto;min-height:var(--tap);font-size:var(--fs-md);white-space:nowrap}
 @media (min-width:600px){.decide{margin:0 calc(-1 * var(--s-6));padding-left:var(--s-6);padding-right:var(--s-6)}}
-@media (max-width:879px){.decide{position:sticky;bottom:0}html:has(.decide){scroll-padding-bottom:88px}}
+/* Scroll padding = the bar (1px border + 12px top + 56px button + bottom inset) + 8px air; below 340px it wraps to a second 8px + 44px row. */
+html:has(.decide){scroll-padding-bottom:calc(77px + max(12px,env(safe-area-inset-bottom)))}
 @media (max-width:479px){.decide button{padding-left:12px;padding-right:12px;font-size:var(--fs-md)}}
-@media (max-width:339px){.decide{flex-wrap:wrap}}
+@media (max-width:339px){.decide{flex-wrap:wrap}html:has(.decide){scroll-padding-bottom:calc(129px + max(12px,env(safe-area-inset-bottom)))}}
 .fine{margin:var(--s-3) 0 0;color:var(--c-muted);font-size:var(--fs-sm)}
 .turn{margin:var(--s-1) 0 var(--s-4)}
 .turn strong{display:block;margin-bottom:var(--s-2);font-size:var(--fs-h1);font-weight:800;line-height:1.1;letter-spacing:-.025em}
@@ -380,6 +381,7 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .teaser-pause{display:inline-flex;align-items:center;min-height:44px;padding:0 var(--s-3);border:1px solid var(--c-border);border-radius:var(--r-lg);background:#fff;font-size:var(--fs-sm);font-weight:650;color:var(--c-primary);cursor:pointer}
 #teaser-pause:focus-visible~figcaption .teaser-pause{outline:3px solid var(--c-focus);outline-offset:2px}
 #teaser-pause:checked~figcaption .teaser-pause{background:var(--c-primary);color:#fff}
+.tp-resume,#teaser-pause:checked~figcaption .tp-pause{display:none}#teaser-pause:checked~figcaption .tp-resume{display:inline}
 #teaser-pause:checked~.phone *{animation-play-state:paused!important}
 @media (prefers-reduced-motion:reduce){.teaser-pause,.vh-input{display:none}}
 .phone{height:640px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
@@ -427,6 +429,8 @@ ${TEASER_CSS}
 .jobs .how-ico{width:40px;height:40px;border-radius:12px}.jobs .how-ico svg{width:22px;height:22px}
 .how-ico{position:relative;flex:none;display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:14px;background:var(--c-surface-3);color:var(--c-primary)}
 .how-ico svg{width:26px;height:26px}
+.how-go{display:flex;align-items:center;min-height:var(--tap);color:var(--c-link);text-decoration:underline;text-underline-offset:3px}
+.how-cta{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2) var(--s-6);margin:var(--s-6) 0 0}.how-cta .btn{margin:0;font-size:var(--fs-lg)}@media (min-width:880px){.how-cta .btn{width:auto;padding:12px 32px}}
 .how .how-ico::after{content:counter(how);position:absolute;top:-6px;right:-6px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--c-primary);color:#fff;font-size:.75rem;font-weight:800}
 .trust{display:grid;gap:var(--s-2);margin:var(--s-6) 0;padding:var(--s-4);list-style:none;border-radius:var(--r-xl);background:var(--c-deep);color:#fff}
 .trust li{display:flex;align-items:center;gap:var(--s-3);min-height:var(--tap);font-weight:700}
@@ -529,6 +533,7 @@ const dtf = (o: Intl.DateTimeFormatOptions) => byLang((loc) => new Intl.DateTime
 const TIME = dtf({ timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const DAY = dtf({ timeZone: TZ, day: "numeric", month: "short" });
 const C_DAY_MON = dtf({ timeZone: "UTC", day: "numeric", month: "short" });
+const C_DAY_MON_YEAR = dtf({ timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
 const C_WEEKDAY = dtf({ timeZone: "UTC", weekday: "long" });
 const C_PERIOD = dtf({ timeZone: "UTC", month: "long", year: "numeric" });
 const TODAY = dtf({ timeZone: TZ, weekday: "long", day: "numeric", month: "long" });
@@ -933,7 +938,7 @@ function handoverRow(j: Job, l: Lang, now: Date): string {
   const lines: string[] = [];
   if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.auto ? t(`, neist <span class="num">${e.auto}</span> ilma sinuta`, `, <span class="num">${e.auto}</span> without you`) : ""}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
   if (e.rule) lines.push(esc(t(`Püsiluba: ${standingRuleName(e.rule, l)} · aegub ${DAY.et.format(new Date(e.rule.expires_at))}`, `Standing approval: ${standingRuleName(e.rule, l)} · ends ${DAY.en.format(new Date(e.rule.expires_at))}`)));
-  if (j.due) lines.push(`${esc(t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}`);
+  if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${C_DAY_MON_YEAR.et.format(civil(j.due))}`, `Was due ${C_DAY_MON_YEAR.en.format(civil(j.due))}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}`);
   if (j.source === "assessment" && j.rung !== "other" && j.assessed) lines.push(`„${esc(j.assessed.reason)}” ${assessedChip}`);
   if (j.rung === "mine" && HO_CAN[j.id]) lines.push(esc(t(...HO_CAN[j.id])));
   if (e.pending) lines.push(stateChip("waiting", t(`${e.pending} ootab sinu kinnitust`, `${e.pending} waiting for your approval`)));
@@ -994,7 +999,7 @@ ${handoverNext(h, l, csrf)}</div>
 
 const approvalTech = (a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang) => techDetails(l, `${techList([[tr(l)("Räsi (SHA-256)", "Digest (SHA-256)"), a.digest], [tr(l)("Liik", "Kind"), v.kindKey || "—"], ["ID", a.id], [tr(l)("Koostatud", "Created"), a.created_at], [tr(l)("Kehtib kuni", "Valid until"), a.expires_at], ...(a.decided_at ? [[tr(l)("Otsustatud", "Decided"), a.decided_at]] as [string, string][] : [])])}<pre class="tech-pre">${esc(JSON.stringify({ action: v.p, outcome: v.outcome }, null, 1))}</pre>`);
 
-export function approvalCardBody(opts: { csrf: string; a: ApprovalRow; lang: Lang; sample: boolean; now?: Date; rules?: StandingRule[]; capCents?: number }): string {
+export function approvalCardBody(opts: { csrf: string; a: ApprovalRow; lang: Lang; sample: boolean; now?: Date; rules?: StandingRule[]; capCents?: number; handover?: Handover }): string {
   const { a, lang: l, sample } = opts, t = tr(l), v = approvalView(a, l), now = opts.now ?? new Date(), rules = opts.rules ?? [];
   const content = v.p.document?.content ? `<h2>${esc(t(...(CONTENT_HEAD[v.kindKey] ?? CONTENT_HEAD.send_message)))}</h2><pre class="letter" tabindex="0">${esc(v.p.document.content)}</pre>` : "";
   const what = `${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}${v.amount ? ` · <b>${esc(v.amount)}</b>` : ""}`;
@@ -1055,6 +1060,7 @@ ${foot()}
 <p class="why">${[v.recipient.name, v.amount].filter(Boolean).map(esc).join(" · ")}${v.recipient.name || v.amount ? " · " : ""}${esc(v.title)}</p>
 ${a.approved_by_rule ? `<p class="small"><strong>${t("Kinnitatud püsiloaga", "Approved by your standing approval")} „${esc(ruleTitle(a, rules, l))}”.</strong></p>` : ""}
 <p class="small"><strong>${esc(t(`Sinu kinnitusi selles töös: ${a.decided_at && !a.approved_by_rule ? 1 : 0}.`, `Your approvals in this job: ${a.decided_at && !a.approved_by_rule ? 1 : 0}.`))}</strong> ${t("Töö tegi assistent; tulemus on tema teade, AI-hüppelaud seda ei kontrollinud.", "Your assistant did the work; the result is its report, not checked by AI Launchpad.")}</p>
+${isDone(a) && opts.handover ? handoverStrip(opts.handover, l) : ""}
 ${stateLine(a, v, l, sample)}
 ${content ? `<details><summary>${t("Mida sa kinnitasid", "What you approved")}</summary>${approvalFacts(v, l)}${content}</details>` : ""}
 </div>
@@ -1377,7 +1383,7 @@ const STEP_ICONS = [
   '<rect x="6.5" y="1.5" width="11" height="21" rx="2.5"/><path d="M9 12l2.2 2.2L15.5 10M10.5 19.5h3"/>',
 ];
 
-export function landingBody(o: { lang: Lang }): string {
+export function landingBody(o: { lang: Lang; demo: boolean }): string {
   const l = o.lang, t = tr(l), amount = fmtEur(24000, l), total = fmtEur(72000, l);
   // One conversation, used for the animation and the screen-reader transcript. It leads with money; the deadline is one offer at the end.
   const ask = t("Kes mulle võlgu on?", "Who owes me money?");
@@ -1439,12 +1445,13 @@ export function landingBody(o: { lang: Lang }): string {
 <input type="checkbox" id="teaser-pause" class="vh-input">
 <div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${t("ühendatud: AI-hüppelaud", "connected: AI Launchpad")}</small></span></div>
 <div class="chat">${chat}</div></div></div>
-<figcaption>${sampleChip(l)}<span class="small muted">${t("Vestlus sinu ChatGPT-s või Claude'is", "A conversation in your ChatGPT or Claude")}</span><label class="teaser-pause" for="teaser-pause">${t("Peata animatsioon", "Pause animation")}</label></figcaption>
+<figcaption>${sampleChip(l)}<span class="small muted">${t("Vestlus sinu ChatGPT-s või Claude'is", "A conversation in your ChatGPT or Claude")}</span><label class="teaser-pause" for="teaser-pause"><span class="tp-pause">${t("Peata animatsioon", "Pause animation")}</span><span class="tp-resume">${t("Jätka animatsiooni", "Resume animation")}</span></label></figcaption>
 </figure>
 <section class="hero-jobs" aria-labelledby="jobs-h"><h2 id="jobs-h" class="vh">${t("Mida assistent sinu eest ära teeb", "What your assistant takes off your plate")}</h2>
 <ul class="jobs">${jobs.map(([h, s], i) => `<li>${icon(JOB_ICONS[i])}<span><strong>${esc(h)}</strong>${esc(s)}</span></li>`).join("")}</ul></section></section>
 <section aria-labelledby="how-h"><h2 id="how-h">${t("Alusta 2 minutiga", "Start in 2 minutes")}</h2>
-<ol class="how">${steps.map((s, i) => `<li>${icon(STEP_ICONS[i])}<span>${esc(s)}</span></li>`).join("")}</ol></section>
+<ol class="how">${steps.map((s, i) => `<li>${icon(STEP_ICONS[i])}${i === 0 ? `<a class="how-go" href="/uhenda">${esc(s)}</a>` : `<span>${esc(s)}</span>`}</li>`).join("")}</ol>
+<p class="how-cta"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a>${o.demo ? `<a class="tap-link" href="/login">${t("Vaata näidisettevõtet", "See the sample company")}</a>` : ""}</p></section>
 <ul class="trust" aria-label="${t("Mida me lubame", "What we promise")}">${trust.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
 <p class="small muted landing-foot"><a class="tap-link" href="/demand">${t("Meta Muse Spark Open liigitab anonüümselt, mida ettevõtjad veel vajavad", "Meta Muse Spark Open anonymously classifies what businesses still need")}</a></p>
 </div>`;
