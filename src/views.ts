@@ -1527,7 +1527,7 @@ export function tanaBody(o: TanaOpts): string {
   }
   for (const p of o.progress) {
     if (p.milestone !== "draft_prepared" && p.milestone !== "external_completion_reported") continue;
-    const verb = p.milestone === "draft_prepared" ? t("Valmistas ette:", "Prepared:") : t("Teatas tehtuks:", "Reported done:");
+    const verb = t(...PROGRESS_VERB[p.milestone]);
     doneCount++;
     doneRows.push(`<div class="row"><strong>${verb} ${esc(titleOf(p.task_id))}</strong><div class="labels">${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${esc(fmtWhen(p.observed_at, l, now))}</span></div>`);
   }
@@ -1674,6 +1674,12 @@ ${techDetails(l, `${techList([[t("MCP-aadress", "MCP address"), endpoint], [t("S
 ${o.owner ? `<p><a class="tap-link" href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a></p>` : ""}`;
 }
 
+/** report_progress milestones as a verb before the job's name, on Täna and Tehtud alike (#63 m12). */
+const PROGRESS_VERB: Record<string, [string, string]> = {
+  started: ["Alustas:", "Started:"], draft_prepared: ["Valmistas ette:", "Prepared:"], waiting_for_owner: ["Ootab sinu otsust:", "Waiting for you:"],
+  blocked: ["Jäi kinni:", "Blocked:"], external_completion_reported: ["Teatas tehtuks:", "Reported done:"],
+};
+const PROGRESS_SUMMARY = new RegExp(`^(.+): (${Object.keys(PROGRESS_VERB).join("|")}) \\(assistant reported\\)\\.$`);
 // --- Tehtud (/activity): finished work in plain verbs; raw log under Tehniline info. ---
 const DONE_VERBS: Record<string, [string, string]> = {
   request_approval: ["Assistent valmistas töö ette ja palus sinu kinnitust", "Your assistant prepared work and asked for your approval"],
@@ -1691,7 +1697,7 @@ const DONE_VERBS: Record<string, [string, string]> = {
   standing_rule_revoked: ["Sina lõpetasid püsiloa", "You ended a standing approval"],
   standing_auto_approved: ["Püsiluba kinnitas assistendi töö", "Your standing approval approved your assistant's work"],
 };
-export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date; approvals?: ApprovalRow[]; rules?: StandingRule[] }): string {
+export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date; approvals?: ApprovalRow[]; rules?: StandingRule[]; assessment?: Assessment | null }): string {
   const l = opts.lang, t = tr(l), now = opts.now ?? new Date();
   // Approval rows name their object (title · recipient): the log summary carries the approval id or digest prefix.
   const approvalOf = (summary: string) => (opts.approvals ?? []).find((x) => summary.includes(x.id) || summary.includes(`digest ${x.digest.slice(0, 12)}`));
@@ -1705,7 +1711,9 @@ export function activityBody(opts: { rows: Record<string, string>[]; receipts: R
     // A send under a standing approval reads as such (#45).
     const byRule = r.action === "standing_auto_approved" || (r.action === "record_action_outcome" && !!approvalOf(r.summary ?? "")?.approved_by_rule);
     const ruleSent = r.action === "record_action_outcome" && byRule && /^Outcome sent /.test(r.summary ?? "");
-    const verb = ruleSent ? t("Assistent saatis püsiloa alusel:", "Your assistant sent under a standing approval:") : r.action === "approval_decided" ? (r.outcome === "approved" ? t("Sina kinnitasid", "You approved") : r.outcome === "declined" ? t("Sina keeldusid", "You declined") : null) : DONE_VERBS[r.action] ? t(...DONE_VERBS[r.action]) : null;
+    // A progress row names its job by the assessment's label, as Täna does.
+    const progress = r.action === "report_progress" ? PROGRESS_SUMMARY.exec(r.summary ?? "") : null;
+    const verb = progress ? `${t(...PROGRESS_VERB[progress[2]])} ${opts.assessment?.responsibilities.find((x) => x.id === progress[1])?.label ?? progress[1]}` : ruleSent ? t("Assistent saatis püsiloa alusel:", "Your assistant sent under a standing approval:") : r.action === "approval_decided" ? (r.outcome === "approved" ? t("Sina kinnitasid", "You approved") : r.outcome === "declined" ? t("Sina keeldusid", "You declined") : null) : DONE_VERBS[r.action] ? t(...DONE_VERBS[r.action]) : null;
     if (!verb || (r.outcome !== "ok" && r.action !== "approval_decided")) return [];
     const chip = `${r.actor === "assistant" ? labelChip("assistant", t("Assistent teatas", "Your assistant reports")) : r.action === "approval_decided" && r.outcome === "approved" ? labelChip("owner", t("Sinu kinnitus", "You approved")) : ""}${byRule ? ruleChip(l) : ""}`;
     const object = objectOf(r.summary ?? "");

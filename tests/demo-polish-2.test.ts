@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { tanaBody, handoverSection, type TanaOpts } from "../src/views.js";
+import { tanaBody, handoverSection, activityBody, type TanaOpts } from "../src/views.js";
 import { computeObligations } from "../src/obligations.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import { computeCoverage } from "../src/core.js";
@@ -45,5 +45,20 @@ describe("#63 m6: the KMD source link in „Käest ära”", () => {
       expect(row).toContain(`href="${kmd.source.url}"`);
       expect(kmdRow(tana())).toContain(`href="${kmd.source.url}"`);
     }
+  });
+});
+
+describe("#63 m12: Tehtud names the job", () => {
+  const row = (milestone: string, task = "vat-prep") => ({ actor: "assistant", action: "report_progress", outcome: "ok", summary: `${task}: ${milestone} (assistant reported).`, created_at: "2026-11-03T09:15:00Z" });
+  test("a progress row reads as on Täna: „Valmistas ette: KMD ettevalmistus”, with the assistant's label", () => {
+    const html = activityBody({ rows: [row("draft_prepared"), row("external_completion_reported", "invoicing"), row("started", "unknown-task")], receipts: [], exclusions: [], lang: "et", now: NOW, assessment: alpha });
+    expect(html).toContain("<strong>Valmistas ette: KMD ettevalmistus</strong>");
+    expect(html).toContain("<strong>Teatas tehtuks: Arvete koostamine</strong>");
+    // A task id the assessment does not name still names itself.
+    expect(html).toContain("<strong>Alustas: unknown-task</strong>");
+    expect(html).not.toContain("Assistent teatas töö käigust");
+    expect(html).toContain("Assistent teatas");
+    expect(tana({ progress: [{ task_id: "vat-prep", milestone: "draft_prepared", observed_at: "2026-11-03T09:15:00Z" }] })).toContain("Valmistas ette: KMD ettevalmistus");
+    expect(activityBody({ rows: [row("draft_prepared")], receipts: [], exclusions: [], lang: "en", now: NOW, assessment: alpha })).toContain("<strong>Prepared: ");
   });
 });
