@@ -268,33 +268,107 @@ describe("Täna", () => {
 });
 
 describe("landing and connect", () => {
-  test("landing: jobs taken off the owner, a labelled CSS-only chat teaser that leads with money, 2-minute start, trust strip, no search (owner 2026-10-30)", () => {
-    const et = landingBody({ lang: "et", demo: false }), en = landingBody({ lang: "en", demo: false });
-    for (const s of ["Tegele sellega, milles oled hea. <span>Kontoritöö teeb sinu AI-assistent.</span>", "Meeldetuletused võlgnikele, arved KMD jaoks, aastaaruande kontroll — assistent valmistab ette, sina kinnitad ühe puudutusega. Töötab sinu oma ChatGPT või Claude&#39;iga.",
-      '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "Kes mulle võlgu on?", `Kolm arvet on üle tähtaja, kokku ${fmtEur(72000, "et")}. Koostasin igale viisaka meeldetuletuse.`,
-      "Maksemeeldetuletus · 1/3", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud: demo", '<span class="mock-allow">Luba sarnased automaatselt</span><span class="mock-rule">Püsiluba: meeldetuletused kuni 500\u00a0€</span>',
-      "Järgmised saadan ise.", "Muide, <b>20.\u00a0nov</b> on KMD — kas valmistan oktoobri arved ette?",
-      "Mida assistent sinu eest ära teeb", "<strong>Võlgnikud</strong>Leiab tasumata arved ja saadab meeldetuletused.", "<strong>KMD</strong>Kogub kuu arved ja paneb deklaratsiooni valmis. Esitad ise.",
-      "<strong>Aastaaruanne</strong>Paneb kokku, mida aruandeks vaja. Allkirjastad ise.", "<strong>Tähtajad</strong>Teab sinu ettevõtte tähtaegu ja tuletab meelde.",
-      "Alusta 2 minutiga", "Ühenda oma ChatGPT või Claude", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega — või luba edaspidi automaatselt", 'href="/demand"']) expect(et, s).toContain(s);
-    for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Reminders to customers who owe you, invoices for the VAT return, the annual-report checklist", "Connect your assistant", ">Sample<",
-      "Who owes me money?", `Three invoices are overdue, ${fmtEur(72000, "en")} in total.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "Allow similar ones automatically", `Standing approval: reminders up to ${fmtEur(50000, "en")}`,
-      "I&#39;ll send the next ones myself.", "By the way, the VAT return is due <b>20\u00a0Nov</b> — shall I prepare October&#39;s invoices?", "What your assistant takes off your plate", "Start in 2 minutes", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
-    // Four jobs, three steps, three trust items in the owner's order; no TSD bubble and no deadline-led copy.
-    expect(et.match(/<ul class="jobs">.*?<\/ul>/s)![0].match(/<li>/g)).toHaveLength(4);
-    expect(et.match(/<ol class="how">.*?<\/ol>/s)![0].match(/<li>/g)).toHaveLength(3);
+  test("landing: the assistant works through vendor connectors; Launchpad adds deadlines, approvals and receipts (#69)", () => {
+    const et = landingBody({ lang: "et", demo: false, rand: () => 0 }), en = landingBody({ lang: "en", demo: false, rand: () => 0 });
+    for (const s of ["Tegele sellega, milles oled hea. <span>Kontoritöö teeb sinu AI-assistent.</span>", "Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud lisab tähtajad, kinnitused ja kviitungid — midagi ei lähe välja ilma sinu loata. Töötab sinu oma ChatGPT või Claude&#39;iga.",
+      '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "ühendatud: raamatupidamine, e-post, AI-hüppelaud", "Kes mulle võlgu on?", `Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${fmtEur(72000, "et")}. Koostasin igale viisaka meeldetuletuse.`,
+      "Maksemeeldetuletus · 1/3", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud sinu e-postist: demo", '<span class="mock-allow">Luba sarnased automaatselt</span><span class="mock-rule">Püsiluba: meeldetuletused kuni 500\u00a0€</span>',
+      "Järgmised saadan ise.", "Muide, <b>20.\u00a0nov</b> on KMD — kas valmistan oktoobri arved ette?", "Mida assistent saab ära teha", '<a href="/kataloog">vaata kataloogist</a>, mis sinu programmile olemas on.',
+      "Kuidas alustada", "Ühenda oma ChatGPT või Claude", "Ühenda ka oma raamatupidamisprogramm ja e-post — assistent ütleb, milline ühendus sobib", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega — või luba edaspidi automaatselt", 'href="/demand"']) expect(et, s).toContain(s);
+    for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Your assistant does the office work through your accounting, bank and e-mail connectors. AI Launchpad adds the deadlines, approvals and receipts — nothing goes out without your permission. Works with your own ChatGPT or Claude.", "Connect your assistant", ">Sample<", "connected: accounting, e-mail, AI Launchpad",
+      "Who owes me money?", `Your accounting software shows three invoices overdue, ${fmtEur(72000, "en")} in total. I drafted a polite reminder for each.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "✓ Approved · Sent from your e-mail: demo", "Allow similar ones automatically", `Standing approval: reminders up to ${fmtEur(50000, "en")}`,
+      "I&#39;ll send the next ones myself.", "By the way, the VAT return is due <b>20\u00a0Nov</b> — shall I prepare October&#39;s invoices?", "What your assistant can take off you", '<a href="/kataloog">see the catalogue</a> for what exists for your software.', "How to start", "Connect your accounting software and e-mail too — your assistant tells you which connector fits", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
+    expect(et.match(/<ol class="how">.*?<\/ol>/s)![0].match(/<li>/g)).toHaveLength(4);
     expect(et).toContain("<li>Midagi ei saadeta ilma sinu loata</li><li>Smart-ID ja allkiri jäävad sinu kätte</li><li>Maksud ja tähtajad arvutab reeglistik, mitte tehisaru</li>");
     for (const gone of ["TSD", "Kuidas see töötab", "Mis mul sel kuul adminis ees on?", "täpselt see saaja, summa ja dokument"]) expect(et, gone).not.toContain(gone);
     // The animation is decorative (aria-hidden, no focusable element); a visually hidden transcript carries the same conversation.
     expect(et).toContain('<div class="phone" aria-hidden="true">');
     const phone = et.slice(et.indexOf('<div class="phone"'), et.indexOf("<figcaption>"));
     expect(phone).not.toMatch(/<(a|button|input)\b|tabindex/);
-    expect(et).toMatch(/<div class="vh"><p>Näidisvestlus:<\/p><ol><li>Sina: Kes mulle võlgu on\?<\/li><li>Assistent: Kolm arvet on üle tähtaja/);
-    // No search, no script, no claim we cannot back (sample figures live only inside the teaser).
-    for (const html of [et, en]) expect(html.replace('<input type="checkbox" id="teaser-pause" class="vh-input">', "")).not.toMatch(/<form|<input|<script|name="q"|\bsäästa|\bsaves? \d/i);
-    for (const html of [et, en]) expect(html.slice(html.indexOf("</figure>")).replace(/<svg.*?<\/svg>/gs, ""), "no figures outside the sample chat").not.toMatch(/\d+\s*(€|%|h\b|tundi|hours)/);
+    expect(et).toMatch(/<div class="vh"><p>Näidisvestlus:<\/p><ol><li>Sina: Kes mulle võlgu on\?<\/li><li>Assistent: Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja/);
+    // No search or unsupported saving claim; the only script is the local carousel pager.
+    for (const html of [et, en]) {
+      expect(html.replace('<input type="checkbox" id="teaser-pause" class="vh-input">', "")).not.toMatch(/<form|<input|name="q"|\bsäästa|\bsaves? \d/i);
+      expect(html.match(/<script>/g)).toHaveLength(1);
+      expect(scripts(html)).toContain("data-job-prev");
+      expect(scripts(html)).not.toMatch(/fetch\(|XMLHttpRequest|sendBeacon|eval\(/);
+      expect(html.slice(html.indexOf("</figure>")).replace(/<svg.*?<\/svg>/gs, ""), "no figures outside the sample chat").not.toMatch(/\d+\s*(€|%|h\b|tundi|hours)/);
+    }
     // The state chip swaps with the first button (same CSS timing), so the last frame does not contradict itself.
     expect(et).toContain('<span class="mock-wait"><span class="state-chip state-chip--waiting">Ootab sinu kinnitust</span></span><span class="mock-ok"><span class="state-chip state-chip--approved">Kinnitatud</span></span>');
+  });
+
+  test("landing carousel: all 8 use cases name their connectors in ET and EN; the no-JS pager and scroll region stay accessible (#69)", () => {
+    const expected = {
+      et: [
+        ["Võlgnikud", [["Raamatupidamine", "raamatupidamine"], ["E-post", "epost"], ["AI-hüppelaud: kinnitus", null]]],
+        ["KMD", [["Raamatupidamine", "raamatupidamine"], ["AI-hüppelaud: tähtaeg", null]]],
+        ["Aastaaruanne", [["Raamatupidamine", "raamatupidamine"], ["AI-hüppelaud: tähtaeg", null]]],
+        ["Tähtajad kalendrisse", [["AI-hüppelaud: tähtajad", null], ["Kalender", "epost"]]],
+        ["Arve kliendile", [["Raamatupidamine", "raamatupidamine"], ["E-post", "epost"], ["AI-hüppelaud: kinnitus", null]]],
+        ["Laekumised", [["Pank", "pank"], ["Raamatupidamine", "raamatupidamine"]]],
+        ["Uue kliendi kontroll", [["Äriandmed", "andmed"]]],
+        ["Ostuarved", [["E-post", "epost"], ["Raamatupidamine", "raamatupidamine"]]],
+      ],
+      en: [
+        ["Unpaid invoices", [["Accounting", "raamatupidamine"], ["E-mail", "epost"], ["AI Launchpad: approval", null]]],
+        ["VAT return", [["Accounting", "raamatupidamine"], ["AI Launchpad: deadline", null]]],
+        ["Annual report", [["Accounting", "raamatupidamine"], ["AI Launchpad: deadline", null]]],
+        ["Deadlines in your calendar", [["AI Launchpad: deadlines", null], ["Calendar", "epost"]]],
+        ["Invoice a customer", [["Accounting", "raamatupidamine"], ["E-mail", "epost"], ["AI Launchpad: approval", null]]],
+        ["Incoming payments", [["Bank", "pank"], ["Accounting", "raamatupidamine"]]],
+        ["Check a new customer", [["Business data", "andmed"]]],
+        ["Purchase invoices", [["E-mail", "epost"], ["Accounting", "raamatupidamine"]]],
+      ],
+    } as const;
+    for (const lang of ["et", "en"] as const) {
+      const html = landingBody({ lang, demo: false, rand: () => 0 });
+      const cards = html.match(/<li class="job-card">[\s\S]*?<\/li>/g) ?? [];
+      expect(cards).toHaveLength(8);
+      for (const [title, chips] of expected[lang]) {
+        const card = cards.find((c) => c.includes(`<h3>${title}</h3>`));
+        expect(card, `${lang}: ${title}`).toBeDefined();
+        const positions = chips.map(([label, group]) => {
+          const chip = group
+            ? `<a href="/kataloog?g=${group}">${label}</a>`
+            : `<span class="label-chip label-chip--rule">${label}</span>`;
+          expect(card, `${lang}: ${title} / ${label}`).toContain(chip);
+          return card!.indexOf(chip);
+        });
+        expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+      }
+      expect(html).toContain(`<h2 id="jobs-h">${lang === "et" ? "Mida assistent saab ära teha" : "What your assistant can take off you"}</h2>`);
+      expect(html).toContain(`role="region" aria-label="${lang === "et" ? "Mida assistent saab ära teha" : "What your assistant can take off you"}" tabindex="0"`);
+      expect(html).toContain(`data-job-prev hidden>${lang === "et" ? "‹ Eelmine" : "‹ Previous"}</button>`);
+      expect(html).toContain(`data-job-next hidden>${lang === "et" ? "Järgmine ›" : "Next ›"}</button>`);
+      expect(html).toContain('aria-live="polite" data-job-status hidden>1 / 8</span>');
+      expect(scripts(html)).toContain("prefers-reduced-motion: reduce");
+    }
+    const css = shell({ title: "x", active: "none", csrf: "", body: "" });
+    expect(css).toContain("overflow-x:auto;scroll-snap-type:x mandatory");
+    expect(css).toContain("scroll-snap-align:start");
+  });
+
+  test("landing carousel: deterministic shuffles differ and retain every card (#69)", () => {
+    const titles = (rand: () => number) => [...landingBody({ lang: "et", demo: false, rand }).matchAll(/<li class="job-card"><h3>(.*?)<\/h3>/g)].map((m) => m[1]);
+    const first = titles(() => 0), second = titles(() => 0.999999);
+    expect(first).not.toEqual(second);
+    const all = ["Võlgnikud", "KMD", "Aastaaruanne", "Tähtajad kalendrisse", "Arve kliendile", "Laekumised", "Uue kliendi kontroll", "Ostuarved"];
+    expect(first).toHaveLength(8); expect(second).toHaveLength(8);
+    expect([...first].sort()).toEqual([...all].sort());
+    expect([...second].sort()).toEqual([...all].sort());
+  });
+
+  test("landing: old job tiles, two-minute setup and vendor names are gone (#69)", () => {
+    const et = landingBody({ lang: "et", demo: false }), en = landingBody({ lang: "en", demo: false });
+    for (const old of ["Alusta 2 minutiga", "Start in 2 minutes", "Mida assistent sinu eest ära teeb", "What your assistant takes off your plate",
+      "Leiab tasumata arved ja saadab meeldetuletused.", "Kogub kuu arved ja paneb deklaratsiooni valmis. Esitad ise.", "Paneb kokku, mida aruandeks vaja. Allkirjastad ise.", "Teab sinu ettevõtte tähtaegu ja tuletab meelde.",
+      "Finds unpaid invoices and sends reminders.", "Gathers the month's invoices and gets the return ready. You file it.", "Puts together what the report needs. You sign it.", "Knows your company's deadlines and reminds you."]) {
+      expect(et, old).not.toContain(old); expect(en, old).not.toContain(old);
+    }
+    for (const vendor of ["Merit", "SmartAccounts", "e-arveldaja", "Gmail", "LHV", "Creditinfo"]) {
+      expect(et).not.toMatch(new RegExp(vendor, "i")); expect(en).not.toMatch(new RegExp(vendor, "i"));
+    }
   });
 
   test("landing teaser: the KMD offer carries the rule and official chips, only once, no assistant chip (tribunal T-002)", () => {
@@ -310,7 +384,7 @@ describe("landing and connect", () => {
     expect(en).toContain("the VAT return is due 20\u00a0Nov — shall I prepare October&#39;s invoices? · Calculated by rule · Source: VAT Act § 27, § 38</li></ol>");
   });
 
-  test("landing: a call to action under „Alusta 2 minutiga”; the sample-company link only where demo login is on (#63 m3)", () => {
+  test("landing: a call to action under „Kuidas alustada”; the sample-company link only where demo login is on (#63 m3)", () => {
     const steps = (h: string) => h.slice(h.indexOf('id="how-h"'), h.indexOf('<ul class="trust"'));
     const demo = steps(landingBody({ lang: "et", demo: true })), plain = steps(landingBody({ lang: "et", demo: false }));
     for (const h of [demo, plain]) {
@@ -323,12 +397,12 @@ describe("landing and connect", () => {
     expect(steps(landingBody({ lang: "en", demo: true }))).toContain('<a class="tap-link" href="/login">See the sample company</a>');
   });
 
-  test("landing teaser: CSS-only pause toggle, labelled, no script (tribunal T-004, WCAG 2.2.2)", () => {
+  test("landing teaser: CSS-only pause toggle, labelled, no script in the teaser (tribunal T-004, WCAG 2.2.2)", () => {
     const css = shell({ title: "x", active: "none", csrf: "", body: "" });
     for (const [h, pause, resume] of [[landingBody({ lang: "et", demo: false }), "Peata animatsioon", "Jätka animatsiooni"], [landingBody({ lang: "en", demo: false }), "Pause animation", "Resume animation"]]) {
       expect(h).toContain('<input type="checkbox" id="teaser-pause" class="vh-input">');
       expect(h).toContain(`<label class="teaser-pause" for="teaser-pause"><span class="tp-pause">${pause}</span><span class="tp-resume">${resume}</span></label>`);
-      expect(h).not.toContain("<script");
+      expect(h.slice(h.indexOf('<figure class="teaser">'), h.indexOf("</figure>"))).not.toContain("<script");
     }
     expect(css).toContain("#teaser-pause:checked~.phone *{animation-play-state:paused!important}");
     // #63 m2: paused, the visible label reads „Jätka animatsiooni” (CSS only).
@@ -338,8 +412,8 @@ describe("landing and connect", () => {
   });
 
   test("landing transcript: the owner approves and allows, the assistant sends (tribunal T-003)", () => {
-    expect(landingBody({ lang: "et", demo: false })).toContain("<li>Sina: Kinnitatud</li><li>Assistent: Saadetud (näidis)</li><li>Sina: Luba sarnased automaatselt</li><li>Assistent: Püsiluba: meeldetuletused kuni 500\u00a0€. Järgmised saadan ise.");
-    expect(landingBody({ lang: "en", demo: false })).toContain(`<li>You: Approved</li><li>Assistant: Sent (sample)</li><li>You: Allow similar ones automatically</li><li>Assistant: Standing approval: reminders up to ${fmtEur(50000, "en")}. I&#39;ll send the next ones myself.`);
+    expect(landingBody({ lang: "et", demo: false })).toContain("<li>Sina: Kinnitatud</li><li>Assistent: Saadetud sinu e-postist (näidis)</li><li>Sina: Luba sarnased automaatselt</li><li>Assistent: Püsiluba: meeldetuletused kuni 500\u00a0€. Järgmised saadan ise.");
+    expect(landingBody({ lang: "en", demo: false })).toContain(`<li>You: Approved</li><li>Assistant: Sent from your e-mail (sample)</li><li>You: Allow similar ones automatically</li><li>Assistant: Standing approval: reminders up to ${fmtEur(50000, "en")}. I&#39;ll send the next ones myself.`);
   });
 
   test("landing teaser: the KMD date is the engine's for November 2026 (20.11)", () => {

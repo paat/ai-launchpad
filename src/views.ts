@@ -376,7 +376,7 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 /* ===== Landing with the chat teaser (owner request 2026-10-30) ===== */
 .wrap:has(.landing){max-width:1040px}
 .landing-hero{display:grid;grid-template-areas:"text" "phone" "jobs";gap:var(--s-8);align-items:start;margin:var(--s-5) 0 var(--s-8)}
-.landing-hero>div{grid-area:text}.landing-hero>.teaser{grid-area:phone}.landing-hero>.hero-jobs{grid-area:jobs}
+.landing-hero>div{grid-area:text}.landing-hero>.teaser{grid-area:phone}.landing-hero>.use-cases{grid-area:jobs;min-width:0}
 .landing-hero h1{margin:0 0 var(--s-4);font-size:var(--fs-display);font-weight:800;line-height:1.05;letter-spacing:-.03em;color:#12291a}
 .landing-hero h1 span{color:var(--c-primary);background:linear-gradient(transparent 68%,#cfe3c6 68%,#cfe3c6 92%,transparent 92%)}
 .landing-hero .lede{max-width:34rem;margin:0 0 var(--s-5);font-size:var(--fs-lg);line-height:1.5}
@@ -430,12 +430,20 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .b-allow .mock-btn>.mock-tap{background:rgba(26,77,46,.25);box-shadow:0 0 0 3px rgba(26,77,46,.15);animation-name:lp-allow-tap}
 ${TEASER_CSS}
 .landing h2{margin:0 0 var(--s-4);font-size:var(--fs-xl);letter-spacing:-.02em}
-.how,.jobs{display:grid;gap:var(--s-3);margin:0;padding:0;list-style:none;counter-reset:how}
+.job-track{display:flex;gap:var(--s-3);max-width:100%;margin:0;padding:0;overflow-x:auto;scroll-snap-type:x mandatory;list-style:none}
+.job-track:focus-visible{outline:3px solid var(--c-focus);outline-offset:2px}
+.job-card{flex:0 0 100%;min-width:0;padding:var(--s-4);scroll-snap-align:start;border:1px solid var(--c-border);border-radius:var(--r-xl);background:#fff}
+.job-card h3{margin:0 0 var(--s-2)}.job-card>p{margin:0 0 var(--s-3)}
+.job-card>p.job-needs{margin:var(--s-4) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}
+.job-chips{margin:0}.job-chips .label-chip{min-height:var(--tap);padding:6px 14px;border-radius:999px}
+.job-pager{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2);margin-top:var(--s-3)}
+.job-pager button{width:auto;min-height:var(--tap);margin:0;padding:8px 14px}.job-pager span{font-variant-numeric:tabular-nums}
+.use-caption{margin:var(--s-3) 0 0}
+@media (min-width:760px){.job-card{flex-basis:calc((100% - var(--s-3))/2)}}
+@media (min-width:1100px){.job-card{flex-basis:calc((100% - 2 * var(--s-3))/3)}}
+.how{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s-3);margin:0;padding:0;list-style:none;counter-reset:how}
 .how li{counter-increment:how;display:flex;align-items:flex-start;gap:var(--s-4);padding:var(--s-4);border:1px solid var(--c-border);border-radius:var(--r-xl);background:#fff;font-size:var(--fs-lg);font-weight:650;line-height:1.35}
-.jobs{gap:0 var(--s-6)}
-.jobs li{display:flex;align-items:flex-start;gap:var(--s-3);padding:var(--s-3) 0;border-top:1px solid var(--c-divider);color:var(--c-muted);font-size:var(--fs-sm);line-height:1.45}
-.jobs strong{display:block;color:var(--c-text);font-size:var(--fs-md);font-weight:750}
-.jobs .how-ico{width:40px;height:40px;border-radius:12px}.jobs .how-ico svg{width:22px;height:22px}
+.how li>span{min-width:0;overflow-wrap:anywhere}
 .how-ico{position:relative;flex:none;display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:14px;background:var(--c-surface-3);color:var(--c-primary)}
 .how-ico svg{width:26px;height:26px}
 .how-go{display:flex;align-items:center;min-height:var(--tap);color:var(--c-link);text-decoration:underline;text-underline-offset:3px}
@@ -444,7 +452,7 @@ ${TEASER_CSS}
 .trust{display:grid;gap:var(--s-2);margin:var(--s-6) 0;padding:var(--s-4);list-style:none;border-radius:var(--r-xl);background:var(--c-deep);color:#fff}
 .trust li{display:flex;align-items:center;gap:var(--s-3);min-height:var(--tap);font-weight:700}
 .trust li::before{content:"";flex:none;width:9px;height:16px;margin:0 9px 4px 7px;border:solid var(--c-mint);border-width:0 3px 3px 0;transform:rotate(45deg)}
-@media (min-width:760px){.how,.trust{grid-template-columns:repeat(3,minmax(0,1fr))}.jobs{grid-template-columns:repeat(2,minmax(0,1fr))}.how li{flex-direction:column}.trust{padding:var(--s-4) var(--s-6)}}
+@media (min-width:760px){.how{grid-template-columns:repeat(4,minmax(0,1fr))}.trust{grid-template-columns:repeat(3,minmax(0,1fr))}.how li{flex-direction:column}.trust{padding:var(--s-4) var(--s-6)}}
 .landing-foot{margin:0}
 /* --- T5 (#61) „Käest ära”: the handover bar (docs/design/progress). One segment = one job; prefix ho-. --- */
 :root{--ho-prep:#3F8A5E}
@@ -1411,25 +1419,43 @@ function questions(r: DeadlinesView, l: Lang): { q: string; then: string }[] {
 
 // --- Public landing: the jobs the assistant takes off the owner, with a pure-CSS chat teaser (owner request 2026-10-30) ---
 const icon = (d: string) => `<span class="how-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg></span>`;
-const JOB_ICONS = [
-  '<circle cx="12" cy="12" r="9.5"/><path d="M15.5 8.2a4.5 4.5 0 1 0 0 7.6M6.5 10.5h6M6.5 13.5h6"/>',
-  '<path d="M6 2.5h8l4 4V21a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 21z"/><path d="M14 2.5v4h4M9 17l6-6M9.5 11.5h.01M14.5 16.5h.01"/>',
-  '<path d="M3.5 20.5h17"/><rect x="5" y="12" width="3" height="5.5" rx=".5"/><rect x="10.5" y="7" width="3" height="10.5" rx=".5"/><rect x="16" y="3.5" width="3" height="14" rx=".5"/>',
-  '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 2.5v4M16 2.5v4M8 14h.01M12 14h.01M16 14h.01M8 17.5h.01M12 17.5h.01"/>',
-];
+const CONNECT_ICON = '<rect x="8" y="2.5" width="8" height="5" rx="1"/><path d="M10 2.5V1M14 2.5V1M6.5 7.5h11V11a5.5 5.5 0 0 1-11 0zM12 16.5V23"/>';
 const STEP_ICONS = [
-  '<rect x="8" y="2.5" width="8" height="5" rx="1"/><path d="M10 2.5V1M14 2.5V1M6.5 7.5h11V11a5.5 5.5 0 0 1-11 0zM12 16.5V23"/>',
+  CONNECT_ICON,
+  CONNECT_ICON,
   '<path d="M4 4.5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z"/><path d="M7.5 9h9M7.5 12.5h6"/>',
   '<rect x="6.5" y="1.5" width="11" height="21" rx="2.5"/><path d="M9 12l2.2 2.2L15.5 10M10.5 19.5h3"/>',
 ];
 
-export function landingBody(o: { lang: Lang; demo: boolean }): string {
+type LandingConnector = { et: string; en: string; g?: CatalogueGroup };
+type LandingCard = { et: string; en: string; bodyEt: string; bodyEn: string; connectors: readonly LandingConnector[] };
+const ACCOUNTING: LandingConnector = { et: "Raamatupidamine", en: "Accounting", g: "raamatupidamine" };
+const EMAIL: LandingConnector = { et: "E-post", en: "E-mail", g: "epost" };
+const BANK: LandingConnector = { et: "Pank", en: "Bank", g: "pank" };
+const BUSINESS_DATA: LandingConnector = { et: "Äriandmed", en: "Business data", g: "andmed" };
+const CALENDAR: LandingConnector = { et: "Kalender", en: "Calendar", g: "epost" };
+const APPROVAL: LandingConnector = { et: "AI-hüppelaud: kinnitus", en: "AI Launchpad: approval" };
+const DEADLINE: LandingConnector = { et: "AI-hüppelaud: tähtaeg", en: "AI Launchpad: deadline" };
+const DEADLINES: LandingConnector = { et: "AI-hüppelaud: tähtajad", en: "AI Launchpad: deadlines" };
+const LANDING_CARDS: readonly LandingCard[] = [
+  { et: "Võlgnikud", en: "Unpaid invoices", bodyEt: "Leiab tasumata arved ja saadab viisaka meeldetuletuse. Iga kiri läheb välja sinu kinnitusega.", bodyEn: "Finds unpaid invoices and sends a polite reminder. Every message goes out with your approval.", connectors: [ACCOUNTING, EMAIL, APPROVAL] },
+  { et: "KMD", en: "VAT return", bodyEt: "Kogub kuu müügi- ja ostuarved ning paneb deklaratsiooni andmed valmis. Esitad ise.", bodyEn: "Gathers the month's sales and purchase invoices and gets the return's figures ready. You file it.", connectors: [ACCOUNTING, DEADLINE] },
+  { et: "Aastaaruanne", en: "Annual report", bodyEt: "Vaatab, mis aruandeks puudu on, ja paneb nimekirja kokku. Allkirjastad ise.", bodyEn: "Checks what the report is still missing and makes the list. You sign it.", connectors: [ACCOUNTING, DEADLINE] },
+  { et: "Tähtajad kalendrisse", en: "Deadlines in your calendar", bodyEt: "Arvutab sinu ettevõtte maksu- ja aruandetähtajad avalikest registritest ja paneb need sinu kalendrisse.", bodyEn: "Calculates your company's tax and filing deadlines from public registers and puts them in your calendar.", connectors: [DEADLINES, CALENDAR] },
+  { et: "Arve kliendile", en: "Invoice a customer", bodyEt: "Koostab arve tehtud töö põhjal ja saadab selle kliendile, kui oled kinnitanud.", bodyEn: "Drafts the invoice from the work done and sends it to the customer once you approve.", connectors: [ACCOUNTING, EMAIL, APPROVAL] },
+  { et: "Laekumised", en: "Incoming payments", bodyEt: "Võrdleb panga laekumisi arvetega ja näitab, mis on veel maksmata.", bodyEn: "Matches bank payments to invoices and shows what is still unpaid.", connectors: [BANK, ACCOUNTING] },
+  { et: "Uue kliendi kontroll", en: "Check a new customer", bodyEt: "Enne tööd vaatab üle kliendi registriandmed, maksuvõla ja esitatud aruanded.", bodyEn: "Before you take the job, checks the customer's register data, tax debt and filed reports.", connectors: [BUSINESS_DATA] },
+  { et: "Ostuarved", en: "Purchase invoices", bodyEt: "Korjab e-postist ostuarved kokku ja lisab need raamatupidamisse.", bodyEn: "Collects purchase invoices from your e-mail and adds them to your books.", connectors: [EMAIL, ACCOUNTING] },
+];
+const JOB_CAROUSEL_SCRIPT = `<script>(function(){var track=document.getElementById("job-track");if(!track)return;var prev=document.querySelector("[data-job-prev]"),next=document.querySelector("[data-job-next]"),status=document.querySelector("[data-job-status]");if(!prev||!next||!status)return;var controls=[prev,next,status];for(var i=0;i<controls.length;i++)controls[i].hidden=false;function step(){var card=track.querySelector("li");if(!card)return 1;var gap=parseFloat(window.getComputedStyle(track).columnGap)||0;return card.getBoundingClientRect().width+gap;}function show(){var n=Math.max(1,Math.min(track.children.length,Math.round(track.scrollLeft/step())+1));status.textContent=n+" / "+track.children.length;}function go(d){track.scrollBy({left:d*step(),behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});}prev.addEventListener("click",function(){go(-1);});next.addEventListener("click",function(){go(1);});track.addEventListener("scroll",show,{passive:true});window.addEventListener("resize",show);show();})();</script>`;
+
+export function landingBody(o: { lang: Lang; demo: boolean; rand?: () => number }): string {
   const l = o.lang, t = tr(l), amount = fmtEur(24000, l), total = fmtEur(72000, l);
   // One conversation, used for the animation and the screen-reader transcript. It leads with money; the deadline is one offer at the end.
   const ask = t("Kes mulle võlgu on?", "Who owes me money?");
-  const owed = t(`Kolm arvet on üle tähtaja, kokku ${total}. Koostasin igale viisaka meeldetuletuse.`, `Three invoices are overdue, ${total} in total. I drafted a polite reminder for each.`);
+  const owed = t(`Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${total}. Koostasin igale viisaka meeldetuletuse.`, `Your accounting software shows three invoices overdue, ${total} in total. I drafted a polite reminder for each.`);
   const card = t("Maksemeeldetuletus · 1/3", "Payment reminder · 1/3"), client = "Demo Klient OÜ";
-  const approve = t("Kinnita täpselt see", "Approve exactly this"), done = `✓ ${t("Kinnitatud", "Approved")} · ${t("Saadetud: demo", "Sent: demo")}`;
+  const approve = t("Kinnita täpselt see", "Approve exactly this"), done = `✓ ${t("Kinnitatud · Saadetud sinu e-postist: demo", "Approved · Sent from your e-mail: demo")}`;
   const allow = t("Luba sarnased automaatselt", "Allow similar ones automatically"), standing = t("Püsiluba: meeldetuletused kuni 500\u00a0€", `Standing approval: reminders up to ${fmtEur(50000, l)}`);
   const kmdDue = t("20.\u00a0nov", "20\u00a0Nov");
   const next = t("Järgmised saadan ise.", "I'll send the next ones myself.");
@@ -1454,19 +1480,24 @@ export function landingBody(o: { lang: Lang; demo: boolean }): string {
     [t("Assistent", "Assistant"), owed],
     [t("Assistent", "Assistant"), `${t("Kinnitus", "Approval")}: ${card} · ${client} · ${amount}. „${approve}”`],
     [t("Sina", "You"), t("Kinnitatud", "Approved")],
-    [t("Assistent", "Assistant"), t("Saadetud (näidis)", "Sent (sample)")],
+    [t("Assistent", "Assistant"), t("Saadetud sinu e-postist (näidis)", "Sent from your e-mail (sample)")],
     [t("Sina", "You"), allow],
     [t("Assistent", "Assistant"), `${standing}. ${next}`],
     [t("Assistent", "Assistant"), `${kmd[0]} ${kmdDue} ${kmd[1]} · ${rule} · ${kmdSource}`],
   ].map(([who, text]) => `<li>${esc(who)}: ${esc(text)}</li>`).join("");
-  const jobs: [string, string][] = [
-    [t("Võlgnikud", "Unpaid invoices"), t("Leiab tasumata arved ja saadab meeldetuletused.", "Finds unpaid invoices and sends reminders.")],
-    [t("KMD", "VAT return"), t("Kogub kuu arved ja paneb deklaratsiooni valmis. Esitad ise.", "Gathers the month's invoices and gets the return ready. You file it.")],
-    [t("Aastaaruanne", "Annual report"), t("Paneb kokku, mida aruandeks vaja. Allkirjastad ise.", "Puts together what the report needs. You sign it.")],
-    [t("Tähtajad", "Deadlines"), t("Teab sinu ettevõtte tähtaegu ja tuletab meelde.", "Knows your company's deadlines and reminds you.")],
-  ];
+  const jobs = [...LANDING_CARDS], rand = o.rand ?? Math.random;
+  for (let i = jobs.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [jobs[i], jobs[j]] = [jobs[j], jobs[i]];
+  }
+  const jobsHeading = t("Mida assistent saab ära teha", "What your assistant can take off you");
+  const connector = (c: LandingConnector) => c.g
+    ? `<a href="/kataloog?g=${esc(c.g)}">${esc(t(c.et, c.en))}</a>`
+    : `<span class="label-chip label-chip--rule">${esc(t(c.et, c.en))}</span>`;
+  const jobCards = jobs.map((job) => `<li class="job-card"><h3>${esc(t(job.et, job.en))}</h3><p>${esc(t(job.bodyEt, job.bodyEn))}</p><p class="job-needs">${esc(t("Vajab ühendusi:", "Needs connectors:"))}</p><div class="chips job-chips">${job.connectors.map(connector).join("")}</div></li>`).join("");
   const steps = [
     t("Ühenda oma ChatGPT või Claude", "Connect your ChatGPT or Claude"),
+    t("Ühenda ka oma raamatupidamisprogramm ja e-post — assistent ütleb, milline ühendus sobib", "Connect your accounting software and e-mail too — your assistant tells you which connector fits"),
     t("Küsi: „Mida saad minu kontoritööst ära teha?”", "Ask: “What office work can you take off me?”"),
     t("Kinnita ühe puudutusega — või luba edaspidi automaatselt", "Approve with one tap — or let it run automatically"),
   ];
@@ -1478,18 +1509,21 @@ export function landingBody(o: { lang: Lang; demo: boolean }): string {
   return `<div class="landing">
 <section class="landing-hero" aria-labelledby="hero-h"><div>
 <h1 id="hero-h">${t("Tegele sellega, milles oled hea.", "Focus on what you're good at.")} <span>${t("Kontoritöö teeb sinu AI-assistent.", "Your AI assistant does the office work.")}</span></h1>
-<p class="lede">${esc(t("Meeldetuletused võlgnikele, arved KMD jaoks, aastaaruande kontroll — assistent valmistab ette, sina kinnitad ühe puudutusega. Töötab sinu oma ChatGPT või Claude'iga.", "Reminders to customers who owe you, invoices for the VAT return, the annual-report checklist — your assistant prepares it, you approve with one tap. Works with your own ChatGPT or Claude."))}</p>
+<p class="lede">${esc(t("Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud lisab tähtajad, kinnitused ja kviitungid — midagi ei lähe välja ilma sinu loata. Töötab sinu oma ChatGPT või Claude'iga.", "Your assistant does the office work through your accounting, bank and e-mail connectors. AI Launchpad adds the deadlines, approvals and receipts — nothing goes out without your permission. Works with your own ChatGPT or Claude."))}</p>
 <a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a></div>
 <figure class="teaser">
 <div class="vh"><p>${t("Näidisvestlus:", "Sample conversation:")}</p><ol>${transcript}</ol></div>
 <input type="checkbox" id="teaser-pause" class="vh-input">
-<div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${t("ühendatud: AI-hüppelaud", "connected: AI Launchpad")}</small></span></div>
+<div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${esc(t("ühendatud: raamatupidamine, e-post, AI-hüppelaud", "connected: accounting, e-mail, AI Launchpad"))}</small></span></div>
 <div class="chat">${chat}</div></div></div>
 <figcaption>${sampleChip(l)}<span class="small muted">${t("Vestlus sinu ChatGPT-s või Claude'is", "A conversation in your ChatGPT or Claude")}</span><label class="teaser-pause" for="teaser-pause"><span class="tp-pause">${t("Peata animatsioon", "Pause animation")}</span><span class="tp-resume">${t("Jätka animatsiooni", "Resume animation")}</span></label></figcaption>
 </figure>
-<section class="hero-jobs" aria-labelledby="jobs-h"><h2 id="jobs-h" class="vh">${t("Mida assistent sinu eest ära teeb", "What your assistant takes off your plate")}</h2>
-<ul class="jobs">${jobs.map(([h, s], i) => `<li>${icon(JOB_ICONS[i])}<span><strong>${esc(h)}</strong>${esc(s)}</span></li>`).join("")}</ul></section></section>
-<section aria-labelledby="how-h"><h2 id="how-h">${t("Alusta 2 minutiga", "Start in 2 minutes")}</h2>
+<section class="use-cases" aria-labelledby="jobs-h"><h2 id="jobs-h">${esc(jobsHeading)}</h2>
+<ul class="job-track" id="job-track" role="region" aria-label="${esc(jobsHeading)}" tabindex="0">${jobCards}</ul>
+<div class="job-pager"><button type="button" class="secondary" aria-controls="job-track" data-job-prev hidden>${esc(t("‹ Eelmine", "‹ Previous"))}</button><button type="button" class="secondary" aria-controls="job-track" data-job-next hidden>${esc(t("Järgmine ›", "Next ›"))}</button><span class="small muted" aria-live="polite" data-job-status hidden>1 / ${jobs.length}</span></div>
+<p class="small muted use-caption">${esc(t("Näited. Raamatupidamise, panga ja e-posti ühendused on nende pakkujate omad — ", "Examples. Accounting, bank and e-mail connectors belong to their providers — "))}<a href="/kataloog">${esc(t("vaata kataloogist", "see the catalogue"))}</a>${esc(t(", mis sinu programmile olemas on.", " for what exists for your software."))}</p>
+${JOB_CAROUSEL_SCRIPT}</section></section>
+<section aria-labelledby="how-h"><h2 id="how-h">${esc(t("Kuidas alustada", "How to start"))}</h2>
 <ol class="how">${steps.map((s, i) => `<li>${icon(STEP_ICONS[i])}${i === 0 ? `<a class="how-go" href="/uhenda">${esc(s)}</a>` : `<span>${esc(s)}</span>`}</li>`).join("")}</ol>
 <p class="how-cta"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a>${o.demo ? `<a class="tap-link" href="/login">${t("Vaata näidisettevõtet", "See the sample company")}</a>` : ""}</p></section>
 <ul class="trust" aria-label="${t("Mida me lubame", "What we promise")}">${trust.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
