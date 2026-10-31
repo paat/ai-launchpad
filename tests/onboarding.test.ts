@@ -9,6 +9,7 @@ type Grant = Record<string, unknown>;
 function body(over: Partial<Parameters<typeof connectionBody>[0]> & { grants?: Grant[] } = {}): string {
   const { grants, ...rest } = over;
   return connectionBody({
+    lang: "en",
     csrf: "csrf-token",
     baseUrl: "https://launchpad.example.com",
     reportingEnabled: false,

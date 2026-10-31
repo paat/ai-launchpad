@@ -34,25 +34,25 @@ for (const width of [390, 320]) {
     await expect(page.getByText("Säästetud aega ei ole mõõdetud, seega me seda ei näita.")).toBeVisible();
     await expect(page.getByText(/Arvete koostamine — teed praegu ise/)).toBeVisible();
 
-    // Data and permissions (English management page): grant sharing, issue a token (shown once, never in the URL).
+    // Data and permissions (in the UI language, #63 m9): grant sharing, issue a token (shown once, never in the URL).
     await page.goto("/uhenda");
     await page.getByRole("link", { name: "Andmed ja õigused" }).last().click();
     await expect(page).toHaveURL(/\/connection$/);
-    const stop = page.getByRole("button", { name: "Stop progress sharing" });
+    const stop = page.getByRole("button", { name: "Lõpeta töö käigu jagamine" });
     if (await stop.isVisible()) await stop.click();
-    await expect(page.getByText(/Currently:/)).toContainText("off");
-    await page.getByRole("button", { name: "Allow progress sharing" }).click();
-    await expect(page.getByText(/Currently:/)).toContainText("on");
-    await expect(page.getByRole("button", { name: /Issue assistant token/ })).toBeHidden();
-    await page.getByText("Advanced: manual tokens").click();
-    await page.getByRole("button", { name: /Issue assistant token/ }).click();
+    await expect(page.getByText(/^Praegu:/)).toContainText("väljas");
+    await page.getByRole("button", { name: "Luba töö käigu jagamine" }).click();
+    await expect(page.getByText(/^Praegu:/)).toContainText("sees");
+    await expect(page.getByRole("button", { name: /Väljasta assistendi võti/ })).toBeHidden();
+    await page.getByText("Edasijõudnutele: käsitsi võtmed").click();
+    await page.getByRole("button", { name: /Väljasta assistendi võti/ }).click();
     await expect(page.getByRole("heading", { name: "Your new assistant token" })).toBeVisible();
     expect(page.url()).not.toContain("lp_");
     await page.screenshot({ path: `${SHOTS}/connection-${width}.png`, fullPage: true });
 
     await page.goto("/connection");
-    await page.getByRole("button", { name: "Stop progress sharing" }).click();
-    await expect(page.getByText(/Currently:/)).toContainText("off");
+    await page.getByRole("button", { name: "Lõpeta töö käigu jagamine" }).click();
+    await expect(page.getByText(/^Praegu:/)).toContainText("väljas");
 
     // Tehtud shows the seeded sample honestly, in plain verbs.
     await page.getByRole("navigation", { name: "Peamenüü" }).getByRole("link", { name: "Tehtud", exact: true }).click();

@@ -241,7 +241,7 @@ async function startRouteApp(db: Db) {
   return { base, server };
 }
 async function getConnection(base: string, cookie: string, query = "") {
-  const r = await fetch(`${base}/connection${query}`, { headers: { cookie }, redirect: "manual" });
+  const r = await fetch(`${base}/connection?lang=en${query.replace(/^\?/, "&")}`, { headers: { cookie }, redirect: "manual" });
   return { status: r.status, html: await r.text() };
 }
 async function stopServer(server: Server) {
@@ -403,7 +403,7 @@ test("revoked grant keeps history with revoked access; owner delete clears histo
 });
 
 test("standalone view defaults to no evidence; synthetic never shows real milestones; displayed values escaped", () => {
-  const baseOpts = { csrf: "csrf-x", baseUrl: "https://launchpad.example.com", reportingEnabled: false, tokens: [] as Record<string, unknown>[], grants: [] as Record<string, string>[], candidates: [] as Record<string, string>[] };
+  const baseOpts = { lang: "en" as const, csrf: "csrf-x", baseUrl: "https://launchpad.example.com", reportingEnabled: false, tokens: [] as Record<string, unknown>[], grants: [] as Record<string, string>[], candidates: [] as Record<string, string>[] };
   const bare = connectionBody(baseOpts);
   expect(bare).toContain("No request recorded in retained history");
   expect(bare).not.toMatch(/Last request received|Assessment saved/);
@@ -458,8 +458,8 @@ test("connection render and route read initiate no source writes and add no appr
   const { base, server } = await startRouteApp(db);
   try {
     const before = counts(db, "quiet2");
-    connectionBody({ csrf: "c", baseUrl: "https://launchpad.example.com", reportingEnabled: false, tokens: [], grants: [], candidates: [] });
-    connectionBody({ csrf: "c", baseUrl: "https://launchpad.example.com", reportingEnabled: false, tokens: [], grants: [], candidates: [], milestones: { synthetic: false, lastContact: null, firstSavedAssessment: null } });
+    connectionBody({ lang: "en", csrf: "c", baseUrl: "https://launchpad.example.com", reportingEnabled: false, tokens: [], grants: [], candidates: [] });
+    connectionBody({ lang: "en", csrf: "c", baseUrl: "https://launchpad.example.com", reportingEnabled: false, tokens: [], grants: [], candidates: [], milestones: { synthetic: false, lastContact: null, firstSavedAssessment: null } });
     const r = await getConnection(base, sess.cookie);
     expect(r.status).toBe(200);
     expect(historySection(r.html)).not.toMatch(/approv|ratif|counter|checkbox/i);

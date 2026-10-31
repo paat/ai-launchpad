@@ -10,7 +10,7 @@ const FIRST_REQUEST =
   "Use AI Launchpad to review what you know about my business admin. Tell me what is still unknown and recommend one next action that would remove the most work. Do not change any business service.";
 const ENDPOINT = "https://launchpad.example.com/mcp";
 const body = (baseUrl = "https://launchpad.example.com/") =>
-  connectionBody({ csrf: "synthetic-csrf", baseUrl, reportingEnabled: false, tokens: [], grants: [], candidates: [] });
+  connectionBody({ lang: "en", csrf: "synthetic-csrf", baseUrl, reportingEnabled: false, tokens: [], grants: [], candidates: [] });
 
 // 1. Normalized IPv4-mapped IPv6 must stay setup-pending; public HTTPS keeps unverified copy.
 for (const baseUrl of [
