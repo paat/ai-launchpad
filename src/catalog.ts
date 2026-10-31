@@ -64,7 +64,7 @@ export const PLAYBOOKS: Playbook[] = [
       "For each row with a playbook_id, offer in one line to prepare it and ask whether to start. Then follow that playbook's steps.",
     ],
     approval_kind: null, done_when: "The owner has seen each deadline with its source and has said which jobs to prepare.", verify_with: "Each row's official source link." },
-  { id: "connect-service", title: "Link the owner's accounting, e-mail or bank", title_et: "Ühenda oma raamatupidamine, e-post või pank",
+  { id: "connect-service", title: "Link the owner's accounting or e-mail", title_et: "Ühenda oma raamatupidamine või e-post",
     summary: "Your assistant asks what you want linked and which one you use, then walks you through it, one step at a time, in plain words. You do the logins yourself, and your keys never go through the chat.",
     source: "https://abiinfo.rik.ee/index.php/e-arveldaja/e-arveldaja-api/e-arveldaja-api-votme-genereerimine", source_label: "RIK e-arveldaja: API võtme genereerimine (raamatupidamise haru / accounting branch)",
     triggers: [],
