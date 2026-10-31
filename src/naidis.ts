@@ -31,11 +31,11 @@ export const twoDeadlines: DeadlinesView = { ...mariDeadlines, obligations: mari
 export const tanaHandover = computeHandover({ assessment: demoAssessment, obligations: mari.obligations, approvals: [pendingApproval], rules: [], now: NOW });
 export const sentTo = (i: number, name: string, address: string, cents: number): ApprovalRow => {
   const outcome = i === 2 ? "paid" : "sent", observed_at = `2026-11-0${i}T09:10:00Z`;
-  return { ...pendingApproval, id: `appr_sent_${i}`, state: "consumed", decided_at: `2026-11-0${i}T09:00:00Z`, consumed_at: observed_at,
+  return { ...pendingApproval, id: `appr_sent_${i}`, state: "consumed", created_at: `2026-11-0${i}T08:55:00Z`, decided_at: `2026-11-0${i}T09:00:00Z`, consumed_at: observed_at,
     outcome_json: JSON.stringify({ outcome, observed_at, history: outcome === "paid" ? [{ outcome: "sent", observed_at: `2026-11-0${i}T09:05:00Z` }, { outcome, observed_at }] : [{ outcome, observed_at }] }), payload_json: JSON.stringify({ ...reminder, recipient: { name, address }, amount_cents: cents }) };
 };
 export const week2 = [sentTo(1, "Demo Klient OÜ", "arved@demo-klient.example", 12000), sentTo(2, "Põhja Puit OÜ", "raamat@pohja-puit.example", 24000), sentTo(3, "Demo Klient OÜ", "arved@demo-klient.example", 18000),
-  pendingApproval, { ...pendingApproval, id: "appr_expired", state: "expired", decided_at: "2026-11-02T08:00:00Z", expires_at: "2026-11-03T08:00:00Z" }];
+  pendingApproval, { ...pendingApproval, id: "appr_expired", state: "expired", created_at: "2026-11-02T07:55:00Z", decided_at: "2026-11-02T08:00:00Z", expires_at: "2026-11-03T08:00:00Z" }]; // #75: created before its decision, unused and expired 24 h later — the „Käest ära” expired-unused row links here
 export const uhendaHandover = computeHandover({ assessment: demoAssessment, obligations: mari.obligations, approvals: week2, rules: [], now: NOW });
 const syntheticApprovals = [longApproval, pendingApproval, longLetterApproval, approvedApproval, ...week2];
 export const naidisApproval = (id: string) => syntheticApprovals.find((a) => a.id === id);

@@ -140,12 +140,32 @@ describe("#21 public synthetic walkthrough", () => {
     }
   });
 
+  test("every synthetic approval was created before it expires and never decided before it was created", () => {
+    const approvals = [NAIDIS.longApproval, NAIDIS.pendingApproval, NAIDIS.longLetterApproval, NAIDIS.approvedApproval, ...NAIDIS.week2];
+    for (const a of approvals) {
+      expect(Date.parse(a.created_at), a.id).toBeLessThan(Date.parse(a.expires_at));
+      if (a.decided_at) expect(Date.parse(a.created_at), a.id).toBeLessThanOrEqual(Date.parse(a.decided_at));
+    }
+  });
+
   test("an unknown synthetic approval id renders a 404 page without writes", async () => {
     const before = counts();
     const response = await fetch(`${base}/naidis/kinnitus/not-a-sample-approval`);
     expect(response.status).toBe(404);
     expect(response.headers.get("set-cookie")).toBeNull();
     expect(await response.text()).toContain("Kinnitust ei leitud");
+    expect(counts()).toEqual(before);
+  });
+
+  test("the English 404 keeps the language on its back link", async () => {
+    const before = counts();
+    const response = await fetch(`${base}/naidis/kinnitus/not-a-sample-approval?lang=en`);
+    expect(response.status).toBe(404);
+    expect(response.headers.get("set-cookie")).toBeNull();
+    const html = await response.text();
+    expect(html).toContain('<html lang="en">');
+    expect(html).toContain("This sample approval does not exist.");
+    expect(html).toContain('<a class="btn secondary" href="/naidis?lang=en">Back to the sample</a>');
     expect(counts()).toEqual(before);
   });
 

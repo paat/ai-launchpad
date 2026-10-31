@@ -453,7 +453,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const l = langOf(res), a = naidisApproval(req.params.id);
     if (!a) {
       const title = tr(l)("Kinnitust ei leitud", "Approval not found");
-      return res.status(404).type("html").send(publicPage(req, res, title, errorBody(l, title, tr(l)("Seda näidiskinnitust pole.", "This sample approval does not exist."), { href: "/naidis", label: tr(l)("Tagasi näidisesse", "Back to the sample") }), { sample: true }));
+      return res.status(404).type("html").send(publicPage(req, res, title, errorBody(l, title, tr(l)("Seda näidiskinnitust pole.", "This sample approval does not exist."), { href: `/naidis${l === "en" ? "?lang=en" : ""}`, label: tr(l)("Tagasi näidisesse", "Back to the sample") }), { sample: true }));
     }
     res.type("html").send(publicPage(req, res, tr(l)("Kinnitus", "Approval"), naidisBody("kinnitus", l, a), { sample: true }));
   });
