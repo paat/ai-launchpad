@@ -10,7 +10,7 @@ import { openDb, sha256, newId, nowIso } from "../src/db.js";
 import { ICS_DISCLAIMER, ICS_NO_COMPANY, deadlinesCalendar, foldLine, icsText } from "../src/ics.js";
 import { computeObligations, tallinnDate, validRegistryCode } from "../src/obligations.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
-import { calendarOnceBody } from "../src/views.js";
+import { calendarOnceBody, fmtEur } from "../src/views.js";
 
 // Issue #29: the owner's deadlines as a secret, read-only .ics feed.
 const TODAY = new Date("2026-10-30T10:00:00Z");
@@ -196,7 +196,14 @@ describe("calendar feed over HTTP", () => {
     const ics = unfold(await (await feed(path)).text());
     expect(ics).toContain("BEGIN:VEVENT");
     const a = DEMO_FIXTURES.alpha;
-    for (const s of ["Salajane Klient", "klient@customer.example", "1234", "SECRET-INVOICE-77", "SECRET-APPROVAL-BODY", "SECRET-NEED-TEXT", a.conclusion, a.next_action.title, ...a.responsibilities.map((r) => r.label), ...a.responsibilities.map((r) => r.reason)]) expect(ics, s).not.toContain(icsText(s));
+    for (const s of [
+      "Salajane Klient", "klient@customer.example",
+      "1234,56", "1\u00a0234,56", "1,234.56", fmtEur(123456, "et"), fmtEur(123456, "en"),
+      "SECRET-INVOICE-77", "SECRET-APPROVAL-BODY", "SECRET-NEED-TEXT",
+      a.conclusion, a.next_action.title,
+      ...a.responsibilities.map((r) => r.label),
+      ...a.responsibilities.map((r) => r.reason),
+    ]) expect(ics, s).not.toContain(icsText(s));
   });
 
   test("revoke, an unknown token and progress deletion all give 404 with no body", async () => {
