@@ -47,36 +47,41 @@ describe("executable job playbooks (#26)", () => {
     expect(remind).toMatch(/request_approval with action kind send_message.*get_approval.*record_action_outcome with outcome sent.*Record paid only after a sent outcome, with a NEW report_id.*only if you see the payment/s);
   });
 
-  test("connect-service: owner does the login, keys never go through the chat, read-only check only", () => {
+  test("connect-service: plain words, one branch per service, owner does logins, keys never in chat, read-only", () => {
     const p = byId("connect-service");
     expect(p).toMatchObject({ approval_kind: null, triggers: [] });
-    const steps = p.steps.join(" ");
-    expect(p.steps[1]).toMatch(/^Ask one question unless the owner already said it: what should be linked \(accounting software, e-mail or bank\).*Follow only the branch for that service/);
-    expect(steps).toContain("Call search_services: for accounting software with \"werkzeug\", for e-mail or a bank with the product's own name.");
-    expect(steps).toContain("Bank: explain only what the matching search_services entry documents and stop there. Never start a bank key, credential or payment setup.");
-    expect(p.steps.at(-1)).toContain("Verify only the service the owner asked for");
-    expect(p.steps[0]).toMatch(/^Speak plainly: the owner may not know what MCP, a connector or an API is/);
-    expect(steps).toContain("Proton Mail has no connector; do not offer community e-mail servers from the catalogue. Setup sends nothing: messages go out only from a job playbook after its approval");
-    expect(steps).toContain("e-mail, only the date of the newest message, with no subject or content.");
-    expect(steps).toContain("own Smart-ID or ID-card (never automate the login)");
-    expect(steps).toContain("Never ask for keys, passwords or PINs in the chat. If the owner pastes one here, do not repeat, store or pass it to any tool; tell them to delete that permit, create a new one and delete the chat message.");
+    const [rules, ask, ...rest] = p.steps;
+    const verify = rest.at(-1)!;
+    expect(rules).toMatch(/^Speak plainly: the owner may not know what MCP, a connector or an API is/);
+    expect(rules).toContain("This playbook never writes, sends or calls request_approval");
+    expect(rules).toContain("Never ask for keys, passwords or PINs in the chat; if the owner pastes one here, do not repeat, store or pass it to any tool");
     expect(p.needs.join(" ")).toContain("never ask for, repeat or accept a password or PIN in the chat");
-    expect(steps).toContain("leaves only reading functions ticked if the permit offers a choice, then saves and downloads the key file");
-    expect(steps).toContain("This playbook never writes and never calls request_approval; any later change or message belongs to the job's own playbook and its approval.");
-    const accounting = p.steps.find((x) => x.startsWith("Accounting:"))!;
-    expect(accounting.indexOf("Before any key is created, choose reading only")).toBeLessThan(accounting.indexOf("Then guide the owner to create the key"));
-    expect(accounting).toContain("never offer community or local servers from the catalogue");
-    expect(accounting).toContain("then stop and wait: continue only after the owner explicitly agrees, and if they decline, explain that it cannot be linked read-only yet.");
+    expect(ask).toMatch(/^Ask one question unless the owner already said it: what should be linked \(accounting software, e-mail or bank\)/);
+    expect(ask).toContain("Follow only the steps that start with that service's name, then the last step.");
+    // Branch-specific steps are scoped by their prefix; each non-accounting branch ends explicitly.
+    const branch = rest.slice(0, -1);
+    for (const x of branch) expect(x).toMatch(/^(E-mail|Bank|Accounting): /);
+    const email = branch.filter((x) => x.startsWith("E-mail:")), bank = branch.filter((x) => x.startsWith("Bank:")), acc = branch.filter((x) => x.startsWith("Accounting:"));
+    expect([email.length, bank.length]).toEqual([1, 1]);
+    expect(email[0]).toMatch(/do not search or quote catalogue entries for it.*Then go to the last step\.$/);
+    expect(bank[0]).toMatch(/Never start a bank key, credential or payment setup\. Then stop: skip the last step\.$/);
+    for (const s of ["paste the key values", "Add custom connector", "API access permits", "search_services with \"werkzeug\""]) {
+      expect(branch.filter((x) => x.includes(s)).every((x) => x.startsWith("Accounting:")), s).toBe(true);
+      expect(acc.some((x) => x.includes(s)), s).toBe(true);
+    }
+    const readOnly = acc.findIndex((x) => x.includes("before any key is created, choose reading only"));
+    const create = acc.findIndex((x) => x.includes("guide the owner to create the key"));
+    expect(readOnly).toBeGreaterThanOrEqual(0);
+    expect(readOnly).toBeLessThan(create);
+    expect(acc[readOnly]).toContain("then stop and wait: continue only after the owner explicitly agrees. If they decline, explain that it cannot be linked read-only yet and stop: skip all remaining steps.");
+    expect(acc.join(" ")).toContain("own Smart-ID or ID-card (never automate the login)");
+    expect(acc.join(" ")).toContain("never offer community or local servers from the catalogue");
+    expect(acc.join(" ")).toContain("in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.");
+    expect(acc.join(" ")).toContain("removing AI Launchpad stops deadlines and approvals, and suggest upgrading the plan.");
+    expect(verify).toMatch(/^Verify only the service the owner asked for/);
+    expect(verify).toContain("e-mail, only the date of the newest message, with no subject or content.");
+    expect(verify).toContain("Do not create, change, delete or send anything during setup.");
     for (const id of ["payment-reminder", "vat-return-prep", "annual-report"]) expect(byId(id).needs[0], id).toContain("(if no accounting connector answers yet, follow the connect-service playbook)");
-    expect(steps).toContain("Erply Books or other software: follow only the connector's own published setup guide.");
-    // Same menu paths as the Connection page (src/views.ts connectionBody).
-    expect(steps).toContain("in Claude, Customize → Connectors → Add custom connector (");
-    expect(steps).toContain("; in ChatGPT, Plugins → add a custom MCP server.");
-    expect(steps).toContain("Claude phone app: Settings → Connectors → + → Add custom connector");
-    expect(steps).toContain("Paste the company-specific MCP URL shown on the connector's dashboard, not the catalogue address");
-    expect(steps).toContain("Claude's free plan allows one custom connector and AI Launchpad already uses it");
-    expect(steps).toContain("removing AI Launchpad stops deadlines and approvals, and suggest upgrading the plan.");
-    expect(steps).toContain("Do not create, change, delete or send anything during setup.");
   });
 
   test("every trigger is a rule_id the engine can emit, mapped to one playbook, with the same official source", () => {
