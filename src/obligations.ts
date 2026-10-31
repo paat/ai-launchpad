@@ -5,7 +5,8 @@
 /** "synthetic": made-up Näidis / Sample fixtures, never register data. */
 export type Provenance = "public_register" | "assistant_supplied" | "assumption" | "synthetic";
 export interface Fact<T> { value: T; provenance: Provenance; as_of?: string; source?: string; }
-export interface AnnualReportFigures { year: number; revenue: number | null; net_profit: number | null; total_assets: number | null; equity: number | null; liabilities: number | null; }
+/** Only lines the register reports as numbers; an absent line is unknown, never zero. */
+export interface AnnualReportFigures { year: number; revenue?: number; net_profit?: number; total_assets?: number; equity?: number; liabilities?: number; }
 export interface AnnualReportStatus { latest_year: number | null; filed: boolean | null; overdue_days: number | null; }
 export interface CompanyFacts {
   company_name?: Fact<string>; registry_code?: Fact<string>;
