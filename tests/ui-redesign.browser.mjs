@@ -210,7 +210,7 @@ try {
   await page.keyboard.press("Tab");
   assert.equal(await page.evaluate(() => document.activeElement.value), "decline", "then decline");
   geometry.ticket = ticket;
-  // review-polish-grok medium: at 320 the bar wraps to two rows, and scroll-padding must still cover all of it.
+  // review-polish-grok medium: at 320 scroll-padding must cover the whole bar.
   // Tab from the top to approve, then decline: nothing focused before the bar ends under it, and both buttons are fully on screen.
   await page.setViewportSize({ width: 320, height: 740 });
   await page.setContent(pageHtml["approval-pending"]());
@@ -230,6 +230,23 @@ try {
     else assert.ok(s.bottom <= s.barTop + 0.5, `320: focused ${s.tag} ends above the bar ${JSON.stringify(s)}`);
   }
   geometry.focus320 = stops.map(({ tag, value, bottom, barTop, barH, pad }) => ({ tag, value, bottom, barTop, barH, pad }));
+  // #63 m8: from 300 px up, the bar is one row in ET and EN: „Keeldu” is a compact text button beside the approve button, both ≥44 px, and scroll-padding covers the bar.
+  for (const width of [300, 320]) for (const lang of ["et", "en"]) {
+    await page.setViewportSize({ width, height: 568 });
+    await page.setContent(shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, lang, body: approvalCardBody({ csrf: CSRF, a: pendingApproval, lang, sample: true, now: NOW }) }));
+    const bar = await page.evaluate(() => {
+      const box = (sel) => document.querySelector(sel).getBoundingClientRect(), ap = box("button[value=approve]"), de = box("button[value=decline]"), b = box("form.decide");
+      return { barH: Math.round(b.height), apTop: ap.top, apBottom: ap.bottom, deTop: de.top, deBottom: de.bottom, apH: ap.height, deH: de.height, apW: ap.width, deW: de.width,
+        pad: parseFloat(getComputedStyle(document.documentElement).scrollPaddingBottom), scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth };
+    });
+    assert.ok(bar.deTop < bar.apBottom && bar.apTop < bar.deBottom, `m8 ${width}/${lang}: approve and decline share one row ${JSON.stringify(bar)}`);
+    assert.ok(bar.barH <= 100, `m8 ${width}/${lang}: one-row bar, not two (${bar.barH}px)`);
+    assert.ok(bar.apH >= 44 && bar.deH >= 44, `m8 ${width}/${lang}: targets >= 44px ${JSON.stringify(bar)}`);
+    assert.ok(bar.barH <= bar.pad, `m8 ${width}/${lang}: scroll-padding ${bar.pad}px covers the ${bar.barH}px bar`);
+    assert.ok(bar.scrollW <= bar.clientW + 1, `m8 ${width}/${lang}: no overflow ${JSON.stringify(bar)}`);
+    if (width === 320) await page.screenshot({ path: path.join(T2_SHOTS, `t2-approval-pending-320x568-${lang}.png`) });
+    (geometry.bar568 ??= {})[`${width}-${lang}`] = bar;
+  }
 
   await page.setContent(pageHtml["approval-approved"]());
   const approvedState = await page.evaluate(() => ({ status: [...document.querySelectorAll("main [role=status]")].map((el) => el.textContent.slice(0, 24)),
