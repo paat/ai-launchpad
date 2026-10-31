@@ -6,7 +6,7 @@ import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
 import { arikratt } from "./arikratt.js";
 import { approvalAddressMissing, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, liveStandingRules, logActivity, normAddress, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, TOOL_ARG_KEYS, type ApprovalRow, type StandingRule } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
-import { computeHandover, handoverObligations, largestAmount, offerCapCents, standingBasis } from "./handover.js";
+import { computeHandover, handoverObligations, isDone, largestAmount, offerCapCents, standingBasis } from "./handover.js";
 import type { Assessment } from "./core.js";
 import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
@@ -588,14 +588,17 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const rows = db.prepare("SELECT * FROM approvals WHERE owner_id=? ORDER BY state='pending' DESC, created_at DESC LIMIT 200").all(oid(req)) as ApprovalRow[];
     res.type("html").send(page(req, res, tr(langOf(res))("Kinnitused", "Approvals"), "none", approvalsListBody(rows, langOf(res), (req as Authed).ownerKind === "demo")));
   });
-  app.get("/approvals/:id", requireOwner, (req, res) => {
+  app.get("/approvals/:id", requireOwner, async (req, res, next) => { try {
     const t = tr(langOf(res));
     const a = getApproval(db, oid(req), req.params.id);
     if (!a) return ownerError(req, res, 404, t("Kinnitust ei leitud", "Approval not found"), t("Sellist kinnitust sinu tööruumis pole. Midagi ei kinnitatud.", "Approval not found in your workspace. Nothing was approved."));
-    res.type("html").send(page(req, res, t("Kinnitus", "Approval"), "none", approvalCardBody({ csrf: (req as Authed).csrf, a, lang: langOf(res), sample: (req as Authed).ownerKind === "demo", rules: ownerRules(oid(req)),
+    // Once the assistant has recorded a done outcome, the receipt shows the owner's „Käest ära” strip (#63).
+    const assessment = isDone(a) ? getState(db, oid(req)).assessment : null;
+    const handover = isDone(a) ? ownerHandover(oid(req), assessment, await ownerDeadlines(assessment)) : undefined;
+    res.type("html").send(page(req, res, t("Kinnitus", "Approval"), "none", approvalCardBody({ csrf: (req as Authed).csrf, a, lang: langOf(res), sample: (req as Authed).ownerKind === "demo", rules: ownerRules(oid(req)), handover,
       // The same default cap as the Ühendus offer, from this send and the owner's past approvals of its job (QA m4).
       capCents: offerCapCents(largestAmount([a, ...standingBasis(db.prepare("SELECT * FROM approvals WHERE owner_id=? AND kind=?").all(oid(req), a.kind ?? "") as ApprovalRow[], a.kind ?? "")])) })));
-  });
+  } catch (e) { next(e); } });
   app.post("/approvals/:id/decide", requireOwner, csrfOk, (req, res) => {
     const t = tr(langOf(res));
     const decision = bodyOf(req).decision;

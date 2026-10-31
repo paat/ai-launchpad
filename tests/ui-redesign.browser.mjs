@@ -85,6 +85,8 @@ const pageHtml = {
     shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "chatgpt", state: { kind: "anon" }, owner: false }) }),
   "approval-receipt-long": () =>
     shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: longApproval, lang: "et", sample: true, now: NOW }) }),
+  "approval-receipt-strip": () =>
+    shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: { ...week2[0], outcome_json: longApproval.outcome_json }, lang: "et", sample: true, now: NOW, handover: uhendaHandover }) }),
   "approval-pending": () =>
     shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: pendingApproval, lang: "et", sample: true, now: NOW }) }),
   "approval-approved": () =>
@@ -117,7 +119,7 @@ try {
 
   // New pages: every visible stand-alone a[href] is a tap target too. A link inside running text (its parent
   // has its own words besides separators) is exempt; the redesign's legacy English pages are not in scope.
-  const NEW_PAGES = new Set(["status-assessed", "tana-demo", "status-unassessed", "activity", "login", "landing", "landing-en", "uhenda", "uhenda-ho", "uhenda-local", "approval-receipt-long", "approval-pending", "approval-approved", "approvals"]);
+  const NEW_PAGES = new Set(["status-assessed", "tana-demo", "status-unassessed", "activity", "login", "landing", "landing-en", "uhenda", "uhenda-ho", "uhenda-local", "approval-receipt-long", "approval-receipt-strip", "approval-pending", "approval-approved", "approvals"]);
   const overflowAndTargets = (allAnchors) => page.evaluate((allAnchors) => {
     const de = document.documentElement;
     const targets = [];
@@ -314,6 +316,16 @@ try {
     await page.locator("#kaest-ara").screenshot({ path: path.join(T2_SHOTS, `t5-uhendus-${vp.width}.png`) });
     geometry[`t5uhendus${vp.width}`] = ho;
   }
+
+  // #63 wow: after „Saadetud” the receipt carries the „Käest ära” strip, so the approval and the progress show in one shot.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setContent(pageHtml["approval-receipt-strip"]());
+  await settle();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const receiptStrip = await boxInFirstViewport('.ticket .ho-strip[href="/uhenda#kaest-ara"]');
+  assert.ok(receiptStrip?.visible && receiptStrip.height >= 44, `receipt-strip@390: strip in the first viewport, ≥ 44 px ${JSON.stringify(receiptStrip)}`);
+  await page.screenshot({ path: path.join(T2_SHOTS, "receipt-strip-390.png") });
+  geometry.receiptStrip = receiptStrip;
 
   // --- T4 (#59) landing fold: header, headline, button and the four jobs in the first 1280×800 viewport beside a 600 px phone
   // whose last bubble is not clipped; at 390 the fold shows the headline, the button and the top of the phone ---
