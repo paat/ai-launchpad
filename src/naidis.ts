@@ -32,7 +32,7 @@ export const tanaHandover = computeHandover({ assessment: demoAssessment, obliga
 export const sentTo = (i: number, name: string, address: string, cents: number): ApprovalRow => {
   const outcome = i === 2 ? "paid" : "sent", observed_at = `2026-11-0${i}T09:10:00Z`;
   return { ...pendingApproval, id: `appr_sent_${i}`, state: "consumed", decided_at: `2026-11-0${i}T09:00:00Z`, consumed_at: observed_at,
-    outcome_json: JSON.stringify({ outcome, observed_at, history: [{ outcome, observed_at }] }), payload_json: JSON.stringify({ ...reminder, recipient: { name, address }, amount_cents: cents }) };
+    outcome_json: JSON.stringify({ outcome, observed_at, history: outcome === "paid" ? [{ outcome: "sent", observed_at: `2026-11-0${i}T09:05:00Z` }, { outcome, observed_at }] : [{ outcome, observed_at }] }), payload_json: JSON.stringify({ ...reminder, recipient: { name, address }, amount_cents: cents }) };
 };
 export const week2 = [sentTo(1, "Demo Klient OÜ", "arved@demo-klient.example", 12000), sentTo(2, "Põhja Puit OÜ", "raamat@pohja-puit.example", 24000), sentTo(3, "Demo Klient OÜ", "arved@demo-klient.example", 18000),
   pendingApproval, { ...pendingApproval, id: "appr_expired", state: "expired", decided_at: "2026-11-02T08:00:00Z", expires_at: "2026-11-03T08:00:00Z" }];
@@ -81,12 +81,14 @@ export function naidisBody(step: NaidisStep, lang: Lang, approval = pendingAppro
   const note = step === "tana"
     ? t("Mis ootab sinult, mida assistent tegi ja mis on tulekul. Tähtajad arvutab reeglistik.", "What waits for you, what the assistant did and what is coming. Deadlines are calculated by rules.")
     : step === "kinnitus"
-      ? t("Assistent küsib kinnitust täpselt sellele saajale, summale ja perioodile. Muudatus vajab uut kinnitust.", "The assistant asks you to approve exactly this recipient, amount and period. Any change needs a new approval.")
+      ? approval.state === "pending"
+        ? t("Assistent küsib kinnitust täpselt sellele saajale, summale ja perioodile. Muudatus vajab uut kinnitust.", "The assistant asks you to approve exactly this recipient, amount and period. Any change needs a new approval.")
+        : t("Kviitung: mis selle kinnitusega tehti ja millal.", "Receipt: what was done with this approval and when.")
       : t("Iga toimingu kviitung ja see, mis on sinu käest ära.", "A receipt for every action and what is off your plate.");
   return `<section class="naidis-frame" aria-label="${esc(t("Näidise juhend", "Sample guide"))}">
 <p class="naidis-banner">${esc(t("Näidis: väljamõeldud ettevõte Mari Disain OÜ. Siin ei saa midagi kinnitada ega saata. Päris tööruumis teeb seda sinu assistent ja kinnitad sina.", "Sample: the made-up company Mari Disain OÜ. Nothing can be approved or sent here. In a real workspace your assistant does this and you approve."))}</p>
 <nav class="naidis-steps" aria-label="${esc(t("Näidise sammud", "Sample steps"))}">${steps.map(([key, href, label]) => `<a href="${href}${lang === "en" ? "?lang=en" : ""}"${key === step ? ' aria-current="page"' : ""}>${esc(label)}</a>`).join("")}</nav>
 <p class="naidis-note">${esc(note)}</p></section>
 <fieldset disabled class="naidis-ro">${sampleLinks(body, lang)}</fieldset>
-${step === "tehtud" ? `<p class="naidis-cta"><a class="btn" href="/uhenda">${esc(t("Ühenda oma assistent", "Connect your assistant"))}</a></p>` : ""}`;
+${step === "tehtud" ? `<p class="naidis-cta"><a class="btn" href="/uhenda${lang === "en" ? "?lang=en" : ""}">${esc(t("Ühenda oma assistent", "Connect your assistant"))}</a></p>` : ""}`;
 }

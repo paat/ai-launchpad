@@ -115,6 +115,8 @@ describe("#21 public synthetic walkthrough", () => {
     expect(html).toContain("Käest ära:");
     expect(html).toContain("Iga toimingu kviitung ja see, mis on sinu käest ära.");
     expect(html).toContain('<p class="naidis-cta"><a class="btn" href="/uhenda">Ühenda oma assistent</a></p>');
+    const english = await (await fetch(`${base}/naidis/tehtud?lang=en`)).text();
+    expect(english).toContain('<p class="naidis-cta"><a class="btn" href="/uhenda?lang=en">Connect your assistant</a></p>');
   });
 
   test("every rendered approval link resolves to that approval's recipient and amount", async () => {
@@ -153,7 +155,9 @@ describe("#21 public synthetic walkthrough", () => {
     expect(sent).not.toContain("Saadetud: ootab assistendi teadet");
     const paid = await (await fetch(`${base}/naidis/kinnitus/appr_sent_2`)).text();
     expect(paid).toContain("Makstud: demo");
-    expect(paid).not.toContain("Makstud: ootab");
+    expect(paid).not.toContain("Saadetud: ootab assistendi teadet");
+    expect(paid).toContain("Kviitung: mis selle kinnitusega tehti ja millal.");
+    expect(paid).not.toContain("Assistent küsib kinnitust täpselt sellele saajale, summale ja perioodile. Muudatus vajab uut kinnitust.");
   });
 
   test("the handover strip links to the detailed section on Tehtud", async () => {
