@@ -532,6 +532,7 @@ const dtf = (o: Intl.DateTimeFormatOptions) => byLang((loc) => new Intl.DateTime
 const TIME = dtf({ timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const DAY = dtf({ timeZone: TZ, day: "numeric", month: "short" });
 const C_DAY_MON = dtf({ timeZone: "UTC", day: "numeric", month: "short" });
+const C_DAY_MON_YEAR = dtf({ timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
 const C_WEEKDAY = dtf({ timeZone: "UTC", weekday: "long" });
 const C_PERIOD = dtf({ timeZone: "UTC", month: "long", year: "numeric" });
 const TODAY = dtf({ timeZone: TZ, weekday: "long", day: "numeric", month: "long" });
@@ -936,7 +937,7 @@ function handoverRow(j: Job, l: Lang, now: Date): string {
   const lines: string[] = [];
   if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.auto ? t(`, neist <span class="num">${e.auto}</span> ilma sinuta`, `, <span class="num">${e.auto}</span> without you`) : ""}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
   if (e.rule) lines.push(esc(t(`Püsiluba: ${standingRuleName(e.rule, l)} · aegub ${DAY.et.format(new Date(e.rule.expires_at))}`, `Standing approval: ${standingRuleName(e.rule, l)} · ends ${DAY.en.format(new Date(e.rule.expires_at))}`)));
-  if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${fmtDeadline(j.due, l)}`, `Was due ${fmtDeadline(j.due, l)}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}`);
+  if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${C_DAY_MON_YEAR.et.format(civil(j.due))}`, `Was due ${C_DAY_MON_YEAR.en.format(civil(j.due))}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}`);
   if (j.source === "assessment" && j.rung !== "other" && j.assessed) lines.push(`„${esc(j.assessed.reason)}” ${assessedChip}`);
   if (j.rung === "mine" && HO_CAN[j.id]) lines.push(esc(t(...HO_CAN[j.id])));
   if (e.pending) lines.push(stateChip("waiting", t(`${e.pending} ootab sinu kinnitust`, `${e.pending} waiting for your approval`)));

@@ -65,6 +65,9 @@ export function jobOfApproval(a: ApprovalRow): string | null {
   return null;
 }
 
+/** Only a definite (applies "yes") past risk row may become a job's date or next step; a cold cache's conditional one may not (review-polish-grok high). */
+const definitelyOverdue = (x: Obligation, today: string) => x.kind === "risk" && x.applies === "yes" && !!x.effective_due && x.effective_due < today;
+
 export function computeHandover(o: { assessment: Assessment | null; obligations: Obligation[]; approvals: ApprovalRow[]; rules: StandingRule[]; now: Date }): Handover {
   const today = tallinnDate(o.now), ym = today.slice(0, 7);
   const live = o.rules.filter((r) => !r.revoked_at && Date.parse(r.expires_at) > o.now.getTime());
@@ -89,8 +92,8 @@ export function computeHandover(o: { assessment: Assessment | null; obligations:
   for (const k of KNOWN) {
     const titles = JOB_TITLES[k.id];
     const match = rows.find((r) => r.id === k.id || [titles[0], titles[1]].map(norm).includes(norm(r.label)));
-    // An overdue row (e.g. annual-report-overdue) binds the job before any later deadline (#64).
-    const overdue = o.obligations.filter((x) => k.triggers.includes(x.rule_id) && x.kind === "risk" && x.effective_due).map((x) => x.effective_due!).sort().pop();
+    // A definite overdue row (e.g. annual-report-overdue) binds the job before any later deadline (#64); a conditional one never does.
+    const overdue = o.obligations.filter((x) => k.triggers.includes(x.rule_id) && definitelyOverdue(x, today)).map((x) => x.effective_due!).sort().pop();
     const due = overdue ?? o.obligations.filter((x) => k.triggers.includes(x.rule_id) && x.effective_due && x.effective_due >= today).map((x) => x.effective_due!).sort()[0] ?? null;
     const applies = k.id === "payment-reminder" || o.obligations.some((x) => k.triggers.includes(x.rule_id)) || !!match || byJob.has(k.id);
     if (!applies) continue;
@@ -106,7 +109,7 @@ export function computeHandover(o: { assessment: Assessment | null; obligations:
     jobs, off: jobs.filter((j) => j.rung !== "mine").length, total: jobs.length,
     withoutYou: jobs.filter((j) => j.rung === "done" && j.ceiling === "rule").length,
     month: { ym, done: monthDone.length, auto: monthDone.filter((a) => a.approved_by_rule).length },
-    next: nextStep(jobs, live, o.approvals, o.obligations),
+    next: nextStep(jobs, live, o.approvals, o.obligations.filter((x) => x.kind !== "risk" || definitelyOverdue(x, today))),
     findings: { expiredUnused: { count: expired.length, last: expired[0] ?? null } },
     fromAssessment: jobs.filter((j) => j.source === "assessment").length,
   };
