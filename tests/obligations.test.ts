@@ -369,6 +369,8 @@ describe("Ärikratt adapter", () => {
     expect(r.result.company).toMatchObject({ name: "Synthetic Register OÜ", registry_code: FAKE_VALID });
     expect(r.result.facts_needed[0]).toEqual({ fact: "confirm_company", question_et: `Kas Synthetic Register OÜ (${FAKE_VALID}) on sinu ettevõte?`, question_en: `Is Synthetic Register OÜ (${FAKE_VALID}) your company?` });
     expect(r.result.assistant_instruction).toContain(`Confirm with the owner that Synthetic Register OÜ (${FAKE_VALID}) is their company before relying on these deadlines.`);
+    // An unconfirmed name match never hands over the register facts.
+    expect(r.result.public_facts).toEqual({});
     // A code the owner gave needs no confirmation.
     const direct = await companyObligations(arikratt(db, { apiKey: "test-key", url: fakeUrl }), { registryCode: FAKE_VALID, months: 1 });
     if (!direct.ok) throw new Error(direct.error);
@@ -382,6 +384,8 @@ describe("Ärikratt adapter", () => {
     // Sample companies' facts stay labelled synthetic, never register data.
     const sample = await companyObligations(arikratt(db, { apiKey: "test-key", url: fakeUrl }), { registryCode: "19990002", months: 1 });
     if (!sample.ok) throw new Error(sample.error);
+    expect(sample.result.public_facts.vat_registered).toMatchObject({ provenance: "synthetic" });
+    expect(sample.result.public_facts.latest_annual_revenue).toMatchObject({ provenance: "synthetic" });
     expect(Object.values(sample.result.public_facts).every((f) => f?.provenance === "synthetic")).toBe(true);
     expect(sample.result.assistant_instruction).toContain("synthetic is sample data and never the register.");
     expect(direct.result.assistant_instruction).toContain("a fact in public_facts that is not in facts_needed is already known, so never ask for it. Name its provenance honestly: public_register is the business register, synthetic is sample data and never the register.");
@@ -448,6 +452,8 @@ describe("get_obligations tool and status card", () => {
     spy.mockRestore();
     expect(r.company).toMatchObject({ registry_code: FAKE_VALID, provenance: "assistant_supplied", unavailable: "not_configured" });
     expect(r.company.label_en).not.toContain("Official");
+    // Owner answers are never presented as public data.
+    expect(r.public_facts).toEqual({});
     expect(r.facts_needed.map((n: { fact: string }) => n.fact)).toEqual(expect.arrayContaining(["fy_end", "annual_report"]));
     expect(r.facts_needed.map((n: { fact: string }) => n.fact)).not.toContain("vat_registered");
     const kmd = r.obligations.find((o: { rule_id: string }) => o.rule_id === "vat-return-kmd");
