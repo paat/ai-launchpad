@@ -393,7 +393,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // sent to sign in again (unchanged behaviour for authenticated sessions).
   app.get("/", (req, res, next) => {
     if (session(req) || cookieVal(req, "lp_session")) return next();
-    res.type("html").send(publicPage(req, res, tr(langOf(res))("Kontoritöö teeb sinu AI-assistent", "Your AI assistant does the office work"), landingBody({ lang: langOf(res) })));
+    res.type("html").send(publicPage(req, res, tr(langOf(res))("Kontoritöö teeb sinu AI-assistent", "Your AI assistant does the office work"), landingBody({ lang: langOf(res), demo: cfg.demo })));
   }, requireOwner, async (req, res, next) => { try {
     const st = getState(db, oid(req));
     const ref = st.assessment?.company_registry_ref?.trim();

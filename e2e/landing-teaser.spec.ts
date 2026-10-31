@@ -27,7 +27,7 @@ for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Tegele sellega, milles oled hea. Kontoritöö teeb sinu AI-assistent.");
-    await expect(page.getByRole("link", { name: "Ühenda oma assistent" })).toHaveAttribute("href", "/uhenda");
+    await expect(page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma assistent" })).toHaveAttribute("href", "/uhenda");
     await expect(page.locator(".phone")).toBeVisible();
     await expect(page.locator(".phone")).toHaveAttribute("aria-hidden", "true");
     await expect(page.locator(".teaser figcaption .label-chip--sample")).toHaveText("Näidis");
@@ -40,7 +40,7 @@ for (const width of [390, 1280]) {
     await expect(page.locator("form, input:not(#teaser-pause)")).toHaveCount(0);
     expect(await page.locator("script").count()).toBe(0);
     expect(await overflow(page)).toBeLessThanOrEqual(0);
-    const cta = await page.getByRole("link", { name: "Ühenda oma assistent" }).boundingBox();
+    const cta = await page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma assistent" }).boundingBox();
     expect(cta!.height).toBeGreaterThanOrEqual(44);
     if (width === 1280) {
       // Desktop: the teaser sits beside the hero text, not below it.
@@ -86,7 +86,7 @@ test("pause toggle: keyboard-focusable, 44 px, stops the animation without scrip
   expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   const states = () => page.evaluate(() => [...new Set(document.getAnimations().map((a) => a.playState))]);
   expect(await states()).toEqual(["running"]);
-  await page.getByRole("link", { name: "Ühenda oma assistent" }).focus();
+  await page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma assistent" }).focus();
   await page.keyboard.press("Tab"); // next stop is the pause toggle
   await expect(page.locator("#teaser-pause")).toBeFocused();
   expect(await label.evaluate((e) => getComputedStyle(e).outlineStyle)).toBe("solid");
@@ -129,11 +129,28 @@ test("200% root font: nested standing beat is not clipped by the card cap (tribu
   expect(card.h).toBeGreaterThanOrEqual(card.full - 1);
 });
 
+test("„Alusta 2 minutiga” ends in a call to action: connect, or the sample company via the demo login (#63 m3)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const how = page.locator('section[aria-labelledby="how-h"]');
+  await expect(how.getByRole("link", { name: "Ühenda oma ChatGPT või Claude" })).toHaveAttribute("href", "/uhenda");
+  const connect = how.getByRole("link", { name: "Ühenda oma assistent" }), sample = how.getByRole("link", { name: "Vaata näidisettevõtet" });
+  await expect(connect).toHaveAttribute("href", "/uhenda");
+  await expect(sample).toHaveAttribute("href", "/login"); // this server runs with LAUNCHPAD_DEMO=1
+  for (const l of [how.getByRole("link", { name: "Ühenda oma ChatGPT või Claude" }), connect, sample]) expect((await l.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(await page.locator("script").count()).toBe(0);
+  expect(await overflow(page)).toBeLessThanOrEqual(0);
+  await how.scrollIntoViewIfNeeded();
+  await how.screenshot({ path: `${SHOTS}/landing-alusta-390.png` });
+  await sample.click();
+  await expect(page).toHaveURL(/\/login$/);
+});
+
 test("EN: ?lang=en renders the same page in English", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/?lang=en");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Focus on what you're good at. Your AI assistant does the office work.");
-  await expect(page.getByRole("link", { name: "Connect your assistant" })).toHaveAttribute("href", "/uhenda");
+  await expect(page.locator(".landing-hero").getByRole("link", { name: "Connect your assistant" })).toHaveAttribute("href", "/uhenda");
   expect(await overflow(page)).toBeLessThanOrEqual(0);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await finalFrameFits(page);

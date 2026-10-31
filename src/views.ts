@@ -428,6 +428,8 @@ ${TEASER_CSS}
 .jobs .how-ico{width:40px;height:40px;border-radius:12px}.jobs .how-ico svg{width:22px;height:22px}
 .how-ico{position:relative;flex:none;display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:14px;background:var(--c-surface-3);color:var(--c-primary)}
 .how-ico svg{width:26px;height:26px}
+.how-go{display:flex;align-items:center;min-height:var(--tap);color:var(--c-link);text-decoration:underline;text-underline-offset:3px}
+.how-cta{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2) var(--s-6);margin:var(--s-6) 0 0}.how-cta .btn{margin:0;font-size:var(--fs-lg)}@media (min-width:880px){.how-cta .btn{width:auto;padding:12px 32px}}
 .how .how-ico::after{content:counter(how);position:absolute;top:-6px;right:-6px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--c-primary);color:#fff;font-size:.75rem;font-weight:800}
 .trust{display:grid;gap:var(--s-2);margin:var(--s-6) 0;padding:var(--s-4);list-style:none;border-radius:var(--r-xl);background:var(--c-deep);color:#fff}
 .trust li{display:flex;align-items:center;gap:var(--s-3);min-height:var(--tap);font-weight:700}
@@ -1379,7 +1381,7 @@ const STEP_ICONS = [
   '<rect x="6.5" y="1.5" width="11" height="21" rx="2.5"/><path d="M9 12l2.2 2.2L15.5 10M10.5 19.5h3"/>',
 ];
 
-export function landingBody(o: { lang: Lang }): string {
+export function landingBody(o: { lang: Lang; demo: boolean }): string {
   const l = o.lang, t = tr(l), amount = fmtEur(24000, l), total = fmtEur(72000, l);
   // One conversation, used for the animation and the screen-reader transcript. It leads with money; the deadline is one offer at the end.
   const ask = t("Kes mulle võlgu on?", "Who owes me money?");
@@ -1446,7 +1448,8 @@ export function landingBody(o: { lang: Lang }): string {
 <section class="hero-jobs" aria-labelledby="jobs-h"><h2 id="jobs-h" class="vh">${t("Mida assistent sinu eest ära teeb", "What your assistant takes off your plate")}</h2>
 <ul class="jobs">${jobs.map(([h, s], i) => `<li>${icon(JOB_ICONS[i])}<span><strong>${esc(h)}</strong>${esc(s)}</span></li>`).join("")}</ul></section></section>
 <section aria-labelledby="how-h"><h2 id="how-h">${t("Alusta 2 minutiga", "Start in 2 minutes")}</h2>
-<ol class="how">${steps.map((s, i) => `<li>${icon(STEP_ICONS[i])}<span>${esc(s)}</span></li>`).join("")}</ol></section>
+<ol class="how">${steps.map((s, i) => `<li>${icon(STEP_ICONS[i])}${i === 0 ? `<a class="how-go" href="/uhenda">${esc(s)}</a>` : `<span>${esc(s)}</span>`}</li>`).join("")}</ol>
+<p class="how-cta"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a>${o.demo ? `<a class="tap-link" href="/login">${t("Vaata näidisettevõtet", "See the sample company")}</a>` : ""}</p></section>
 <ul class="trust" aria-label="${t("Mida me lubame", "What we promise")}">${trust.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
 <p class="small muted landing-foot"><a class="tap-link" href="/demand">${t("Meta Muse Spark Open liigitab anonüümselt, mida ettevõtjad veel vajavad", "Meta Muse Spark Open anonymously classifies what businesses still need")}</a></p>
 </div>`;

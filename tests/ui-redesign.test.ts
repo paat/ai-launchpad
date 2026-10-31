@@ -269,7 +269,7 @@ describe("Täna", () => {
 
 describe("landing and connect", () => {
   test("landing: jobs taken off the owner, a labelled CSS-only chat teaser that leads with money, 2-minute start, trust strip, no search (owner 2026-10-30)", () => {
-    const et = landingBody({ lang: "et" }), en = landingBody({ lang: "en" });
+    const et = landingBody({ lang: "et", demo: false }), en = landingBody({ lang: "en", demo: false });
     for (const s of ["Tegele sellega, milles oled hea. <span>Kontoritöö teeb sinu AI-assistent.</span>", "Meeldetuletused võlgnikele, arved KMD jaoks, aastaaruande kontroll — assistent valmistab ette, sina kinnitad ühe puudutusega. Töötab sinu oma ChatGPT või Claude&#39;iga.",
       '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "Kes mulle võlgu on?", `Kolm arvet on üle tähtaja, kokku ${fmtEur(72000, "et")}. Koostasin igale viisaka meeldetuletuse.`,
       "Maksemeeldetuletus · 1/3", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud: demo", '<span class="mock-allow">Luba sarnased automaatselt</span><span class="mock-rule">Püsiluba: meeldetuletused kuni 500\u00a0€</span>',
@@ -298,7 +298,7 @@ describe("landing and connect", () => {
   });
 
   test("landing teaser: the KMD offer carries the rule and official chips, only once, no assistant chip (tribunal T-002)", () => {
-    const et = landingBody({ lang: "et" }), en = landingBody({ lang: "en" });
+    const et = landingBody({ lang: "et", demo: false }), en = landingBody({ lang: "en", demo: false });
     const teaser = (h: string) => h.slice(h.indexOf('<figure class="teaser">'), h.indexOf("</figure>"));
     const chip = (k: string, text: string) => `<span class="label-chip label-chip--${k}">${text}</span>`;
     for (const h of [et, en]) expect(teaser(h)).not.toContain("label-chip--assistant");
@@ -310,9 +310,22 @@ describe("landing and connect", () => {
     expect(en).toContain("the VAT return is due 20\u00a0Nov — shall I prepare October&#39;s invoices? · Calculated by rule · Source: VAT Act § 27, § 38</li></ol>");
   });
 
+  test("landing: a call to action under „Alusta 2 minutiga”; the sample-company link only where demo login is on (#63 m3)", () => {
+    const steps = (h: string) => h.slice(h.indexOf('id="how-h"'), h.indexOf('<ul class="trust"'));
+    const demo = steps(landingBody({ lang: "et", demo: true })), plain = steps(landingBody({ lang: "et", demo: false }));
+    for (const h of [demo, plain]) {
+      expect(h).toContain('<a class="how-go" href="/uhenda">Ühenda oma ChatGPT või Claude</a>');
+      expect(h).toContain('<p class="how-cta"><a class="btn" href="/uhenda">Ühenda oma assistent</a>');
+      expect(h).not.toContain("<script");
+    }
+    expect(demo).toContain('<a class="tap-link" href="/login">Vaata näidisettevõtet</a>');
+    expect(plain).not.toContain('href="/login"'); expect(plain).not.toContain("Vaata näidisettevõtet");
+    expect(steps(landingBody({ lang: "en", demo: true }))).toContain('<a class="tap-link" href="/login">See the sample company</a>');
+  });
+
   test("landing teaser: CSS-only pause toggle, labelled, no script (tribunal T-004, WCAG 2.2.2)", () => {
     const css = shell({ title: "x", active: "none", csrf: "", body: "" });
-    for (const [h, pause, resume] of [[landingBody({ lang: "et" }), "Peata animatsioon", "Jätka animatsiooni"], [landingBody({ lang: "en" }), "Pause animation", "Resume animation"]]) {
+    for (const [h, pause, resume] of [[landingBody({ lang: "et", demo: false }), "Peata animatsioon", "Jätka animatsiooni"], [landingBody({ lang: "en", demo: false }), "Pause animation", "Resume animation"]]) {
       expect(h).toContain('<input type="checkbox" id="teaser-pause" class="vh-input">');
       expect(h).toContain(`<label class="teaser-pause" for="teaser-pause"><span class="tp-pause">${pause}</span><span class="tp-resume">${resume}</span></label>`);
       expect(h).not.toContain("<script");
@@ -325,8 +338,8 @@ describe("landing and connect", () => {
   });
 
   test("landing transcript: the owner approves and allows, the assistant sends (tribunal T-003)", () => {
-    expect(landingBody({ lang: "et" })).toContain("<li>Sina: Kinnitatud</li><li>Assistent: Saadetud (näidis)</li><li>Sina: Luba sarnased automaatselt</li><li>Assistent: Püsiluba: meeldetuletused kuni 500\u00a0€. Järgmised saadan ise.");
-    expect(landingBody({ lang: "en" })).toContain(`<li>You: Approved</li><li>Assistant: Sent (sample)</li><li>You: Allow similar ones automatically</li><li>Assistant: Standing approval: reminders up to ${fmtEur(50000, "en")}. I&#39;ll send the next ones myself.`);
+    expect(landingBody({ lang: "et", demo: false })).toContain("<li>Sina: Kinnitatud</li><li>Assistent: Saadetud (näidis)</li><li>Sina: Luba sarnased automaatselt</li><li>Assistent: Püsiluba: meeldetuletused kuni 500\u00a0€. Järgmised saadan ise.");
+    expect(landingBody({ lang: "en", demo: false })).toContain(`<li>You: Approved</li><li>Assistant: Sent (sample)</li><li>You: Allow similar ones automatically</li><li>Assistant: Standing approval: reminders up to ${fmtEur(50000, "en")}. I&#39;ll send the next ones myself.`);
   });
 
   test("landing teaser: the KMD date is the engine's for November 2026 (20.11)", () => {

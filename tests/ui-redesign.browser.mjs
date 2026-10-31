@@ -76,9 +76,9 @@ const pageHtml = {
   login: () =>
     shell({ title: "Logi sisse", active: "none", csrf: "", body: loginBody({ lang: "et", demo: true, google: true, preauth: "pre-1", companies: [{ key: "alpha", label: "Mari Disain OÜ (näidis)" }] }) }),
   landing: () =>
-    shell({ title: "Kontoritöö teeb sinu AI-assistent", active: "none", csrf: "", body: landingBody({ lang: "et" }) }),
+    shell({ title: "Kontoritöö teeb sinu AI-assistent", active: "none", csrf: "", body: landingBody({ lang: "et", demo: true }) }),
   "landing-en": () =>
-    shell({ title: "Your AI assistant does the office work", active: "none", csrf: "", lang: "en", body: landingBody({ lang: "en" }) }),
+    shell({ title: "Your AI assistant does the office work", active: "none", csrf: "", lang: "en", body: landingBody({ lang: "en", demo: true }) }),
   uhenda: () =>
     shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true }) }),
   "uhenda-ho": () =>

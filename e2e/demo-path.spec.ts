@@ -22,7 +22,7 @@ test("public landing: what the product does, then Connect leads to /uhenda", asy
   await expect(page.locator("main .label-chip--sample").first()).toHaveText("Näidis");
   await noOverflow(page);
   await page.screenshot({ path: `${SHOTS}/landing-390.png`, fullPage: true });
-  await page.getByRole("link", { name: "Ühenda oma assistent" }).click();
+  await page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma assistent" }).click();
   await expect(page).toHaveURL(/\/uhenda$/);
 });
 
