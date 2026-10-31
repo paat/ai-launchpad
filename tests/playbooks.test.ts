@@ -266,7 +266,8 @@ describe("agent-facing copy over MCP", () => {
     for (const w of ["how far their books are", "month-end or year-end close", "what is missing from their books", "before an accounting tool's own month-close or status check"]) expect(tool.description, w).toContain(w);
     const r = JSON.parse(((await c.callTool({ name: "check_my_books", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { playbook: { id: string }; first_step: string };
     expect(r.playbook).toEqual(PLAYBOOKS.find((p) => p.id === "books-catch-up"));
-    expect(r.first_step).toContain("Read every bank account the company used for the period before you call any month ready");
+    expect(r.first_step).toContain("any account that appears in a transfer between the company's own accounts");
+    expect(r.first_step).toContain("even if the accounting software's month-end check shows nothing unconfirmed");
   });
 
   test("read-only errors: no consent label, request progress:report, tool-accurate copy", async () => {
