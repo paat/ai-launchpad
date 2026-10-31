@@ -248,10 +248,11 @@ article.card.ticket{margin:0 0 var(--s-6);padding:0;border-radius:var(--r-xl);bo
 @media (min-width:600px){.decide{margin:0 calc(-1 * var(--s-6));padding-left:var(--s-6);padding-right:var(--s-6)}}
 /* Scroll padding = the bar (1px border + 12px top + 56px button + bottom inset) + 8px air, in --px so it grows with text zoom (PR #65).
    It stays one row from 300px (#63 m8): on phones „Keeldu” is a compact text button and a long approve label may take two 1.2-line
-   rows inside its 56px button. Under large text, where the card is narrower than 12em, the label would wrap further: the bar stays in flow. */
+   rows inside its 56px button. Under large text, where the card is narrower than 12em, the bar stays in flow and stacks its two buttons at
+   full width, so no word of the approve label breaks mid-word (review-polish3-grok: .card sets overflow-wrap:anywhere). */
 html:has(.decide){scroll-padding-bottom:calc(77 * var(--px) + max(12 * var(--px), env(safe-area-inset-bottom)))}
 .ticket-body{container-type:inline-size}
-@container (max-width:12em){.decide{position:static}}
+@container (max-width:12em){.decide{position:static;flex-wrap:wrap}.decide button,.decide button.text{flex:1 1 100%;overflow-wrap:normal}}
 @media (max-width:479px){.decide button{padding:6px 12px;line-height:1.2;font-size:var(--fs-md)}}
 @media (max-width:379px){.decide{gap:var(--s-2)}.decide button{padding:6px 10px;line-height:1.2}.decide button.text{padding:6px 8px}}
 .fine{margin:var(--s-3) 0 0;color:var(--c-muted);font-size:var(--fs-sm)}

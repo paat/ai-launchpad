@@ -272,6 +272,27 @@ try {
     if (width === 320) await page.screenshot({ path: path.join(T2_SHOTS, `t2-approval-pending-320x568-${lang}.png`) });
     (geometry.bar568 ??= {})[`${width}-${lang}`] = bar;
   }
+  // review-polish3-grok medium: at 320×568 with a 32 px root font the bar stacks, and no approve word breaks mid-word.
+  for (const lang of ["et", "en"]) {
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.setContent(shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, lang, body: approvalCardBody({ csrf: CSRF, a: pendingApproval, lang, sample: true, now: NOW }) }));
+    await page.addStyleTag({ content: "html{font-size:32px}" });
+    const big = await page.evaluate(() => {
+      const ap = document.querySelector("button[value=approve]"), de = document.querySelector("button[value=decline]"), cs = getComputedStyle(ap);
+      const ctx = document.createElement("canvas").getContext("2d");
+      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const content = ap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const words = ap.textContent.trim().split(/\s+/).map((w) => ({ w, px: ctx.measureText(w).width }));
+      const box = (el) => { const r = el.getBoundingClientRect(); return { w: r.width, h: r.height, top: r.top, bottom: r.bottom }; };
+      return { content, words, ap: box(ap), de: box(de), root: parseFloat(getComputedStyle(document.documentElement).fontSize) };
+    });
+    assert.equal(big.root, 32, `big text ${lang}: 32 px root`);
+    for (const { w, px } of big.words) assert.ok(px <= big.content, `big text ${lang}: „${w}” (${px.toFixed(1)}px) fits the approve content box (${big.content}px) ${JSON.stringify(big)}`);
+    for (const k of ["ap", "de"]) assert.ok(big[k].h >= 44 && big[k].w >= 44, `big text ${lang}: ${k} >= 44px ${JSON.stringify(big)}`);
+    assert.ok(big.de.top >= big.ap.bottom - 0.5, `big text ${lang}: decline stacks under approve ${JSON.stringify(big)}`);
+    await page.locator("form.decide").screenshot({ path: path.join(T2_SHOTS, `t2-approval-pending-320x568-root32-${lang}.png`) });
+    (geometry.bigText ??= {})[lang] = big;
+  }
 
   await page.setContent(pageHtml["approval-approved"]());
   const approvedState = await page.evaluate(() => ({ status: [...document.querySelectorAll("main [role=status]")].map((el) => el.textContent.slice(0, 24)),
