@@ -170,6 +170,7 @@ export interface ApprovalRow { id: string; kind: string | null; report_id: strin
 export function expireApprovals(db: Db, ownerId: string) {
   db.prepare("UPDATE approvals SET state='expired' WHERE owner_id=? AND state IN ('pending','approved') AND expires_at<=?").run(ownerId, nowIso());
 }
+const APPROVED_NOW = "The owner approved this exact content, so it is approved now. Do not ask them to approve it again on Launchpad: act with your own tools using exactly this content, then call record_action_outcome with this digest before expires_at.";
 const ADDRESS_MISSING = "Address missing: request a new approval that includes the recipient address";
 /** A stored send approval without a usable address (a legacy row) can never be approved or acted on. */
 export function approvalAddressMissing(a: Pick<ApprovalRow, "kind" | "payload_json">): boolean {
@@ -368,7 +369,8 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     if (prior === "conflict") return err("Conflict: report_id already used with a different payload. Nothing was saved and no approval was requested.");
     if (prior) {
       const live = getApproval(db, ctx.ownerId, String(prior.receipt.approval_id))?.state;
-      if (live === "approved" || live === "pending") return json({ ...prior.receipt, state: live, current_state: live });
+      if (live === "pending") return json({ ...prior.receipt, state: live, current_state: live });
+      if (live === "approved") { const { owner_instruction: _ask, ...rest } = prior.receipt; return json({ ...rest, state: live, current_state: live, ...(_ask ? { assistant_instruction: APPROVED_NOW } : {}) }); }
       const { owner_instruction: _owner, ...rest } = prior.receipt;
       return json({ ...rest, state: live, current_state: live, assistant_instruction: `This approval is ${live}. Do not send, pay or file anything for it. If the owner still wants this done, make a new request_approval with a new report_id.` });
     }
@@ -379,15 +381,16 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     if (total >= 200) return err("Approval limit reached for this workspace (200). The owner can export and delete progress to start again. Nothing was saved and no approval was requested.");
     if (args.owner_confirmation) {
       // The owner said yes in their own assistant: that is the approval, so they never approve twice.
-      // A request still waiting for the same exact action is approved instead of adding a second one.
+      // An open approval for the same exact action is reused (a waiting one is approved), never duplicated.
       const digest = approvalDigest(args.action), now = nowIso();
-      const waiting = db.prepare("SELECT id,expires_at FROM approvals WHERE owner_id=? AND digest=? AND state='pending' ORDER BY created_at DESC LIMIT 1").get(ctx.ownerId, digest) as { id: string; expires_at: string } | undefined;
-      const id = waiting?.id ?? newId("appr"), expires = waiting?.expires_at ?? new Date(Date.now() + 24 * 3600_000).toISOString();
-      const receipt = { approval_id: id, state: "approved", approved_in_assistant: true, digest, decided_at: now, expires_at: expires, approve_url: `${ctx.baseUrl}/approvals/${id}`,
-        assistant_instruction: "The owner approved this exact content in this chat, so it is approved now. Do not ask them to approve it again on Launchpad: act with your own tools using exactly this content, then call record_action_outcome with this digest before expires_at.",
-        note: "Approved in the assistant chat, as reported by the assistant. Any change to the content needs a new approval." };
+      const open = db.prepare("SELECT id,state,expires_at,decided_at FROM approvals WHERE owner_id=? AND digest=? AND state IN ('pending','approved') ORDER BY created_at DESC LIMIT 1").get(ctx.ownerId, digest) as { id: string; state: string; expires_at: string; decided_at: string | null } | undefined;
+      const id = open?.id ?? newId("appr"), expires = open?.expires_at ?? new Date(Date.now() + 24 * 3600_000).toISOString();
+      const receipt = { approval_id: id, state: "approved", approved_in_assistant: true, digest, decided_at: open?.state === "approved" ? open.decided_at : now, expires_at: expires, approve_url: `${ctx.baseUrl}/approvals/${id}`,
+        assistant_instruction: APPROVED_NOW, note: "Approved in the assistant chat, as reported by the assistant. Any change to the content needs a new approval." };
       db.transaction(() => {
-        if (waiting) db.prepare("UPDATE approvals SET state='approved',decided_at=?,owner_confirmation=? WHERE id=? AND owner_id=?").run(now, args.owner_confirmation, id, ctx.ownerId);
+        if (open?.state === "pending") db.prepare("UPDATE approvals SET state='approved',decided_at=?,owner_confirmation=? WHERE id=? AND owner_id=?").run(now, args.owner_confirmation, id, ctx.ownerId);
+        // Older cards for the same action can no longer be tapped into a second use.
+        if (open) db.prepare("UPDATE approvals SET state='expired' WHERE owner_id=? AND digest=? AND state='pending' AND id<>?").run(ctx.ownerId, digest, id);
         else db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at,decided_at,playbook_id,owner_confirmation) VALUES(?,?,?,?,?,?,'approved',?,?,?,?,?)").run(id, ctx.ownerId, args.action.kind, args.report_id, JSON.stringify(args.action), digest, expires, now, now, args.playbook_id ?? null, args.owner_confirmation);
         saveReceipt(db, ctx.ownerId, "approval", args.report_id, args, receipt);
       })();

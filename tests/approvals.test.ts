@@ -314,7 +314,9 @@ describe("approval cards over MCP", () => {
     expect(first.current_state).toBeUndefined();
     await decide(o, first.approval_id, { decision: "approve", digest: first.digest });
     const replay = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "r1", action: reminder() } }));
-    expect(replay).toEqual({ ...first, state: "approved", current_state: "approved", note });
+    // Once approved, the replay drops the "ask the owner" line and says to act.
+    const { owner_instruction: _ask, ...firstRest } = first;
+    expect(replay).toEqual({ ...firstRest, state: "approved", current_state: "approved", note, assistant_instruction: expect.stringContaining("Do not ask them to approve it again on Launchpad") });
   });
 
   test("a replay of a still-pending request keeps pending and the owner instruction (tribunal T-001)", async () => {
@@ -808,8 +810,24 @@ describe("one approval: the owner's yes in their own assistant", () => {
     expect(yes).toMatchObject({ approval_id: waiting.approval_id, state: "approved", approved_in_assistant: true, expires_at: waiting.expires_at });
     expect(row(waiting.approval_id)).toMatchObject({ state: "approved", owner_confirmation: "jah, õige" });
     expect((db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='chat-yes-pending'").get() as { n: number }).n).toBe(2);
-    // The first receipt's replay now shows the live state.
-    expect(parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cp-1", action: filing } }))).toMatchObject({ approval_id: waiting.approval_id, current_state: "approved" });
+    // The first receipt's replay shows the live state and no longer asks for another request.
+    const replay = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cp-1", action: filing } }));
+    expect(replay).toMatchObject({ approval_id: waiting.approval_id, current_state: "approved" });
+    expect(replay.owner_instruction).toBeUndefined();
+    expect(replay.assistant_instruction).toContain("Do not ask them to approve it again on Launchpad");
+    // A second yes for the same open approval reuses it, never a second approved row.
+    expect(parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cp-4", action: filing, owner_confirmation: "jah" } }))).toMatchObject({ approval_id: waiting.approval_id, state: "approved" });
+    expect((db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='chat-yes-pending'").get() as { n: number }).n).toBe(2);
+  });
+
+  test("a yes approves the newest waiting card and closes older cards for the same action", async () => {
+    const c = await client(owner("chat-yes-dupes").token);
+    const older = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cd-1", action: reminder() } }));
+    const newer = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cd-2", action: reminder() } }));
+    const yes = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cd-3", action: reminder(), owner_confirmation: "jah" } }));
+    expect(yes.approval_id).toBe(newer.approval_id);
+    expect(row(older.approval_id).state).toBe("expired");
+    expect(row(newer.approval_id).state).toBe("approved");
   });
 
   test("an empty or overlong owner_confirmation is rejected and nothing is saved", async () => {
