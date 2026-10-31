@@ -9,12 +9,17 @@ const SHOTS = process.env.SHOT_DIR ?? "test-results/screenshots";
 mkdirSync(SHOTS, { recursive: true });
 const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 /** Pause every CSS animation at one moment of the 18 s loop. */
-const seek = (page: Page, ms: number) => page.evaluate((t) => document.getAnimations().forEach((a) => { a.pause(); a.currentTime = t; }), ms);
+const seek = (page: Page, ms: number) => page.evaluate(async (t) => {
+  await Promise.all(document.getAnimations().map((a) => a.ready));
+  document.getAnimations().forEach((a) => { a.pause(); a.currentTime = t; });
+}, ms);
 const opacity = (page: Page, sel: string) => page.locator(sel).evaluateAll((els) => els.map((e) => Number(getComputedStyle(e).opacity)));
 const UNPAID = '[data-job-conversation="unpaid"]:visible';
 const scoped = (...selectors: string[]) => selectors.map((sel) => `${UNPAID} ${sel}`).join(", ");
 const activateUnpaid = async (page: Page) => {
   await page.locator('[data-job-activate="unpaid"]').click();
+  await page.waitForFunction(() => matchMedia("(prefers-reduced-motion: reduce)").matches || (document.querySelector('[data-job-conversation]:not([hidden])')?.getAnimations({ subtree: true }).length ?? 0) > 0);
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.ready)));
   await page.waitForTimeout(180); // let native scrollend (or the 120 ms fallback) finish before seeking the timeline
   await expect(page.locator(UNPAID)).toBeVisible();
 };
