@@ -115,6 +115,8 @@ const browser = await chromium.launch({
 const geometry = {};
 try {
   const context = await browser.newContext({ serviceWorkers: "block" });
+  // tsx decorates the exported carousel helper with esbuild's __name; the real server is plain tsc output.
+  await context.addInitScript(() => { window.__name = (fn) => fn; });
   const attempts = [];
   await context.route("**/*", (route) => { attempts.push(route.request().url()); return route.abort(); });
   const page = await context.newPage();
@@ -429,7 +431,7 @@ try {
   await page.screenshot({ path: path.join(T2_SHOTS, "receipt-strip-390.png") });
   geometry.receiptStrip = receiptStrip;
 
-  // --- T4 (#59) landing fold: header, headline, button and the four jobs in the first 1280×800 viewport beside a 656 px phone
+  // --- T4 (#59) landing fold: header, headline, button and the carousel heading in the first 1280×800 viewport beside a 656 px phone
   // whose first and last bubbles are not clipped (#63 m1); at 390 the fold shows the headline, the button and the top of the phone ---
   const landingFold = () => page.evaluate(() => {
     document.getAnimations().forEach((a) => { a.pause(); a.currentTime = 14000; }); // the teaser's final frame
@@ -437,16 +439,18 @@ try {
     const box = (el) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), h: Math.round(r.height) }; };
     const q = (s) => box(document.querySelector(s));
     const teaser = document.querySelector(".teaser");
-    return { innerH: window.innerHeight, header: q("header"), h1: q("h1"), btn: q(".landing-hero .btn"), phone: q(".phone"), chat: q(".chat"), first: q(".b-me1"), last: q(".b-ai3"),
-      jobs: [...document.querySelectorAll(".landing-hero .jobs li")].map(box), pause: q(".teaser-pause"),
-      transcriptFirst: teaser.firstElementChild.matches("div.vh") && teaser.firstElementChild.querySelector("ol") !== null,
+    const conversation = teaser.querySelector("[data-job-conversation]:not([hidden])");
+    const bubbles = conversation.querySelectorAll(".chat .bubble");
+    return { innerH: window.innerHeight, header: q("header"), h1: q("h1"), btn: q(".landing-hero .btn"), phone: box(conversation.querySelector(".phone")), chat: box(conversation.querySelector(".chat")), first: box(bubbles[0]), last: box(bubbles[bubbles.length - 1]),
+      jobsHeading: q("#jobs-h"), pause: q(".teaser-pause"),
+      transcriptFirst: conversation.firstElementChild.matches("div.vh") && conversation.firstElementChild.querySelector("ol") !== null,
       h1Size: getComputedStyle(document.querySelector("h1")).fontSize, trustBg: getComputedStyle(document.querySelector(".trust")).backgroundColor };
   });
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.setContent(pageHtml.landing());
   const fold1280 = await landingFold();
   const inFold = (b) => b.top >= 0 && b.bottom <= fold1280.innerH;
-  assert.ok([fold1280.header, fold1280.h1, fold1280.btn, ...fold1280.jobs].every(inFold) && fold1280.jobs.length === 4, `t4 landing@1280: header, headline, button, 4 jobs in 800 px ${JSON.stringify(fold1280)}`);
+  assert.ok([fold1280.header, fold1280.h1, fold1280.btn].every(inFold) && fold1280.jobsHeading.top >= 0 && fold1280.jobsHeading.top < fold1280.innerH, `t4 landing@1280: header, headline, button and carousel heading in 800 px ${JSON.stringify(fold1280)}`);
   assert.ok(fold1280.phone.h === 656 && fold1280.phone.bottom <= fold1280.innerH && fold1280.phone.left > fold1280.h1.left + 300, `t4 landing@1280: 656 px phone in the fold beside the text ${JSON.stringify(fold1280.phone)}`);
   assert.ok(fold1280.last.top >= fold1280.chat.top - 1 && fold1280.last.bottom <= fold1280.chat.bottom + 1, `t4 landing@1280: last bubble not clipped ${JSON.stringify(fold1280)}`);
   assert.ok(fold1280.first.top >= fold1280.chat.top - 1, `t4 landing@1280: the opening question is not under the chat header ${JSON.stringify(fold1280)}`);
@@ -469,8 +473,12 @@ try {
   const still = await page.evaluate(() => ["ootab", "tegi", "tulekul"].map((id) => { const cs = getComputedStyle(document.getElementById(id)); return `${cs.animationName} ${cs.opacity}`; }));
   assert.deepEqual(still, ["none 1", "none 1", "none 1"], "t4 reduced motion: no section entrance");
   await page.setContent(pageHtml.landing());
-  const finalFrame = await page.evaluate(() => [...document.querySelectorAll(".b-card, .mock-done, .mock-rule, .b-ai2, .b-ai3")].map((e) => getComputedStyle(e).opacity));
-  assert.deepEqual(finalFrame, ["1", "1", "1", "1", "1"], "t4 reduced motion: the teaser shows its final frame");
+  await page.locator('[data-job-activate="unpaid"]').click();
+  const finalFrame = await page.evaluate(() => {
+    const conversation = document.querySelector('[data-job-conversation="unpaid"]:not([hidden])');
+    return [...conversation.querySelectorAll(".b-unpaid-card, .mock-done, .mock-rule, .b-unpaid-ai2")].map((e) => getComputedStyle(e).opacity);
+  });
+  assert.deepEqual(finalFrame, ["1", "1", "1", "1"], "t4 reduced motion: the visible unpaid teaser shows its final frame");
   await page.emulateMedia({ reducedMotion: null });
 
   // #69: scroll end must not undo a deliberate selection, including the last cards on a three-up track.
@@ -571,9 +579,12 @@ try {
       }
     }
   }
-  // Täna is zero-JS: no inline script; the prompts are visible text.
-  for (const name of ["status-assessed", "status-unassessed", "landing", "landing-en", "uhenda", "activity", "login"]) {
+  // Täna is zero-JS; the landing has only the carousel's inline IIFE.
+  for (const name of ["status-assessed", "status-unassessed", "uhenda", "activity", "login"]) {
     assert.ok(!pageHtml[name]().includes("<script"), `${name}: zero inline JS`);
+  }
+  for (const name of ["landing", "landing-en"]) {
+    assert.deepEqual(pageHtml[name]().match(/<script\b[^>]*>/g) ?? [], ["<script>"], `${name}: exactly one inline carousel script, no external script`);
   }
 
   // --- Unknowns visible outside closed details; synthetic/unchecked labels ---
