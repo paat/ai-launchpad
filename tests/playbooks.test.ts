@@ -51,7 +51,10 @@ describe("executable job playbooks (#26)", () => {
     const p = byId("connect-service");
     expect(p).toMatchObject({ approval_kind: null, triggers: [] });
     const steps = p.steps.join(" ");
-    expect(steps).toMatch(/Check your own connectors first.*ask one question/s);
+    expect(p.steps[1]).toMatch(/^Ask one question unless the owner already said it: what should be linked \(accounting software, e-mail or bank\).*Follow only the branch for that service/);
+    expect(steps).toContain("Call search_services with the product's own name");
+    expect(steps).toContain("Bank: explain only what the matching search_services entry documents and stop there. Never start a bank key, credential or payment setup.");
+    expect(p.steps.at(-1)).toContain("Verify only the service the owner asked for");
     expect(p.steps[0]).toMatch(/^Speak plainly: the owner may not know what MCP, a connector or an API is/);
     expect(steps).toContain("Proton Mail has no connector: prepare each message here and open it in the owner's mail app, where the owner presses Send.");
     expect(steps).toContain("own Smart-ID or ID-card (never automate the login)");
@@ -68,7 +71,7 @@ describe("executable job playbooks (#26)", () => {
     expect(steps).toContain("Paste the company-specific MCP URL shown on the connector's dashboard, not the catalogue address");
     expect(steps).toContain("Claude's free plan allows one custom connector and AI Launchpad already uses it");
     expect(steps).toContain("removing AI Launchpad stops deadlines and approvals, and suggest upgrading the plan.");
-    expect(steps).toContain("Do not create, change or delete anything in the books during setup.");
+    expect(steps).toContain("Do not create, change, delete or send anything during setup.");
     expect(p.steps.at(-1)).toMatch(/^Verify with one read-only question/);
   });
 
