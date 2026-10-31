@@ -147,6 +147,16 @@ describe("Täna", () => {
     expect(tegi).not.toContain("started");
   });
 
+  test("a not-applicable row reads as not applying and its old work leaves Täna (real company replacing a test row)", () => {
+    const real = assessmentSchema.parse({ ...assessment, responsibilities: [...assessment.responsibilities, { id: "R-001", domain: "operations", label: "Setup test entry", applicability: "not_applicable", is_core: false, arrangement: "none", reason: "Left over from a setup test.", evidence_refs: [] }] });
+    const html = tana({ lang: "en", sample: false, assessment: real, coverage: computeCoverage(real), progress: [{ task_id: "R-001", milestone: "draft_prepared", observed_at: "2026-11-03T09:15:00Z" }, { task_id: "invoicing", milestone: "draft_prepared", observed_at: "2026-11-03T09:15:00Z" }] });
+    const tegi = html.slice(html.indexOf('id="tegi"'), html.indexOf('id="tulekul"'));
+    expect(tegi).toContain("Done for you (1)");
+    expect(tegi).not.toContain("Setup test entry");
+    expect(html).toContain("Setup test entry — does not apply to you");
+    expect(html).toContain("Sales invoicing — you do it yourself now");
+  });
+
   test("the payouts question maps to the TSD row of the same period, never the first conditional one (#21, QA D-01, D-16)", () => {
     // 3 Nov: the October question goes with the 10 Nov row (October payouts), even when the 10 Dec row is listed first.
     const reordered = { ...mariDeadlines, obligations: [...mariDeadlines.obligations].reverse() };
