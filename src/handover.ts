@@ -49,6 +49,10 @@ const payloadOf = (a: ApprovalRow): { kind?: string; recipient?: { name?: string
 const outcomeOf = (a: ApprovalRow): string | null => { try { return a.outcome_json ? (JSON.parse(a.outcome_json) as { outcome?: string }).outcome ?? null : null; } catch { return null; } };
 export const isDone = (a: ApprovalRow) => a.state === "consumed" && DONE_OUTCOMES.includes(outcomeOf(a) ?? "");
 
+/** The rows „Käest ära” resolves its jobs from: the Täna window, the next deadline, and the next annual report even when it is months out (tribunal T-001). */
+export const handoverObligations = (r: { result: { obligations: Obligation[]; next_deadline: Obligation | null }; annual_next: Obligation | null }): Obligation[] =>
+  [...r.result.obligations, ...(r.result.next_deadline ? [r.result.next_deadline] : []), ...(r.annual_next ? [r.annual_next] : [])];
+
 /** Which job an approval belongs to: its playbook_id, else kind plus the recipient name for filings. */
 export function jobOfApproval(a: ApprovalRow): string | null {
   if (a.playbook_id && JOB_TITLES[a.playbook_id]) return a.playbook_id;

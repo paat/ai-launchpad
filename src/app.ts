@@ -6,7 +6,7 @@ import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
 import { arikratt } from "./arikratt.js";
 import { approvalAddressMissing, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, liveStandingRules, logActivity, normAddress, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, TOOL_ARG_KEYS, type ApprovalRow, type StandingRule } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
-import { computeHandover } from "./handover.js";
+import { computeHandover, handoverObligations } from "./handover.js";
 import type { Assessment } from "./core.js";
 import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
@@ -269,9 +269,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   const ownerDeadlines = (assessment: Assessment | null) => { const ref = assessment?.company_registry_ref?.trim(); return ref && /^\d{8}$/.test(ref) ? companyObligations(register, { registryCode: ref, months: 2, cacheOnly: true }) : Promise.resolve(null); };
   // „Käest ära” (#61): once per request, from the stored approvals and rules plus the rule-computed deadlines.
   const ownerHandover = (ownerId: string, assessment: Assessment | null, deadlines: Awaited<ReturnType<typeof ownerDeadlines>>) => {
-    const r = deadlines?.ok ? deadlines.result : null;
     expireApprovals(db, ownerId);
-    return computeHandover({ assessment, obligations: r ? [...r.obligations, ...(r.next_deadline ? [r.next_deadline] : [])] : [], approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(ownerId) as ApprovalRow[], rules: ownerRules(ownerId), now: new Date() });
+    return computeHandover({ assessment, obligations: deadlines?.ok ? handoverObligations(deadlines) : [], approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(ownerId) as ApprovalRow[], rules: ownerRules(ownerId), now: new Date() });
   };
 
   const oauth = new LaunchpadOAuth(db, cfg, session, ownerAllowed);

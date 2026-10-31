@@ -1,8 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { computeHandover, jobOfApproval, type Handover } from "../src/handover.js";
+import { computeHandover, handoverObligations, jobOfApproval, type Handover } from "../src/handover.js";
+import { arikratt } from "../src/arikratt.js";
+import { openDb } from "../src/db.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import { computeObligations, type Obligation } from "../src/obligations.js";
-import type { ApprovalRow, StandingRule } from "../src/mcp.js";
+import { companyObligations, type ApprovalRow, type StandingRule } from "../src/mcp.js";
 import { handoverSection, handoverStrip } from "../src/views.js";
 
 // Synthetic traces for the three states in docs/design/progress/concept.md (Mari Disain OÜ, the alpha fixture).
@@ -165,5 +167,17 @@ describe("„Käest ära” fix cycle 1", () => {
     const page = handoverSection(h, "et", "c", NOW);
     expect(page).toContain("Koosta mulle sammud hilinenud majandusaasta aruande esitamiseks.");
     expect(page).not.toContain("Valmista ette:");
+  });
+});
+
+describe("„Käest ära” fix cycle 2", () => {
+  test("the annual-report job is listed even when its due date is outside the Täna window (tribunal T-001)", async () => {
+    const today = new Date("2026-10-31T10:00:00Z");
+    const r = await companyObligations(arikratt(openDb(":memory:"), {}), { registryCode: "19990001", months: 2, today, cacheOnly: true });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.result.obligations.some((x) => x.rule_id === "annual-report")).toBe(false);
+    const h = computeHandover({ assessment: null, obligations: handoverObligations(r), approvals: [], rules: [], now: today });
+    const job = h.jobs.find((j) => j.id === "annual-report");
+    expect(job?.due).toBe("2027-06-30");
   });
 });

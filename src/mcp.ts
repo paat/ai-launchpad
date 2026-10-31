@@ -5,7 +5,7 @@ import { newId, nowIso, sha256 } from "./db.js";
 import { APPROVAL_KINDS, FRAMEWORK, PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { assessmentSchema, assessmentRevisionError, computeCoverage, evidenceRefs, s, type Assessment } from "./core.js";
 import { arikratt, type Arikratt, type CompanyCard } from "./arikratt.js";
-import { computeObligations, tallinnDate, type CompanyFacts, type Fact, type FactNeeded, type Obligation } from "./obligations.js";
+import { computeObligations, nextAnnualReport, tallinnDate, type CompanyFacts, type Fact, type FactNeeded, type Obligation } from "./obligations.js";
 import { BLOCKERS, MAX_JOB_HINT_CHARS, MAX_NEED_CHARS, recordUnmetNeed } from "./unmet-needs.js";
 
 const PLAYBOOK_IDS = PLAYBOOKS.map((p) => p.id) as [string, ...string[]];
@@ -232,6 +232,7 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
   // next_deadline: a late-month window can be empty, so always name the next date (3-month horizon).
   const from = tallinnDate(today);
   const next = computeObligations(facts, { today, months: 3 }).obligations.find((x) => x.effective_due !== null && x.effective_due >= from) ?? null;
+  const annual = nextAnnualReport(facts, today);
   const confirm = lookup?.ok ? lookup.confirm.map((fact) => ({ fact, ...CONFIRM_QUESTIONS[fact] })) : [];
   // A single name-search match is a guess until the owner confirms it (#30 item 4).
   const which = matched && `${matched.name} (${matched.registry_code})`;
@@ -247,7 +248,9 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
     facts_needed: [...confirmCompany, ...(miss ? [REGISTRY_CODE_NEEDED] : []), ...confirm, ...r.facts_needed.filter((n) => !confirm.some((c) => c.fact === n.fact))],
     data_as_of: company.as_of, disclaimer: OBLIGATIONS_DISCLAIMER,
     assistant_instruction: `${which ? `Confirm with the owner that ${which} is their company before relying on these deadlines. ` : ""}Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed.${miss ? " Ask the owner for the 8-digit registry code." : ""} Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.`,
-  } };
+  },
+  // Not part of get_obligations: the annual-report job's next row for „Käest ära”, outside the window (tribunal T-001).
+  annual_next: annual && withPlaybook(annual) };
 }
 
 export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {}), hooks: { onUnmetNeed?: () => void } = {}) {
