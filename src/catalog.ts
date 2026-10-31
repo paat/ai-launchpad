@@ -56,7 +56,7 @@ export interface Playbook {
 export const PLAYBOOKS: Playbook[] = [
   { id: "deadlines-check", title: "Check the owner's deadlines", title_et: "Vaata üle oma tähtajad",
     summary: "Your assistant lists your upcoming tax and register deadlines, each with its official source. It first asks only the questions that can change the list, then offers to prepare each job.",
-    source: "https://www.emta.ee/en/business-client/taxes-and-payment", source_label: "Estonian Tax and Customs Board (EMTA)",
+    source: "https://www.emta.ee/en/business-client/taxes-and-payment/payment-arrears/payment-taxes", source_label: "Estonian Tax and Customs Board (EMTA): Payment of taxes",
     triggers: [], needs: ["The company's registry code or name (owner fact)."],
     steps: [
       "Call get_obligations. Rules compute every date; quote them with each row's source link and never compute a deadline yourself.",
