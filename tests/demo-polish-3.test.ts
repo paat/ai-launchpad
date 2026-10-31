@@ -113,16 +113,16 @@ describe("grok medium: a friction card that is not completed has a translated st
 // #68: a terminal card state must not read as temporary; "right now" stays only for states that may still change.
 describe("#68: friction-card status line per state (terminal vs may-still-change)", () => {
   const card = (state: string, output: string | null = null) => ({ topicId: "copying-invoices", locale: "en", state, output, replayed: false, label: "Copying invoices" });
-  test("pending/uncertain keep „pole praegu saadaval” / „right now”", () => {
-    for (const state of ["pending", "uncertain"]) {
+  test("pending keeps „pole praegu saadaval” / „right now” (none renders no row)", () => {
+    for (const state of ["pending"]) {
       expect(playbooksBody("et", [], [card(state)]), state).toContain('<p class="small muted" lang="et">See soovitus pole praegu saadaval.</p>');
       expect(playbooksBody("et", [], [card(state)]), state).not.toContain("ei ole saadaval");
       expect(playbooksBody("en", [], [card(state)]), state).toContain('<p class="small muted" lang="en">This suggestion is not available right now.</p>');
       expect(playbooksBody("en", [], [card(state)]), state).not.toContain("This suggestion is not available.</p>");
     }
   });
-  test("blocked/failed/breach/breach_blocked/exhausted/conflict say plainly it is not available", () => {
-    for (const state of ["blocked", "failed", "breach", "breach_blocked", "exhausted", "conflict"]) {
+  test("blocked/failed/breach/breach_blocked/exhausted/conflict/uncertain say plainly it is not available", () => {
+    for (const state of ["blocked", "failed", "breach", "breach_blocked", "exhausted", "conflict", "uncertain"]) {
       expect(playbooksBody("et", [], [card(state)]), state).toContain('<p class="small muted" lang="et">See soovitus ei ole saadaval.</p>');
       expect(playbooksBody("et", [], [card(state)]), state).not.toContain("praegu");
       expect(playbooksBody("en", [], [card(state)]), state).toContain('<p class="small muted" lang="en">This suggestion is not available.</p>');
