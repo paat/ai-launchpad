@@ -60,10 +60,10 @@ const uhendaHandover = computeHandover({ assessment: demoAssessment, obligations
 const pageHtml = {
   "connection-https": () =>
     shell({ title: "Connection", active: "none", csrf: CSRF, sample: true, bodyLang: "en",
-      body: connectionBody({ csrf: CSRF, baseUrl: "https://launchpad.example.com", reportingEnabled: false, tokens: [], grants: [], candidates: [] }) }),
+      body: connectionBody({ lang: "en", csrf: CSRF, baseUrl: "https://launchpad.example.com", reportingEnabled: false, tokens: [], grants: [], candidates: [] }) }),
   "connection-local": () =>
     shell({ title: "Connection", active: "none", csrf: CSRF, sample: true, bodyLang: "en",
-      body: connectionBody({ csrf: CSRF, baseUrl: "http://localhost:3000", reportingEnabled: false, tokens: [], grants: [], candidates: [] }) }),
+      body: connectionBody({ lang: "en", csrf: CSRF, baseUrl: "http://localhost:3000", reportingEnabled: false, tokens: [], grants: [], candidates: [] }) }),
   "status-assessed": () =>
     shell({ title: "Täna", active: "tana", csrf: CSRF, sample: true, body: tana(assessment, { deadlines: mariDeadlines, needs: [{ id: "need_1", state: "classified", reason: null, need_redacted: "Esita KMD", blocker: "needs_owner_pin_or_signature", job_hint_redacted: null, category: "tax_filings", demand_label: "KMD esitamine", same_as: null, spec: "Mock.", classified_by: "mock", created_at: "2026-11-03T10:00:00Z" }] }) }),
   "tana-demo": () =>

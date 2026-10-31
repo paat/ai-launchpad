@@ -26,7 +26,7 @@ const approval = (over: Partial<ApprovalRow> = {}): ApprovalRow => ({ id: "appr_
 const tana = (over: Partial<TanaOpts> = {}) => tanaBody({ lang: "et", csrf: "csrf-x", sample: true, label: "Synthetic OÜ", assessment, coverage: computeCoverage(assessment), assessedAt: "2026-10-28T10:00:00Z", exclusions: [], approvals: [], progress: [], deadlines: null, needs: [], reportCount: 2, now: NOW, ...over });
 const status = (a = assessment) => tana({ assessment: a, coverage: computeCoverage(a) });
 const connection = (baseUrl = "https://launchpad.example.com") =>
-  connectionBody({ csrf: "csrf-x", baseUrl, reportingEnabled: false, tokens: [], grants: [], candidates: [] });
+  connectionBody({ lang: "en", csrf: "csrf-x", baseUrl, reportingEnabled: false, tokens: [], grants: [], candidates: [] });
 const scripts = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
 
 describe("shell, locale and login", () => {

@@ -348,7 +348,7 @@ test("operator batch precomputes a friction card the playbook view actually disp
     const s = await start({ modelLedgerPath: path, modelFetchFn: appFetch.fetchFn });
     try {
       const a = makeOwner(s.db, "own_a", `google:${SUB_A}`, "google");
-      const html = await (await req(s.base, "/playbooks", { cookie: a.raw })).text();
+      const html = await (await req(s.base, "/playbooks?lang=en", { cookie: a.raw })).text();
       expect(html).toContain("Manual-work suggestions");
       expect(html).toContain("Batch friction suggestion.");
       expect(html).toContain("Saved guidance");

@@ -452,7 +452,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   app.get("/playbooks", requireOwner, (req, res) => {
     // Saved friction cards only: this GET never starts inference.
     const friction = publicCards ? publicCards.readFrictionCards().map((c) => ({ ...c, label: findTopic(FRICTION_TOPICS, c.topicId)!.label[c.locale] })) : undefined;
-    res.type("html").send(page(req, res, "Playbooks", "none", playbooksBody(PLAYBOOKS, friction), { bodyLang: "en" }));
+    res.type("html").send(page(req, res, tr(langOf(res))("Mängukavad", "Playbooks"), "none", playbooksBody(langOf(res), PLAYBOOKS, friction)));
   });
   // Public research catalogue (ET first). Signed-in owners keep their nav; never cached (the shell carries their CSRF).
   app.get("/kataloog", (req, res) => {
@@ -555,7 +555,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
     const tokens = db.prepare("SELECT id,scopes,revoked,created_at,last_used_at FROM mcp_tokens WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, unknown>[];
     const candidates = db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, string>[];
-    res.type("html").send(page(req, res, "Connection & data", "none", connectionBody({ csrf: (req as Authed).csrf, baseUrl: cfg.baseUrl, reportingEnabled: owner.reporting_enabled === 1, tokens, candidates, milestones: getAssistantMilestones(db, oid(req)), grants: db.prepare("SELECT g.id,g.scopes,g.revoked,g.expires,g.redirect,c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? ORDER BY g.rowid DESC").all(oid(req)) as Record<string, string>[] }), { bodyLang: "en" }));
+    res.type("html").send(page(req, res, tr(langOf(res))("Andmed ja õigused", "Connection & data"), "none", connectionBody({ lang: langOf(res), csrf: (req as Authed).csrf, baseUrl: cfg.baseUrl, reportingEnabled: owner.reporting_enabled === 1, tokens, candidates, milestones: getAssistantMilestones(db, oid(req)), grants: db.prepare("SELECT g.id,g.scopes,g.revoked,g.expires,g.redirect,c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? ORDER BY g.rowid DESC").all(oid(req)) as Record<string, string>[] })));
   });
   app.post("/tokens", requireOwner, csrfOk, (req, res) => {
     const owner = db.prepare("SELECT epoch FROM owners WHERE id=?").get(oid(req)) as { epoch: number };
