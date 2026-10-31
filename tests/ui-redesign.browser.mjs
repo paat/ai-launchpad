@@ -473,6 +473,38 @@ try {
   assert.deepEqual(finalFrame, ["1", "1", "1", "1", "1"], "t4 reduced motion: the teaser shows its final frame");
   await page.emulateMedia({ reducedMotion: null });
 
+  // #69: scroll end must not undo a deliberate selection, including the last cards on a three-up track.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const width of [360, 760, 1280]) for (const lang of ["et", "en"]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.setContent(shell({ title: "Landing", active: "none", csrf: "", lang, body: landingBody({ lang, demo: false, rand: () => 0.999999 }) }));
+    const ids = await page.locator("[data-job-card]").evaluateAll((cards) => cards.map((card) => card.getAttribute("data-job-card")));
+    const expectActive = async (id, action) => {
+      await page.waitForTimeout(180); // let native scrollend (or the 120 ms fallback) run before checking
+      const state = await page.evaluate(() => ({
+        active: document.querySelector(".job-card--active")?.getAttribute("data-job-card"),
+        visible: document.querySelector("[data-job-conversation]:not([hidden])")?.getAttribute("data-job-conversation"),
+      }));
+      assert.equal(state.visible, state.active, `${width}/${lang} ${action}: phone matches active card ${JSON.stringify(state)}`);
+      assert.equal(state.active, id, `${width}/${lang} ${action}: reached ${id} ${JSON.stringify(state)}`);
+    };
+    for (let i = 1; i < ids.length; i++) {
+      await page.locator("[data-job-next]").click();
+      await expectActive(ids[i], `Next ${i + 1}`);
+    }
+    for (let i = ids.length - 2; i >= 0; i--) {
+      await page.locator("[data-job-prev]").click();
+      await expectActive(ids[i], `Previous ${i + 1}`);
+    }
+    for (let i = 0; i < ids.length; i++) {
+      await page.locator("[data-job-activate]").nth(i).click();
+      await expectActive(ids[i], `card button ${i + 1}`);
+    }
+    await page.setViewportSize({ width: width + 1, height: 1000 });
+    await expectActive(ids.at(-1), "resize keeps the active last card");
+  }
+  await page.emulateMedia({ reducedMotion: null });
+
   // --- Guide tabs: one panel, click + keyboard (Arrow/Home/End, roving tabindex) ---
   await page.setViewportSize({ width: 390, height: 844 });
   await page.setContent(pageHtml["connection-https"]());

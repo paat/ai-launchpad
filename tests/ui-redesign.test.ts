@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { esc, shell, loginBody, tanaBody, deadlinesList, approvalsListBody, activityBody, connectionBody, setupBody, landingBody, connectBody, approvalCardBody, fmtEur, fmtDeadline, fmtPeriod, fmtWhen, type TanaOpts } from "../src/views.js";
+import { esc, shell, loginBody, tanaBody, deadlinesList, approvalsListBody, activityBody, connectionBody, setupBody, landingBody, connectBody, approvalCardBody, fmtEur, fmtDeadline, fmtPeriod, fmtWhen, jobCardAfterScroll, type TanaOpts } from "../src/views.js";
 import { computeObligations } from "../src/obligations.js";
 import { SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import type { ApprovalRow } from "../src/mcp.js";
@@ -371,11 +371,12 @@ describe("landing and connect", () => {
       '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "ühendatud: raamatupidamine, e-post, AI-hüppelaud", "Kes mulle võlgu on?", `Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${fmtEur(72000, "et")}. Koostasin igale viisaka meeldetuletuse.`,
       "Maksemeeldetuletus · 1/3", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud sinu e-postist: demo", `<span class="mock-allow">Luba sarnased automaatselt</span><span class="mock-rule">Püsiluba: meeldetuletused kuni ${fmtEur(50000, "et")}</span>`,
       "Järgmised saadan ise.", "Raamatupidamise järgi on oktoobris 14 müügi- ja 9 ostuarvet.", "Mida assistent saab ära teha", '<a href="/kataloog">vaata kataloogist</a>, mis sinu programmile olemas on.',
-      "Kuidas alustada", "Ühenda oma ChatGPT või Claude", "Ühenda ka oma raamatupidamisprogramm ja e-post — assistent ütleb, milline ühendus sobib", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega — või luba edaspidi automaatselt", 'href="/demand"']) expect(et, s).toContain(s);
+      "Kuidas alustada", "Ühenda oma ChatGPT või Claude", "Ühenda ka oma raamatupidamine ja e-post — assistent ütleb, milline ühendus sobib", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega — või luba edaspidi automaatselt", 'href="/demand"']) expect(et, s).toContain(s);
     for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Your assistant does the office work through your accounting, bank and e-mail connectors. AI Launchpad runs the work: it tells you which connectors you need, asks for your approval, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude.", "Connect your assistant", ">Sample<", "connected: accounting, e-mail, AI Launchpad",
       "Who owes me money?", `Your accounting software shows three invoices overdue, ${fmtEur(72000, "en")} in total. I drafted a polite reminder for each.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "✓ Approved · Sent from your e-mail: demo", "Allow similar ones automatically", `Standing approval: reminders up to ${fmtEur(50000, "en")}`,
       "I&#39;ll send the next ones myself.", "Your books show 14 sales and 9 purchase invoices for October.", "What your assistant can take off you", '<a href="/kataloog">see the catalogue</a> for what exists for your software.', "How to start", "Connect your accounting software and e-mail too — your assistant tells you which connector fits", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
     expect(et.match(/<ol class="how">.*?<\/ol>/s)![0].match(/<li>/g)).toHaveLength(4);
+    expect(shell({ title: "x", active: "none", csrf: "", body: "" })).toContain(".how li>span{min-width:0;overflow-wrap:break-word}");
     expect(et).toContain("<li>Midagi ei saadeta ilma sinu loata</li><li>Smart-ID ja allkiri jäävad sinu kätte</li><li>Maksud ja tähtajad arvutab reeglistik, mitte tehisaru</li>");
     for (const gone of ["Kuidas see töötab", "Mis mul sel kuul adminis ees on?", "täpselt see saaja, summa ja dokument", "Muide,"]) expect(et, gone).not.toContain(gone);
     // The animation is decorative (aria-hidden, no focusable element); a visually hidden transcript carries the same conversation.
@@ -444,6 +445,13 @@ describe("landing and connect", () => {
     const css = shell({ title: "x", active: "none", csrf: "", body: "" });
     expect(css).toContain("overflow-x:auto;scroll-snap-type:x mandatory");
     expect(css).toContain("scroll-snap-align:start");
+  });
+
+  test("landing carousel: scroll end preserves a visible active card, then prefers the first visible or nearest card (#69)", () => {
+    const track = { left: 0, right: 300 };
+    expect(jobCardAfterScroll(2, track, [{ left: 0, right: 100 }, { left: 100, right: 200 }, { left: 200, right: 300 }])).toBe(2);
+    expect(jobCardAfterScroll(2, track, [{ left: 0, right: 100 }, { left: 110, right: 210 }, { left: 220, right: 320 }])).toBe(0);
+    expect(jobCardAfterScroll(0, { left: 0, right: 100 }, [{ left: -150, right: -50 }, { left: 120, right: 220 }])).toBe(1);
   });
 
   test("landing carousel: deterministic shuffles differ and retain every card (#69)", () => {
