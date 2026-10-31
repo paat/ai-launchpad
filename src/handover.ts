@@ -41,8 +41,9 @@ export const JOB_TITLES: Record<string, [string, string]> = {
   "vat-return-prep": ["KMD ettevalmistus", "VAT return (KMD)"],
   "annual-report": ["Majandusaasta aruanne", "Annual report"],
   invoicing: ["Arvete koostamine", "Invoicing"],
+  "books-catch-up": ["Raamatupidamine järele", "Books brought up to date"],
 };
-export const DONE_OUTCOMES = ["sent", "submitted", "paid", "accepted"];
+export const DONE_OUTCOMES = ["sent", "submitted", "paid", "accepted", "posted"];
 const RANK: Record<Rung, number> = { done: 0, prep: 1, other: 2, mine: 3 };
 const norm = (s: string) => s.trim().toLowerCase();
 const payloadOf = (a: ApprovalRow): { kind?: string; recipient?: { name?: string; address?: string }; amount_cents?: number; summary?: string; document?: { title?: string } } => { try { return JSON.parse(a.payload_json); } catch { return {}; } };
@@ -61,6 +62,7 @@ export function jobOfApproval(a: ApprovalRow): string | null {
   const p = payloadOf(a), kind = a.kind ?? p.kind;
   if (kind === "send_message") return REMINDER.test(`${p.summary ?? ""} ${p.document?.title ?? ""}`) ? "payment-reminder" : null;
   if (kind === "send_invoice") return "invoicing";
+  if (kind === "post_entries") return "books-catch-up";
   if (kind === "prepare_filing") return /äriregist|business register/i.test(p.recipient?.name ?? "") ? "annual-report" : "vat-return-prep";
   return null;
 }

@@ -303,6 +303,23 @@ describe("approval cards over MCP", () => {
     expect(parsed(await call(f, "f-failed", "failed")).outcome).toBe("failed");
     const i = await approve("i", reminder());
     expect(errText(await call(i, "i-submitted", "submitted"))).toMatch(/send_invoice.*sent or failed\. Nothing was recorded/);
+    const b = await approve("b", reminder({ kind: "post_entries", period: "2026-10" }));
+    expect(errText(await call(b, "b-sent", "sent"))).toMatch(/post_entries.*posted or failed\. Nothing was recorded/);
+    expect(parsed(await call(b, "b-posted", "posted")).outcome).toBe("posted");
+  });
+
+  test("a month's book entries (books-catch-up): the chat yes approves, posted is recorded and shown as done", async () => {
+    const o = owner("books-month");
+    const c = await client(o.token);
+    const action = reminder({ kind: "post_entries", recipient: { name: "Näidis OÜ, e-arveldaja" }, period: "2026-10", amount_cents: 45320, document: { title: "Oktoober 2026", content: "2026-10-08 Sünteetiline Tarkvara OÜ 229,00 tarkvara (arve 1)\n2026-10-30 Sünteetiline Majutus OÜ 224,20 majutus (arve 2)" }, summary: "October 2026 entries for Näidis OÜ" });
+    const r = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "bm-1", action, owner_confirmation: "jah, kirjenda", playbook_id: "books-catch-up" } }));
+    expect(r).toMatchObject({ state: "approved", approved_in_assistant: true });
+    expect(row(r.approval_id)).toMatchObject({ kind: "post_entries", playbook_id: "books-catch-up" });
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "bm-o1", approval_id: r.approval_id, digest: r.digest, outcome: "posted", observed_at: new Date().toISOString() } }))).toMatchObject({ state: "consumed" });
+    const card = await (await fetch(`${base}/approvals/${r.approval_id}?lang=en`, { headers: { cookie: o.cookie } })).text();
+    expect(card).toContain("The entries, exactly as they will be posted");
+    expect(card).toContain(">Posted<");
+    expect(await (await fetch(`${base}/activity?lang=en`, { headers: { cookie: o.cookie } })).text()).toContain("Oktoober 2026");
   });
 
   test("a replayed request_approval reports the live state, not the stale creation state", async () => {

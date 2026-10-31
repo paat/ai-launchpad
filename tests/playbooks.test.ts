@@ -47,18 +47,23 @@ describe("executable job playbooks (#26)", () => {
     expect(remind).toMatch(/request_approval with action kind send_message.*get_approval.*record_action_outcome with outcome sent.*Record paid only after a sent outcome, with a NEW report_id.*only if you see the payment/s);
   });
 
-  test("books-catch-up: drafts first, documents before posting, owner asked only what no document explains", () => {
+  test("books-catch-up: drafts first, documents before posting, each month posted under an exact approval", () => {
     const p = byId("books-catch-up");
-    expect(p).toMatchObject({ approval_kind: null, triggers: [], source: "https://www.riigiteataja.ee/akt/107012025012?leiaKehtiv=" });
+    expect(p).toMatchObject({ approval_kind: "post_entries", triggers: [], source: "https://www.riigiteataja.ee/akt/107012025012?leiaKehtiv=" });
     const all = p.steps.join(" ");
-    expect(all).toContain("22 Swedbank, 10 SEB, 77 LHV, 42 Coop Pank, 96 Luminor");
+    expect(all).toContain("22 Swedbank, 10 SEB, 77 LHV, 42 Coop Pank, 17 or 96 Luminor");
+    expect(all).toContain("For any other code or a foreign account, say you cannot tell the bank and ask once whose account it is.");
+    expect(all).toContain("If it can only read");
+    expect(all).toContain("never ask for a key with more rights");
+    expect(all).toContain("Use the public register totals in get_obligations only to cross-check it, never as the entry itself.");
     expect(all).toContain("as a draft (unconfirmed) bank entry");
     expect(all).toContain("never post during this step");
     expect(all).toContain("every connected mailbox, searched by the vendor's name and the amount");
-    expect(all).toContain("never invent wording, dates or amounts");
+    expect(all).toContain("never from the payment reference");
     expect(all).toContain("one movement per question");
     expect(all).toContain("Never guess.");
-    expect(all).toMatch(/Ask once; post only what they confirm\./);
+    expect(all).toMatch(/request_approval with action kind post_entries.*owner_confirmation: their words, verbatim.*Post exactly the approved entries, nothing else, then call record_action_outcome with outcome posted/s);
+    expect(p.needs.join(" ")).not.toContain("follow the connect-service playbook");
     expect(p.done_when).toContain("equals the bank statement's balance");
     expect(byId("annual-report").steps.join(" ")).toContain("follow the books-catch-up playbook first");
   });
@@ -194,7 +199,7 @@ describe("executable job playbooks (#26)", () => {
   });
 
   test("approval steps name the full action shape with a concrete recipient", () => {
-    const recipient: Record<string, string> = { "payment-reminder": "the customer", "vat-return-prep": "\"EMTA (e-MTA)\"", "annual-report": "\"Äriregister (e-äriregister)\"" };
+    const recipient: Record<string, string> = { "payment-reminder": "the customer", "vat-return-prep": "\"EMTA (e-MTA)\"", "annual-report": "\"Äriregister (e-äriregister)\"", "books-catch-up": "the company and its accounting software" };
     for (const p of PLAYBOOKS.filter((x) => x.approval_kind)) {
       const step = p.steps.find((x) => x.includes("request_approval with action kind"))!;
       expect(step, p.id).toContain(`kind ${p.approval_kind}`);
