@@ -191,7 +191,7 @@ try {
     const letter = document.querySelector("pre.letter");
     return { approveH: ap.getBoundingClientRect().height, declineH: de.getBoundingClientRect().height, declineCls: de.className, position: getComputedStyle(bar).position,
       decisionOutsideForm: [...document.querySelectorAll('[name="decision"]')].filter((el) => !el.closest("form.decide")).length,
-      larger, letterTab: letter.getAttribute("tabindex"), letterClipped: letter.scrollHeight > letter.clientHeight + 1, scrollPad: getComputedStyle(document.documentElement).scrollPaddingBottom };
+      larger, letterTab: letter.getAttribute("tabindex"), letterClipped: letter.scrollHeight > letter.clientHeight + 1, barH: bar.getBoundingClientRect().height, scrollPad: parseFloat(getComputedStyle(document.documentElement).scrollPaddingBottom) };
   });
   assert.equal(ticket.position, "sticky", "decide bar sticky at 390");
   assert.ok(ticket.approveH >= 56, `approve button >= 56px (${ticket.approveH})`);
@@ -201,7 +201,7 @@ try {
   assert.deepEqual(ticket.larger, [], "the amount is the largest figure");
   assert.equal(ticket.letterTab, "0", "letter keeps tabindex=0");
   assert.equal(ticket.letterClipped, false, "letter shows its full text");
-  assert.equal(ticket.scrollPad, "88px", "focused elements are not hidden under the bar");
+  assert.ok(ticket.barH <= ticket.scrollPad, `focused elements are not hidden under the bar: scroll-padding ${ticket.scrollPad}px >= bar ${ticket.barH}px`);
   await page.screenshot({ path: path.join(T2_SHOTS, "t2-approval-pending-390-fold.png") });
   // Focus order unchanged: letter → approve → decline.
   await page.locator("pre.letter").focus();
@@ -210,6 +210,26 @@ try {
   await page.keyboard.press("Tab");
   assert.equal(await page.evaluate(() => document.activeElement.value), "decline", "then decline");
   geometry.ticket = ticket;
+  // review-polish-grok medium: at 320 the bar wraps to two rows, and scroll-padding must still cover all of it.
+  // Tab from the top to approve, then decline: nothing focused before the bar ends under it, and both buttons are fully on screen.
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.setContent(pageHtml["approval-pending"]());
+  const stops = [];
+  for (let i = 0; i < 40 && stops.at(-1)?.value !== "decline"; i++) {
+    await page.keyboard.press("Tab");
+    stops.push(await page.evaluate(() => {
+      const el = document.activeElement, bar = document.querySelector("form.decide").getBoundingClientRect(), r = el.getBoundingClientRect();
+      return { tag: el.tagName, value: el.value ?? null, inBar: !!el.closest("form.decide"), bottom: r.bottom, barTop: bar.top, barH: bar.height, vh: innerHeight,
+        pad: parseFloat(getComputedStyle(document.documentElement).scrollPaddingBottom) };
+    }));
+  }
+  assert.deepEqual(stops.filter((s) => s.inBar).map((s) => s.value), ["approve", "decline"], `320: Tab reaches approve then decline ${JSON.stringify(stops)}`);
+  for (const s of stops) {
+    assert.ok(s.barH <= s.pad, `320: scroll-padding ${s.pad}px covers the ${s.barH}px bar`);
+    if (s.inBar) assert.ok(s.bottom <= s.vh, `320: ${s.value} fully on screen ${JSON.stringify(s)}`);
+    else assert.ok(s.bottom <= s.barTop + 0.5, `320: focused ${s.tag} ends above the bar ${JSON.stringify(s)}`);
+  }
+  geometry.focus320 = stops.map(({ tag, value, bottom, barTop, barH, pad }) => ({ tag, value, bottom, barTop, barH, pad }));
 
   await page.setContent(pageHtml["approval-approved"]());
   const approvedState = await page.evaluate(() => ({ status: [...document.querySelectorAll("main [role=status]")].map((el) => el.textContent.slice(0, 24)),

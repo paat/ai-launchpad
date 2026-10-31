@@ -243,9 +243,10 @@ article.card.ticket{margin:0 0 var(--s-6);padding:0;border-radius:var(--r-xl);bo
 .decide button{flex:1 1 auto;min-width:0;min-height:56px;margin:0;font-size:var(--fs-lg)}
 .decide button.text{flex:0 0 auto;min-height:var(--tap);font-size:var(--fs-md);white-space:nowrap}
 @media (min-width:600px){.decide{margin:0 calc(-1 * var(--s-6));padding-left:var(--s-6);padding-right:var(--s-6)}}
-html:has(.decide){scroll-padding-bottom:88px}
+/* Scroll padding = the bar (1px border + 12px top + 56px button + bottom inset) + 8px air; below 340px it wraps to a second 8px + 44px row. */
+html:has(.decide){scroll-padding-bottom:calc(77px + max(12px,env(safe-area-inset-bottom)))}
 @media (max-width:479px){.decide button{padding-left:12px;padding-right:12px;font-size:var(--fs-md)}}
-@media (max-width:339px){.decide{flex-wrap:wrap}}
+@media (max-width:339px){.decide{flex-wrap:wrap}html:has(.decide){scroll-padding-bottom:calc(129px + max(12px,env(safe-area-inset-bottom)))}}
 .fine{margin:var(--s-3) 0 0;color:var(--c-muted);font-size:var(--fs-sm)}
 .turn{margin:var(--s-1) 0 var(--s-4)}
 .turn strong{display:block;margin-bottom:var(--s-2);font-size:var(--fs-h1);font-weight:800;line-height:1.1;letter-spacing:-.025em}
