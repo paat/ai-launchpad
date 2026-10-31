@@ -66,7 +66,12 @@ describe("executable job playbooks (#26)", () => {
     const email = branch.filter((x) => x.startsWith("E-mail:")), bank = branch.filter((x) => x.startsWith("Bank:")), acc = branch.filter((x) => x.startsWith("Accounting:"));
     expect([email.length, bank.length]).toEqual([1, 1]);
     expect(email[0]).toContain("if it is Gmail or Microsoft 365, offer your built-in connector (if it is already connected, skip the offer), and once it is connected, go to the last step.");
-    expect(email[0]).toContain("say plainly that it cannot be linked, do not search or quote catalogue entries for it, and stop here without the last step");
+    expect(email[0]).toContain("only if your Gmail or Microsoft 365 connector is already connected, offer in one line to use that mailbox for sending instead");
+    expect(email[0]).toContain("do not search or quote catalogue entries for it");
+    expect(email[0]).toContain("otherwise stop here without the last step");
+    expect(email[0]).toContain("not from the mailbox they asked about");
+    expect(email[0]).toContain("This is only an offer: nothing is sent now, and each later send still needs its job's own approval.");
+    expect(email[0]).toContain("If the owner agrees, verify that connected mailbox in the last step");
     expect(bank[0]).toMatch(/^Bank: only LHV can be linked, through LHV's own read-only connection \(no payments\)\./);
     expect(bank[0]).toContain("quote only the entry with id lhv-ai; the connector address is https://mcp.lhv.ai/mcp");
     expect(bank[0]).toContain("own Smart-ID (never automate it)");
@@ -89,7 +94,8 @@ describe("executable job playbooks (#26)", () => {
     expect(acc.join(" ")).toContain("never offer community or local servers from the catalogue");
     expect(acc.join(" ")).toContain("in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.");
     expect(acc.join(" ")).toContain("removing AI Launchpad stops deadlines and approvals, suggest upgrading the plan, and stop here without the last step; never suggest removing AI Launchpad.");
-    expect(verify).toMatch(/^Verify only the service the owner asked for/);
+    expect(verify).toMatch(/^Verify only the service the owner asked for, or the mailbox they agreed to use instead, read-only,/);
+    expect(verify).toContain("or the mailbox they agreed to use instead");
     expect(verify).toContain("e-mail, only the date of the newest message, with no subject or content;");
     expect(verify).toContain("Do not create, change, delete or send anything during setup.");
     for (const id of ["payment-reminder", "vat-return-prep", "annual-report"]) expect(byId(id).needs[0], id).toContain("(if no accounting connector answers yet, follow the connect-service playbook)");
