@@ -532,7 +532,8 @@ describe("standing approvals (#45)", () => {
     expect((await decide(o, first.approval_id, { decision: "approve", digest: first.digest })).status).toBe(302);
     const card = await html(o, `/approvals/${first.approval_id}`);
     expect(card).toContain("Luba edaspidi sarnased automaatselt");
-    expect(card).toContain('value="2000"');
+    // The default cap is the largest approved amount up to the next 100 € (QA m4): 1 240 € → 1 300 €.
+    expect(card).toContain('<input id="so-max" name="max_eur" inputmode="decimal" autocomplete="off" value="1300">');
     const made = await post(o, "/standing-approvals", { approval_id: first.approval_id, scope, max_eur });
     expect(made.status).toBe(302);
     expect(made.headers.get("location")).toBe(`/approvals/${first.approval_id}#pusiluba`);

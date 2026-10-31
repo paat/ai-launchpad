@@ -117,6 +117,10 @@ export function standingBasis(approvals: ApprovalRow[], kind: string): ApprovalR
   return approvals.filter((a) => a.kind === kind && a.decided_at && a.state !== "declined" && !a.approved_by_rule && jobOfApproval(a) === job);
 }
 
+export const largestAmount = (rows: ApprovalRow[]) => Math.max(0, ...rows.map((a) => payloadOf(a).amount_cents ?? 0));
+/** A standing offer's default cap, on the approval card and on Ühendus alike (QA m4): the largest approved amount rounded up to the next 100 €, else the default. */
+export const offerCapCents = (maxCents: number) => maxCents ? Math.ceil(maxCents / 10_000) * 10_000 : STANDING_DEFAULTS.maxAmountCents;
+
 /** One next step, first match wins: standing offer → playbook prompt → connector. */
 function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], obligations: Obligation[]): NextStep {
   for (const j of jobs) {
@@ -125,8 +129,7 @@ function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], o
     const recipients = new Map<string, string>();
     for (const a of basis) { const r = payloadOf(a).recipient; if (r?.address?.trim()) recipients.set(normAddress(r.address), r.name ?? r.address); }
     if (!recipients.size) continue;
-    const maxCents = Math.max(0, ...basis.map((a) => payloadOf(a).amount_cents ?? 0));
-    const capCents = maxCents ? Math.ceil(maxCents / 10_000) * 10_000 : STANDING_DEFAULTS.maxAmountCents;
+    const maxCents = largestAmount(basis), capCents = offerCapCents(maxCents);
     return { type: "standing", job: j, kind: j.kind, recipients: [...recipients].map(([address, name]) => ({ name, address })), capCents, basis: { count: basis.length, maxCents } };
   }
   // Reminders first (they can reach the top rung), then filings by the soonest rule-computed date.

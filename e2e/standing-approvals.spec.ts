@@ -33,14 +33,14 @@ test("owner approves a card, allows similar ones automatically, and the next rem
     await page.goto(first.approve_url);
     await page.getByRole("button", { name: "Kinnita täpselt see" }).click();
     await expect(page.locator("main [role=status]").first()).toContainText("Nüüd on assistendi kord.");
-    // The offer: this recipient by default, cap max(2 000 €, this amount), up to 10 a day, 90 days.
+    // The offer: this recipient by default, cap = the largest approved amount up to the next 100 € (1 240 € → 1 300 €), up to 10 a day, 90 days.
     const offer = page.locator("section.standing-offer");
     await expect(offer.getByRole("heading", { name: "Luba edaspidi sarnased automaatselt" })).toBeVisible();
     // The scope radios and the cap sit under „Muuda piire”; the sentence above already names them.
-    await expect(offer.getByRole("heading", { name: "Luba edaspidi sarnased automaatselt: ainult Synthetic Client OÜ, kuni 2000\u00a0€" })).toBeVisible();
+    await expect(offer.getByRole("heading", { name: "Luba edaspidi sarnased automaatselt: ainult Synthetic Client OÜ, kuni 1300\u00a0€" })).toBeVisible();
     await offer.getByText("Muuda piire").click();
     await expect(offer.getByRole("radio", { name: /Ainult Synthetic Client OÜ/ })).toBeChecked();
-    await expect(offer.getByLabel("Summa ülempiir (€)")).toHaveValue("2000");
+    await expect(offer.getByLabel("Summa ülempiir (€)")).toHaveValue("1300");
     await expect(offer.getByText("Kuni 10 päevas · kehtib 90 päeva")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     await offer.scrollIntoViewIfNeeded();
@@ -105,6 +105,9 @@ test("„Käest ära” (#61): the pre-filled offer on Ühendus creates the rule
     const first = await ask("ho-1", "2026-014", 24000);
     await page.goto(first.approve_url);
     await page.getByRole("button", { name: "Kinnita täpselt see" }).click();
+    // QA m4: the card's default cap follows the Ühendus rule (largest approved amount up to the next 100 €): 240 € → 300 €.
+    await expect(page.locator("section.standing-offer h2")).toHaveText("Luba edaspidi sarnased automaatselt: ainult Synthetic Client OÜ, kuni 300\u00a0€");
+    await expect(page.locator("#so-max")).toHaveValue("300");
     await page.goto(`${cfg.baseUrl}/uhenda`);
     // Approved but not reported: still yours.
     await expect(ho.locator(".ho-sum")).toContainText("0 tööd 1-st");

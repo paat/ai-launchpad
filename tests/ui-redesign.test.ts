@@ -407,7 +407,7 @@ describe("landing and connect", () => {
     expect(approved).toContain('<p class="turn" role="status"><strong>Nüüd on assistendi kord.</strong>');
     // Standing offer: one sentence + one primary; the scope radios and cap sit under „Muuda piire”, same fields and endpoint.
     // The cap sits in .cap-now, hidden while „Muuda piire” is open; the inner button after the field submits an edited cap (QA M1).
-    expect(approved).toContain('<h2 id="so-h">Luba edaspidi sarnased automaatselt: ainult Demo Klient OÜ<span class="cap-now">, kuni 2000\u00a0€</span></h2>');
+    expect(approved).toContain('<h2 id="so-h">Luba edaspidi sarnased automaatselt: ainult Demo Klient OÜ<span class="cap-now">, kuni 300\u00a0€</span></h2>');
     expect(approved).toMatch(/<form method="post" action="\/standing-approvals">[^]*<button type="submit">Luba automaatselt<\/button>\n<details><summary>Muuda piire<\/summary>[^]*name="scope" value="recipient" checked[^]*name="max_eur"[^]*>\n<button type="submit">Luba automaatselt<\/button>\n<\/details><\/form>/);
     expect(approved).toContain("Nüüd on assistendi kord.");
     expect(approved).toContain("Kinnitasin");
