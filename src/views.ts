@@ -3,7 +3,7 @@ import { isHandled } from "./core.js";
 import { isDone, offerCapCents, type Handover, type Job } from "./handover.js";
 import { approvalAddressMissing, normAddress, standingRecipients, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type AssistantMilestones, type Exclusion, type StandingRule } from "./mcp.js";
 import type { CompanyCard } from "./arikratt.js";
-import { ET_OF, tallinnDate, type FactNeeded, type Obligation, type Source } from "./obligations.js";
+import { ET_OF, SRC, tallinnDate, type FactNeeded, type Obligation, type Source } from "./obligations.js";
 import { BASETEN_MODEL } from "./model-quality.js";
 import { DEMO_LABELS_EN } from "./fixtures.js";
 import { PLAYBOOKS, safeHttps, type ServiceRecord } from "./catalog.js";
@@ -11,17 +11,147 @@ import { BLOCKER_HANDOFF, BLOCKER_LABELS, BLOCKER_LABELS_ET, CATEGORY_LABELS, CA
 
 export const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 
-// Landing teaser timeline (18 s loop, pure CSS): each beat grows in at its
-// percentage and the whole chat fades out at the end. Without animation
-// (prefers-reduced-motion) the base styles are the final frame.
-const BEATS: [string, number, string?][] = [["me1", 3], ["ai1", 19], ["card", 26, "48rem"], ["allow", 43], ["ai2", 69], ["ai3", 74]];
-const TYPING: [string, number, number][] = [["t1", 7, 19], ["t2", 59, 69]];
-// The card's two taps: the button swaps for its result at this percentage, the tap ring leads it.
-const TAPS: [string, number][] = [["approve", 38], ["allow", 54]];
+// One landing case supplies the card, its phone conversation, transcript and
+// scoped 18 s CSS timeline. Amount tokens are formatted with fmtEur at render.
+type LandingText = { et: string; en: string };
+type LandingConnector = LandingText & { g?: CatalogueGroup; href?: string; launchpad?: boolean; subtitleEt?: string; subtitleEn?: string };
+type LandingChip = { kind: "rule" } | { kind: "official"; source: "kmd" | "annual" } | { kind: "official"; et: string; en: string };
+type LandingApproval = { title: LandingText; client: string; amountCents: number; allow?: LandingText & { standingEt: string; standingEn: string } };
+type LandingCase = LandingText & {
+  id: string; bodyEt: string; bodyEn: string; connectors: readonly LandingConnector[]; registerData?: boolean;
+  ask: LandingText; answer: LandingText & { boldEt?: string; boldEn?: string }; chips?: readonly LandingChip[];
+  approval?: LandingApproval; next?: LandingText;
+};
+const ACCOUNTING: LandingConnector = { et: "Raamatupidamine", en: "Accounting", g: "raamatupidamine" };
+const EMAIL: LandingConnector = { et: "E-post", en: "E-mail", g: "epost" };
+const BANK: LandingConnector = { et: "Pank", en: "Bank", g: "pank" };
+const CALENDAR: LandingConnector = { et: "Kalender", en: "Calendar", g: "epost" };
+const ARIKRATT: LandingConnector = { et: "Ärikratt · soovitatud", en: "Ärikratt · recommended", href: "/kataloog?q=%C3%84rikratt", subtitleEt: "äriandmed", subtitleEn: "business data" };
+const APPROVAL: LandingConnector = { et: "AI-hüppelaud: kinnitus", en: "AI Launchpad: approval", launchpad: true };
+const DEADLINE: LandingConnector = { et: "AI-hüppelaud: tähtaeg", en: "AI Launchpad: deadline", launchpad: true };
+const DEADLINES: LandingConnector = { et: "AI-hüppelaud: tähtajad", en: "AI Launchpad: deadlines", launchpad: true };
+const RULE: LandingChip = { kind: "rule" };
+const KMD_SOURCE: LandingChip = { kind: "official", source: "kmd" };
+const ANNUAL_SOURCE: LandingChip = { kind: "official", source: "annual" };
+const LANDING_CARDS: readonly LandingCase[] = [
+  {
+    id: "unpaid", et: "Võlgnikud", en: "Unpaid invoices",
+    bodyEt: "Leiab tasumata arved ja saadab viisaka meeldetuletuse. Iga kiri läheb välja sinu kinnitusega.",
+    bodyEn: "Finds unpaid invoices and sends a polite reminder. Every message goes out with your approval.",
+    connectors: [ACCOUNTING, EMAIL, APPROVAL],
+    ask: { et: "Kes mulle võlgu on?", en: "Who owes me money?" },
+    answer: {
+      et: "Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku {total}. Koostasin igale viisaka meeldetuletuse.",
+      en: "Your accounting software shows three invoices overdue, {total} in total. I drafted a polite reminder for each.",
+    },
+    approval: {
+      title: { et: "Maksemeeldetuletus · 1/3", en: "Payment reminder · 1/3" }, client: "Demo Klient OÜ", amountCents: 24000,
+      allow: { et: "Luba sarnased automaatselt", en: "Allow similar ones automatically", standingEt: "Püsiluba: meeldetuletused kuni {cap}", standingEn: "Standing approval: reminders up to {cap}" },
+    },
+    next: { et: "Järgmised saadan ise.", en: "I'll send the next ones myself." },
+  },
+  {
+    id: "kmd", et: "KMD", en: "VAT return",
+    bodyEt: "Kogub kuu müügi- ja ostuarved ning paneb deklaratsiooni andmed valmis. Esitad ise.",
+    bodyEn: "Gathers the month's sales and purchase invoices and gets the return's figures ready. You file it.",
+    connectors: [ACCOUNTING, DEADLINE], registerData: true,
+    ask: { et: "Kas oktoobri KMD on valmis?", en: "Is October's VAT return ready?" },
+    answer: {
+      et: "Raamatupidamise järgi on oktoobris 14 müügi- ja 9 ostuarvet. Andmed on valmis, esitad e-maksuametis ise. Tähtaeg on 20. nov.",
+      en: "Your books show 14 sales and 9 purchase invoices for October. The figures are ready; you file in e-MTA yourself. Due 20 Nov.",
+      boldEt: "20. nov", boldEn: "20 Nov",
+    },
+    chips: [RULE, KMD_SOURCE],
+  },
+  {
+    id: "annual", et: "Aastaaruanne", en: "Annual report",
+    bodyEt: "Vaatab, mis aruandeks puudu on, ja paneb nimekirja kokku. Allkirjastad ise.",
+    bodyEn: "Checks what the report is still missing and makes the list. You sign it.",
+    connectors: [ACCOUNTING, DEADLINE], registerData: true,
+    ask: { et: "Mis aastaaruandest puudu on?", en: "What's missing from the annual report?" },
+    answer: {
+      et: "Puudu on inventuuri kokkuvõte ja kasumi jaotamise otsus. Muu on raamatupidamises olemas. Allkirjastad e-äriregistris ise. Tähtaeg on 30. juuni.",
+      en: "Missing: the stock-take summary and the profit-distribution decision. Everything else is in your books. You sign in the e-Business Register yourself. Due 30 Jun.",
+      boldEt: "30. juuni", boldEn: "30 Jun",
+    },
+    chips: [RULE, ANNUAL_SOURCE],
+  },
+  {
+    id: "calendar", et: "Tähtajad kalendrisse", en: "Deadlines in your calendar",
+    bodyEt: "Arvutab sinu ettevõtte maksu- ja aruandetähtajad avalikest registritest ja paneb need sinu kalendrisse.",
+    bodyEn: "Calculates your company's tax and filing deadlines from public registers and puts them in your calendar.",
+    connectors: [DEADLINES, CALENDAR], registerData: true,
+    ask: { et: "Pane mu tähtajad kalendrisse.", en: "Put my deadlines in my calendar." },
+    answer: {
+      et: "Lisasin 4 tähtaega: TSD 10. nov, KMD 20. nov, TSD 10. dets, KMD 20. dets.",
+      en: "Added 4 deadlines: TSD 10 Nov, VAT 20 Nov, TSD 10 Dec, VAT 20 Dec.",
+    },
+    chips: [RULE],
+  },
+  {
+    id: "invoice", et: "Arve kliendile", en: "Invoice a customer",
+    bodyEt: "Koostab arve tehtud töö põhjal ja saadab selle kliendile, kui oled kinnitanud.",
+    bodyEn: "Drafts the invoice from the work done and sends it to the customer once you approve.",
+    connectors: [ACCOUNTING, EMAIL, APPROVAL],
+    ask: { et: "Tee Demo Klient OÜ-le arve oktoobri töö eest.", en: "Invoice Demo Klient OÜ for October's work." },
+    answer: { et: "Koostasin arve tehtud töö põhjal.", en: "I drafted the invoice from the work done." },
+    approval: { title: { et: "Arve", en: "Invoice" }, client: "Demo Klient OÜ", amountCents: 89280 },
+  },
+  {
+    id: "payments", et: "Laekumised", en: "Incoming payments",
+    bodyEt: "Võrdleb panga laekumisi arvetega ja näitab, mis on veel maksmata.",
+    bodyEn: "Matches bank payments to invoices and shows what is still unpaid.",
+    connectors: [BANK, ACCOUNTING],
+    ask: { et: "Kes on oktoobris maksnud?", en: "Who paid in October?" },
+    answer: {
+      et: "Pangas on 5 laekumist, 4 sobivad arvetega. Maksmata: Demo Partner OÜ, {unpaid}.",
+      en: "5 payments arrived; 4 match invoices. Unpaid: Demo Partner OÜ, {unpaid}.",
+    },
+  },
+  {
+    id: "customer", et: "Uue kliendi kontroll", en: "Check a new customer",
+    bodyEt: "Enne tööd vaatab üle kliendi registriandmed, maksuvõla ja esitatud aruanded.",
+    bodyEn: "Before you take the job, checks the customer's register data, tax debt and filed reports.",
+    connectors: [ARIKRATT],
+    ask: { et: "Kontrolli Näidis Ehitus OÜ enne pakkumist.", en: "Check Näidis Ehitus OÜ before I quote." },
+    answer: {
+      et: "Registris aktiivne, maksuvõlga pole, eelmise aasta aruanne on esitatud.",
+      en: "Active in the register, no tax debt, last year's report filed.",
+    },
+    chips: [{ kind: "official", et: "Allikas: avalikud registrid", en: "Source: public registers" }],
+  },
+  {
+    id: "purchases", et: "Ostuarved", en: "Purchase invoices",
+    bodyEt: "Korjab e-postist ostuarved kokku ja lisab need raamatupidamisse.",
+    bodyEn: "Collects purchase invoices from your e-mail and adds them to your books.",
+    connectors: [EMAIL, ACCOUNTING],
+    ask: { et: "Korja oktoobri ostuarved kokku.", en: "Collect October's purchase invoices." },
+    answer: {
+      et: "Leidsin e-postist 7 ostuarvet, kokku {purchases}. Lisasin need raamatupidamisse kinnitamata kannetena.",
+      en: "Found 7 purchase invoices in your e-mail, {purchases} in total. I added them to your books as unconfirmed entries.",
+    },
+  },
+];
+
+// Each beat grows in at its percentage and the whole chat fades out at the
+// end. Without animation (prefers-reduced-motion) base styles are final frames.
 const HIDE = "max-height:0;opacity:0;transform:translateY(12px)";
-const TEASER_CSS = BEATS.map(([k, a, cap = "16rem"]) => `.b-${k}{animation-name:lp-${k}}@keyframes lp-${k}{0%,${a}%{${HIDE}}${a + 2}%,94%{max-height:${cap};opacity:1;transform:none}98%{max-height:${cap};opacity:0}100%{max-height:0;opacity:0}}`).join("\n")
-  + "\n" + TAPS.map(([k, a]) => `@keyframes lp-${k}-out{0%,${a}%{opacity:1}${a + 1}%,100%{opacity:0}}@keyframes lp-${k}-in{0%,${a}%{opacity:0;transform:scale(.96)}${a + 2}%,100%{opacity:1;transform:none}}@keyframes lp-${k}-tap{0%,${a - 8}%{opacity:0;transform:scale(.3)}${a - 5}%{opacity:1;transform:scale(1)}${a}%,100%{opacity:0;transform:scale(2.4)}}`).join("\n")
-  + "\n" + TYPING.map(([k, a, b]) => `.b-${k}{animation-name:lp-${k}}@keyframes lp-${k}{0%,${a}%{max-height:0;opacity:0}${a + 1}%,${b}%{max-height:4rem;opacity:1}${b + 1}%,100%{max-height:0;opacity:0}}`).join("\n");
+const teaserBeat = (id: string, k: string, a: number, cap = "16rem") => `.b-${id}-${k}{animation-name:lp-${id}-${k}}@keyframes lp-${id}-${k}{0%,${a}%{${HIDE}}${a + 2}%,94%{max-height:${cap};opacity:1;transform:none}98%{max-height:${cap};opacity:0}100%{max-height:0;opacity:0}}`;
+const teaserTyping = (id: string, k: string, a: number, b: number) => `.b-${id}-${k}{animation-name:lp-${id}-${k}}@keyframes lp-${id}-${k}{0%,${a}%{max-height:0;opacity:0}${a + 1}%,${b}%{max-height:4rem;opacity:1}${b + 1}%,100%{max-height:0;opacity:0}}`;
+const teaserTap = (id: string, k: string, a: number) => `@keyframes lp-${id}-${k}-out{0%,${a}%{opacity:1}${a + 1}%,100%{opacity:0}}@keyframes lp-${id}-${k}-in{0%,${a}%{opacity:0;transform:scale(.96)}${a + 2}%,100%{opacity:1;transform:none}}@keyframes lp-${id}-${k}-tap{0%,${a - 8}%{opacity:0;transform:scale(.3)}${a - 5}%{opacity:1;transform:scale(1)}${a}%,100%{opacity:0;transform:scale(2.4)}}`;
+const TEASER_CSS = LANDING_CARDS.map((c) => {
+  const id = c.id, css = [teaserBeat(id, "me1", 3), teaserTyping(id, "t1", 7, 19), teaserBeat(id, "ai1", 19)];
+  if (c.approval) {
+    css.push(teaserBeat(id, "card", 26, "48rem"), teaserTap(id, "approve", 38));
+    css.push(`.b-${id}-card .mock-wait,.b-${id}-card .mock-approve{animation-name:lp-${id}-approve-out}.b-${id}-card .mock-ok,.b-${id}-card .mock-done{animation-name:lp-${id}-approve-in}.b-${id}-card .mock-btn>.mock-tap{animation-name:lp-${id}-approve-tap}`);
+    if (c.approval.allow) {
+      css.push(teaserBeat(id, "allow", 43), teaserTap(id, "allow", 54));
+      css.push(`.b-${id}-allow .mock-allow{animation-name:lp-${id}-allow-out}.b-${id}-allow .mock-rule{animation-name:lp-${id}-allow-in}.b-${id}-allow .mock-btn>.mock-tap{animation-name:lp-${id}-allow-tap}`);
+    }
+  }
+  if (c.next) css.push(teaserTyping(id, "t2", 59, 69), teaserBeat(id, "ai2", 69));
+  return css.join("\n");
+}).join("\n");
 
 const CSS = `
 /* --- Tokens (design direction A „Selge leht”, docs/design/direction-a) --- */
@@ -390,16 +520,17 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 #teaser-pause:focus-visible~figcaption .teaser-pause{outline:3px solid var(--c-focus);outline-offset:2px}
 #teaser-pause:checked~figcaption .teaser-pause{background:var(--c-primary);color:#fff}
 .tp-resume,#teaser-pause:checked~figcaption .tp-pause{display:none}#teaser-pause:checked~figcaption .tp-resume{display:inline}
-#teaser-pause:checked~.phone *{animation-play-state:paused!important}
+#teaser-pause:checked~.teaser-conversation .phone *{animation-play-state:paused!important}
 @media (prefers-reduced-motion:reduce){.teaser-pause,.vh-input{display:none}}
-/* Heights fit the final frame from the owner's opening question to the last bubble, in ET and EN (#63 m1); the beat timing is unchanged. */
+/* Fixed phone and chat heights fit every case's longest final frame in ET and EN at 360 px and desktop; switching cases cannot resize the phone. */
 .phone{height:672px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
 @media (max-width:380px){.phone{height:700px}}@media (max-width:359px){.phone{height:772px}}@media (min-width:880px){.phone{height:656px}}
 .phone-screen{display:flex;flex-direction:column;height:100%;overflow:hidden;border-radius:36px;background:var(--c-surface-2)}
 .phone-bar{display:flex;align-items:center;gap:10px;padding:22px 16px 10px;background:#fff;border-bottom:1px solid var(--c-divider)}
 .phone-ava{flex:none;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1a4d2e,#6f9c63)}
 .phone-who{line-height:1.25}.phone-who b{display:block;font-size:var(--fs-sm)}.phone-who small{color:var(--c-muted);font-size:.75rem}
-.chat{display:flex;flex:1;flex-direction:column;justify-content:flex-end;min-height:0;overflow:hidden;padding:4px 12px 14px;font-size:.875rem;line-height:1.4}
+.chat{display:flex;flex:1;flex-direction:column;justify-content:flex-end;min-height:540px;overflow:hidden;padding:4px 12px 14px;font-size:.875rem;line-height:1.4}
+@media (max-width:380px){.chat{min-height:568px}}@media (max-width:359px){.chat{min-height:640px}}
 .beat{display:flex;flex:none;flex-direction:column;overflow:hidden;animation-duration:18s;animation-timing-function:ease-out;animation-iteration-count:infinite}
 .beat>*{margin:10px 0 0}.beat--ai+.beat--ai>*{margin-top:4px}
 .bubble{max-width:88%;padding:8px 12px;border-radius:18px}
@@ -418,23 +549,25 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .mock-btn{position:relative;display:grid;margin-top:10px}
 .mock-btn>span{grid-area:1/1;display:flex;align-items:center;justify-content:center;min-height:var(--tap);padding:0 10px;border-radius:var(--r-lg);font-weight:750;text-align:center}
 .mock-state{display:grid}.mock-state>span{grid-area:1/1;justify-self:start}
-.mock-wait,.mock-approve{opacity:0;animation:lp-approve-out 18s infinite}
-.mock-ok,.mock-done{animation:lp-approve-in 18s infinite}
-.mock-allow{opacity:0;animation:lp-allow-out 18s infinite}
-.mock-rule{animation:lp-allow-in 18s infinite}
+.mock-wait,.mock-approve{opacity:0;animation-duration:18s;animation-iteration-count:infinite}
+.mock-ok,.mock-done,.mock-rule{animation-duration:18s;animation-iteration-count:infinite}
+.mock-allow{opacity:0;animation-duration:18s;animation-iteration-count:infinite}
 .mock-approve{background:var(--c-primary);color:#fff}
 .mock-allow{border:1px solid var(--c-primary);background:#fff;color:var(--c-primary)}
 .mock-done{border:1px dashed var(--st-accepted-fg);background:var(--st-accepted-bg);color:var(--st-accepted-fg)}
 .mock-btn>.mock-rule{border-radius:999px;background:var(--lbl-owner-bg);color:var(--lbl-owner-fg);font-size:var(--fs-xs)}
-.mock-btn>.mock-tap{position:absolute;top:50%;left:50%;width:46px;height:46px;min-height:0;margin:-23px 0 0 -23px;padding:0;border-radius:50%;background:rgba(255,255,255,.6);box-shadow:0 0 0 3px rgba(255,255,255,.35);opacity:0;animation:lp-approve-tap 18s infinite}
-.b-allow .mock-btn>.mock-tap{background:rgba(26,77,46,.25);box-shadow:0 0 0 3px rgba(26,77,46,.15);animation-name:lp-allow-tap}
+.mock-btn>.mock-tap{position:absolute;top:50%;left:50%;width:46px;height:46px;min-height:0;margin:-23px 0 0 -23px;padding:0;border-radius:50%;background:rgba(255,255,255,.6);box-shadow:0 0 0 3px rgba(255,255,255,.35);opacity:0;animation-duration:18s;animation-iteration-count:infinite}
+.beat--allow .mock-btn>.mock-tap{background:rgba(26,77,46,.25);box-shadow:0 0 0 3px rgba(26,77,46,.15)}
 ${TEASER_CSS}
 .landing h2{margin:0 0 var(--s-4);font-size:var(--fs-xl);letter-spacing:-.02em}
 .job-track{display:flex;gap:var(--s-3);max-width:100%;margin:0;padding:0;overflow-x:auto;scroll-snap-type:x mandatory;list-style:none}
 .job-track:focus-visible{outline:3px solid var(--c-focus);outline-offset:2px}
 .job-card{flex:0 0 100%;min-width:0;padding:var(--s-4);scroll-snap-align:start;border:1px solid var(--c-border);border-radius:var(--r-xl);background:#fff}
+.job-card--active{border-color:var(--c-primary);box-shadow:inset 0 0 0 1px var(--c-primary)}
 .job-card h3{margin:0 0 var(--s-2)}.job-card>p{margin:0 0 var(--s-3)}
+.job-activate{width:auto;min-height:var(--tap);margin:0;padding:0;border:0;background:none;color:var(--c-text);font:inherit;font-weight:750;text-align:left}
 .job-card>p.job-needs{margin:var(--s-4) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}
+.job-card>p.job-register{margin:var(--s-2) 0 0}
 .job-chips{margin:0}.job-chips .label-chip{min-height:var(--tap);padding:6px 14px;border-radius:999px}
 .job-pager{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2);margin-top:var(--s-3)}
 .job-pager button{width:auto;min-height:var(--tap);margin:0;padding:8px 14px}.job-pager span{font-variant-numeric:tabular-nums}
@@ -1427,74 +1560,80 @@ const STEP_ICONS = [
   '<rect x="6.5" y="1.5" width="11" height="21" rx="2.5"/><path d="M9 12l2.2 2.2L15.5 10M10.5 19.5h3"/>',
 ];
 
-type LandingConnector = { et: string; en: string; g?: CatalogueGroup };
-type LandingCard = { et: string; en: string; bodyEt: string; bodyEn: string; connectors: readonly LandingConnector[] };
-const ACCOUNTING: LandingConnector = { et: "Raamatupidamine", en: "Accounting", g: "raamatupidamine" };
-const EMAIL: LandingConnector = { et: "E-post", en: "E-mail", g: "epost" };
-const BANK: LandingConnector = { et: "Pank", en: "Bank", g: "pank" };
-const BUSINESS_DATA: LandingConnector = { et: "Äriandmed", en: "Business data", g: "andmed" };
-const CALENDAR: LandingConnector = { et: "Kalender", en: "Calendar", g: "epost" };
-const APPROVAL: LandingConnector = { et: "AI-hüppelaud: kinnitus", en: "AI Launchpad: approval" };
-const DEADLINE: LandingConnector = { et: "AI-hüppelaud: tähtaeg", en: "AI Launchpad: deadline" };
-const DEADLINES: LandingConnector = { et: "AI-hüppelaud: tähtajad", en: "AI Launchpad: deadlines" };
-const LANDING_CARDS: readonly LandingCard[] = [
-  { et: "Võlgnikud", en: "Unpaid invoices", bodyEt: "Leiab tasumata arved ja saadab viisaka meeldetuletuse. Iga kiri läheb välja sinu kinnitusega.", bodyEn: "Finds unpaid invoices and sends a polite reminder. Every message goes out with your approval.", connectors: [ACCOUNTING, EMAIL, APPROVAL] },
-  { et: "KMD", en: "VAT return", bodyEt: "Kogub kuu müügi- ja ostuarved ning paneb deklaratsiooni andmed valmis. Esitad ise.", bodyEn: "Gathers the month's sales and purchase invoices and gets the return's figures ready. You file it.", connectors: [ACCOUNTING, DEADLINE] },
-  { et: "Aastaaruanne", en: "Annual report", bodyEt: "Vaatab, mis aruandeks puudu on, ja paneb nimekirja kokku. Allkirjastad ise.", bodyEn: "Checks what the report is still missing and makes the list. You sign it.", connectors: [ACCOUNTING, DEADLINE] },
-  { et: "Tähtajad kalendrisse", en: "Deadlines in your calendar", bodyEt: "Arvutab sinu ettevõtte maksu- ja aruandetähtajad avalikest registritest ja paneb need sinu kalendrisse.", bodyEn: "Calculates your company's tax and filing deadlines from public registers and puts them in your calendar.", connectors: [DEADLINES, CALENDAR] },
-  { et: "Arve kliendile", en: "Invoice a customer", bodyEt: "Koostab arve tehtud töö põhjal ja saadab selle kliendile, kui oled kinnitanud.", bodyEn: "Drafts the invoice from the work done and sends it to the customer once you approve.", connectors: [ACCOUNTING, EMAIL, APPROVAL] },
-  { et: "Laekumised", en: "Incoming payments", bodyEt: "Võrdleb panga laekumisi arvetega ja näitab, mis on veel maksmata.", bodyEn: "Matches bank payments to invoices and shows what is still unpaid.", connectors: [BANK, ACCOUNTING] },
-  { et: "Uue kliendi kontroll", en: "Check a new customer", bodyEt: "Enne tööd vaatab üle kliendi registriandmed, maksuvõla ja esitatud aruanded.", bodyEn: "Before you take the job, checks the customer's register data, tax debt and filed reports.", connectors: [BUSINESS_DATA] },
-  { et: "Ostuarved", en: "Purchase invoices", bodyEt: "Korjab e-postist ostuarved kokku ja lisab need raamatupidamisse.", bodyEn: "Collects purchase invoices from your e-mail and adds them to your books.", connectors: [EMAIL, ACCOUNTING] },
-];
-const JOB_CAROUSEL_SCRIPT = `<script>(function(){var track=document.getElementById("job-track");if(!track)return;var prev=document.querySelector("[data-job-prev]"),next=document.querySelector("[data-job-next]"),status=document.querySelector("[data-job-status]");if(!prev||!next||!status)return;var controls=[prev,next,status];for(var i=0;i<controls.length;i++)controls[i].hidden=false;function step(){var card=track.querySelector("li");if(!card)return 1;var gap=parseFloat(window.getComputedStyle(track).columnGap)||0;return card.getBoundingClientRect().width+gap;}function show(){var n=Math.max(1,Math.min(track.children.length,Math.round(track.scrollLeft/step())+1));status.textContent=n+" / "+track.children.length;}function go(d){track.scrollBy({left:d*step(),behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});}prev.addEventListener("click",function(){go(-1);});next.addEventListener("click",function(){go(1);});track.addEventListener("scroll",show,{passive:true});window.addEventListener("resize",show);show();})();</script>`;
+const JOB_CAROUSEL_SCRIPT = `<script>(function(){var track=document.getElementById("job-track");if(!track)return;var prev=document.querySelector("[data-job-prev]"),next=document.querySelector("[data-job-next]"),status=document.querySelector("[data-job-status]");if(!prev||!next||!status)return;var cards=[].slice.call(track.querySelectorAll("[data-job-card]")),conversations=[].slice.call(document.querySelectorAll("[data-job-conversation]"));if(!cards.length)return;var controls=[prev,next,status],active=cards[0];for(var i=0;i<controls.length;i++)controls[i].hidden=false;function activate(card,scroll){if(!card)return;active=card;var id=card.getAttribute("data-job-card"),n=cards.indexOf(card);for(var i=0;i<cards.length;i++){var on=cards[i]===card;cards[i].classList.toggle("job-card--active",on);cards[i].querySelector("[data-job-activate]").setAttribute("aria-pressed",on?"true":"false");}for(var j=0;j<conversations.length;j++)conversations[j].hidden=conversations[j].getAttribute("data-job-conversation")!==id;status.textContent=(n+1)+" / "+cards.length;if(scroll)card.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"nearest",inline:"start"});}function nearest(){var left=track.getBoundingClientRect().left,card=cards[0],distance=Infinity;for(var i=0;i<cards.length;i++){var d=Math.abs(cards[i].getBoundingClientRect().left-left);if(d<distance){distance=d;card=cards[i];}}activate(card,false);}function go(d){activate(cards[Math.max(0,Math.min(cards.length-1,cards.indexOf(active)+d))],true);}prev.addEventListener("click",function(){go(-1);});next.addEventListener("click",function(){go(1);});for(var k=0;k<cards.length;k++)(function(card){card.querySelector("[data-job-activate]").addEventListener("click",function(){activate(card,true);});})(cards[k]);var timer;if("onscrollend" in track)track.addEventListener("scrollend",nearest);else track.addEventListener("scroll",function(){clearTimeout(timer);timer=setTimeout(nearest,120);},{passive:true});window.addEventListener("resize",nearest);activate(active,false);})();</script>`;
 
 export function landingBody(o: { lang: Lang; demo: boolean; rand?: () => number }): string {
-  const l = o.lang, t = tr(l), amount = fmtEur(24000, l), total = fmtEur(72000, l);
-  // One conversation, used for the animation and the screen-reader transcript. It leads with money; the deadline is one offer at the end.
-  const ask = t("Kes mulle võlgu on?", "Who owes me money?");
-  const owed = t(`Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${total}. Koostasin igale viisaka meeldetuletuse.`, `Your accounting software shows three invoices overdue, ${total} in total. I drafted a polite reminder for each.`);
-  const card = t("Maksemeeldetuletus · 1/3", "Payment reminder · 1/3"), client = "Demo Klient OÜ";
+  const l = o.lang, t = tr(l);
+  const amounts: Record<string, string> = { total: fmtEur(72000, l), cap: fmtEur(50000, l), unpaid: fmtEur(31000, l), purchases: fmtEur(118420, l) };
+  const format = (s: string) => s.replace(/\{(\w+)\}/g, (_, k: string) => amounts[k] ?? "");
+  const text = (v: LandingText) => format(t(v.et, v.en));
+  const rich = (v: LandingCase["answer"]) => {
+    const value = text(v), bold = format(t(v.boldEt ?? "", v.boldEn ?? "")), at = bold ? value.indexOf(bold) : -1;
+    return at < 0 ? esc(value) : `${esc(value.slice(0, at))}<b>${esc(bold)}</b>${esc(value.slice(at + bold.length))}`;
+  };
+  const chipText = (chip: LandingChip): string => {
+    if (chip.kind === "rule") return t("Arvutatud reeglist", "Calculated by rule");
+    if ("source" in chip) {
+      const act = chip.source === "kmd" ? t("KMS", "VAT Act") : t("ÄS", "Commercial Code");
+      return `${t("Allikas", "Source")}: ${act} ${SRC[chip.source].section}`;
+    }
+    return t(chip.et, chip.en);
+  };
+  const chipLabels = (chips: readonly LandingChip[] = []) => chips.length ? `<span class="labels">${chips.map((chip) => labelChip(chip.kind, chipText(chip))).join("")}</span>` : "";
+  const connector = (c: LandingConnector) => {
+    const href = c.href ?? (c.g ? `/kataloog?g=${c.g}` : null);
+    return href ? `<a href="${esc(href)}">${esc(t(c.et, c.en))}</a>` : `<span class="label-chip label-chip--rule">${esc(t(c.et, c.en))}</span>`;
+  };
+  const subtitle = (job: LandingCase) => {
+    const names = job.connectors.filter((c) => !c.launchpad).map((c) => {
+      if (c.subtitleEt) return t(c.subtitleEt, c.subtitleEn ?? c.subtitleEt);
+      const name = t(c.et, c.en);
+      return name.charAt(0).toLocaleLowerCase(l) + name.slice(1);
+    });
+    names.push(t("AI-hüppelaud", "AI Launchpad"));
+    return `${t("ühendatud:", "connected:")} ${names.join(", ")}`;
+  };
+  const me = (id: string, value: string) => `<div class="beat beat--me b-${id}-me1"><p class="bubble">${esc(value)}</p></div>`;
+  const ai = (id: string, k: string, inner: string) => `<div class="beat beat--ai b-${id}-${k}"><div class="bubble">${inner}</div></div>`;
+  const typing = (id: string, k: string) => `<div class="beat beat--typing b-${id}-${k}"><span class="typing"><i></i><i></i><i></i></span></div>`;
   const approve = t("Kinnita täpselt see", "Approve exactly this"), done = `✓ ${t("Kinnitatud · Saadetud sinu e-postist: demo", "Approved · Sent from your e-mail: demo")}`;
-  const allow = t("Luba sarnased automaatselt", "Allow similar ones automatically"), standing = t("Püsiluba: meeldetuletused kuni 500\u00a0€", `Standing approval: reminders up to ${fmtEur(50000, l)}`);
-  const kmdDue = t("20.\u00a0nov", "20\u00a0Nov");
-  const next = t("Järgmised saadan ise.", "I'll send the next ones myself.");
-  const kmd: [string, string] = [t("Muide,", "By the way, the VAT return is due"), t("on KMD — kas valmistan oktoobri arved ette?", "— shall I prepare October's invoices?")];
-  const rule = t("Arvutatud reeglist", "Calculated by rule"), kmdSource = `${t("Allikas", "Source")}: ${t("KMS", "VAT Act")} § 27, § 38`;
-  const me = (k: string, text: string) => `<div class="beat beat--me b-${k}"><p class="bubble">${esc(text)}</p></div>`;
-  const ai = (k: string, inner: string) => `<div class="beat beat--ai b-${k}"><div class="bubble">${inner}</div></div>`;
-  const typing = (k: string) => `<div class="beat beat--typing b-${k}"><span class="typing"><i></i><i></i><i></i></span></div>`;
-  const chat = [
-    me("me1", ask), typing("t1"),
-    ai("ai1", esc(owed)),
-    `<div class="beat b-card"><div class="mock-card"><div class="labels mock-state"><span class="mock-wait">${stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))}</span><span class="mock-ok">${stateChip("approved", t("Kinnitatud", "Approved"))}</span></div>
-<p class="mock-title">${esc(card)}</p><p class="mock-facts"><span>${esc(client)}</span><b>${esc(amount)}</b></p>
+  const conversation = (job: LandingCase, index: number) => {
+    const id = job.id, ask = text(job.ask), answer = text(job.answer), approval = job.approval;
+    const chat = [me(id, ask), typing(id, "t1"), ai(id, "ai1", `${rich(job.answer)}${chipLabels(job.chips)}`)];
+    const transcript: [string, string][] = [
+      [t("Sina", "You"), ask],
+      [t("Assistent", "Assistant"), [answer, ...(job.chips ?? []).map(chipText)].join(" · ")],
+    ];
+    if (approval) {
+      const title = text(approval.title), amount = fmtEur(approval.amountCents, l);
+      chat.push(`<div class="beat b-${id}-card"><div class="mock-card"><div class="labels mock-state"><span class="mock-wait">${stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))}</span><span class="mock-ok">${stateChip("approved", t("Kinnitatud", "Approved"))}</span></div>
+<p class="mock-title">${esc(title)}</p><p class="mock-facts"><span>${esc(approval.client)}</span><b>${esc(amount)}</b></p>
 <div class="mock-btn"><span class="mock-approve">${esc(approve)}</span><span class="mock-done">${esc(done)}</span><span class="mock-tap"></span></div>
-<div class="beat b-allow"><div class="mock-btn"><span class="mock-allow">${esc(allow)}</span><span class="mock-rule">${esc(standing)}</span><span class="mock-tap"></span></div></div></div></div>`,
-    typing("t2"),
-    ai("ai2", esc(next)),
-    ai("ai3", `${esc(kmd[0])} <b>${esc(kmdDue)}</b> ${esc(kmd[1])}<span class="labels">${labelChip("rule", rule)}${labelChip("official", kmdSource)}</span>`),
-  ].join("\n");
-  const transcript = [
-    [t("Sina", "You"), ask],
-    [t("Assistent", "Assistant"), owed],
-    [t("Assistent", "Assistant"), `${t("Kinnitus", "Approval")}: ${card} · ${client} · ${amount}. „${approve}”`],
-    [t("Sina", "You"), t("Kinnitatud", "Approved")],
-    [t("Assistent", "Assistant"), t("Saadetud sinu e-postist (näidis)", "Sent from your e-mail (sample)")],
-    [t("Sina", "You"), allow],
-    [t("Assistent", "Assistant"), `${standing}. ${next}`],
-    [t("Assistent", "Assistant"), `${kmd[0]} ${kmdDue} ${kmd[1]} · ${rule} · ${kmdSource}`],
-  ].map(([who, text]) => `<li>${esc(who)}: ${esc(text)}</li>`).join("");
+${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock-btn"><span class="mock-allow">${esc(text(approval.allow))}</span><span class="mock-rule">${esc(format(t(approval.allow.standingEt, approval.allow.standingEn)))}</span><span class="mock-tap"></span></div></div>` : ""}</div></div>`);
+      transcript.push(
+        [t("Assistent", "Assistant"), `${t("Kinnitus", "Approval")}: ${title} · ${approval.client} · ${amount}. „${approve}”`],
+        [t("Sina", "You"), t("Kinnitatud", "Approved")],
+        [t("Assistent", "Assistant"), t("Saadetud sinu e-postist (näidis)", "Sent from your e-mail (sample)")],
+      );
+      if (approval.allow) {
+        const standing = format(t(approval.allow.standingEt, approval.allow.standingEn)), next = job.next ? text(job.next) : "";
+        transcript.push([t("Sina", "You"), text(approval.allow)], [t("Assistent", "Assistant"), `${standing}${next ? `. ${next}` : ""}`]);
+      }
+    }
+    if (job.next) chat.push(typing(id, "t2"), ai(id, "ai2", esc(text(job.next))));
+    if (job.next && !approval?.allow) transcript.push([t("Assistent", "Assistant"), text(job.next)]);
+    return `<div class="teaser-conversation" data-job-conversation="${esc(id)}"${index === 0 ? "" : " hidden"}>
+<div class="vh"><p>${t("Näidisvestlus:", "Sample conversation:")}</p><ol>${transcript.map(([who, value]) => `<li>${esc(who)}: ${esc(value)}</li>`).join("")}</ol></div>
+<div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${esc(subtitle(job))}</small></span></div>
+<div class="chat">${chat.join("\n")}</div></div></div></div>`;
+  };
   const jobs = [...LANDING_CARDS], rand = o.rand ?? Math.random;
   for (let i = jobs.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [jobs[i], jobs[j]] = [jobs[j], jobs[i]];
   }
   const jobsHeading = t("Mida assistent saab ära teha", "What your assistant can take off you");
-  const connector = (c: LandingConnector) => c.g
-    ? `<a href="/kataloog?g=${esc(c.g)}">${esc(t(c.et, c.en))}</a>`
-    : `<span class="label-chip label-chip--rule">${esc(t(c.et, c.en))}</span>`;
-  const jobCards = jobs.map((job) => `<li class="job-card"><h3>${esc(t(job.et, job.en))}</h3><p>${esc(t(job.bodyEt, job.bodyEn))}</p><p class="job-needs">${esc(t("Vajab ühendusi:", "Needs connectors:"))}</p><div class="chips job-chips">${job.connectors.map(connector).join("")}</div></li>`).join("");
+  const jobCards = jobs.map((job, index) => `<li class="job-card${index === 0 ? " job-card--active" : ""}" data-job-card="${esc(job.id)}"><h3><button type="button" class="job-activate" aria-pressed="${index === 0}" aria-controls="landing-phone" data-job-activate="${esc(job.id)}">${esc(t(job.et, job.en))}</button></h3><p>${esc(t(job.bodyEt, job.bodyEn))}</p><p class="job-needs">${esc(t("Vajab ühendusi:", "Needs connectors:"))}</p><div class="chips job-chips">${job.connectors.map(connector).join("")}</div>${job.registerData ? `<p class="job-register small muted">${esc(t("Registriandmed: Ärikratt", "Register data: Ärikratt"))}</p>` : ""}</li>`).join("");
   const steps = [
     t("Ühenda oma ChatGPT või Claude", "Connect your ChatGPT or Claude"),
     t("Ühenda ka oma raamatupidamisprogramm ja e-post — assistent ütleb, milline ühendus sobib", "Connect your accounting software and e-mail too — your assistant tells you which connector fits"),
@@ -1509,19 +1648,17 @@ export function landingBody(o: { lang: Lang; demo: boolean; rand?: () => number 
   return `<div class="landing">
 <section class="landing-hero" aria-labelledby="hero-h"><div>
 <h1 id="hero-h">${t("Tegele sellega, milles oled hea.", "Focus on what you're good at.")} <span>${t("Kontoritöö teeb sinu AI-assistent.", "Your AI assistant does the office work.")}</span></h1>
-<p class="lede">${esc(t("Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud lisab tähtajad, kinnitused ja kviitungid — midagi ei lähe välja ilma sinu loata. Töötab sinu oma ChatGPT või Claude'iga.", "Your assistant does the office work through your accounting, bank and e-mail connectors. AI Launchpad adds the deadlines, approvals and receipts — nothing goes out without your permission. Works with your own ChatGPT or Claude."))}</p>
+<p class="lede">${esc(t("Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud juhib tööd: ütleb, milliseid ühendusi vaja, küsib sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude'iga.", "Your assistant does the office work through your accounting, bank and e-mail connectors. AI Launchpad runs the work: it tells you which connectors you need, asks for your approval, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude."))}</p>
 <a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a></div>
-<figure class="teaser">
-<div class="vh"><p>${t("Näidisvestlus:", "Sample conversation:")}</p><ol>${transcript}</ol></div>
+<figure class="teaser" id="landing-phone">
 <input type="checkbox" id="teaser-pause" class="vh-input">
-<div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${esc(t("ühendatud: raamatupidamine, e-post, AI-hüppelaud", "connected: accounting, e-mail, AI Launchpad"))}</small></span></div>
-<div class="chat">${chat}</div></div></div>
+${jobs.map(conversation).join("\n")}
 <figcaption>${sampleChip(l)}<span class="small muted">${t("Vestlus sinu ChatGPT-s või Claude'is", "A conversation in your ChatGPT or Claude")}</span><label class="teaser-pause" for="teaser-pause"><span class="tp-pause">${t("Peata animatsioon", "Pause animation")}</span><span class="tp-resume">${t("Jätka animatsiooni", "Resume animation")}</span></label></figcaption>
 </figure>
 <section class="use-cases" aria-labelledby="jobs-h"><h2 id="jobs-h">${esc(jobsHeading)}</h2>
 <ul class="job-track" id="job-track" role="region" aria-label="${esc(jobsHeading)}" tabindex="0">${jobCards}</ul>
 <div class="job-pager"><button type="button" class="secondary" aria-controls="job-track" data-job-prev hidden>${esc(t("‹ Eelmine", "‹ Previous"))}</button><button type="button" class="secondary" aria-controls="job-track" data-job-next hidden>${esc(t("Järgmine ›", "Next ›"))}</button><span class="small muted" aria-live="polite" data-job-status hidden>1 / ${jobs.length}</span></div>
-<p class="small muted use-caption">${esc(t("Näited. Raamatupidamise, panga ja e-posti ühendused on nende pakkujate omad — ", "Examples. Accounting, bank and e-mail connectors belong to their providers — "))}<a href="/kataloog">${esc(t("vaata kataloogist", "see the catalogue"))}</a>${esc(t(", mis sinu programmile olemas on.", " for what exists for your software."))}</p>
+<p class="small muted use-caption">${esc(t("Näited. Raamatupidamise, panga ja e-posti ühendused on nende pakkujate omad — ", "Examples. Accounting, bank and e-mail connectors belong to their providers — "))}<a href="/kataloog">${esc(t("vaata kataloogist", "see the catalogue"))}</a>${esc(t(", mis sinu programmile olemas on.", " for what exists for your software."))} ${esc(t("Ärikratti soovitame tungivalt: sellest tulevad sinu ettevõtte registriandmed.", "We strongly recommend Ärikratt: it supplies your company's register data."))}</p>
 ${JOB_CAROUSEL_SCRIPT}</section></section>
 <section aria-labelledby="how-h"><h2 id="how-h">${esc(t("Kuidas alustada", "How to start"))}</h2>
 <ol class="how">${steps.map((s, i) => `<li>${icon(STEP_ICONS[i])}${i === 0 ? `<a class="how-go" href="/uhenda">${esc(s)}</a>` : `<span>${esc(s)}</span>`}</li>`).join("")}</ol>
