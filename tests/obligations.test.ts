@@ -426,7 +426,7 @@ describe("get_obligations tool and status card", () => {
   test("readOnlyHint on read tools only; get_started lists get_obligations first", async () => {
     const c = await client(owner("ann").token);
     const tools = Object.fromEntries((await c.listTools()).tools.map((t) => [t.name, t.annotations]));
-    for (const t of ["get_started", "connect_my_services", "get_progress", "search_services", "get_approval", "get_obligations"]) expect(tools[t]?.readOnlyHint, t).toBe(true);
+    for (const t of ["get_started", "connect_my_services", "check_my_books", "get_progress", "search_services", "get_approval", "get_obligations"]) expect(tools[t]?.readOnlyHint, t).toBe(true);
     expect(tools.get_obligations?.openWorldHint).toBe(true);
     for (const t of ["report_assessment", "report_progress", "submit_service_candidate", "request_approval", "record_action_outcome"]) expect(tools[t]?.readOnlyHint, t).toBeUndefined();
     const started = parsed(await c.callTool({ name: "get_started", arguments: {} }));
