@@ -68,6 +68,8 @@ describe("executable job playbooks (#26)", () => {
     expect(email[0]).toContain("if it is Gmail or Microsoft 365, offer your built-in connector (if it is already connected, skip the offer), and once it is connected, go to the last step.");
     expect(email[0]).toContain("If your Gmail or Microsoft 365 connector is already connected, offer in one line to send from that mailbox instead");
     expect(email[0]).toContain("do not search or quote catalogue entries for it");
+    expect(email[0]).toContain("Otherwise stop here without the last step");
+    expect(email[0]).toContain("not from the mailbox they asked about");
     expect(bank[0]).toMatch(/^Bank: only LHV can be linked, through LHV's own read-only connection \(no payments\)\./);
     expect(bank[0]).toContain("quote only the entry with id lhv-ai; the connector address is https://mcp.lhv.ai/mcp");
     expect(bank[0]).toContain("own Smart-ID (never automate it)");
