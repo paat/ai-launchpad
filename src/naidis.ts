@@ -29,11 +29,16 @@ export const demoAssessment = DEMO_FIXTURES.alpha;
 export const twoDeadlines: DeadlinesView = { ...mariDeadlines, obligations: mari.obligations.slice(0, 2), facts_needed: [] };
 // T5 „Käest ära”: Täna's strip from the same rows; Ühendus in week 2 (3 sent, 1 pending, 1 expired unused, the accountant on KMD).
 export const tanaHandover = computeHandover({ assessment: demoAssessment, obligations: mari.obligations, approvals: [pendingApproval], rules: [], now: NOW });
-export const sentTo = (i: number, name: string, address: string, cents: number): ApprovalRow => ({ ...pendingApproval, id: `appr_sent_${i}`, state: "consumed", decided_at: `2026-11-0${i}T09:00:00Z`, consumed_at: `2026-11-0${i}T09:10:00Z`,
-  outcome_json: JSON.stringify({ outcome: i === 2 ? "paid" : "sent", history: [] }), payload_json: JSON.stringify({ ...reminder, recipient: { name, address }, amount_cents: cents }) });
+export const sentTo = (i: number, name: string, address: string, cents: number): ApprovalRow => {
+  const outcome = i === 2 ? "paid" : "sent", observed_at = `2026-11-0${i}T09:10:00Z`;
+  return { ...pendingApproval, id: `appr_sent_${i}`, state: "consumed", decided_at: `2026-11-0${i}T09:00:00Z`, consumed_at: observed_at,
+    outcome_json: JSON.stringify({ outcome, observed_at, history: [{ outcome, observed_at }] }), payload_json: JSON.stringify({ ...reminder, recipient: { name, address }, amount_cents: cents }) };
+};
 export const week2 = [sentTo(1, "Demo Klient OÜ", "arved@demo-klient.example", 12000), sentTo(2, "Põhja Puit OÜ", "raamat@pohja-puit.example", 24000), sentTo(3, "Demo Klient OÜ", "arved@demo-klient.example", 18000),
   pendingApproval, { ...pendingApproval, id: "appr_expired", state: "expired", decided_at: "2026-11-02T08:00:00Z", expires_at: "2026-11-03T08:00:00Z" }];
 export const uhendaHandover = computeHandover({ assessment: demoAssessment, obligations: mari.obligations, approvals: week2, rules: [], now: NOW });
+const syntheticApprovals = [longApproval, pendingApproval, longLetterApproval, approvedApproval, ...week2];
+export const naidisApproval = (id: string) => syntheticApprovals.find((a) => a.id === id);
 
 export const preparedProgress = [{ task_id: "vat-prep", milestone: "draft_prepared", observed_at: "2026-11-03T11:00:00Z" }];
 export const NAIDIS = { NOW, mari, mariDeadlines, LONG_TITLE, longApproval, reminder, pendingApproval, longLetterApproval, approvedApproval, demoAssessment, twoDeadlines, tanaHandover, sentTo, week2, uhendaHandover, preparedProgress };
@@ -48,7 +53,7 @@ const activityRows = [
 function sampleLinks(html: string, lang: Lang): string {
   const linked = html
     .replace(/href="\/uhenda#kaest-ara"/g, 'href="/naidis/tehtud#kaest-ara"')
-    .replace(/href="\/approvals\/([^"]+)"/g, (_all, id: string) => `href="${id === pendingApproval.id ? "/naidis/kinnitus" : "/naidis/tehtud"}"`)
+    .replace(/href="\/approvals\/([^"]+)"/g, (_all, id: string) => `href="/naidis/kinnitus/${id}"`)
     .replace(/href="\/approvals(?:[?#][^"]*)?"/g, 'href="/naidis/kinnitus"')
     .replace(/href="\/activity(?:[?#][^"]*)?"/g, 'href="/naidis/tehtud"')
     .replace(/href="\/(?:playbooks|connection|unmet-needs)(?:[/?#][^"]*)?"/g, 'href="/naidis"')
@@ -59,12 +64,12 @@ function sampleLinks(html: string, lang: Lang): string {
   }) : linked;
 }
 
-export function naidisBody(step: NaidisStep, lang: Lang): string {
+export function naidisBody(step: NaidisStep, lang: Lang, approval = pendingApproval): string {
   const t = tr(lang);
   const body = step === "tana"
     ? tanaBody({ lang, csrf: "", sample: true, label: "Mari Disain OÜ (näidis)", assessment: demoAssessment, coverage: computeCoverage(demoAssessment), assessedAt: "2026-10-28T10:00:00Z", exclusions: [], approvals: week2, progress: preparedProgress, deadlines: twoDeadlines, needs: [], reportCount: 4, now: NOW, handover: uhendaHandover })
     : step === "kinnitus"
-      ? approvalCardBody({ csrf: "", a: pendingApproval, lang, sample: true, now: NOW })
+      ? approvalCardBody({ csrf: "", a: approval, lang, sample: true, now: NOW })
       : activityBody({ rows: activityRows, receipts: [], exclusions: [], assessment: demoAssessment, approvals: week2, rules: [], lang, now: NOW, sample: true })
         + approvalCardBody({ csrf: "", a: week2[0], lang, sample: true, now: NOW, handover: uhendaHandover })
         + handoverSection(uhendaHandover, lang, "", NOW, true);

@@ -15,7 +15,7 @@ import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
 import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
-import { naidisBody } from "./naidis.js";
+import { naidisApproval, naidisBody } from "./naidis.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; }
 // Owner-only pilot allowlist: exact opaque Google `sub` values, never emails.
@@ -447,6 +447,15 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (!parseLang(req.query.lang)) res.set({ "cache-control": "public, max-age=300", vary: "Cookie" });
     const l = langOf(res);
     res.type("html").send(publicPage(req, res, tr(l)(titleEt, titleEn), naidisBody(step, l), { sample: true }));
+  });
+  app.get("/naidis/kinnitus/:id", (req, res) => {
+    if (!parseLang(req.query.lang)) res.set({ "cache-control": "public, max-age=300", vary: "Cookie" });
+    const l = langOf(res), a = naidisApproval(req.params.id);
+    if (!a) {
+      const title = tr(l)("Kinnitust ei leitud", "Approval not found");
+      return res.status(404).type("html").send(publicPage(req, res, title, errorBody(l, title, tr(l)("Seda näidiskinnitust pole.", "This sample approval does not exist."), { href: "/naidis", label: tr(l)("Tagasi näidisesse", "Back to the sample") }), { sample: true }));
+    }
+    res.type("html").send(publicPage(req, res, tr(l)("Kinnitus", "Approval"), naidisBody("kinnitus", l, a), { sample: true }));
   });
 
   // Public, login-free aggregate of owner-approved demand. Never reads

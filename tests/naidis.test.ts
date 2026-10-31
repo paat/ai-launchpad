@@ -3,15 +3,17 @@ import type { Server } from "node:http";
 import { createApp, type Config } from "../src/app.js";
 import { openDb, sha256 } from "../src/db.js";
 import { NAIDIS } from "../src/naidis.js";
+import { fmtEur } from "../src/views.js";
 
 let server: Server, base = "";
 const cfg: Config = { demo: false, production: true, dbPath: ":memory:", baseUrl: "https://127.0.0.1", modelMode: "test", allowedHosts: ["127.0.0.1"], googleAllowedSubjects: ["synthetic-subject"] };
 const { app, db } = createApp(cfg, openDb(":memory:"));
 const sessionCookie = "lp_session=synthetic-signed-in-session";
 const routes = [
-  { path: "/naidis", step: "1. Täna", enStep: "1. Today" },
-  { path: "/naidis/kinnitus", step: "2. Kinnitus", enStep: "2. Approval" },
-  { path: "/naidis/tehtud", step: "3. Tehtud", enStep: "3. Done" },
+  { path: "/naidis", current: "/naidis", step: "1. Täna", enStep: "1. Today" },
+  { path: "/naidis/kinnitus", current: "/naidis/kinnitus", step: "2. Kinnitus", enStep: "2. Approval" },
+  { path: "/naidis/kinnitus/appr_sent_2", current: "/naidis/kinnitus", step: "2. Kinnitus", enStep: "2. Approval" },
+  { path: "/naidis/tehtud", current: "/naidis/tehtud", step: "3. Tehtud", enStep: "3. Done" },
 ] as const;
 const counts = () => Object.fromEntries(["activity", "approvals", "owners"].map((table) => [table, (db.prepare(`SELECT count(*) n FROM ${table}`).get() as { n: number }).n]));
 
@@ -45,7 +47,7 @@ function expectReadOnly(html: string) {
 }
 
 describe("#21 public synthetic walkthrough", () => {
-  test.each(routes)("$path is public, cached, labelled and read-only in production mode", async ({ path, step }) => {
+  test.each(routes)("$path is public, cached, labelled and read-only in production mode", async ({ path, current, step }) => {
     const before = counts();
     const response = await fetch(`${base}${path}`);
     expect(response.status).toBe(200);
@@ -55,7 +57,7 @@ describe("#21 public synthetic walkthrough", () => {
     const html = await response.text();
     expect(html).toContain("Näidis: väljamõeldud ettevõte Mari Disain OÜ. Siin ei saa midagi kinnitada ega saata. Päris tööruumis teeb seda sinu assistent ja kinnitad sina.");
     expect(html).toContain('<nav class="naidis-steps" aria-label="Näidise sammud">');
-    expect(html).toContain(`<a href="${path}" aria-current="page">${step}</a>`);
+    expect(html).toContain(`<a href="${current}" aria-current="page">${step}</a>`);
     expect(html.match(/<a\b[^>]*aria-current="page"/g)).toHaveLength(1);
     expect(html).toContain("Mari Disain OÜ");
     expect(html).not.toContain('class="main"');
@@ -63,7 +65,7 @@ describe("#21 public synthetic walkthrough", () => {
     expect(counts()).toEqual(before);
   });
 
-  test.each(routes)("$path honours English without setting a language cookie", async ({ path, enStep }) => {
+  test.each(routes)("$path honours English without setting a language cookie", async ({ path, current, enStep }) => {
     const before = counts();
     const response = await fetch(`${base}${path}?lang=en`);
     expect(response.status).toBe(200);
@@ -73,7 +75,7 @@ describe("#21 public synthetic walkthrough", () => {
     expect(html).toContain('<html lang="en">');
     expect(html).toContain("Sample: the made-up company Mari Disain OÜ. Nothing can be approved or sent here. In a real workspace your assistant does this and you approve.");
     expect(html).toContain('<nav class="naidis-steps" aria-label="Sample steps">');
-    expect(html).toContain(`<a href="${path}?lang=en" aria-current="page">${enStep}</a>`);
+    expect(html).toContain(`<a href="${current}?lang=en" aria-current="page">${enStep}</a>`);
     const sampleHrefs = [...html.matchAll(/<a\b[^>]*href="(\/naidis[^"]*)"[^>]*>/g)]
       .filter((match) => !match[0].includes('class="lang-toggle"')).map((match) => match[1]);
     expect(sampleHrefs.length).toBeGreaterThan(0);
@@ -113,6 +115,45 @@ describe("#21 public synthetic walkthrough", () => {
     expect(html).toContain("Käest ära:");
     expect(html).toContain("Iga toimingu kviitung ja see, mis on sinu käest ära.");
     expect(html).toContain('<p class="naidis-cta"><a class="btn" href="/uhenda">Ühenda oma assistent</a></p>');
+  });
+
+  test("every rendered approval link resolves to that approval's recipient and amount", async () => {
+    const approvals = [NAIDIS.longApproval, NAIDIS.pendingApproval, NAIDIS.longLetterApproval, NAIDIS.approvedApproval, ...NAIDIS.week2];
+    for (const source of ["/naidis", "/naidis/tehtud"]) {
+      const html = await (await fetch(`${base}${source}`)).text();
+      const hrefs = [...html.matchAll(/href="(\/naidis\/kinnitus\/[^"]+)"/g)].map((match) => match[1]);
+      expect(hrefs.length, source).toBeGreaterThan(0);
+      for (const href of new Set(hrefs)) {
+        const url = new URL(href, base), id = decodeURIComponent(url.pathname.split("/").pop()!);
+        const approval = approvals.find((a) => a.id === id);
+        expect(approval, href).toBeDefined();
+        const payload = JSON.parse(approval!.payload_json) as { recipient: { name: string }; amount_cents: number };
+        const response = await fetch(url);
+        expect(response.status, href).toBe(200);
+        const receipt = await response.text();
+        expect(receipt).toContain(id);
+        expect(receipt).toContain(payload.recipient.name);
+        expect(receipt).toContain(fmtEur(payload.amount_cents, "et"));
+      }
+    }
+  });
+
+  test("an unknown synthetic approval id renders a 404 page without writes", async () => {
+    const before = counts();
+    const response = await fetch(`${base}/naidis/kinnitus/not-a-sample-approval`);
+    expect(response.status).toBe(404);
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(await response.text()).toContain("Kinnitust ei leitud");
+    expect(counts()).toEqual(before);
+  });
+
+  test("sent and paid receipts do not wait for their reported outcomes", async () => {
+    const sent = await (await fetch(`${base}/naidis/kinnitus/appr_sent_1`)).text();
+    expect(sent).toContain("Saadetud: demo");
+    expect(sent).not.toContain("Saadetud: ootab assistendi teadet");
+    const paid = await (await fetch(`${base}/naidis/kinnitus/appr_sent_2`)).text();
+    expect(paid).toContain("Makstud: demo");
+    expect(paid).not.toContain("Makstud: ootab");
   });
 
   test("the handover strip links to the detailed section on Tehtud", async () => {
