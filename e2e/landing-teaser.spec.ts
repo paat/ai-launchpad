@@ -96,6 +96,30 @@ for (const width of [390, 1280]) {
   });
 }
 
+test("390px: layout changes do not change the active job card (#69)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await activateUnpaid(page);
+  for (const height of [600, 844]) {
+    await page.setViewportSize({ width: 390, height });
+    await page.screenshot({ path: `${SHOTS}/landing-390-resize-${height}.png`, fullPage: true });
+    await expect(page.locator(".job-card--active")).toHaveAttribute("data-job-card", "unpaid");
+    await expect(page.locator(UNPAID)).toBeVisible();
+  }
+});
+
+test("390px: an owner wheel scroll activates the card it lands on", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  const active = page.locator(".job-card--active");
+  const initial = (await active.getAttribute("data-job-card"))!;
+  await page.locator("#job-track").hover();
+  await page.mouse.wheel(250, 0);
+  await expect(active).not.toHaveAttribute("data-job-card", initial);
+  await expect(page.locator(`[data-job-conversation="${await active.getAttribute("data-job-card")}"]`)).toBeVisible();
+});
+
 test("each of the 8 job cards shows exactly its own conversation in the phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
