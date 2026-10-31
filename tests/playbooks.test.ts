@@ -16,7 +16,7 @@ const byId = (id: string) => PLAYBOOKS.find((p) => p.id === id)!;
 
 describe("executable job playbooks (#26)", () => {
   test("shape: every field present, deterministic copy, known approval kind", () => {
-    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-service", "payment-reminder", "vat-return-prep", "annual-report"]);
+    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-service", "books-catch-up", "payment-reminder", "vat-return-prep", "annual-report"]);
     for (const p of PLAYBOOKS) {
       for (const k of ["id", "title", "title_et", "summary", "source", "source_label", "done_when", "verify_with"] as const) expect(p[k], `${p.id}.${k}`).toMatch(/\S/);
       expect(p.steps.length, p.id).toBeGreaterThan(0);
@@ -45,6 +45,22 @@ describe("executable job playbooks (#26)", () => {
     expect(remind).toContain("Do not cite the statute or interest in the reminder unless the owner asks.");
     expect(remind).not.toMatch(/threaten|viivis/);
     expect(remind).toMatch(/request_approval with action kind send_message.*get_approval.*record_action_outcome with outcome sent.*Record paid only after a sent outcome, with a NEW report_id.*only if you see the payment/s);
+  });
+
+  test("books-catch-up: drafts first, documents before posting, owner asked only what no document explains", () => {
+    const p = byId("books-catch-up");
+    expect(p).toMatchObject({ approval_kind: null, triggers: [], source: "https://www.riigiteataja.ee/akt/107012025012?leiaKehtiv=" });
+    const all = p.steps.join(" ");
+    expect(all).toContain("22 Swedbank, 10 SEB, 77 LHV, 42 Coop Pank, 96 Luminor");
+    expect(all).toContain("as a draft (unconfirmed) bank entry");
+    expect(all).toContain("never post during this step");
+    expect(all).toContain("every connected mailbox, searched by the vendor's name and the amount");
+    expect(all).toContain("never invent wording, dates or amounts");
+    expect(all).toContain("one movement per question");
+    expect(all).toContain("Never guess.");
+    expect(all).toMatch(/Ask once; post only what they confirm\./);
+    expect(p.done_when).toContain("equals the bank statement's balance");
+    expect(byId("annual-report").steps.join(" ")).toContain("follow the books-catch-up playbook first");
   });
 
   test("connect-service: plain words, one branch per service, owner does logins, keys never in chat, read-only", () => {
