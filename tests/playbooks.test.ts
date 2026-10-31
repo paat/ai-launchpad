@@ -16,12 +16,12 @@ const byId = (id: string) => PLAYBOOKS.find((p) => p.id === id)!;
 
 describe("executable job playbooks (#26)", () => {
   test("shape: every field present, deterministic copy, known approval kind", () => {
-    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "payment-reminder", "vat-return-prep", "annual-report"]);
+    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-service", "payment-reminder", "vat-return-prep", "annual-report"]);
     for (const p of PLAYBOOKS) {
       for (const k of ["id", "title", "title_et", "summary", "source", "source_label", "done_when", "verify_with"] as const) expect(p[k], `${p.id}.${k}`).toMatch(/\S/);
       expect(p.steps.length, p.id).toBeGreaterThan(0);
       expect(p.needs.length, p.id).toBeGreaterThan(0);
-      expect(p.source).toMatch(/^https:\/\/www\.(riigiteataja|emta)\.ee\//);
+      expect(p.source).toMatch(/^https:\/\/(www\.(riigiteataja|emta)|abiinfo\.rik)\.ee\//);
       if (p.approval_kind !== null) expect(APPROVAL_KINDS).toContain(p.approval_kind);
     }
     expect(byId("deadlines-check").approval_kind).toBeNull();
@@ -45,6 +45,53 @@ describe("executable job playbooks (#26)", () => {
     expect(remind).toContain("Do not cite the statute or interest in the reminder unless the owner asks.");
     expect(remind).not.toMatch(/threaten|viivis/);
     expect(remind).toMatch(/request_approval with action kind send_message.*get_approval.*record_action_outcome with outcome sent.*Record paid only after a sent outcome, with a NEW report_id.*only if you see the payment/s);
+  });
+
+  test("connect-service: plain words, one branch per service, owner does logins, keys never in chat, read-only", () => {
+    const p = byId("connect-service");
+    expect(p).toMatchObject({ approval_kind: null, triggers: [] });
+    const [rules, ask, ...rest] = p.steps;
+    const verify = rest.at(-1)!;
+    expect(rules).toMatch(/^Speak plainly: the owner may not know what MCP, a connector or an API is/);
+    expect(rules).toContain("This playbook never writes, sends or calls request_approval");
+    expect(rules).toContain("Never ask for keys, passwords or PINs in the chat; if the owner pastes one here, do not repeat, store or pass it to any tool");
+    expect(p.needs.join(" ")).toContain("never ask for, repeat or accept a password or PIN in the chat");
+    expect(ask).toMatch(/^Ask one question unless the owner already said it: what should be linked \(accounting software, e-mail or bank\)/);
+    expect(ask).toContain("Follow only the steps that start with that service's name; each one says how to finish. A connector for a different service never lets you skip these steps.");
+    expect(ask).not.toMatch(/go straight to the last step/);
+    // Branch-specific steps are scoped by their prefix; each non-accounting branch ends explicitly.
+    const branch = rest.slice(0, -1);
+    for (const x of branch) expect(x).toMatch(/^(E-mail|Bank|Accounting): /);
+    const email = branch.filter((x) => x.startsWith("E-mail:")), bank = branch.filter((x) => x.startsWith("Bank:")), acc = branch.filter((x) => x.startsWith("Accounting:"));
+    expect([email.length, bank.length]).toEqual([1, 1]);
+    expect(email[0]).toContain("if it is Gmail or Microsoft 365, offer your built-in connector (if it is already connected, skip the offer), and once it is connected, go to the last step.");
+    expect(email[0]).toContain("say plainly that it cannot be linked, do not search or quote catalogue entries for it, and stop here without the last step");
+    expect(bank[0]).toMatch(/^Bank: only LHV can be linked, through LHV's own read-only connection \(no payments\)\./);
+    expect(bank[0]).toContain("quote only the entry with id lhv-ai; the connector address is https://mcp.lhv.ai/mcp");
+    expect(bank[0]).toContain("own Smart-ID (never automate it)");
+    expect(bank[0]).toContain("Any other bank: say plainly that it cannot be linked live yet and explain the statement route instead: when a job needs bank data, the owner downloads the account statement for that period from their internet bank as a file and shares it, and it is used only for that job. Then stop here without the last step. Never start a bank key, credential or payment setup, and never offer community bank tools.");
+    expect(verify).toContain("LHV, only the date of the latest transaction, with no amounts.");
+    for (const s of ["paste the key values", "Add custom connector", "API access permits", "search_services with \"werkzeug\""]) {
+      expect(branch.filter((x) => x.includes(s)).every((x) => x.startsWith("Accounting:")), s).toBe(true);
+      expect(acc.some((x) => x.includes(s)), s).toBe(true);
+    }
+    const readOnly = acc.findIndex((x) => x.includes("before any key is created, choose reading only"));
+    const create = acc.findIndex((x) => x.includes("guide the owner to create the key"));
+    expect(readOnly).toBeGreaterThanOrEqual(0);
+    expect(readOnly).toBeLessThan(create);
+    expect(acc[readOnly]).toContain("If the product or the connector offers no read-only key, say plainly that it cannot be linked safely yet, because the key could also change the books, and stop here: skip all remaining steps.");
+    expect(acc.at(-1)).toMatch(/Once the connector is added, go to the last step\.$/);
+    expect(acc.join(" ")).toContain("own Smart-ID or ID-card (never automate the login)");
+    expect(acc[0]).toMatch(/^Accounting: if an accounting connector for this company already answers a read-only question, skip the remaining Accounting steps and go to the last step\./);
+    expect(acc.join(" ")).toContain("ticks only reading functions (if the permit cannot be limited to reading, stop here: skip all remaining steps)");
+    expect(acc.join(" ")).toContain("Merit Aktiva or Erply Books: continue only if the connector's own published setup guide documents a read-only key, and create only that; otherwise stop here: skip all remaining steps. Other software: say plainly that it cannot be linked yet and stop here: skip all remaining steps.");
+    expect(acc.join(" ")).toContain("never offer community or local servers from the catalogue");
+    expect(acc.join(" ")).toContain("in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.");
+    expect(acc.join(" ")).toContain("removing AI Launchpad stops deadlines and approvals, suggest upgrading the plan, and stop here without the last step; never suggest removing AI Launchpad.");
+    expect(verify).toMatch(/^Verify only the service the owner asked for/);
+    expect(verify).toContain("e-mail, only the date of the newest message, with no subject or content;");
+    expect(verify).toContain("Do not create, change, delete or send anything during setup.");
+    for (const id of ["payment-reminder", "vat-return-prep", "annual-report"]) expect(byId(id).needs[0], id).toContain("(if no accounting connector answers yet, follow the connect-service playbook)");
   });
 
   test("every trigger is a rule_id the engine can emit, mapped to one playbook, with the same official source", () => {
@@ -154,6 +201,17 @@ describe("agent-facing copy over MCP", () => {
     await Promise.all([server.connect(a), c.connect(b)]);
     return c;
   }
+
+  test("server instructions send 'connect my e-mail / accounting' to Launchpad first, in plain words", async () => {
+    const c = await connect(["progress:read"]);
+    const i = c.getInstructions() ?? "";
+    expect(i).toContain("may not know technical words such as MCP, connector or API");
+    expect(i).toContain("short sentences, everyday words, one question per message, and no technical codes or file formats unless the owner uses them first.");
+    expect(i).not.toMatch(/CAMT|ISO|XML/);
+    expect(i).toContain("follow the connect-service playbook before answering from your own connector directory; it says which lookups are allowed.");
+    const tools = (await c.listTools()).tools;
+    expect(tools.find((x) => x.name === "search_services")?.description).toMatch(/^Research catalogue behind the connect-service playbook: when linking a service, query only as that playbook's branch says\./);
+  });
 
   test("read-only errors: no consent label, request progress:report, tool-accurate copy", async () => {
     const c = await connect(["progress:read"]);
