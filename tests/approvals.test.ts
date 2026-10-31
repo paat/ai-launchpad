@@ -117,7 +117,7 @@ describe("approval cards over MCP", () => {
     expect((await c.listTools()).tools.map((t) => t.name)).toEqual(expect.arrayContaining(["request_approval", "get_approval", "record_action_outcome"]));
     const started = parsed(await c.callTool({ name: "get_started", arguments: {} }));
     expect(started.tools).toEqual(expect.arrayContaining(["request_approval", "get_approval", "record_action_outcome"]));
-    expect(started.approvals_note).toContain("act only when get_approval returns approved (and usable is not false)");
+    expect(started.approvals_note).toContain("Act only when the approval is approved (and usable is not false)"); expect(started.approvals_note).toContain("call request_approval with owner_confirmation set to their words");
 
     // Amount is required for invoices and payments; nothing is saved.
     const { amount_cents: _drop, ...noAmount } = reminder();
@@ -131,7 +131,7 @@ describe("approval cards over MCP", () => {
     expect(req.state).toBe("pending");
     expect(req.digest).toBe(approvalDigest({ ...reminder(), currency: "EUR" }));
     expect(req.approve_url).toBe(`${base}/approvals/${req.approval_id}`);
-    expect(req.owner_instruction).toBe("Ask the owner to open the link (or the Launchpad Status page) and approve or decline. Do not act before get_approval returns approved.");
+    expect(req.owner_instruction).toContain("when they say yes, call request_approval again with a new report_id, the same action and owner_confirmation"); expect(req.owner_instruction).toContain("Do not act before the approval is approved.");
     expect(Date.parse(req.expires_at) - Date.now()).toBeGreaterThan(23.9 * 3600_000);
     // Idempotent: replay returns the same receipt; a changed payload conflicts.
     expect(parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "req-1", action: reminder() } })).approval_id).toBe(req.approval_id);
@@ -314,7 +314,9 @@ describe("approval cards over MCP", () => {
     expect(first.current_state).toBeUndefined();
     await decide(o, first.approval_id, { decision: "approve", digest: first.digest });
     const replay = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "r1", action: reminder() } }));
-    expect(replay).toEqual({ ...first, state: "approved", current_state: "approved", note });
+    // Once approved, the replay drops the "ask the owner" line and says to act.
+    const { owner_instruction: _ask, ...firstRest } = first;
+    expect(replay).toEqual({ ...firstRest, state: "approved", current_state: "approved", note, assistant_instruction: expect.stringContaining("Do not ask them to approve it again on Launchpad") });
   });
 
   test("a replay of a still-pending request keeps pending and the owner instruction (tribunal T-001)", async () => {
@@ -760,5 +762,78 @@ describe("playbook_id on approvals („Käest ära”, #61)", () => {
     expect(section).toContain('<input type="hidden" name="kind" value="send_message">');
     expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "300" })).status).toBe(302);
     expect(db.prepare("SELECT recipients_json, max_amount_cents FROM standing_approvals WHERE owner_id='pb-fill'").get()).toEqual({ recipients_json: JSON.stringify(["billing@client.example"]), max_amount_cents: 30000 });
+  });
+});
+
+describe("one approval: the owner's yes in their own assistant", () => {
+  const page = async (o: { cookie: string }, id: string, lang = "") => (await fetch(`${base}/approvals/${id}${lang}`, { headers: { cookie: o.cookie } })).text();
+
+  test("owner_confirmation approves at once; no Launchpad tap is needed and the outcome records", async () => {
+    const o = owner("chat-yes");
+    const c = await client(o.token);
+    const r = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cy-1", action: reminder(), owner_confirmation: "jah, saada" } }));
+    expect(r).toMatchObject({ state: "approved", approved_in_assistant: true, digest: approvalDigest({ ...reminder(), currency: "EUR" }) });
+    expect(r.assistant_instruction).toContain("Do not ask them to approve it again on Launchpad");
+    expect(r.owner_instruction).toBeUndefined();
+    expect(row(r.approval_id)).toMatchObject({ state: "approved", owner_confirmation: "jah, saada" });
+    expect(row(r.approval_id).decided_at).not.toBeNull();
+    expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: r.approval_id } }))).toMatchObject({ state: "approved", approved_in_assistant: true, owner_confirmation: "jah, saada" });
+    // The card quotes the owner's words and never asks them to go back and write "Kinnitasin".
+    const card = await page(o, r.approval_id);
+    expect(card).toContain("Kinnitasid assistendis: „jah, saada”.");
+    expect(card).toContain("Sina, assistendis");
+    expect(card).not.toContain("Kinnitasin");
+    expect(card).not.toContain("Kinnita täpselt see");
+    expect(await page(o, r.approval_id, "?lang=en")).toContain("You approved in your assistant: „jah, saada”.");
+    // A replay is idempotent; the digest still binds the exact content.
+    expect(parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cy-1", action: reminder(), owner_confirmation: "jah, saada" } }))).toMatchObject({ approval_id: r.approval_id, current_state: "approved" });
+    const now = new Date().toISOString();
+    expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "cy-o0", approval_id: r.approval_id, digest: approvalDigest(reminder({ amount_cents: 124001 })), outcome: "sent", observed_at: now } }))).toContain("Digest does not match");
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "cy-o1", approval_id: r.approval_id, digest: r.digest, outcome: "sent", observed_at: now } }))).toMatchObject({ state: "consumed" });
+    expect(await page(o, r.approval_id)).toContain("Kinnitasid assistendis: „jah, saada”.");
+    expect(db.prepare("SELECT actor,summary FROM activity WHERE owner_id=? AND action='approved_in_assistant'").get("chat-yes")).toMatchObject({ actor: "assistant", summary: expect.stringContaining(`digest ${r.digest.slice(0, 12)}`) });
+    expect(await (await fetch(`${base}/activity?lang=en`, { headers: { cookie: o.cookie } })).text()).toContain("You approved in your assistant");
+  });
+
+  test("a yes for the same exact action approves the waiting request instead of adding a second one", async () => {
+    const o = owner("chat-yes-pending");
+    const c = await client(o.token);
+    const filing = reminder({ kind: "prepare_filing", amount_cents: undefined, recipient: { name: "EMTA (e-MTA)" } });
+    const waiting = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cp-1", action: filing } }));
+    expect(waiting.state).toBe("pending");
+    expect(waiting.owner_instruction).toContain("owner_confirmation");
+    // A different action does not touch the waiting one.
+    const other = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cp-2", action: { ...filing, period: "2026-09" }, owner_confirmation: "jah" } }));
+    expect(other.approval_id).not.toBe(waiting.approval_id);
+    expect(row(waiting.approval_id).state).toBe("pending");
+    const yes = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cp-3", action: filing, owner_confirmation: "jah, õige" } }));
+    expect(yes).toMatchObject({ approval_id: waiting.approval_id, state: "approved", approved_in_assistant: true, expires_at: waiting.expires_at });
+    expect(row(waiting.approval_id)).toMatchObject({ state: "approved", owner_confirmation: "jah, õige" });
+    expect((db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='chat-yes-pending'").get() as { n: number }).n).toBe(2);
+    // The first receipt's replay shows the live state and no longer asks for another request.
+    const replay = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cp-1", action: filing } }));
+    expect(replay).toMatchObject({ approval_id: waiting.approval_id, current_state: "approved" });
+    expect(replay.owner_instruction).toBeUndefined();
+    expect(replay.assistant_instruction).toContain("Do not ask them to approve it again on Launchpad");
+    // A second yes for the same open approval reuses it, never a second approved row.
+    expect(parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cp-4", action: filing, owner_confirmation: "jah" } }))).toMatchObject({ approval_id: waiting.approval_id, state: "approved" });
+    expect((db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='chat-yes-pending'").get() as { n: number }).n).toBe(2);
+  });
+
+  test("a yes approves the newest waiting card and closes older cards for the same action", async () => {
+    const c = await client(owner("chat-yes-dupes").token);
+    const older = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cd-1", action: reminder() } }));
+    const newer = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cd-2", action: reminder() } }));
+    const yes = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "cd-3", action: reminder(), owner_confirmation: "jah" } }));
+    expect(yes.approval_id).toBe(newer.approval_id);
+    expect(row(older.approval_id).state).toBe("expired");
+    expect(row(newer.approval_id).state).toBe("approved");
+  });
+
+  test("an empty or overlong owner_confirmation is rejected and nothing is saved", async () => {
+    const c = await client(owner("chat-yes-bad").token);
+    for (const [id, words] of [["cb-1", ""], ["cb-2", "x".repeat(301)]] as const)
+      errText(await c.callTool({ name: "request_approval", arguments: { report_id: id, action: reminder(), owner_confirmation: words } }));
+    expect((db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='chat-yes-bad'").get() as { n: number }).n).toBe(0);
   });
 });
