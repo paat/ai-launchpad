@@ -8,10 +8,8 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
 import { shell, loginBody, tanaBody, activityBody, connectionBody, setupBody, landingBody, connectBody, approvalCardBody, approvalsListBody } from "../src/views.ts";
-import { computeObligations } from "../src/obligations.ts";
-import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.ts";
 import { assessmentSchema, computeCoverage } from "../src/core.ts";
-import { computeHandover } from "../src/handover.ts";
+import { NAIDIS, naidisBody } from "../src/naidis.ts";
 
 const SHOTS = path.resolve("scratch/implementation/ui-redesign-finish-01-shots");
 await mkdir(SHOTS, { recursive: true });
@@ -30,33 +28,8 @@ const assessment = assessmentSchema.parse({
   conclusion: "Partly mapped.",
   next_action: { title: "Check the urgent filing", rationale: "It may carry a deadline.", savings_basis: "unknown", uncertainty: "High.", needs_owner: true },
 });
-const NOW = new Date("2026-11-03T12:00:00Z");
-const mari = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: NOW, months: 2 });
-const mariDeadlines = { company: { name: "Mari Disain OÜ", registry_code: "19990001", synthetic: true, provenance: "synthetic_fixture", label_et: "Näidis", label_en: "Sample", snapshot_id: null, as_of: null, sources: [], attribution: "" }, obligations: mari.obligations, facts_needed: mari.facts_needed };
+const { NOW, mariDeadlines, longApproval, pendingApproval, longLetterApproval, approvedApproval, demoAssessment, twoDeadlines, tanaHandover, week2, uhendaHandover, preparedProgress } = NAIDIS;
 const tana = (a, extra = {}) => tanaBody({ lang: "et", csrf: CSRF, sample: true, label: "Synthetic OÜ", assessment: a, coverage: computeCoverage(a), assessedAt: a ? "2026-10-28T10:00:00Z" : null, exclusions: [], approvals: [], progress: [], deadlines: null, needs: [], reportCount: 1, now: NOW, ...extra });
-// An 80-character document title on a consumed (sent) approval: the receipt and list must wrap it.
-const LONG_TITLE = "Maksemeeldetuletus: arve 2026-011 Kase Konsult OÜ tellitud strateegiaseminari eest";
-const longApproval = { id: "appr_long", kind: "send_message", report_id: "r1", digest: "d".repeat(64), state: "consumed", created_at: "2026-11-03T09:00:00Z", expires_at: "2026-11-04T09:00:00Z", decided_at: "2026-11-03T09:05:00Z", consumed_at: "2026-11-03T09:10:00Z",
-  outcome_json: JSON.stringify({ outcome: "sent", observed_at: "2026-11-03T09:10:00Z", history: [{ outcome: "sent", observed_at: "2026-11-03T09:10:00Z" }] }),
-  payload_json: JSON.stringify({ kind: "send_message", recipient: { name: "Demo Klient OÜ", address: "arved@demo-klient.example" }, amount_cents: 24000, period: "2026-10", document: { title: LONG_TITLE, content: "Tere!" }, summary: "Tasumata arve." }) };
-// T2 ticket: a pending reminder with a real-length letter, and the same reminder approved.
-const reminder = { kind: "send_message", recipient: { name: "Demo Klient OÜ", address: "arved@demo-klient.example" }, amount_cents: 24000, period: "2026-10",
-  document: { title: "Maksemeeldetuletus: arve 2026-014", content: "Tere!\n\nMeie arve nr 2026-014 (20.10.2026) summas 240,00 € on veel tasumata; maksetähtaeg oli 20. oktoober. Palun tasuge see lähiajal. Kui olete juba maksnud, pidage see kiri tühjaks.\n\nAitäh,\nMari" },
-  summary: "Demo Klient OÜ pole arvet tasunud; maksetähtaeg oli 20. oktoober." };
-const pendingApproval = { id: "appr_t2", kind: "send_message", report_id: "r2", digest: "e".repeat(64), state: "pending", created_at: "2026-11-03T11:50:00Z", expires_at: "2026-11-04T11:50:00Z", decided_at: null, consumed_at: null, outcome_json: null, payload_json: JSON.stringify(reminder) };
-// #63 m7: a 40-line letter must not push the decision below the desktop fold.
-const longLetterApproval = { ...pendingApproval, id: "appr_long_letter", payload_json: JSON.stringify({ ...reminder, document: { ...reminder.document, content: Array.from({ length: 40 }, (_, i) => `Rida ${i + 1}: arve 2026-014 on veel tasumata.`).join("\n") } }) };
-const approvedApproval = { ...pendingApproval, state: "approved", decided_at: "2026-11-03T11:55:00Z" };
-// T3: the prototype's Täna — demo company, one pending reminder, one prepared job, two deadlines.
-const demoAssessment = DEMO_FIXTURES.alpha;
-const twoDeadlines = { ...mariDeadlines, obligations: mari.obligations.slice(0, 2), facts_needed: [] };
-// T5 „Käest ära”: Täna's strip from the same rows; Ühendus in week 2 (3 sent, 1 pending, 1 expired unused, the accountant on KMD).
-const tanaHandover = computeHandover({ assessment: demoAssessment, obligations: mari.obligations, approvals: [pendingApproval], rules: [], now: NOW });
-const sentTo = (i, name, address, cents) => ({ ...pendingApproval, id: `appr_sent_${i}`, state: "consumed", decided_at: `2026-11-0${i}T09:00:00Z`, consumed_at: `2026-11-0${i}T09:10:00Z`,
-  outcome_json: JSON.stringify({ outcome: i === 2 ? "paid" : "sent", history: [] }), payload_json: JSON.stringify({ ...reminder, recipient: { name, address }, amount_cents: cents }) });
-const week2 = [sentTo(1, "Demo Klient OÜ", "arved@demo-klient.example", 12000), sentTo(2, "Põhja Puit OÜ", "raamat@pohja-puit.example", 24000), sentTo(3, "Demo Klient OÜ", "arved@demo-klient.example", 18000),
-  pendingApproval, { ...pendingApproval, id: "appr_expired", state: "expired", decided_at: "2026-11-02T08:00:00Z", expires_at: "2026-11-03T08:00:00Z" }];
-const uhendaHandover = computeHandover({ assessment: demoAssessment, obligations: mari.obligations, approvals: week2, rules: [], now: NOW });
 const pageHtml = {
   "connection-https": () =>
     shell({ title: "Connection", active: "none", csrf: CSRF, sample: true, bodyLang: "en",
@@ -67,7 +40,13 @@ const pageHtml = {
   "status-assessed": () =>
     shell({ title: "Täna", active: "tana", csrf: CSRF, sample: true, body: tana(assessment, { deadlines: mariDeadlines, needs: [{ id: "need_1", state: "classified", reason: null, need_redacted: "Esita KMD", blocker: "needs_owner_pin_or_signature", job_hint_redacted: null, category: "tax_filings", demand_label: "KMD esitamine", same_as: null, spec: "Mock.", classified_by: "mock", created_at: "2026-11-03T10:00:00Z" }] }) }),
   "tana-demo": () =>
-    shell({ title: "Täna", active: "tana", csrf: CSRF, sample: true, body: tana(demoAssessment, { deadlines: twoDeadlines, approvals: [pendingApproval], handover: tanaHandover, progress: [{ task_id: "vat-prep", milestone: "draft_prepared", observed_at: "2026-11-03T11:00:00Z" }] }) }),
+    shell({ title: "Täna", active: "tana", csrf: CSRF, sample: true, body: tana(demoAssessment, { deadlines: twoDeadlines, approvals: [pendingApproval], handover: tanaHandover, progress: preparedProgress }) }),
+  "naidis-tana": () =>
+    shell({ title: "Täna", active: "none", csrf: "", sample: true, body: naidisBody("tana", "et") }),
+  "naidis-kinnitus": () =>
+    shell({ title: "Kinnitus", active: "none", csrf: "", sample: true, body: naidisBody("kinnitus", "et") }),
+  "naidis-tehtud": () =>
+    shell({ title: "Tehtud", active: "none", csrf: "", sample: true, body: naidisBody("tehtud", "et") }),
   "status-unassessed": () =>
     shell({ title: "Täna", active: "tana", csrf: CSRF, sample: true, body: tana(null) }),
   activity: () =>
@@ -123,7 +102,7 @@ try {
 
   // New pages: every visible stand-alone a[href] is a tap target too. A link inside running text (its parent
   // has its own words besides separators) is exempt; the redesign's legacy English pages are not in scope.
-  const NEW_PAGES = new Set(["status-assessed", "tana-demo", "status-unassessed", "activity", "login", "landing", "landing-en", "uhenda", "uhenda-ho", "uhenda-local", "approval-receipt-long", "approval-receipt-strip", "approval-pending", "approval-long-letter", "approval-approved", "approvals"]);
+  const NEW_PAGES = new Set(["status-assessed", "tana-demo", "naidis-tana", "naidis-kinnitus", "naidis-tehtud", "status-unassessed", "activity", "login", "landing", "landing-en", "uhenda", "uhenda-ho", "uhenda-local", "approval-receipt-long", "approval-receipt-strip", "approval-pending", "approval-long-letter", "approval-approved", "approvals"]);
   const overflowAndTargets = (allAnchors) => page.evaluate((allAnchors) => {
     const de = document.documentElement;
     const targets = [];
@@ -177,6 +156,24 @@ try {
     const approveBox = await boxInFirstViewport("button[value=approve]");
     assert.ok(approveBox?.visible, `approval-pending@${vp.width}: approve button in first viewport ${JSON.stringify(approveBox)}`);
     geometry[`approve-button@${vp.width}`] = approveBox;
+  }
+
+  // #21: the public walkthrough keeps its banner and step navigation above the fold.
+  for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
+    await page.setViewportSize(vp);
+    for (const name of ["naidis-tana", "naidis-kinnitus", "naidis-tehtud"]) {
+      await page.setContent(pageHtml[name]());
+      await settle();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const banner = await boxInFirstViewport(".naidis-banner"), steps = await boxInFirstViewport(".naidis-steps");
+      assert.ok(banner?.visible, `${name}@${vp.width}: banner in first viewport ${JSON.stringify(banner)}`);
+      assert.ok(steps?.visible, `${name}@${vp.width}: step nav in first viewport ${JSON.stringify(steps)}`);
+      const g = await overflowAndTargets(true);
+      assert.ok(g.scrollW <= g.clientW + 1 && g.bodyScrollW <= g.clientW + 1, `${name}@${vp.width}: no h-overflow ${JSON.stringify(g)}`);
+      assert.deepEqual(g.targets.filter((t) => t.h < 44), [], `${name}@${vp.width}: targets >= 44px`);
+      await page.screenshot({ path: path.join(SHOTS, `${name}-${vp.width}-fold.png`) });
+      (geometry[name] ??= {})[vp.width] = { banner, steps, scrollW: g.scrollW, clientW: g.clientW, minTargetH: Math.min(...g.targets.map((t) => t.h)) };
+    }
   }
 
   // --- T2 ticket: sticky decision bar, sizes, focus order, amount hero, stamp and reduced motion ---

@@ -171,6 +171,8 @@ test("pause toggle: keyboard-focusable, 44 px, stops the animation without scrip
   const states = () => page.evaluate(() => [...new Set(document.getAnimations().map((a) => a.playState))]);
   expect(await states()).toEqual(["running"]);
   await page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma assistent" }).focus();
+  await page.keyboard.press("Tab"); // the public sample link follows the primary action
+  await expect(page.locator(".landing-hero").getByRole("link", { name: "Vaata näidist" })).toBeFocused();
   await page.keyboard.press("Tab"); // next stop is the pause toggle
   await expect(page.locator("#teaser-pause")).toBeFocused();
   expect(await label.evaluate((e) => getComputedStyle(e).outlineStyle)).toBe("solid");
