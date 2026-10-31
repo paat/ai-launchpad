@@ -1005,9 +1005,9 @@ const NO_ADDRESS = (l: Lang) => tr(l)("Aadress puudub — seda kinnitust ei saa 
 function approvalFacts(v: ReturnType<typeof approvalView>, l: Lang, heroAmount = false): string {
   const t = tr(l);
   const row = (k: string, val: string | null | undefined, sub?: string | null, cls = "") => val ? `<div class="fact-row${cls}"><dt>${esc(k)}</dt><dd>${esc(val)}${sub ? `<span class="fact-sub">${esc(sub)}</span>` : ""}</dd></div>` : "";
-  return `<dl class="facts">${row(t("Saaja", "To"), v.recipient.name, v.noAddress ? NO_ADDRESS(l) : v.recipient.address)}${heroAmount ? "" : `${row(t("Summa", "Amount"), v.amount, null, " fact-row--amount")}${row(t("Periood", "Period"), v.p.period ? fmtPeriod(v.p.period, l) : null)}`}</dl>`;
+  return `<dl class="facts">${row(t("Saaja", "To"), v.recipient.name, v.noAddress ? NO_ADDRESS(l) : v.recipient.address)}${heroAmount ? "" : `${row(v.kindKey === "post_entries" ? t("Kannete summa (märgita)", "Entries total (unsigned)") : t("Summa", "Amount"), v.amount, v.kindKey === "post_entries" ? t("Kontrollsumma, mitte makse", "A check total, not a payment") : null, " fact-row--amount")}${row(t("Periood", "Period"), v.p.period ? fmtPeriod(v.p.period, l) : null)}`}</dl>`;
 }
-const amountHero = (v: ReturnType<typeof approvalView>, l: Lang) => v.amount ? `<div class="amount"><b>${esc(v.amount)}</b>${v.p.period ? `<span>${esc(fmtPeriod(v.p.period, l))}</span>` : ""}</div>` : "";
+const amountHero = (v: ReturnType<typeof approvalView>, l: Lang) => v.amount ? `<div class="amount"><b>${esc(v.amount)}</b>${v.p.period ? `<span>${esc(fmtPeriod(v.p.period, l))}</span>` : ""}${v.kindKey === "post_entries" ? `<span>${esc(tr(l)("Kannete summa märgita: kontrollsumma, mitte makse", "Entries total, unsigned: a check total, not a payment"))}</span>` : ""}</div>` : "";
 
 /** Who does what for this approval, as one sentence; the owner's part in bold. */
 function handLine(kindKey: string, l: Lang): string {

@@ -41,7 +41,7 @@ export const JOB_TITLES: Record<string, [string, string]> = {
   "vat-return-prep": ["KMD ettevalmistus", "VAT return (KMD)"],
   "annual-report": ["Majandusaasta aruanne", "Annual report"],
   invoicing: ["Arvete koostamine", "Invoicing"],
-  "books-catch-up": ["Raamatupidamine järele", "Books brought up to date"],
+  "books-catch-up": ["Raamatupidamine korras", "Books brought up to date"],
 };
 export const DONE_OUTCOMES = ["sent", "submitted", "paid", "accepted", "posted"];
 const RANK: Record<Rung, number> = { done: 0, prep: 1, other: 2, mine: 3 };
