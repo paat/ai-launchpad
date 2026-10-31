@@ -57,8 +57,9 @@ describe("executable job playbooks (#26)", () => {
     expect(steps).toContain("own Smart-ID or ID-card (never automate the login)");
     expect(steps).toContain("Never ask for keys, passwords or PINs in the chat. If the owner pastes one here, do not repeat, store or pass it to any tool; tell them to delete that permit, create a new one and delete the chat message.");
     expect(p.needs.join(" ")).toContain("never ask for, repeat or accept a password or PIN in the chat");
-    expect(steps).toContain("Start read-only: if the permit or the connector offers a choice, allow reading only.");
-    expect(steps).toContain("every write the owner wants goes through request_approval first");
+    expect(steps).toContain("leaves only reading functions ticked if the permit offers a choice, then saves and downloads the key file");
+    expect(steps).toContain("This playbook never writes and never calls request_approval; writes come later under the job's own playbook and its approval.");
+    for (const id of ["payment-reminder", "vat-return-prep", "annual-report"]) expect(byId(id).needs[0], id).toContain("(if no accounting connector answers yet, follow the connect-service playbook)");
     expect(steps).toContain("Erply Books or other software: follow only the connector's own published setup guide.");
     // Same menu paths as the Connection page (src/views.ts connectionBody).
     expect(steps).toContain("in Claude, Customize → Connectors → Add custom connector (");

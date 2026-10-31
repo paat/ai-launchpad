@@ -75,8 +75,8 @@ export const PLAYBOOKS: Playbook[] = [
       "Otherwise ask one question: which accounting software does the company use (e-arveldaja, Merit Aktiva, Erply Books or other)?",
       "E-mail: if the owner uses Gmail or Microsoft 365, offer your built-in connector for it. Proton Mail has no connector: prepare each message here and open it in the owner's mail app, where the owner presses Send.",
       "Call search_services with \"accounting\" and offer the connector that supports that software (werkzeug covers e-arveldaja, Merit Aktiva and Erply Books). Quote its access_and_price and say that it is a third-party service the owner signs up to, not Launchpad.",
-      "Guide the owner to create an API key, one step per message. e-arveldaja: the owner logs in at https://e-arveldaja.rik.ee with their own Smart-ID or ID-card (never automate the login), opens Settings → General settings → e-Financials API access permits, adds a permit, enters the server IP address shown on the connector's dashboard and downloads the key file. Merit Aktiva: Settings → API Settings (needs Merit Pro or Premium). Erply Books or other software: follow only the connector's own published setup guide.",
-      "Start read-only: if the permit or the connector offers a choice, allow reading only. Writes come later, when a job needs them, and every write the owner wants goes through request_approval first.",
+      "Guide the owner to create an API key, one step per message. e-arveldaja: the owner logs in at https://e-arveldaja.rik.ee with their own Smart-ID or ID-card (never automate the login), opens Settings → General settings → e-Financials API access permits, adds a permit, enters the server IP address shown on the connector's dashboard (never guess one), leaves only reading functions ticked if the permit offers a choice, then saves and downloads the key file. Merit Aktiva: Settings → API Settings (needs Merit Pro or Premium). Erply Books or other software: follow only the connector's own published setup guide.",
+      "Start read-only: wherever the permit or the connector offers a choice, allow reading only, before any key is created. This playbook never writes and never calls request_approval; writes come later under the job's own playbook and its approval.",
       "Tell the owner to paste the key values only into the connector's own dashboard; if it asks for an environment, choose Production for their real books. Never ask for keys, passwords or PINs in the chat. If the owner pastes one here, do not repeat, store or pass it to any tool; tell them to delete that permit, create a new one and delete the chat message.",
       "Help the owner add the connector to this assistant: in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server. Paste the company-specific MCP URL shown on the connector's dashboard, not the catalogue address, keep the detected sign-in settings, then sign in and pick the company. Claude's free plan allows one custom connector and AI Launchpad already uses it: if Add custom connector is greyed out, say so plainly, explain that removing AI Launchpad stops deadlines and approvals, and suggest upgrading the plan.",
       "Verify with one read-only question, such as last month's unpaid sales invoices, and tell the owner the result in one line. Do not create, change or delete anything in the books during setup.",
@@ -86,7 +86,7 @@ export const PLAYBOOKS: Playbook[] = [
     summary: "Your assistant finds unpaid invoices past their due date and drafts a polite reminder. Nothing is sent until you approve the exact text, amount and recipient.",
     source: "https://www.riigiteataja.ee/akt/13113422?leiaKehtiv=", source_label: "Võlaõigusseadus § 113 (viivis), Riigi Teataja",
     triggers: [],
-    needs: ["Unpaid sales invoices: the owner's accounting connector (none yet: follow the connect-service playbook) or a file the owner shares.", "The owner's own email tool to send the reminder."],
+    needs: ["Unpaid sales invoices: the owner's accounting connector (if no accounting connector answers yet, follow the connect-service playbook) or a file the owner shares.", "The owner's own email tool to send the reminder."],
     steps: [
       "Find unpaid invoices past their due date in the owner's accounting connector or in a file the owner shares.",
       "Draft a polite reminder in the owner's language with the invoice number, the overdue amount and the due date as they appear on the invoice; the amount in the text is the same amount you put in amount_cents. Do not cite the statute or interest in the reminder unless the owner asks.",
@@ -101,7 +101,7 @@ export const PLAYBOOKS: Playbook[] = [
     summary: "Your assistant gathers the month's invoices and takes the VAT figures from your accounting software's own report. You approve the exact figures, then file the return yourself in e-MTA.",
     source: "https://www.riigiteataja.ee/akt/130062026129", source_label: "Käibemaksuseadus § 27, Riigi Teataja",
     triggers: ["vat-return-kmd"],
-    needs: ["The month's sales and purchase invoices: the owner's accounting connector (none yet: follow the connect-service playbook) or files the owner shares.", "The accounting software's own VAT report for the period."],
+    needs: ["The month's sales and purchase invoices: the owner's accounting connector (if no accounting connector answers yet, follow the connect-service playbook) or files the owner shares.", "The accounting software's own VAT report for the period."],
     steps: [
       "Gather the period's sales and purchase invoices from the owner's accounting connector or from files the owner shares.",
       "Check that none are missing (gaps in invoice numbers, purchases without an invoice) and ask the owner about each gap.",
@@ -116,7 +116,7 @@ export const PLAYBOOKS: Playbook[] = [
     summary: "Your assistant checks the register, gathers what the annual report needs and tells you what is still missing. You approve the key figures and the version you will sign, then sign and submit it yourself in the e-Business Register.",
     source: "https://www.riigiteataja.ee/akt/106072023131", source_label: "Äriseadustik § 179, Riigi Teataja",
     triggers: ["annual-report", "annual-report-overdue"],
-    needs: ["The financial year's accounts: the owner's accounting connector (none yet: follow the connect-service playbook) or files the owner shares.", "Owner facts the report asks for, such as the activity description and the number of employees."],
+    needs: ["The financial year's accounts: the owner's accounting connector (if no accounting connector answers yet, follow the connect-service playbook) or files the owner shares.", "Owner facts the report asks for, such as the activity description and the number of employees."],
     steps: [
       "Check the annual-report or annual-report-overdue row in get_obligations. With applies \"yes\" (public-register facts) the report is not listed as filed. With applies \"if\" the filing state is unknown: ask the owner the facts_needed question first.",
       "Gather what the report needs: the balance sheet and income statement from the accounting software, the activity description and the owner's answers.",
