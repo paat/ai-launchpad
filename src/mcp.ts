@@ -164,7 +164,7 @@ export function matchStandingRule(db: Db, ownerId: string, action: z.infer<typeo
 }
 const OUTCOME_FIRST: Record<string, string[]> = { send_message: ["sent", "failed"], send_invoice: ["sent", "failed"], prepare_payment: ["paid", "failed"], prepare_filing: ["submitted", "failed"] };
 const OUTCOME_NEXT: Record<string, string[]> = { sent: ["accepted", "rejected", "paid"], submitted: ["accepted", "rejected"] };
-export interface ApprovalRow { id: string; kind: string | null; report_id: string | null; payload_json: string; digest: string; state: string; expires_at: string; created_at: string; decided_at: string | null; consumed_at: string | null; outcome_json: string | null; approved_by_rule?: string | null; playbook_id?: string | null; }
+export interface ApprovalRow { id: string; kind: string | null; report_id: string | null; payload_json: string; digest: string; state: string; expires_at: string; created_at: string; decided_at: string | null; consumed_at: string | null; outcome_json: string | null; approved_by_rule?: string | null; playbook_id?: string | null; owner_confirmation?: string | null; }
 /** Lazy expiry: the window covers deciding and acting, so a pending or an
  *  approved-but-unused approval past expires_at becomes expired on read. */
 export function expireApprovals(db: Db, ownerId: string) {
@@ -270,7 +270,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     const shared = { framework: FRAMEWORK, playbooks: PLAYBOOKS,
       tools: ["get_obligations", "connect_my_services", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "request_approval", "get_approval", "record_action_outcome", "report_unmet_need"],
       note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments; private service nominations; the exact text of each approval request until the owner deletes their progress; and the de-identified text of unmet needs. It stores no conversations. Reporting never approves business actions.",
-      approvals_note: "Before sending, invoicing, paying or filing for the owner, call request_approval with the exact content and act only when get_approval returns approved (and usable is not false). A standing approval the owner set may approve a send at once (auto_approved: true): then proceed without asking again. When you follow a playbook, pass its id as playbook_id so the owner sees which job the approval belongs to. Launchpad never sends, pays or files.",
+      approvals_note: "Before sending, invoicing, paying or filing for the owner, show the owner the exact content in this chat and ask once. When they say yes, call request_approval with owner_confirmation set to their words: it is approved at once, so act without asking them to approve again anywhere else. Act only when the approval is approved (and usable is not false). A standing approval the owner set may approve a send without asking (auto_approved: true): to use it, call request_approval without owner_confirmation first; if it stays pending, ask the owner in this chat and call again with a new report_id, the same action and owner_confirmation. When you follow a playbook, pass its id as playbook_id so the owner sees which job the approval belongs to. Launchpad never sends, pays or files.",
       catalog_note: "search_services is a public research catalogue available to any authenticated connection; it never contains owner data." };
     if (!need("progress:read")) return json({ first_step, ...shared });
     return json({ first_step, workspace: { company_ref: ctx.companyRef, label: ctx.label }, ...shared, reporting_enabled: ctx.reportingEnabled });
@@ -359,7 +359,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     return json({ candidate_id: id, status: "pending_moderation", deduplicated: false, note: "Pending human moderation. Not published or endorsed." });
   });
 
-  server.registerTool("request_approval", { description: "Ask the owner to approve one exact action (message, invoice, payment or filing) on their phone. The digest binds every field of action; any change needs a new approval. send_message and send_invoice must name recipient.address, the exact e-mail or e-invoice address you will send to. Launchpad never sends, pays or files: after get_approval returns approved, act with your own tools using exactly this content, then call record_action_outcome before expires_at. Expires 24 hours after the request, for deciding and for acting: an approved approval with no outcome recorded by then becomes expired. Idempotent by report_id; a replay returns the creation receipt plus the live current_state. If the owner set a standing approval that covers the action (send_message/send_invoice only: kind, recipient, amount cap, daily limit, expiry), the reply is already state approved with auto_approved: true: proceed without asking the owner again. Filings and payments are never auto-approved.", inputSchema: { report_id: s(80), action: approvalActionSchema, playbook_id: z.enum(PLAYBOOK_IDS).describe("The playbook you are following (get_started playbooks[].id), so the owner sees which job this is. Optional.").optional() } }, async (args) => {
+  server.registerTool("request_approval", { description: "Record the owner's approval of one exact action (message, invoice, payment or filing). Usual flow: show the owner the exact content in this chat and ask once; when they say yes, call this with owner_confirmation set to their words, and the reply is state approved at once (approved_in_assistant: true): act without asking them to approve again on Launchpad. Without owner_confirmation the approval waits (pending) for the owner on the Launchpad approval page; use that only when the owner is not in this chat. A later call with owner_confirmation and the same action (new report_id) approves that waiting request. The digest binds every field of action; any change needs a new approval. send_message and send_invoice must name recipient.address, the exact e-mail or e-invoice address you will send to. Launchpad never sends, pays or files: after get_approval returns approved, act with your own tools using exactly this content, then call record_action_outcome before expires_at. Expires 24 hours after the request, for deciding and for acting: an approved approval with no outcome recorded by then becomes expired. Idempotent by report_id; a replay returns the creation receipt plus the live current_state. If the owner set a standing approval that covers the action (send_message/send_invoice only: kind, recipient, amount cap, daily limit, expiry), the reply is already state approved with auto_approved: true: proceed without asking the owner again. Filings and payments are never auto-approved.", inputSchema: { report_id: s(80), action: approvalActionSchema, owner_confirmation: s(300).describe("The owner's own reply in this chat approving exactly this content, quoted verbatim (e.g. \"jah, saada\"). Pass it only after you showed the owner the exact recipient, amount and text and they said yes. Optional.").optional(), playbook_id: z.enum(PLAYBOOK_IDS).describe("The playbook you are following (get_started playbooks[].id), so the owner sees which job this is. Optional.").optional() } }, async (args) => {
     const gate = sharingGate("Nothing was saved and no approval was requested."); if (gate) return err(gate);
     if (["send_invoice", "prepare_payment"].includes(args.action.kind) && args.action.amount_cents === undefined) return err(`amount_cents is required for ${args.action.kind}. Nothing was saved and no approval was requested.`);
     const playbook = args.playbook_id ? PLAYBOOKS.find((p) => p.id === args.playbook_id) : undefined;
@@ -377,6 +377,23 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     expireApprovals(db, ctx.ownerId);
     const { total, pending } = db.prepare("SELECT count(*) total, count(*) FILTER (WHERE state='pending') pending FROM approvals WHERE owner_id=?").get(ctx.ownerId) as { total: number; pending: number };
     if (total >= 200) return err("Approval limit reached for this workspace (200). The owner can export and delete progress to start again. Nothing was saved and no approval was requested.");
+    if (args.owner_confirmation) {
+      // The owner said yes in their own assistant: that is the approval, so they never approve twice.
+      // A request still waiting for the same exact action is approved instead of adding a second one.
+      const digest = approvalDigest(args.action), now = nowIso();
+      const waiting = db.prepare("SELECT id,expires_at FROM approvals WHERE owner_id=? AND digest=? AND state='pending' ORDER BY created_at DESC LIMIT 1").get(ctx.ownerId, digest) as { id: string; expires_at: string } | undefined;
+      const id = waiting?.id ?? newId("appr"), expires = waiting?.expires_at ?? new Date(Date.now() + 24 * 3600_000).toISOString();
+      const receipt = { approval_id: id, state: "approved", approved_in_assistant: true, digest, decided_at: now, expires_at: expires, approve_url: `${ctx.baseUrl}/approvals/${id}`,
+        assistant_instruction: "The owner approved this exact content in this chat, so it is approved now. Do not ask them to approve it again on Launchpad: act with your own tools using exactly this content, then call record_action_outcome with this digest before expires_at.",
+        note: "Approved in the assistant chat, as reported by the assistant. Any change to the content needs a new approval." };
+      db.transaction(() => {
+        if (waiting) db.prepare("UPDATE approvals SET state='approved',decided_at=?,owner_confirmation=? WHERE id=? AND owner_id=?").run(now, args.owner_confirmation, id, ctx.ownerId);
+        else db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at,decided_at,playbook_id,owner_confirmation) VALUES(?,?,?,?,?,?,'approved',?,?,?,?,?)").run(id, ctx.ownerId, args.action.kind, args.report_id, JSON.stringify(args.action), digest, expires, now, now, args.playbook_id ?? null, args.owner_confirmation);
+        saveReceipt(db, ctx.ownerId, "approval", args.report_id, args, receipt);
+      })();
+      logActivity(db, ctx.ownerId, "assistant", "approved_in_assistant", "ok", `Owner approved in the assistant chat: ${args.action.kind} to ${args.action.recipient.name} (digest ${digest.slice(0, 12)}). Launchpad sent, paid and filed nothing.`);
+      return json(receipt);
+    }
     const rule = matchStandingRule(db, ctx.ownerId, args.action);
     if (rule) {
       const id = newId("appr"), digest = approvalDigest(args.action), now = nowIso(), expires = new Date(Date.now() + 24 * 3600_000).toISOString(), ruleName = standingRuleName(rule);
@@ -392,7 +409,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     }
     if (pending >= 20) return err("Too many approvals are waiting for the owner (20 pending). Ask the owner to decide on those first. Nothing was saved and no approval was requested.");
     const id = newId("appr"), digest = approvalDigest(args.action), expires = new Date(Date.now() + 24 * 3600_000).toISOString();
-    const receipt = { approval_id: id, state: "pending", digest, expires_at: expires, approve_url: `${ctx.baseUrl}/approvals/${id}`, owner_instruction: "Ask the owner to open the link (or the Launchpad Status page) and approve or decline. Do not act before get_approval returns approved.", note: "Call get_approval before acting; current_state on replays is live." };
+    const receipt = { approval_id: id, state: "pending", digest, expires_at: expires, approve_url: `${ctx.baseUrl}/approvals/${id}`, owner_instruction: "If the owner is in this chat, show them the exact content and ask once; when they say yes, call request_approval again with a new report_id, the same action and owner_confirmation (their words). That approves this request; do not also send them to the link. If they are not in this chat, they can approve or decline at the link (or the Launchpad Status page). Do not act before the approval is approved.", note: "Call get_approval before acting; current_state on replays is live." };
     db.transaction(() => {
       db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at,playbook_id) VALUES(?,?,?,?,?,?,'pending',?,?,?)").run(id, ctx.ownerId, args.action.kind, args.report_id, JSON.stringify(args.action), digest, expires, nowIso(), args.playbook_id ?? null);
       saveReceipt(db, ctx.ownerId, "approval", args.report_id, args, receipt);
@@ -406,7 +423,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     const a = getApproval(db, ctx.ownerId, args.approval_id);
     if (!a) return err("Unknown approval_id in this workspace. Nothing was read.");
     const unusable = a.state === "approved" && approvalAddressMissing(a) ? { usable: false, reason: ADDRESS_MISSING } : {};
-    const auto = a.approved_by_rule ? { auto_approved: true, approved_by_rule: a.approved_by_rule } : {};
+    const auto = a.approved_by_rule ? { auto_approved: true, approved_by_rule: a.approved_by_rule } : a.owner_confirmation ? { approved_in_assistant: true, owner_confirmation: a.owner_confirmation } : {};
     return json({ approval_id: a.id, state: a.state, ...unusable, ...auto, digest: a.digest, action: JSON.parse(a.payload_json), playbook_id: a.playbook_id ?? null, created_at: a.created_at, decided_at: a.decided_at, expires_at: a.expires_at, outcome: a.outcome_json ? JSON.parse(a.outcome_json) : null });
   });
 
@@ -466,7 +483,7 @@ export const TOOL_ARG_KEYS: Record<string, string[]> = {
   report_progress: ["report_id", "task_id", "expected_version", "observed_at", "milestone", "evidence_refs"],
   search_services: ["query", "limit"],
   submit_service_candidate: ["name", "connection", "jobs"],
-  request_approval: ["report_id", "action", "playbook_id"],
+  request_approval: ["report_id", "action", "owner_confirmation", "playbook_id"],
   get_approval: ["approval_id"],
   record_action_outcome: ["report_id", "approval_id", "digest", "outcome", "observed_at", "evidence_refs"],
   report_unmet_need: ["report_id", "need", "blocker", "job_hint"],

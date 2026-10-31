@@ -984,7 +984,7 @@ function stateLine(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, 
     { cls: "done", mark: "✓", text: t("Koostatud", "Drafted"), note: `${t("Assistent", "Your assistant")} · ${fmtWhen(a.created_at, l)}` },
   ];
   const decided = !!a.decided_at && a.state !== "declined";
-  steps.push(decided ? { cls: "done", mark: "✓", text: t("Kinnitatud", "Approved"), note: `${a.approved_by_rule ? t("Püsiluba", "Standing approval") : t("Sina", "You")} · ${fmtWhen(a.decided_at, l)}` } : { cls: "todo", mark: "", text: t("Kinnitatud: ootab sind", "Approved: waiting for you") });
+  steps.push(decided ? { cls: "done", mark: "✓", text: t("Kinnitatud", "Approved"), note: `${a.approved_by_rule ? t("Püsiluba", "Standing approval") : a.owner_confirmation ? t("Sina, assistendis", "You, in your assistant") : t("Sina", "You")} · ${fmtWhen(a.decided_at, l)}` } : { cls: "todo", mark: "", text: t("Kinnitatud: ootab sind", "Approved: waiting for you") });
   const done = seen(act[0]), failed = seen("failed");
   if (failed) steps.push({ cls: "stop", mark: "✕", text: t("Ei õnnestunud", "Failed"), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(failed.observed_at, l)}` });
   else if (done) steps.push({ cls: sample ? "demo" : "done", mark: sample ? "–" : "✓", text: sample ? t(`${act[1]}: demo`, `${act[2]}: demo`) : t(act[1], act[2]), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(done.observed_at, l)}${sample ? t(" · päriselt ei saadetud", " · nothing really sent") : ""}` });
@@ -1024,6 +1024,9 @@ function ticketHead(v: ReturnType<typeof approvalView>, kindExtra = ""): string 
 <h1 id="a-h">${esc(head)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}</h1>`;
 }
 const STAMP = '<span class="stamp" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 4.5"/></svg></span>';
+
+/** The owner approved in their own assistant chat: quote their words, as the assistant reported them. */
+const confirmedInAssistant = (a: ApprovalRow, l: Lang) => `<p class="small"><strong>${tr(l)("Kinnitasid assistendis", "You approved in your assistant")}: „${esc(a.owner_confirmation ?? "")}”.</strong> ${tr(l)("Siin pole vaja uuesti kinnitada. Sinu sõnad on assistendi teade.", "No need to approve again here. Your words are as your assistant reported them.")}</p>`;
 
 // --- Standing approvals (#45): the owner sets a rule once; matching sends need no new tap. ---
 const ruleChip = (l: Lang) => labelChip("owner", tr(l)("Püsiloaga", "Standing approval"));
@@ -1211,7 +1214,7 @@ ${foot()}
 <div class="strip strip--ok">${STAMP}<h1 class="receipt-head" id="a-h">${t("Kinnitatud", "Approved")} ${decidedAt()}</h1>${labelChip("owner", t("Sinu kinnitus", "You approved"))}</div>
 <div class="ticket-body">
 <p class="turn" role="status"><strong>${t("Nüüd on assistendi kord.", "Now it's your assistant's turn.")}</strong> ${what}</p>
-<div class="callout"><p><strong>${t("Mine tagasi ChatGPT-sse või Claude'i ja kirjuta <code>Kinnitasin</code>.", "Go back to ChatGPT or Claude and write <code>Approved</code> (“Kinnitasin” works too).")}</strong></p><p class="small">${t("Assistent näeb sinu kinnitust alles siis, kui talle kirjutad.", "Your assistant only sees your approval when you write to it.")}</p></div>
+${a.owner_confirmation ? confirmedInAssistant(a, l) : `<div class="callout"><p><strong>${t("Mine tagasi ChatGPT-sse või Claude'i ja kirjuta <code>Kinnitasin</code>.", "Go back to ChatGPT or Claude and write <code>Approved</code> (“Kinnitasin” works too).")}</strong></p><p class="small">${t("Assistent näeb sinu kinnitust alles siis, kui talle kirjutad.", "Your assistant only sees your approval when you write to it.")}</p></div>`}
 ${standingOffer(a, v, l, opts.csrf, rules, now, opts.capCents)}
 ${stateLine(a, v, l, sample)}
 <p class="fine">${esc(t(`Kui assistent ei teata tulemusest ${fmtUntil(a.expires_at, l, now)}, kinnitus aegub ja ta peab uuesti küsima.`, `If your assistant does not report an outcome by ${fmtUntil(a.expires_at, l, now)}, the approval expires and it must ask again.`))}</p>
@@ -1227,7 +1230,7 @@ ${foot()}
 <div class="ticket-body">
 <h1 class="receipt-head" id="a-h">${head}</h1>
 <p class="why">${[v.recipient.name, v.amount].filter(Boolean).map(esc).join(" · ")}${v.recipient.name || v.amount ? " · " : ""}${esc(v.title)}</p>
-${a.approved_by_rule ? `<p class="small"><strong>${t("Kinnitatud püsiloaga", "Approved by your standing approval")} „${esc(ruleTitle(a, rules, l))}”.</strong></p>` : ""}
+${a.approved_by_rule ? `<p class="small"><strong>${t("Kinnitatud püsiloaga", "Approved by your standing approval")} „${esc(ruleTitle(a, rules, l))}”.</strong></p>` : a.owner_confirmation ? confirmedInAssistant(a, l) : ""}
 <p class="small"><strong>${esc(t(`Sinu kinnitusi selles töös: ${a.decided_at && !a.approved_by_rule ? 1 : 0}.`, `Your approvals in this job: ${a.decided_at && !a.approved_by_rule ? 1 : 0}.`))}</strong> ${t("Töö tegi assistent; tulemus on tema teade, AI-hüppelaud seda ei kontrollinud.", "Your assistant did the work; the result is its report, not checked by AI Launchpad.")}</p>
 ${isDone(a) && opts.handover ? handoverStrip(opts.handover, l) : ""}
 ${stateLine(a, v, l, sample)}
@@ -1932,6 +1935,7 @@ const DONE_VERBS: Record<string, [string, string]> = {
   standing_rule_created: ["Sina andsid püsiloa", "You set a standing approval"],
   standing_rule_revoked: ["Sina lõpetasid püsiloa", "You ended a standing approval"],
   standing_auto_approved: ["Püsiluba kinnitas assistendi töö", "Your standing approval approved your assistant's work"],
+  approved_in_assistant: ["Sina kinnitasid assistendis", "You approved in your assistant"],
 };
 export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date; approvals?: ApprovalRow[]; rules?: StandingRule[]; assessment?: Assessment | null; sample?: boolean }): string {
   const l = opts.lang, t = tr(l), now = opts.now ?? new Date(), fx = fixtureText(l, !!opts.sample);

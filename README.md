@@ -65,7 +65,7 @@ First persona: a one-person Estonian service OÜ, books in e-arveldaja or Merit.
 | Job playbooks (~10 to start) | For each job: steps, tools, approval points, official source |
 | Catalogue | Researched MCP services per job; how to connect each; runtime verification remains future work |
 | Permissions | Per-authority inventory (EMTA, Business Register, …) with expiry and revocation — filing rights are separate per authority |
-| Approvals & receipts | Server-enforced approval bound to the exact action; submitted / accepted / rejected / paid states |
+| Approvals & receipts | Approval bound to the exact action, given once: the owner's yes in their own assistant, a tap on the approval page, or a standing rule; submitted / accepted / rejected / paid states |
 | Portal prefill | Where no API exists, a browser agent fills the government portal and stops before Submit |
 | Friction loop | Where an assistant gets stuck: classify why, deduplicate, redact, publish an owner-approved request as open demand on the marketplace |
 
