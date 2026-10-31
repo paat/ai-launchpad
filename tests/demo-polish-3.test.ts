@@ -109,3 +109,12 @@ describe("grok medium: a friction card that is not completed has a translated st
     expect(en).toContain('<p class="small muted" lang="en">This suggestion is not available right now.</p>');
   });
 });
+
+describe("grok low: only fixed English tokens on a nomination carry lang=\"en\"", () => {
+  test("the assistant's Estonian jobs text is not inside lang=\"en\"; the status pill is", () => {
+    const html = conn("et", [{ id: "cand_1", name: "Kratt Arved", connection: "https://arved.example.ee/mcp", jobs: "Meeldetuletused eesti keeles", status: "pending_moderation", created_at: "2026-10-31T10:00:00Z" }]);
+    expect(html).toContain('<span class="pill" lang="en">pending_moderation</span>');
+    expect(html).not.toMatch(/lang="en"[^>]*>[^<]*Meeldetuletused eesti keeles/);
+    expect(html).toContain("Meeldetuletused eesti keeles");
+  });
+});
