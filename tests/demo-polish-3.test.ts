@@ -103,10 +103,37 @@ describe("grok medium: a friction card that is not completed has a translated st
   test("no „steps above” on /playbooks; the status line is in the UI language", () => {
     const et = playbooksBody("et", [], [card]);
     expect(et).not.toContain("steps above");
-    expect(et).toContain('<p class="small muted" lang="et">See soovitus pole praegu saadaval.</p>');
+    expect(et).toContain('<p class="small muted" lang="et">See soovitus ei ole saadaval.</p>');
     const en = playbooksBody("en", [], [card]);
     expect(en).not.toContain("steps above");
-    expect(en).toContain('<p class="small muted" lang="en">This suggestion is not available right now.</p>');
+    expect(en).toContain('<p class="small muted" lang="en">This suggestion is not available.</p>');
+  });
+});
+
+// #68: a terminal card state must not read as temporary; "right now" stays only for states that may still change.
+describe("#68: friction-card status line per state (terminal vs may-still-change)", () => {
+  const card = (state: string, output: string | null = null) => ({ topicId: "copying-invoices", locale: "en", state, output, replayed: false, label: "Copying invoices" });
+  test("pending keeps „pole praegu saadaval” / „right now” (none renders no row)", () => {
+    for (const state of ["pending"]) {
+      expect(playbooksBody("et", [], [card(state)]), state).toContain('<p class="small muted" lang="et">See soovitus pole praegu saadaval.</p>');
+      expect(playbooksBody("et", [], [card(state)]), state).not.toContain("ei ole saadaval");
+      expect(playbooksBody("en", [], [card(state)]), state).toContain('<p class="small muted" lang="en">This suggestion is not available right now.</p>');
+      expect(playbooksBody("en", [], [card(state)]), state).not.toContain("This suggestion is not available.</p>");
+    }
+  });
+  test("blocked/failed/breach/breach_blocked/exhausted/conflict/uncertain say plainly it is not available", () => {
+    for (const state of ["blocked", "failed", "breach", "breach_blocked", "exhausted", "conflict", "uncertain"]) {
+      expect(playbooksBody("et", [], [card(state)]), state).toContain('<p class="small muted" lang="et">See soovitus ei ole saadaval.</p>');
+      expect(playbooksBody("et", [], [card(state)]), state).not.toContain("praegu");
+      expect(playbooksBody("en", [], [card(state)]), state).toContain('<p class="small muted" lang="en">This suggestion is not available.</p>');
+      expect(playbooksBody("en", [], [card(state)]), state).not.toContain("right now");
+    }
+  });
+  test("completed is unchanged; none renders no row", () => {
+    expect(playbooksBody("et", [], [card("completed", "Salvestatud juhis tekst.")])).toContain('<p class="small muted" lang="et">Salvestatud juhis. Selle põhjal pole midagi esitatud, saadetud, makstud ega kontrollitud.</p>');
+    expect(playbooksBody("en", [], [card("completed", "Saved guidance text.")])).toContain('<p class="small muted" lang="en">Saved guidance. Nothing was filed, sent, paid or verified from it.</p>');
+    expect(playbooksBody("et", [], [card("none")])).not.toContain("Copying invoices");
+    expect(playbooksBody("et", [], [card("none")])).toContain("Ühtegi soovitust pole veel koostatud.");
   });
 });
 
