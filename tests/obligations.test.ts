@@ -443,6 +443,13 @@ describe("get_obligations tool and status card", () => {
     expect(errText(await c.callTool({ name: "get_obligations", arguments: {} }))).toMatch(/Ask the owner for the company name or 8-digit registry code.*No deadlines were computed/s);
     expect(errText(await c.callTool({ name: "get_obligations", arguments: { registry_code: "12417835" } }))).toMatch(/checksum.*No deadlines were computed/s);
   });
+  test("connect_my_services takes no arguments; TOOL_ARG_KEYS matches the listed tools exactly", async () => {
+    const c = await client(owner("noargs").token);
+    expect(errText(await c.callTool({ name: "connect_my_services", arguments: { password: "x" } }))).toContain("Unexpected field(s) rejected: password");
+    const listed = (await c.listTools()).tools.map((t) => t.name);
+    expect(listed.every((n) => Object.hasOwn(TOOL_ARG_KEYS, n))).toBe(true);
+    expect(Object.keys(TOOL_ARG_KEYS).every((k) => listed.includes(k))).toBe(true);
+  });
   test("not_configured: rules still compute, facts_needed asks, no network call", async () => {
     const spy = vi.spyOn(globalThis, "fetch");
     const c = await client(owner("nokey").token);

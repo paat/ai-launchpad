@@ -460,7 +460,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
 /** Top-level argument allowlists per tool. The app layer rejects unexpected
  * fields before dispatch (the SDK strips unknown keys instead of rejecting). */
 export const TOOL_ARG_KEYS: Record<string, string[]> = {
-  get_started: [], get_progress: [],
+  get_started: [], connect_my_services: [], get_progress: [],
   get_obligations: ["registry_code", "facts", "months"],
   report_assessment: ["report_id", "expected_version", "assessment"],
   report_progress: ["report_id", "task_id", "expected_version", "observed_at", "milestone", "evidence_refs"],
