@@ -58,6 +58,7 @@ describe("executable job playbooks (#26)", () => {
     expect(p.needs.join(" ")).toContain("never ask for, repeat or accept a password or PIN in the chat");
     expect(ask).toMatch(/^Ask one question unless the owner already said it: what should be linked \(accounting software, e-mail or bank\)/);
     expect(ask).toContain("Follow only the steps that start with that service's name; each one says how to finish. A connector for a different service never lets you skip these steps.");
+    expect(ask).toContain("if a connector for that same service already answers, name it and use it instead of asking");
     expect(ask).not.toMatch(/go straight to the last step/);
     // Branch-specific steps are scoped by their prefix; each non-accounting branch ends explicitly.
     const branch = rest.slice(0, -1);
