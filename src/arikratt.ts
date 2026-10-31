@@ -3,7 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Db } from "./db.js";
 import { nowIso } from "./db.js";
 import { SYNTHETIC_COMPANIES } from "./fixtures.js";
-import { validRegistryCode, type CompanyFacts, type Fact } from "./obligations.js";
+import { validRegistryCode, type CompanyFacts, type Fact, type AnnualReportFigures } from "./obligations.js";
 
 /** Public-register facts via the Ärikratt MCP (external dependency). Reads
  * company-level fields only: natural-person data (board members etc.) is never
@@ -61,6 +61,10 @@ export function mapCompany(code: string, raw: unknown): { company: CompanyCard; 
   // financials: the default (latest) annual report; as_of is its report year.
   const revenue = num(fin.revenue), year = num(fin.year);
   if (revenue !== null && year !== null) facts.latest_annual_revenue = { ...fact(revenue), as_of: String(year) };
+  const lines = { revenue, net_profit: num(fin.net_profit), total_assets: num(fin.total_assets), equity: num(fin.equity), liabilities: num(fin.liabilities) };
+  const figures = Object.fromEntries(Object.entries(lines).filter(([, v]) => v !== null)) as Omit<AnnualReportFigures, "year">;
+  // Revenue alone is already latest_annual_revenue; figures need at least one profit or balance-sheet line.
+  if (year !== null && Object.keys(figures).some((k) => k !== "revenue")) facts.latest_annual_report_figures = { ...fact({ year, ...figures }), as_of: String(year) };
   const https = (v: unknown) => { const u = str(v); return u?.startsWith("https://") ? u : null; };
   const sources = (Array.isArray(r.sources) ? r.sources : []).map(rec).map((s) => ({ key: str(s.key), name: str(s.name), licence: str(s.licence), licence_url: https(s.licence_url) }))
     .filter((s): s is RegisterSource => s.key !== null).slice(0, 10);

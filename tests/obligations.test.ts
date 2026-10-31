@@ -321,6 +321,11 @@ describe("Ärikratt adapter", () => {
     const { facts } = mapCompany(FAKE_VALID, { as_of: "2026-10-29", profile: { vat_number: null }, financials: { year: 2025, report_basis: "annual_report", revenue: 45000, revenue_reason: null, employees_avg: 1 } });
     expect(facts.latest_annual_revenue).toEqual({ value: 45000, provenance: "public_register", source: "arikratt:get_company", as_of: "2025" });
     expect(mapCompany(FAKE_VALID, { financials: { year: 2025, revenue: null, revenue_reason: "not_reported" } }).facts.latest_annual_revenue).toBeUndefined();
+    const figs = mapCompany(FAKE_VALID, { as_of: "2026-10-29", financials: { year: 2025, revenue: 0, net_profit: -53, equity: 1248, total_assets: 1248, liabilities: 0 } }).facts.latest_annual_report_figures;
+    expect(figs).toEqual({ value: { year: 2025, revenue: 0, net_profit: -53, total_assets: 1248, equity: 1248, liabilities: 0 }, provenance: "public_register", source: "arikratt:get_company", as_of: "2025" });
+    expect(mapCompany(FAKE_VALID, { financials: { year: 2025, revenue: null, revenue_reason: "not_reported" } }).facts.latest_annual_report_figures).toBeUndefined();
+    // Absent lines are omitted, never null or zero.
+    expect(mapCompany(FAKE_VALID, { financials: { year: 2025, revenue: null, equity: 1248, total_assets: null } }).facts.latest_annual_report_figures?.value).toEqual({ year: 2025, equity: 1248 });
     expect(mapCompany(FAKE_VALID, { as_of: "2026-10-29", profile: { founded: "2026-03-12" } }).facts.founded).toEqual({ value: "2026-03-12", provenance: "public_register", source: "arikratt:get_company", as_of: "2026-10-29" });
     for (const bad of [null, "", "12.03.2026", 2026, "2026-02-31", "2025-02-29"]) expect(mapCompany(FAKE_VALID, { profile: { founded: bad } }).facts.founded, String(bad)).toBeUndefined();
   });
@@ -364,11 +369,26 @@ describe("Ärikratt adapter", () => {
     expect(r.result.company).toMatchObject({ name: "Synthetic Register OÜ", registry_code: FAKE_VALID });
     expect(r.result.facts_needed[0]).toEqual({ fact: "confirm_company", question_et: `Kas Synthetic Register OÜ (${FAKE_VALID}) on sinu ettevõte?`, question_en: `Is Synthetic Register OÜ (${FAKE_VALID}) your company?` });
     expect(r.result.assistant_instruction).toContain(`Confirm with the owner that Synthetic Register OÜ (${FAKE_VALID}) is their company before relying on these deadlines.`);
+    // An unconfirmed name match never hands over the register facts.
+    expect(r.result.public_facts).toEqual({});
     // A code the owner gave needs no confirmation.
     const direct = await companyObligations(arikratt(db, { apiKey: "test-key", url: fakeUrl }), { registryCode: FAKE_VALID, months: 1 });
     if (!direct.ok) throw new Error(direct.error);
     expect(direct.result.facts_needed.map((n) => n.fact)).not.toContain("confirm_company");
     expect(direct.result.assistant_instruction).not.toContain("Confirm with the owner that");
+    // Register facts reach the assistant, so it never asks the owner for them (owner 2026-10-31).
+    expect(direct.result.public_facts.vat_registered).toMatchObject({ value: true, provenance: "public_register" });
+    // The fake register reports revenue only: that is latest_annual_revenue, not a figures fact full of nulls.
+    expect(direct.result.public_facts.latest_annual_report_figures).toBeUndefined();
+    expect(direct.result.public_facts.latest_annual_revenue).toMatchObject({ value: 45000, as_of: "2025" });
+    // Sample companies' facts stay labelled synthetic, never register data.
+    const sample = await companyObligations(arikratt(db, { apiKey: "test-key", url: fakeUrl }), { registryCode: "19990002", months: 1 });
+    if (!sample.ok) throw new Error(sample.error);
+    expect(sample.result.public_facts.vat_registered).toMatchObject({ provenance: "synthetic" });
+    expect(sample.result.public_facts.latest_annual_revenue).toMatchObject({ provenance: "synthetic" });
+    expect(Object.values(sample.result.public_facts).every((f) => f?.provenance === "synthetic")).toBe(true);
+    expect(sample.result.assistant_instruction).toContain("synthetic is sample data and never the register.");
+    expect(direct.result.assistant_instruction).toContain("a fact in public_facts that is not in facts_needed is already known, so never ask for it. Name its provenance honestly: public_register is the business register, synthetic is sample data and never the register.");
   });
   test("honest unavailable states: timeout, not found, bad key", async () => {
     const db = openDb(":memory:");
@@ -432,11 +452,13 @@ describe("get_obligations tool and status card", () => {
     spy.mockRestore();
     expect(r.company).toMatchObject({ registry_code: FAKE_VALID, provenance: "assistant_supplied", unavailable: "not_configured" });
     expect(r.company.label_en).not.toContain("Official");
+    // Owner answers are never presented as public data.
+    expect(r.public_facts).toEqual({});
     expect(r.facts_needed.map((n: { fact: string }) => n.fact)).toEqual(expect.arrayContaining(["fy_end", "annual_report"]));
     expect(r.facts_needed.map((n: { fact: string }) => n.fact)).not.toContain("vat_registered");
     const kmd = r.obligations.find((o: { rule_id: string }) => o.rule_id === "vat-return-kmd");
     expect(kmd).toMatchObject({ applies: "yes", applies_because: [{ fact: "vat_registered", value: true, provenance: "assistant_supplied" }] });
-    expect(r.assistant_instruction).toBe("Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed. Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.");
+    expect(r.assistant_instruction).toBe("Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed; a fact in public_facts that is not in facts_needed is already known, so never ask for it. Name its provenance honestly: public_register is the business register, synthetic is sample data and never the register. Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.");
     expect(r.disclaimer).toContain("calculated by rules, not AI");
     expect(r.computed_by).toBe("rules");
   });

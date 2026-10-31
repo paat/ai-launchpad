@@ -5,6 +5,8 @@
 /** "synthetic": made-up Näidis / Sample fixtures, never register data. */
 export type Provenance = "public_register" | "assistant_supplied" | "assumption" | "synthetic";
 export interface Fact<T> { value: T; provenance: Provenance; as_of?: string; source?: string; }
+/** Only lines the register reports as numbers; an absent line is unknown, never zero. */
+export interface AnnualReportFigures { year: number; revenue?: number; net_profit?: number; total_assets?: number; equity?: number; liabilities?: number; }
 export interface AnnualReportStatus { latest_year: number | null; filed: boolean | null; overdue_days: number | null; }
 export interface CompanyFacts {
   company_name?: Fact<string>; registry_code?: Fact<string>;
@@ -14,6 +16,8 @@ export interface CompanyFacts {
   fy_end?: Fact<string>; annual_report?: Fact<AnnualReportStatus>; tax_debt_on_list?: Fact<boolean>;
   /** Revenue in the latest annual report (register or fixture); as_of is the report year. */
   latest_annual_revenue?: Fact<number>;
+  /** Key figures of the latest filed annual report (register); as_of is the report year. Opening balances for the next year start here. */
+  latest_annual_report_figures?: Fact<AnnualReportFigures>;
   /** Assistant-supplied only: this calendar year's Estonian turnover so far. */
   ytd_turnover_this_year?: Fact<number>;
   /** Assistant-supplied only: payouts (salary, board fee, dividends) in the last calendar month. */
