@@ -69,7 +69,8 @@ describe("executable job playbooks (#26)", () => {
     expect(all).toContain("Never guess.");
     expect(all).toMatch(/request_approval with action kind post_entries.*owner_confirmation: their words, verbatim.*Post exactly the approved entries, nothing else, then call record_action_outcome with outcome posted/s);
     expect(p.needs.join(" ")).not.toContain("follow the connect-service playbook");
-    expect(p.done_when).toContain("equals the bank statement's balance");
+    expect(p.done_when).toContain("for every account the company used, its balance in the books equals its bank statement's balance at the end of each month");
+    expect(all).toContain("A month is done only after every one of those accounts was read for it; a quiet month on one account is still waiting while another account is unread.");
     expect(byId("annual-report").steps.join(" ")).toContain("follow the books-catch-up playbook first");
   });
 
