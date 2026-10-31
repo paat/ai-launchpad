@@ -20,7 +20,20 @@ const activateUnpaid = async (page: Page) => {
   await page.locator('[data-job-activate="unpaid"]').click();
   await page.waitForFunction(() => matchMedia("(prefers-reduced-motion: reduce)").matches || (document.querySelector('[data-job-conversation]:not([hidden])')?.getAnimations({ subtree: true }).length ?? 0) > 0);
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.ready)));
-  await page.waitForTimeout(180); // let native scrollend (or the 120 ms fallback) finish before seeking the timeline
+  // Wait for the click's smooth scroll to settle instead of a fixed 180 ms (#69): the unpaid card
+  // fully inside the track (±1 px, as the carousel's own scrollend handler judges it) and the same
+  // scrollLeft on two consecutive animation frames — so a later full-page screenshot cannot
+  // interrupt the scroll and hand the active card to a neighbour.
+  await page.waitForFunction(() => {
+    const track = document.querySelector("#job-track"), card = document.querySelector('[data-job-card="unpaid"]');
+    if (!track || !card) return false;
+    const r = card.getBoundingClientRect(), t = track.getBoundingClientRect();
+    const inside = r.left >= t.left - 1 && r.right <= t.right + 1;
+    const left = track.scrollLeft, w = window as typeof window & { __jobTrackScrollLeft?: number };
+    const settled = w.__jobTrackScrollLeft === left;
+    w.__jobTrackScrollLeft = left;
+    return inside && settled;
+  }, undefined, { polling: "raf" });
   await expect(page.locator(UNPAID)).toBeVisible();
 };
 /** The final frame: the owner's opening question (#63 m1), the whole card (with the standing-approval chip) and the last bubble sit inside the visible chat. */
