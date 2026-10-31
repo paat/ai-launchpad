@@ -209,9 +209,19 @@ describe("agent-facing copy over MCP", () => {
     expect(i).toContain("short sentences, everyday words, one question per message, and no technical codes or file formats unless the owner uses them first.");
     expect(i).not.toMatch(/CAMT|ISO|XML/);
     expect(i).toContain("Before asking the owner for any fact or document, check both public data (get_obligations public_facts) and the owner's own connected files, such as Google Drive; ask only if neither has it. Always ask the facts_needed questions from get_obligations, and never let a file stand in for the owner's answer to them.");
-    expect(i).toContain("follow the connect-service playbook before answering from your own connector directory; it says which lookups are allowed.");
+    expect(i).toContain("call connect_my_services and follow the connect-service playbook it returns before answering from your own connector directory; it says which lookups are allowed.");
     const tools = (await c.listTools()).tools;
     expect(tools.find((x) => x.name === "search_services")?.description).toMatch(/^Research catalogue behind the connect-service playbook: when linking a service, query only as that playbook's branch says\./);
+  });
+
+  test("connect_my_services: owner phrasing finds it, read-only, returns the connect-service playbook for any scope", async () => {
+    const c = await connect([]);
+    const tool = (await c.listTools()).tools.find((x) => x.name === "connect_my_services")!;
+    expect(tool.annotations?.readOnlyHint).toBe(true);
+    for (const w of ["e-mail", "Proton Mail", "Gmail", "bank", "LHV", "accounting software", "e-arveldaja", "send invoices from their mailbox", "before searching your own connector directory"]) expect(tool.description, w).toContain(w);
+    const r = JSON.parse(((await c.callTool({ name: "connect_my_services", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { playbook: { id: string; steps: string[] }; first_step: string };
+    expect(r.playbook).toEqual(PLAYBOOKS.find((p) => p.id === "connect-service"));
+    expect(r.first_step).toContain("one plain question per message");
   });
 
   test("read-only errors: no consent label, request progress:report, tool-accurate copy", async () => {

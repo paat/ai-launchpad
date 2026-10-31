@@ -1,0 +1,10 @@
+{
+  "name": "ai-launchpad",
+  "displayName": "AI Launchpad",
+  "version": "0.1.0",
+  "description": "Back office for Estonian small businesses: your deadlines from public data, help linking your accounting, e-mail and bank in plain words, and nothing sent, paid or filed without your approval.",
+  "author": { "name": "AI Launchpad contributors", "url": "https://github.com/paat/ai-launchpad" },
+  "homepage": "https://huppelaud.arikratt.ee",
+  "repository": "https://github.com/paat/ai-launchpad",
+  "license": "MIT"
+}

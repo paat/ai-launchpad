@@ -426,7 +426,7 @@ describe("get_obligations tool and status card", () => {
   test("readOnlyHint on read tools only; get_started lists get_obligations first", async () => {
     const c = await client(owner("ann").token);
     const tools = Object.fromEntries((await c.listTools()).tools.map((t) => [t.name, t.annotations]));
-    for (const t of ["get_started", "get_progress", "search_services", "get_approval", "get_obligations"]) expect(tools[t]?.readOnlyHint, t).toBe(true);
+    for (const t of ["get_started", "connect_my_services", "get_progress", "search_services", "get_approval", "get_obligations"]) expect(tools[t]?.readOnlyHint, t).toBe(true);
     expect(tools.get_obligations?.openWorldHint).toBe(true);
     for (const t of ["report_assessment", "report_progress", "submit_service_candidate", "request_approval", "record_action_outcome"]) expect(tools[t]?.readOnlyHint, t).toBeUndefined();
     const started = parsed(await c.callTool({ name: "get_started", arguments: {} }));
@@ -442,6 +442,13 @@ describe("get_obligations tool and status card", () => {
     expect((await c.callTool({ name: "get_obligations", arguments: { months: 4 } }) as { isError?: boolean }).isError).toBe(true);
     expect(errText(await c.callTool({ name: "get_obligations", arguments: {} }))).toMatch(/Ask the owner for the company name or 8-digit registry code.*No deadlines were computed/s);
     expect(errText(await c.callTool({ name: "get_obligations", arguments: { registry_code: "12417835" } }))).toMatch(/checksum.*No deadlines were computed/s);
+  });
+  test("connect_my_services takes no arguments; TOOL_ARG_KEYS matches the listed tools exactly", async () => {
+    const c = await client(owner("noargs").token);
+    expect(errText(await c.callTool({ name: "connect_my_services", arguments: { password: "x" } }))).toContain("Unexpected field(s) rejected: password");
+    const listed = (await c.listTools()).tools.map((t) => t.name);
+    expect(listed.every((n) => Object.hasOwn(TOOL_ARG_KEYS, n))).toBe(true);
+    expect(Object.keys(TOOL_ARG_KEYS).every((k) => listed.includes(k))).toBe(true);
   });
   test("not_configured: rules still compute, facts_needed asks, no network call", async () => {
     const spy = vi.spyOn(globalThis, "fetch");
