@@ -181,6 +181,19 @@ describe("„Käest ära” fix cycle 2", () => {
     expect(job?.due).toBe("2027-06-30");
   });
 
+  test("an overdue annual report binds the job: its date and handoff win over next year's deadline (#64)", () => {
+    const late = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2027-07-05T10:00:00Z"), months: 2 }).obligations.find((x) => x.rule_id === "annual-report-overdue")!;
+    const overdue = { ...late, effective_due: "2026-06-30", statutory_due: "2026-06-30" } as Obligation;
+    const h = computeHandover({ assessment: null, obligations: [overdue, annual], approvals: [], rules: [], now: NOW });
+    const job = h.jobs.find((j) => j.id === "annual-report")!;
+    expect(job.due).toBe("2026-06-30");
+    const next = computeHandover({ assessment: null, obligations: [overdue, annual], approvals: [appr({ outcome: "sent" }), appr({ outcome: "sent", rule: "rule_1" })], rules: [rule()], now: NOW }).next;
+    expect(next).toMatchObject({ type: "playbook", playbookId: "annual-report", obligation: { rule_id: "annual-report-overdue" } });
+    const page = handoverSection(h, "et", "c", NOW);
+    expect(page).toContain("Tähtaeg oli 30. juuni");
+    expect(page).not.toContain("Järgmine tähtaeg 30. juuni");
+  });
+
   test("an untagged thank-you send fills no reminder segment and feeds no standing offer (tribunal T-003)", () => {
     const thanks = appr({ outcome: "sent", cents: 90_000, to: { name: "Uus Klient OÜ", address: "info@uus-klient.example" }, title: "Aitäh koostöö eest", summary: "Thank-you note" });
     expect(jobOfApproval(thanks)).toBeNull();

@@ -89,7 +89,9 @@ export function computeHandover(o: { assessment: Assessment | null; obligations:
   for (const k of KNOWN) {
     const titles = JOB_TITLES[k.id];
     const match = rows.find((r) => r.id === k.id || [titles[0], titles[1]].map(norm).includes(norm(r.label)));
-    const due = o.obligations.filter((x) => k.triggers.includes(x.rule_id) && x.effective_due && x.effective_due >= today).map((x) => x.effective_due!).sort()[0] ?? null;
+    // An overdue row (e.g. annual-report-overdue) binds the job before any later deadline (#64).
+    const overdue = o.obligations.filter((x) => k.triggers.includes(x.rule_id) && x.kind === "risk" && x.effective_due).map((x) => x.effective_due!).sort().pop();
+    const due = overdue ?? o.obligations.filter((x) => k.triggers.includes(x.rule_id) && x.effective_due && x.effective_due >= today).map((x) => x.effective_due!).sort()[0] ?? null;
     const applies = k.id === "payment-reminder" || o.obligations.some((x) => k.triggers.includes(x.rule_id)) || !!match || byJob.has(k.id);
     if (!applies) continue;
     if (match) used.add(match.id);
