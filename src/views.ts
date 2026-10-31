@@ -3,7 +3,7 @@ import { isHandled } from "./core.js";
 import { isDone, offerCapCents, type Handover, type Job } from "./handover.js";
 import { approvalAddressMissing, normAddress, standingRecipients, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type AssistantMilestones, type Exclusion, type StandingRule } from "./mcp.js";
 import type { CompanyCard } from "./arikratt.js";
-import { ET_OF, tallinnDate, type FactNeeded, type Obligation } from "./obligations.js";
+import { ET_OF, tallinnDate, type FactNeeded, type Obligation, type Source } from "./obligations.js";
 import { BASETEN_MODEL } from "./model-quality.js";
 import { PLAYBOOKS, safeHttps, type ServiceRecord } from "./catalog.js";
 import { BLOCKER_HANDOFF, BLOCKER_LABELS, BLOCKER_LABELS_ET, CATEGORY_LABELS, CATEGORY_LABELS_ET, classifiedByLabel, type Blocker, type Category, type DemandItem, type OwnerNeed } from "./unmet-needs.js";
@@ -570,6 +570,8 @@ const fmtUntil = (iso: string, l: Lang, now = new Date()) => {
   if (diff === 1) return t(`homme kella ${time}\u2011ni`, `${time} tomorrow`);
   return t(`${DAY.et.format(d)} kella ${time}\u2011ni`, `${DAY.en.format(d)}, ${time}`);
 };
+/** The official source of a rule: the same link on Tulekul and in „Käest ära”. */
+const sourceLink = (src: Source, l: Lang) => `<a class="tap-link" href="${esc(src.url)}" rel="noopener noreferrer"><span>${tr(l)("Allikas", "Source")}: <span lang="et">${esc(src.act_et)} ${esc(src.section)}</span><span aria-hidden="true">&nbsp;↗</span></span></a>`;
 const timeEl = (iso: string, text: string) => `<time datetime="${esc(iso)}">${esc(text)}</time>`;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -939,7 +941,7 @@ function handoverRow(j: Job, l: Lang, now: Date): string {
   const lines: string[] = [];
   if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.auto ? t(`, neist <span class="num">${e.auto}</span> ilma sinuta`, `, <span class="num">${e.auto}</span> without you`) : ""}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
   if (e.rule) lines.push(esc(t(`Püsiluba: ${standingRuleName(e.rule, l)} · aegub ${DAY.et.format(new Date(e.rule.expires_at))}`, `Standing approval: ${standingRuleName(e.rule, l)} · ends ${DAY.en.format(new Date(e.rule.expires_at))}`)));
-  if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${C_DAY_MON_YEAR.et.format(civil(j.due))}`, `Was due ${C_DAY_MON_YEAR.en.format(civil(j.due))}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}`);
+  if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${C_DAY_MON_YEAR.et.format(civil(j.due))}`, `Was due ${C_DAY_MON_YEAR.en.format(civil(j.due))}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}${j.dueSource ? ` ${sourceLink(j.dueSource, l)}` : ""}`);
   if (j.source === "assessment" && j.rung !== "other" && j.assessed) lines.push(`„${esc(j.assessed.reason)}” ${assessedChip}`);
   if (j.rung === "mine" && HO_CAN[j.id]) lines.push(esc(t(...HO_CAN[j.id])));
   if (e.pending) lines.push(stateChip("waiting", t(`${e.pending} ootab sinu kinnitust`, `${e.pending} waiting for your approval`)));
@@ -1349,7 +1351,7 @@ function deadlineRow(o: Obligation, l: Lang, opts: { now: Date; prompts: boolean
   return `<li class="deadline-row">${tile}
 <div><h3 class="deadline-title">${o.kind === "risk" && cond ? t("Võimalik: ", "Possible: ") : ""}${esc(t(o.title_et, o.title_en))} · ${esc(t(o.period_label_et, o.period_label_en))}</h3>
 ${cond ? `<p class="deadline-cond"><strong>${esc(cond)}</strong></p>` : ""}<p class="deadline-reason">${lead ? `<strong>${esc(lead)}</strong> ` : ""}${reason !== cond ? esc(reason) : ""}${esc(shifted)}</p>
-<div class="deadline-meta">${labelChip("rule", t("Arvutatud reeglist", "Calculated by rule"))}<a class="tap-link" href="${esc(o.source.url)}" rel="noopener noreferrer"><span>${t("Allikas", "Source")}: <span lang="et">${esc(o.source.act_et)} ${esc(o.source.section)}</span><span aria-hidden="true">&nbsp;↗</span></span></a></div>
+<div class="deadline-meta">${labelChip("rule", t("Arvutatud reeglist", "Calculated by rule"))}${sourceLink(o.source, l)}</div>
 <details><summary>${t("Kes mida teeb", "Who does what")}</summary>${qualify ? `<p class="small"><strong>${qualify.slice(0, -2)}</strong></p>` : ""}<dl class="handoff">${doer}<dt class="me">${t("Sina", "You")}</dt><dd>${esc(t(h.owner_et, h.owner_en))}</dd></dl>
 ${o.rule_id === "vat-return-kmd" ? `<p class="small muted">${t("Summad arvutab sinu raamatupidamisprogramm, mitte tehisaru.", "Your accounting software calculates the amounts, not AI.")}</p>` : ""}
 ${opts.prompts && !other ? `<div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(qualify + t(h.prompt_et, h.prompt_en))}”</p></div>` : ""}</details></div></li>`;

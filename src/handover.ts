@@ -4,7 +4,7 @@
 import { PLAYBOOKS } from "./catalog.js";
 import { isHandled, type Assessment } from "./core.js";
 import { normAddress, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type StandingRule } from "./mcp.js";
-import { tallinnDate, type Obligation } from "./obligations.js";
+import { tallinnDate, type Obligation, type Source } from "./obligations.js";
 
 export type Rung = "mine" | "other" | "prep" | "done";
 export interface Job {
@@ -14,8 +14,8 @@ export interface Job {
   source: "playbook" | "assessment" | "approvals";
   /** The assistant's assessment behind the row: its reason, and who handles the job if handled. */
   assessed?: { reason: string; executor?: string };
-  /** The next rule-computed date for the job, if any. */
-  due: string | null;
+  /** The next rule-computed date for the job, if any, and the official source of its rule (#63 m6). */
+  due: string | null; dueSource: Source | null;
 }
 export type NextStep =
   | { type: "standing"; job: Job; kind: string; recipients: { name: string; address: string }[]; capCents: number; basis: { count: number; maxCents: number } }
@@ -75,14 +75,14 @@ export function computeHandover(o: { assessment: Assessment | null; obligations:
   const byJob = new Map<string, ApprovalRow[]>();
   for (const a of o.approvals) { const j = jobOfApproval(a); if (j) byJob.set(j, [...(byJob.get(j) ?? []), a]); }
 
-  const build = (id: string, kind: string | null, source: Job["source"], assessed: Job["assessed"], due: string | null, titles: [string, string]): Job => {
+  const build = (id: string, kind: string | null, source: Job["source"], assessed: Job["assessed"], dueRow: Obligation | null, titles: [string, string]): Job => {
     const mine = byJob.get(id) ?? [], done = mine.filter(isDone);
     const ceiling = kind && STANDING_KINDS.includes(kind) ? "rule" as const : "law" as const;
     // Deep green under a rule only once a live rule of this kind has approved a done outcome.
     const rule = ceiling === "rule" ? live.find((r) => r.kind === kind && done.some((a) => a.approved_by_rule === r.id)) : undefined;
     const rung: Rung = done.length && (rule || ceiling === "law") ? "done" : done.length ? "prep" : assessed?.executor ? "other" : "mine";
     const last = done.map((a) => a.consumed_at ?? "").sort().pop() || null;
-    return { id, title_et: titles[0], title_en: titles[1], kind, rung, ceiling, source, due, ...(assessed ? { assessed } : {}),
+    return { id, title_et: titles[0], title_en: titles[1], kind, rung, ceiling, source, due: dueRow?.effective_due ?? null, dueSource: dueRow?.source ?? null, ...(assessed ? { assessed } : {}),
       evidence: { done: done.length, auto: done.filter((a) => a.approved_by_rule).length, paid: done.filter((a) => outcomeOf(a) === "paid").length, last, pending: mine.filter((a) => a.state === "pending").length, ...(rule ? { rule } : {}) } };
   };
   const assessedOf = (r: (typeof rows)[number]) => ({ reason: r.reason, ...(isHandled(r) ? { executor: r.executor } : {}) });
@@ -93,8 +93,9 @@ export function computeHandover(o: { assessment: Assessment | null; obligations:
     const titles = JOB_TITLES[k.id];
     const match = rows.find((r) => r.id === k.id || [titles[0], titles[1]].map(norm).includes(norm(r.label)));
     // A definite overdue row (e.g. annual-report-overdue) binds the job before any later deadline (#64); a conditional one never does.
-    const overdue = o.obligations.filter((x) => k.triggers.includes(x.rule_id) && definitelyOverdue(x, today)).map((x) => x.effective_due!).sort().pop();
-    const due = overdue ?? o.obligations.filter((x) => k.triggers.includes(x.rule_id) && x.effective_due && x.effective_due >= today).map((x) => x.effective_due!).sort()[0] ?? null;
+    const byDate = (a: Obligation, b: Obligation) => (a.effective_due! < b.effective_due! ? -1 : a.effective_due! > b.effective_due! ? 1 : 0);
+    const overdue = o.obligations.filter((x) => k.triggers.includes(x.rule_id) && definitelyOverdue(x, today)).sort(byDate).pop();
+    const due = overdue ?? o.obligations.filter((x) => k.triggers.includes(x.rule_id) && x.effective_due && x.effective_due >= today).sort(byDate)[0] ?? null;
     const applies = k.id === "payment-reminder" || o.obligations.some((x) => k.triggers.includes(x.rule_id)) || !!match || byJob.has(k.id);
     if (!applies) continue;
     if (match) used.add(match.id);

@@ -35,3 +35,15 @@ describe("#63 m5: who does the KMD, said once", () => {
     expect(row).toContain("Palu assistendilt");
   });
 });
+
+describe("#63 m6: the KMD source link in „Käest ära”", () => {
+  test("the KMD row carries the official „Allikas” link next to „Arvutatud reeglist”, the same source as its Tulekul row", () => {
+    const kmd = mari.obligations.find((x) => x.rule_id === "vat-return-kmd")!;
+    for (const l of ["et", "en"] as const) {
+      const row = handoverSection(handover, l, "c", NOW).match(/<li class="ho-job">(?:(?!<\/li>)[^])*?(?:KMD ettevalmistus|VAT return \(KMD\))[^]*?<\/li>/)![0];
+      expect(row).toMatch(l === "et" ? /Arvutatud reeglist<\/span> <a class="tap-link" href="[^"]+" rel="noopener noreferrer"><span>Allikas: / : /Calculated by rules<\/span> <a class="tap-link" href="[^"]+" rel="noopener noreferrer"><span>Source: /);
+      expect(row).toContain(`href="${kmd.source.url}"`);
+      expect(kmdRow(tana())).toContain(`href="${kmd.source.url}"`);
+    }
+  });
+});
