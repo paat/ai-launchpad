@@ -380,6 +380,7 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .teaser-pause{display:inline-flex;align-items:center;min-height:44px;padding:0 var(--s-3);border:1px solid var(--c-border);border-radius:var(--r-lg);background:#fff;font-size:var(--fs-sm);font-weight:650;color:var(--c-primary);cursor:pointer}
 #teaser-pause:focus-visible~figcaption .teaser-pause{outline:3px solid var(--c-focus);outline-offset:2px}
 #teaser-pause:checked~figcaption .teaser-pause{background:var(--c-primary);color:#fff}
+.tp-resume,#teaser-pause:checked~figcaption .tp-pause{display:none}#teaser-pause:checked~figcaption .tp-resume{display:inline}
 #teaser-pause:checked~.phone *{animation-play-state:paused!important}
 @media (prefers-reduced-motion:reduce){.teaser-pause,.vh-input{display:none}}
 .phone{height:640px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
@@ -1440,7 +1441,7 @@ export function landingBody(o: { lang: Lang }): string {
 <input type="checkbox" id="teaser-pause" class="vh-input">
 <div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${t("ühendatud: AI-hüppelaud", "connected: AI Launchpad")}</small></span></div>
 <div class="chat">${chat}</div></div></div>
-<figcaption>${sampleChip(l)}<span class="small muted">${t("Vestlus sinu ChatGPT-s või Claude'is", "A conversation in your ChatGPT or Claude")}</span><label class="teaser-pause" for="teaser-pause">${t("Peata animatsioon", "Pause animation")}</label></figcaption>
+<figcaption>${sampleChip(l)}<span class="small muted">${t("Vestlus sinu ChatGPT-s või Claude'is", "A conversation in your ChatGPT or Claude")}</span><label class="teaser-pause" for="teaser-pause"><span class="tp-pause">${t("Peata animatsioon", "Pause animation")}</span><span class="tp-resume">${t("Jätka animatsiooni", "Resume animation")}</span></label></figcaption>
 </figure>
 <section class="hero-jobs" aria-labelledby="jobs-h"><h2 id="jobs-h" class="vh">${t("Mida assistent sinu eest ära teeb", "What your assistant takes off your plate")}</h2>
 <ul class="jobs">${jobs.map(([h, s], i) => `<li>${icon(JOB_ICONS[i])}<span><strong>${esc(h)}</strong>${esc(s)}</span></li>`).join("")}</ul></section></section>

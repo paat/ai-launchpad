@@ -81,7 +81,8 @@ for (const width of [880, 960, 1024, 1094, 1200]) {
 test("pause toggle: keyboard-focusable, 44 px, stops the animation without script (tribunal T-004)", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  const label = page.getByText("Peata animatsioon");
+  const label = page.locator("label.teaser-pause");
+  await expect(label).toHaveText("Peata animatsioon", { useInnerText: true });
   expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   const states = () => page.evaluate(() => [...new Set(document.getAnimations().map((a) => a.playState))]);
   expect(await states()).toEqual(["running"]);
@@ -93,8 +94,13 @@ test("pause toggle: keyboard-focusable, 44 px, stops the animation without scrip
   await expect(page.locator("#teaser-pause")).toBeChecked();
   expect(await states()).toEqual(["paused"]);
   expect(await page.locator(".b-card").evaluate((e) => getComputedStyle(e).animationPlayState)).toBe("paused");
+  // #63 m2: paused, the visible label says how to resume; same size, same focus ring.
+  await expect(label).toHaveText("Jätka animatsiooni", { useInnerText: true });
+  expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(await label.evaluate((e) => getComputedStyle(e).outlineStyle)).toBe("solid");
   await label.click();
   expect(await states()).toEqual(["running"]);
+  await expect(label).toHaveText("Peata animatsioon", { useInnerText: true });
   await page.locator("#teaser-pause").focus();
   await page.screenshot({ path: `${SHOTS}/teaser-390-pause-focus.png`, fullPage: true });
 });

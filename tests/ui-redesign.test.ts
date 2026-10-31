@@ -312,12 +312,14 @@ describe("landing and connect", () => {
 
   test("landing teaser: CSS-only pause toggle, labelled, no script (tribunal T-004, WCAG 2.2.2)", () => {
     const css = shell({ title: "x", active: "none", csrf: "", body: "" });
-    for (const [h, label] of [[landingBody({ lang: "et" }), "Peata animatsioon"], [landingBody({ lang: "en" }), "Pause animation"]]) {
+    for (const [h, pause, resume] of [[landingBody({ lang: "et" }), "Peata animatsioon", "Jätka animatsiooni"], [landingBody({ lang: "en" }), "Pause animation", "Resume animation"]]) {
       expect(h).toContain('<input type="checkbox" id="teaser-pause" class="vh-input">');
-      expect(h).toContain(`<label class="teaser-pause" for="teaser-pause">${label}</label>`);
+      expect(h).toContain(`<label class="teaser-pause" for="teaser-pause"><span class="tp-pause">${pause}</span><span class="tp-resume">${resume}</span></label>`);
       expect(h).not.toContain("<script");
     }
     expect(css).toContain("#teaser-pause:checked~.phone *{animation-play-state:paused!important}");
+    // #63 m2: paused, the visible label reads „Jätka animatsiooni” (CSS only).
+    expect(css).toContain(".tp-resume,#teaser-pause:checked~figcaption .tp-pause{display:none}#teaser-pause:checked~figcaption .tp-resume{display:inline}");
     expect(css).toMatch(/\.teaser-pause\{[^}]*min-height:44px/);
     expect(css).toMatch(/#teaser-pause:focus-visible~figcaption \.teaser-pause\{outline:3px/);
   });
