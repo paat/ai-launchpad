@@ -53,14 +53,18 @@ describe("executable job playbooks (#26)", () => {
     const steps = p.steps.join(" ");
     expect(steps).toMatch(/Check your own connectors first.*ask one question/s);
     expect(steps).toContain("own Smart-ID or ID-card (never automate the login)");
-    expect(steps).toContain("Never ask for keys, passwords or PINs in the chat; if the owner pastes a key here, tell them to delete that permit and create a new one.");
+    expect(steps).toContain("Never ask for keys, passwords or PINs in the chat. If the owner pastes one here, do not repeat, store or pass it to any tool; tell them to delete that permit, create a new one and delete the chat message.");
     expect(p.needs.join(" ")).toContain("never ask for, repeat or accept a password or PIN in the chat");
     expect(steps).toContain("Start read-only: if the permit or the connector offers a choice, allow reading only.");
     expect(steps).toContain("every write the owner wants goes through request_approval first");
     expect(steps).toContain("Erply Books or other software: follow only the connector's own published setup guide.");
     // Same menu paths as the Connection page (src/views.ts connectionBody).
-    expect(steps).toContain("in Claude, Customize → Connectors → Add custom connector; in ChatGPT, Plugins → add a custom MCP server.");
-    expect(steps).toContain("Claude's free plan allows one custom connector");
+    expect(steps).toContain("in Claude, Customize → Connectors → Add custom connector (");
+    expect(steps).toContain("; in ChatGPT, Plugins → add a custom MCP server.");
+    expect(steps).toContain("Claude phone app: Settings → Connectors → + → Add custom connector");
+    expect(steps).toContain("Paste the company-specific MCP URL shown on the connector's dashboard, not the catalogue address");
+    expect(steps).toContain("Claude's free plan allows one custom connector and AI Launchpad already uses it");
+    expect(steps).toContain("removing AI Launchpad stops deadlines and approvals, and suggest upgrading the plan.");
     expect(steps).toContain("Do not create, change or delete anything in the books during setup.");
     expect(p.steps.at(-1)).toMatch(/^Verify with one read-only question/);
   });
