@@ -3,7 +3,7 @@ import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "./fixtures.js";
 import { computeHandover } from "./handover.js";
 import type { ApprovalRow } from "./mcp.js";
 import { computeObligations } from "./obligations.js";
-import { activityBody, approvalCardBody, esc, tanaBody, tr, type DeadlinesView, type Lang } from "./views.js";
+import { activityBody, approvalCardBody, esc, handoverSection, tanaBody, tr, type DeadlinesView, type Lang } from "./views.js";
 
 // One fixed, in-code walkthrough dataset. The public routes and browser checks
 // render these same synthetic rows; none of them is loaded from a database.
@@ -45,13 +45,18 @@ const activityRows = [
 ].sort((a, b) => b.created_at.localeCompare(a.created_at));
 
 /** Owner destinations in the reused views become steps in this read-only walkthrough. */
-function sampleLinks(html: string): string {
-  return html
+function sampleLinks(html: string, lang: Lang): string {
+  const linked = html
+    .replace(/href="\/uhenda#kaest-ara"/g, 'href="/naidis/tehtud#kaest-ara"')
     .replace(/href="\/approvals\/([^"]+)"/g, (_all, id: string) => `href="${id === pendingApproval.id ? "/naidis/kinnitus" : "/naidis/tehtud"}"`)
     .replace(/href="\/approvals(?:[?#][^"]*)?"/g, 'href="/naidis/kinnitus"')
     .replace(/href="\/activity(?:[?#][^"]*)?"/g, 'href="/naidis/tehtud"')
     .replace(/href="\/(?:playbooks|connection|unmet-needs)(?:[/?#][^"]*)?"/g, 'href="/naidis"')
     .replace(/href="\/"/g, 'href="/naidis"');
+  return lang === "en" ? linked.replace(/href="(\/naidis[^"]*)"/g, (_all, href: string) => {
+    const hash = href.indexOf("#"), path = hash < 0 ? href : href.slice(0, hash), anchor = hash < 0 ? "" : href.slice(hash);
+    return `href="${path}${path.includes("?") ? "&" : "?"}lang=en${anchor}"`;
+  }) : linked;
 }
 
 export function naidisBody(step: NaidisStep, lang: Lang): string {
@@ -61,7 +66,8 @@ export function naidisBody(step: NaidisStep, lang: Lang): string {
     : step === "kinnitus"
       ? approvalCardBody({ csrf: "", a: pendingApproval, lang, sample: true, now: NOW })
       : activityBody({ rows: activityRows, receipts: [], exclusions: [], assessment: demoAssessment, approvals: week2, rules: [], lang, now: NOW, sample: true })
-        + approvalCardBody({ csrf: "", a: week2[0], lang, sample: true, now: NOW, handover: uhendaHandover });
+        + approvalCardBody({ csrf: "", a: week2[0], lang, sample: true, now: NOW, handover: uhendaHandover })
+        + handoverSection(uhendaHandover, lang, "", NOW, true);
   const steps = [
     ["tana", "/naidis", t("1. Täna", "1. Today")],
     ["kinnitus", "/naidis/kinnitus", t("2. Kinnitus", "2. Approval")],
@@ -74,8 +80,8 @@ export function naidisBody(step: NaidisStep, lang: Lang): string {
       : t("Iga toimingu kviitung ja see, mis on sinu käest ära.", "A receipt for every action and what is off your plate.");
   return `<section class="naidis-frame" aria-label="${esc(t("Näidise juhend", "Sample guide"))}">
 <p class="naidis-banner">${esc(t("Näidis: väljamõeldud ettevõte Mari Disain OÜ. Siin ei saa midagi kinnitada ega saata. Päris tööruumis teeb seda sinu assistent ja kinnitad sina.", "Sample: the made-up company Mari Disain OÜ. Nothing can be approved or sent here. In a real workspace your assistant does this and you approve."))}</p>
-<nav class="naidis-steps" aria-label="${esc(t("Näidise sammud", "Sample steps"))}">${steps.map(([key, href, label]) => `<a href="${href}"${key === step ? ' aria-current="page"' : ""}>${esc(label)}</a>`).join("")}</nav>
+<nav class="naidis-steps" aria-label="${esc(t("Näidise sammud", "Sample steps"))}">${steps.map(([key, href, label]) => `<a href="${href}${lang === "en" ? "?lang=en" : ""}"${key === step ? ' aria-current="page"' : ""}>${esc(label)}</a>`).join("")}</nav>
 <p class="naidis-note">${esc(note)}</p></section>
-<fieldset disabled class="naidis-ro">${sampleLinks(body)}</fieldset>
+<fieldset disabled class="naidis-ro">${sampleLinks(body, lang)}</fieldset>
 ${step === "tehtud" ? `<p class="naidis-cta"><a class="btn" href="/uhenda">${esc(t("Ühenda oma assistent", "Connect your assistant"))}</a></p>` : ""}`;
 }

@@ -41,6 +41,7 @@ function expectReadOnly(html: string) {
     expect(html).not.toMatch(new RegExp(`href="/${route}(?:[/?#"])`));
   }
   expect(html.slice(start, end)).not.toContain('href="/"');
+  expect(html).not.toContain('href="/uhenda#kaest-ara"');
 }
 
 describe("#21 public synthetic walkthrough", () => {
@@ -72,7 +73,11 @@ describe("#21 public synthetic walkthrough", () => {
     expect(html).toContain('<html lang="en">');
     expect(html).toContain("Sample: the made-up company Mari Disain OÜ. Nothing can be approved or sent here. In a real workspace your assistant does this and you approve.");
     expect(html).toContain('<nav class="naidis-steps" aria-label="Sample steps">');
-    expect(html).toContain(`<a href="${path}" aria-current="page">${enStep}</a>`);
+    expect(html).toContain(`<a href="${path}?lang=en" aria-current="page">${enStep}</a>`);
+    const sampleHrefs = [...html.matchAll(/<a\b[^>]*href="(\/naidis[^"]*)"[^>]*>/g)]
+      .filter((match) => !match[0].includes('class="lang-toggle"')).map((match) => match[1]);
+    expect(sampleHrefs.length).toBeGreaterThan(0);
+    for (const href of sampleHrefs) expect(new URL(href, base).searchParams.get("lang"), href).toBe("en");
     expectReadOnly(html);
     expect(counts()).toEqual(before);
   });
@@ -108,6 +113,18 @@ describe("#21 public synthetic walkthrough", () => {
     expect(html).toContain("Käest ära:");
     expect(html).toContain("Iga toimingu kviitung ja see, mis on sinu käest ära.");
     expect(html).toContain('<p class="naidis-cta"><a class="btn" href="/uhenda">Ühenda oma assistent</a></p>');
+  });
+
+  test("the handover strip links to the detailed section on Tehtud", async () => {
+    const today = await (await fetch(`${base}/naidis`)).text();
+    expect(today).toContain('<a class="ho-strip" href="/naidis/tehtud#kaest-ara"');
+    const done = await (await fetch(`${base}/naidis/tehtud`)).text();
+    expect(done).toContain('<section class="section ho" id="kaest-ara"');
+  });
+
+  test("read-only controls have disabled styling", async () => {
+    const html = await (await fetch(`${base}/naidis`)).text();
+    expect(html).toContain(".naidis-ro :disabled{opacity:.55;cursor:not-allowed}");
   });
 
   test("the landing hero links to the sample and keeps its primary connection action", async () => {

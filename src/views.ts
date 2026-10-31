@@ -208,6 +208,7 @@ nav.main a[aria-current="page"]::after{content:"";position:absolute;left:var(--s
 .naidis-steps a[aria-current="page"]{background:var(--c-deep);color:#fff}
 .naidis-note{margin:0;color:var(--c-muted);font-size:var(--fs-sm)}
 .naidis-ro{min-width:0;min-inline-size:0;margin:0;padding:0;border:0}
+.naidis-ro :disabled{opacity:.55;cursor:not-allowed}
 .naidis-ro .row>a{display:inline-flex;align-items:center;min-height:var(--tap)}
 .naidis-cta{margin:var(--s-5) 0 0}
 footer{display:flex;flex-wrap:wrap;align-items:center;gap:0 var(--s-4);margin-top:var(--s-8);padding-top:var(--s-3);border-top:1px solid var(--c-divider);font-size:var(--fs-sm)}
