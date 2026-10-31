@@ -89,3 +89,11 @@ describe("grok high: the retention sentence matches reportCapacityError", () => 
     expect(para(conn("en"), "500")).toContain("Up to 500 reports are retained; once that limit is reached, new reports are refused until you delete progress.");
   });
 });
+
+describe("grok medium: the assessment paragraph does not use the approval verb", () => {
+  test("„Hinnangut ei pea eraldi heaks kiitma”, no „kinnitamist”", () => {
+    const p = para(conn("et"), "Assistendi hinnang on tema enda otsus");
+    expect(p).toContain("Hinnangut ei pea eraldi heaks kiitma.");
+    expect(p).not.toContain("kinnitamist");
+  });
+});
