@@ -56,12 +56,16 @@ describe("executable job playbooks (#26)", () => {
     expect(steps).toContain("Bank: explain only what the matching search_services entry documents and stop there. Never start a bank key, credential or payment setup.");
     expect(p.steps.at(-1)).toContain("Verify only the service the owner asked for");
     expect(p.steps[0]).toMatch(/^Speak plainly: the owner may not know what MCP, a connector or an API is/);
-    expect(steps).toContain("Proton Mail has no connector: prepare each message here and open it in the owner's mail app, where the owner presses Send.");
+    expect(steps).toContain("Proton Mail has no connector; do not offer community e-mail servers from the catalogue. Setup sends nothing: messages go out only from a job playbook after its approval");
+    expect(steps).toContain("e-mail, only the date of the newest message, with no subject or content.");
     expect(steps).toContain("own Smart-ID or ID-card (never automate the login)");
     expect(steps).toContain("Never ask for keys, passwords or PINs in the chat. If the owner pastes one here, do not repeat, store or pass it to any tool; tell them to delete that permit, create a new one and delete the chat message.");
     expect(p.needs.join(" ")).toContain("never ask for, repeat or accept a password or PIN in the chat");
     expect(steps).toContain("leaves only reading functions ticked if the permit offers a choice, then saves and downloads the key file");
-    expect(steps).toContain("This playbook never writes and never calls request_approval; writes come later under the job's own playbook and its approval.");
+    expect(steps).toContain("This playbook never writes and never calls request_approval; any later change or message belongs to the job's own playbook and its approval.");
+    const accounting = p.steps.find((x) => x.startsWith("Accounting:"))!;
+    expect(accounting.indexOf("Before any key is created, choose reading only")).toBeLessThan(accounting.indexOf("Then guide the owner to create the key"));
+    expect(accounting).toContain("if the product has no read-only key, tell the owner plainly that the key could also change the books and let them decide");
     for (const id of ["payment-reminder", "vat-return-prep", "annual-report"]) expect(byId(id).needs[0], id).toContain("(if no accounting connector answers yet, follow the connect-service playbook)");
     expect(steps).toContain("Erply Books or other software: follow only the connector's own published setup guide.");
     // Same menu paths as the Connection page (src/views.ts connectionBody).
