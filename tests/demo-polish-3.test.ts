@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { Server } from "node:http";
 import { createApp, type Config } from "../src/app.js";
 import { openDb } from "../src/db.js";
+import { shell, approvalCardBody } from "../src/views.js";
+import type { ApprovalRow } from "../src/mcp.js";
 
 // Demo polish 3 (#63): the last QA items from PR #62.
 let server: Server, base = "", cookie = "";
@@ -50,5 +52,29 @@ describe("#63 m9: /connection and /playbooks follow the UI language", () => {
     expect(en).toContain("<p>Your assistant lists your upcoming tax and register deadlines");
     expect(en).toContain("Official source:");
     expect(en).not.toContain("Mängukavad");
+  });
+});
+
+describe("#63 nit: the „Saadetud: demo” chip is in direction A's palette", () => {
+  const root = shell({ title: "x", active: "none", csrf: "", body: "" }).match(/:root\{([^}]*)\}/)![1];
+  const vars = Object.fromEntries([...root.matchAll(/--([\w-]+):([^;]+)/g)].map((m) => [m[1], m[2].trim()]));
+  const hex = (v: string): string => (v.startsWith("var(--") ? hex(vars[v.slice(6, -1)]) : v);
+  const rgb = (v: string) => hex(v).slice(1).match(/../g)!.map((x) => parseInt(x, 16));
+  test("sent is the green family for done/sent, not the old blue (AA is checked with every pair in ui-redesign)", () => {
+    for (const k of ["st-sent-fg", "st-sent-bg"]) {
+      const [r, g, b] = rgb(vars[k]);
+      expect(g, `${k} ${vars[k]} is green`).toBeGreaterThan(r);
+      expect(g, `${k} ${vars[k]} is green`).toBeGreaterThan(b);
+    }
+    expect([vars["st-sent-fg"], vars["st-sent-bg"]]).not.toContain("#1d4580");
+  });
+  test("the callout's code chip sits without stray quote gaps: „Kinnitasin” is the chip itself", () => {
+    const a = { id: "appr_1", kind: "send_message", report_id: "r1", digest: "d".repeat(64), state: "approved", created_at: "2026-11-03T09:00:00Z", expires_at: "2026-11-04T09:00:00Z", decided_at: "2026-11-03T09:05:00Z", consumed_at: null, outcome_json: null,
+      payload_json: JSON.stringify({ kind: "send_message", recipient: { name: "Demo Klient OÜ", address: "arved@demo.example" }, amount_cents: 24000, document: { title: "Meeldetuletus", content: "Tere!" }, summary: "Meeldetuletus" }) } as unknown as ApprovalRow;
+    const et = approvalCardBody({ csrf: "c", a, lang: "et", sample: true, now: new Date("2026-11-03T10:00:00Z") });
+    expect(et).toContain("kirjuta <code>Kinnitasin</code>.");
+    expect(et).not.toMatch(/„<code>|<\/code>”/);
+    const en = approvalCardBody({ csrf: "c", a, lang: "en", sample: true, now: new Date("2026-11-03T10:00:00Z") });
+    expect(en).toContain("write <code>Approved</code> (“Kinnitasin” works too).");
   });
 });

@@ -441,7 +441,7 @@ describe("QA minors (#21)", () => {
   });
   test("EN approved card asks for “Approved” and accepts either word (QA D-18)", () => {
     const en = approvalCardBody({ csrf: "c", a: approval({ state: "approved", decided_at: "2026-11-03T12:36:00Z" }), lang: "en", sample: false, now: NOW });
-    expect(en).toContain("write “<code>Approved</code>” (“Kinnitasin” works too).");
+    expect(en).toContain("write <code>Approved</code> (“Kinnitasin” works too).");
   });
   test("no phone hand-off without a public HTTPS address (QA D-14)", () => {
     const local = connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "chatgpt", state: { kind: "anon" }, owner: false });
