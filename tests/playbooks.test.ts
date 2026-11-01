@@ -552,11 +552,15 @@ describe("agent-facing copy over MCP", () => {
     expect(steps).toContain("1 250,00 € → 125000");
     expect(steps).toContain("document.title: the draft's number or ID as the software shows it;");
     expect(steps).toContain("the total written in document.content must be the same amount as amount_cents");
-    expect(SEND_INVOICE_ACT).toContain("Before you confirm, check that the draft's lines equal the approved document.content and its total in euro cents equals amount_cents; if anything differs, do not confirm or send: request a new approval.");
+    expect(steps).toContain("4000 characters");
+    expect(SEND_INVOICE_ACT).toContain("same buyer, lines, total and due date");
+    expect(SEND_INVOICE_ACT.indexOf("same buyer, lines, total and due date")).toBeLessThan(
+      SEND_INVOICE_ACT.indexOf("confirm the draft")
+    );
+    expect(SEND_INVOICE_ACT).toContain("recipient.address");
     expect(SEND_INVOICE_ACT).toContain("total in euro cents equals amount_cents");
     expect(SEND_INVOICE_ACT).toContain("Launchpad sends nothing");
     for (const step of p.steps) {
-      expect(step).not.toContain("invalidate");
       expect(step).not.toMatch(/\b(paying|filing|signing)\b/i);
     }
   });
@@ -575,8 +579,11 @@ describe("agent-facing copy over MCP", () => {
 
   test("invoicing: unsent invoice cleanup offer exists and comes after request_approval (#120, tribunal T-006)", () => {
     const p = byId("invoicing");
-    const cleanupStep = "If the owner declines or the approval expires, the draft was never confirmed: offer once to delete it, and delete it only after they say yes. If the send fails after the invoice was confirmed, tell the owner it is in their books and unsent, and record failed.";
+    const cleanupStep =
+      "If the owner declines, or the approval expires while the draft is still unconfirmed in the software, offer once to delete that unconfirmed draft and delete it only after they say yes. Never delete or invalidate a confirmed invoice. If the send fails after you confirmed the invoice, record failed before the approval expires and tell the owner the invoice is in their books but was not sent.";
     expect(p.steps).toContain(cleanupStep);
+    expect(cleanupStep).toContain("still unconfirmed");
+    expect(cleanupStep).toContain("Never delete or invalidate a confirmed invoice");
     const cleanupIdx = p.steps.indexOf(cleanupStep);
     const approvalIdx = p.steps.findIndex((s) => s.includes("request_approval"));
     expect(approvalIdx).toBeGreaterThan(0);
