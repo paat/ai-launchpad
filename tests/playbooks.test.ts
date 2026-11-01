@@ -383,11 +383,18 @@ describe("agent-facing copy over MCP", () => {
     expect(monthsCovered("2026-01-15", "2026-03-30")).toEqual(["2026-02"]);
     expect(monthsCovered("2024-02-01", "2024-02-29")).toEqual(["2024-02"]);
     expect(monthsCovered("2026-12-01", "2027-01-31")).toEqual(["2026-12", "2027-01"]);
-    for (const bad of [{ bank: "EE632200221090471884" }, { bank: "Swedbank 1884" }, { last4: "EE63" }, { last4: "41884" }, { period_from: "2026-02-30" }, { period_from: "2026-11-01" }, { period_to: "2999-12-31" }]) {
+    for (const bad of [{ period_from: "0001-01-01" }, { period_from: "2024-10-01" }, { bank: "EE632200221090471884" }, { bank: "Swedbank 1884" }, { last4: "EE63" }, { last4: "41884" }, { period_from: "2026-02-30" }, { period_from: "2026-11-01" }, { period_to: "2999-12-31" }]) {
       const r = await call("record_statement_read", { bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 0, ...bad });
       expect(r.isError, JSON.stringify(bad)).toBe(true);
     }
     expect(db.prepare("SELECT COUNT(*) n FROM statements_read").get()).toEqual({ n: 1 });
+    // Grok r3: legal-name variants and other casings update the same row.
+    for (const bank of ["Swedbank AS", "swedbank"]) expect((await call("record_statement_read", { bank, last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 0 })).isError).toBeFalsy();
+    await call("record_statement_read", { bank: "Wise", last4: "7777", period_from: "2026-01-01", period_to: "2026-01-31", closing_balance_cents: 0 });
+    await call("record_statement_read", { bank: "wise", last4: "7777", period_from: "2026-01-01", period_to: "2026-01-31", closing_balance_cents: 5 });
+    await call("record_statement_read", { bank: "AS LHV Pank", last4: "5618", period_from: "2026-01-01", period_to: "2026-01-31", closing_balance_cents: 0 });
+    expect(db.prepare("SELECT bank, last4 FROM statements_read ORDER BY bank").all()).toEqual([{ bank: "LHV", last4: "5618" }, { bank: "Swedbank", last4: "1884" }, { bank: "Wise", last4: "7777" }]);
+    db.prepare("DELETE FROM statements_read WHERE bank IN ('LHV','Wise')").run();
     // Row cap: an owner keeps at most 200 statements; updating a known one still works at the cap.
     const ins = db.prepare("INSERT INTO statements_read VALUES('o','LHV',?,'2025-01-01','2025-01-31',0,'2026-11-01T10:00:00Z')");
     for (let i = 0; i < 199; i++) ins.run(String(i).padStart(4, "0"));
