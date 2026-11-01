@@ -209,7 +209,7 @@ test("grants and rotation replay detection survive a SQLite reopen", async () =>
     await db.backup(path); await new Promise<void>(ok=>server.close(()=>ok())); db.close();
     db = openDb(path); const app = createApp(cfg,db).app; const port = Number(new URL(base).port);
     await new Promise<void>(ok=>{server=app.listen(port,"127.0.0.1",ok);});
-    const c = await sdk(t.access_token); expect((await c.listTools()).tools.length).toBe(13); await c.close();
+    const c = await sdk(t.access_token); expect((await c.listTools()).tools.length).toBe(14); await c.close();
     expect((await refresh(f.client.client_id,t.refresh_token)).status).toBe(200);
     expect((await refresh(f.client.client_id,t.refresh_token)).status).toBe(400);
   } finally { await rm(dir,{recursive:true,force:true}); }
