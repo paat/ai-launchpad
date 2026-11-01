@@ -225,7 +225,7 @@ describe("executable job playbooks (#26)", () => {
       { id: "vat-return-prep", title: byId("vat-return-prep").title, title_et: byId("vat-return-prep").title_et, approval_kind: "prepare_filing" },
       { id: "annual-report", title: byId("annual-report").title, title_et: byId("annual-report").title_et, approval_kind: "prepare_filing" },
     ]);
-    expect(may.result.assistant_instruction).toContain("Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself.");
+    expect(may.result.assistant_instruction).toContain("Ask the facts_needed questions first, one per message, each with the answer left open: never suggest an answer in the question. An answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself.");
     const july = await companyObligations(ar(), { registryCode: FAKE_VALID, months: 1, today: at("2027-07-15") });
     if (!july.ok) throw new Error(july.error);
     expect(july.result.obligations.find((o) => o.rule_id === "annual-report-overdue")?.playbook_id).toBe("annual-report");
