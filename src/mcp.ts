@@ -10,7 +10,17 @@ import { BLOCKERS, MAX_JOB_HINT_CHARS, MAX_NEED_CHARS, recordUnmetNeed } from ".
 
 const PLAYBOOK_IDS = PLAYBOOKS.map((p) => p.id) as [string, ...string[]];
 
-export interface Ctx { ownerId: string; scopes: string[]; companyRef: string; label: string; reportingEnabled: boolean; baseUrl: string; }
+export interface Ctx { ownerId: string; scopes: string[]; companyRef: string; label: string; reportingEnabled: boolean; baseUrl: string; anotherAssistant?: boolean; }
+const SAVED_FACTS_CHECK = "Before asking the owner any stable fact, check the saved facts (the remember-facts playbook).";
+const SWITCH_ASSISTANT_HINT = "If this chat has not picked up from the owner's other assistant yet, follow the switch-assistant playbook first.";
+function gettingStarted(anotherAssistant: boolean) {
+  const lead = anotherAssistant ? `${SWITCH_ASSISTANT_HINT} ` : "";
+  const onwards = `Start with the owner's deadlines (get_obligations), then offer the matching playbook.`;
+  return {
+    first_step: `${lead}${SAVED_FACTS_CHECK} ${onwards} Rules compute every date and each row has its official source; ask the owner only for the facts it lists in facts_needed. A row with a playbook_id has a job you can prepare: follow that playbook's steps; the owner only approves. ${OWNER_VOICE}`,
+    description: `Start here. ${lead}${SAVED_FACTS_CHECK} ${onwards} Public assessment framework, executable job playbooks and reporting guidance for any authenticated connection; with progress:read it also returns this workspace's company_ref, label and sharing state.`,
+  };
+}
 const readOnly = (nothing: string) => `The owner connected you read-only. Tell the owner: „Et saaksin seda sinu eest ette valmistada, ühenda mind AI-hüppelauaga uuesti ja luba nõusolekulehel töid ette valmistada.” When reconnecting, request the progress:report scope; the owner must allow it on the consent page. ${nothing}`;
 const json = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }], structuredContent: data as Record<string, unknown> });
 const err = (m: string) => ({ isError: true, content: [{ type: "text" as const, text: m }] });
@@ -318,9 +328,10 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
   /** Tools that need progress:report and sharing on: a read-only connection gets the same reconnect guidance everywhere. */
   const sharingGate = (nothing: string) => !need("progress:report") ? readOnly(nothing) : !ctx.reportingEnabled ? `Progress sharing is stopped by the owner (it is off by default). ${nothing}` : null;
 
-  server.registerTool("get_started", { description: "Start here. Start with the owner's deadlines (get_obligations), then offer the matching playbook. Public assessment framework, executable job playbooks and reporting guidance for any authenticated connection; with progress:read it also returns this workspace's company_ref, label and sharing state.", inputSchema: {}, annotations: { readOnlyHint: true } }, async () => {
+  const started = gettingStarted(ctx.anotherAssistant === true);
+  server.registerTool("get_started", { description: started.description, inputSchema: {}, annotations: { readOnlyHint: true } }, async () => {
     logActivity(db, ctx.ownerId, "assistant", "get_started", "ok", "Assistant fetched getting-started guidance.");
-    const first_step = `Start with the owner's deadlines (get_obligations), then offer the matching playbook. Rules compute every date and each row has its official source; ask the owner only for the facts it lists in facts_needed. A row with a playbook_id has a job you can prepare: follow that playbook's steps; the owner only approves. ${OWNER_VOICE}`;
+    const first_step = started.first_step;
     const shared = { framework: FRAMEWORK, playbooks: PLAYBOOKS,
       tools: ["get_obligations", "connect_my_services", "check_my_books", "record_statement_read", "remember_business_facts", "check_my_customers", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "request_approval", "get_approval", "record_action_outcome", "report_unmet_need"],
       note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments; private service nominations; the exact text of each approval request until the owner deletes their progress; the de-identified text of unmet needs; and, for each bank statement the assistant read, the bank, the account's last four digits, the period and the closing balance. It stores no conversations. Reporting never approves business actions.",

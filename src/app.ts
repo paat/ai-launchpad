@@ -159,6 +159,12 @@ const REGISTER_GAP_ET: Record<string, string> = {
   not_found: "Registrikoodiga ettevõtet registrist ei leitud — palu assistendil kood üle kontrollida",
 };
 
+/** Another assistant for this owner: an OAuth grant in the same epoch whose client_name differs. Revoked grants count. The name itself is never returned. */
+function otherAssistantConnected(db: Db, ownerId: string, epoch: number, grantId: string): boolean {
+  const current = db.prepare("SELECT json_extract(c.metadata,'$.client_name') AS name FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.id=? AND g.owner_id=? AND g.epoch=?").get(grantId, ownerId, epoch) as { name: string | null } | undefined;
+  if (!current) return false;
+  return !!db.prepare("SELECT 1 AS hit FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? AND g.epoch=? AND g.id<>? AND json_extract(c.metadata,'$.client_name') IS NOT ? LIMIT 1").get(ownerId, epoch, grantId, current.name);
+}
 export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   const releaseSha = cfg.releaseSha ?? null;
   if (releaseSha !== null && !RELEASE_SHA_RE.test(releaseSha)) throw new Error("releaseSha must be exactly 40 lowercase hex characters (or null).");
@@ -1012,7 +1018,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       }
       const ws = db.prepare("SELECT company_ref,label FROM workspaces WHERE owner_id=?").get(token.owner_id) as { company_ref: string; label: string };
       if (!oauthGrant) touchLastUsed(db, "mcp_tokens", token.id);
-      const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl }, register, { onUnmetNeed: () => unmetNeeds.kick() });
+      // Manual tokens never count: only an OAuth grant can have another assistant connection.
+      const anotherAssistant = oauthGrant && otherAssistantConnected(db, token.owner_id, owner.epoch, token.id);
+      const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl, anotherAssistant }, register, { onUnmetNeed: () => unmetNeeds.kick() });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => { void transport.close(); void server.close(); });
       await server.connect(transport);
