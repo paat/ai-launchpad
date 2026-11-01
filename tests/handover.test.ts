@@ -411,10 +411,12 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     const reminderEn = nextCard(handoverSection(reminder, "en", "c", NOW));
     expect(reminderEt).toContain("Lase assistendil koostada esimene maksemeeldetuletus");
     expect(reminderEt).toContain("Vaata, millised minu arved on tasumata, ja koosta esimesele meeldetuletus. Küsi minult kinnitust enne saatmist.");
-    expect(reminderEt).toContain("Kõige kiirem võit: see on ainus igakuine töö, mille saab hiljem püsiloaga täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.");
+    expect(reminderEt).toContain("Kõige kiirem võit: püsiloaga saab selle hiljem täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.");
+    expect(reminderEt).not.toContain("ainus igakuine töö");
     expect(reminderEn).toContain("Let your assistant draft the first payment reminder");
     expect(reminderEn).toContain("Check which of my invoices are unpaid and draft a reminder for the first one. Ask me to approve it before sending.");
-    expect(reminderEn).toContain("The quickest win: the only monthly job a standing approval can later take off your plate completely. It needs your unpaid invoices: your accounting connector or a file you share with your assistant.");
+    expect(reminderEn).toContain("The quickest win: a standing approval can later take it off your plate completely. It needs your unpaid invoices: your accounting connector or a file you share with your assistant.");
+    expect(reminderEn).not.toContain("the only monthly job");
 
     const late = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2027-07-05T10:00:00Z"), months: 2 }).obligations.find((x) => x.rule_id === "annual-report-overdue")!;
     const overdue = { ...late, effective_due: "2026-11-11", statutory_due: "2026-11-11" } as Obligation;

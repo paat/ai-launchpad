@@ -155,7 +155,7 @@ describe("executable job playbooks (#26)", () => {
     expect(acc[0]).toContain("If it answers but cannot create one (a read-only key), say once that its current key cannot create invoices, and continue with the key steps below to add those rights.");
     expect(acc[0]).toContain("Otherwise, when no accounting connector answers, call search_services with \"werkzeug\"");
     expect(acc.join(" ")).toContain("ticks reading plus sales invoices and journal entries (not payments)");
-    expect(acc.join(" ")).toContain("Merit Aktiva or Erply Books: follow the connector's own published setup guide for a key with those rights; if the guide documents none, say plainly it cannot be linked yet and stop. Other software: say plainly that it cannot be linked yet and stop here: skip all remaining steps.");
+    expect(acc.join(" ")).toContain("Merit Aktiva or Erply Books: follow the connector's own published setup guide for a key with those rights; if it documents only a read-only key, create that and say plainly that invoicing and posting will not work with it; if it documents none, say plainly it cannot be linked yet and stop. Other software: say plainly that it cannot be linked yet and stop here: skip all remaining steps.");
     expect(acc.join(" ")).not.toMatch(/offers no read-only key|cannot be limited to reading/);
     expect(acc.join(" ")).toContain("never offer community or local servers from the catalogue");
     expect(acc.join(" ")).toContain("in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.");
@@ -542,18 +542,21 @@ describe("agent-facing copy over MCP", () => {
     expect(steps).toContain("amount_cents: REQUIRED");
     expect(steps).toContain("Has this buyer asked you for an e-invoice?");
     expect(steps).toContain("Launchpad sends nothing");
-    expect(steps).toContain("Create the invoice in the owner's accounting software through its connector (draft in the software: numbering, VAT and total come from the software).");
+    expect(steps).toContain("Create the invoice as an unconfirmed draft in the owner's accounting software through its connector; numbering, VAT and total come from the software.");
+    expect(steps).toContain("unconfirmed draft");
+    expect(steps).toContain("do not confirm the draft yet");
     expect(steps).toContain("If the connector answers but cannot create an invoice (a read-only key), say once that invoicing needs a key that can create invoices and offer to follow the connect-service playbook to re-link it; stop. No accounting connector: follow the connect-service playbook first.");
-    expect(steps).toContain("Never compute VAT or a total yourself.");
+    expect(steps).toContain("Never compute VAT or a total yourself, and do not confirm the draft yet.");
     expect(steps).not.toContain("draft the invoice lines and total");
-    expect(steps.replace("Never compute VAT or a total yourself.", "")).not.toMatch(/compute (a total|VAT)|calculate (a total|VAT)/i);
+    expect(steps.replace("Never compute VAT or a total yourself, and do not confirm the draft yet.", "")).not.toMatch(/compute (a total|VAT)|calculate (a total|VAT)/i);
     expect(steps).toContain("1 250,00 € → 125000");
-    expect(steps).toContain("document.title: the invoice number as issued;");
+    expect(steps).toContain("document.title: the draft's number or ID as the software shows it;");
     expect(steps).toContain("the total written in document.content must be the same amount as amount_cents");
-    expect(SEND_INVOICE_ACT).toContain("whose number equals the approved document.title and whose total equals amount_cents");
-    expect(SEND_INVOICE_ACT).toContain("If the invoice, total, address or channel differs, do not send: request a new approval");
+    expect(SEND_INVOICE_ACT).toContain("Before you confirm, check that the draft's lines equal the approved document.content and its total in euro cents equals amount_cents; if anything differs, do not confirm or send: request a new approval.");
+    expect(SEND_INVOICE_ACT).toContain("total in euro cents equals amount_cents");
     expect(SEND_INVOICE_ACT).toContain("Launchpad sends nothing");
     for (const step of p.steps) {
+      expect(step).not.toContain("invalidate");
       expect(step).not.toMatch(/\b(paying|filing|signing)\b/i);
     }
   });
@@ -572,7 +575,7 @@ describe("agent-facing copy over MCP", () => {
 
   test("invoicing: unsent invoice cleanup offer exists and comes after request_approval (#120, tribunal T-006)", () => {
     const p = byId("invoicing");
-    const cleanupStep = "If the owner declines, the approval expires, or the send fails, tell the owner the invoice is still in their books and offer once to delete the draft (or invalidate it, if the software already confirmed it); do that only after they say yes.";
+    const cleanupStep = "If the owner declines or the approval expires, the draft was never confirmed: offer once to delete it, and delete it only after they say yes. If the send fails after the invoice was confirmed, tell the owner it is in their books and unsent, and record failed.";
     expect(p.steps).toContain(cleanupStep);
     const cleanupIdx = p.steps.indexOf(cleanupStep);
     const approvalIdx = p.steps.findIndex((s) => s.includes("request_approval"));
