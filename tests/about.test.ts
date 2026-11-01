@@ -43,7 +43,10 @@ describe("public About page", () => {
     expect(html).toContain('<html lang="et">');
     expect(html).toContain("<title>Meist · AI-hüppelaud</title>");
     expect(html).toContain("<h1>Mis on AI-hüppelaud?</h1>");
-    expect(html).toContain("AI-hüppelaud paneb sinu oma AI-assistendi — ChatGPT või Claude'i — tegema väikeettevõtte kontoritööd: tähtajad, arved, raamatupidamine, meeldetuletused. Sina saad tegeleda oma põhitööga.");
+    expect(html).toContain("AI-hüppelaud ei ole uus AI-assistent ega vestlusrobot. See aitab sinu olemasoleval AI-assistendil — ChatGPT-l või Claude'il — võtta kontoritöö sinu õlult.");
+    expect(html).toContain("ei ole uus AI-assistent");
+    expect(html).toContain("võtta kontoritöö sinu õlult");
+    expect(html).toContain("Sinu assistent teeb kontoritööd: tähtajad, arved, raamatupidamine, meeldetuletused. AI-hüppelaud ütleb talle, mida Eesti reeglid nõuavad ja milliseid ühendusi on vaja, ning küsib enne iga tegevust sinu kinnitust.");
     expect(headings(html)).toEqual(ET_H2);
     expect(html).toContain("Eesti väikeettevõtjale, kes teeb kontoritöö ise. Esimesena ühe inimese OÜ, mille raamatud on e-arveldajas või Meritis.");
     expect(html).toContain("Neile, kes juba kasutavad ChatGPT-d või Claude'i ja tahavad, et see ka tööd teeks, mitte ainult vestleks.");
@@ -77,7 +80,10 @@ describe("public About page", () => {
     expect(html).toContain('<html lang="en">');
     expect(html).toContain("<title>About · AI Launchpad</title>");
     expect(html).toContain("<h1>What is AI Launchpad?</h1>");
-    expect(html).toContain("AI Launchpad puts your own AI assistant — ChatGPT or Claude — to work on your small business's office work: deadlines, invoices, bookkeeping, reminders. You get on with your real work.");
+    expect(html).toContain("AI Launchpad is not another AI assistant, and not a chatbot. It helps the AI assistant you already have — ChatGPT or Claude — take the office work off your shoulders.");
+    expect(html).toContain("not another AI assistant");
+    expect(html).toContain("off your shoulders");
+    expect(html).toContain("Your assistant does the office work: deadlines, invoices, bookkeeping, reminders. AI Launchpad tells it what Estonian rules require and which connections it needs, and asks for your approval before each action.");
     expect(headings(html)).toEqual(EN_H2);
     expect(html).toContain("Estonian small-business owners who do their own office work. First, a one-person OÜ with its books in e-arveldaja or Merit.");
     expect(html).toContain("People who already use ChatGPT or Claude and want it to do work, not just chat.");
