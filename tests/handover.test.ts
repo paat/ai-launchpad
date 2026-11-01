@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { computeHandover, handoverObligations, jobOfApproval, type Handover } from "../src/handover.js";
+import { computeHandover, handoverObligations, jobOfApproval, standingBasis, type Handover } from "../src/handover.js";
 import { arikratt } from "../src/arikratt.js";
 import { openDb } from "../src/db.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
@@ -245,5 +245,43 @@ describe("„Käest ära” fix cycle 3 (review-polish-grok)", () => {
     expect(h.next).toMatchObject({ type: "playbook", playbookId: "annual-report", obligation: { rule_id: "annual-report-overdue" } });
     expect(handoverSection(h, "et", "c", NOW)).toContain("Tähtaeg oli 30. juuni 2026");
     expect(handoverSection(h, "en", "c", NOW)).toContain("Was due 30 Jun 2026");
+  });
+});
+
+describe("customer follow-ups are never standing-approved (#96, tribunal T-001/T-002)", () => {
+  const followUp = (over: { rule?: string; outcome?: string } = {}) => appr({ outcome: over.outcome ?? "sent", playbook: "customer-follow-ups", rule: over.rule, to: { name: "Pakkumine OÜ", address: "info@pakkumine.example" }, title: "Järgmine kõne", summary: "Follow up on the quote" });
+
+  test("recorded follow-up sends build no standing card, and the payment-reminder basis is unchanged", () => {
+    const reminders = week2();
+    const follow = followUp();
+    const mixed = [...reminders, follow];
+    expect(jobOfApproval(follow)).toBe("customer-follow-ups");
+    expect(standingBasis(mixed, "send_message").map((a) => a.id)).toEqual(standingBasis(reminders, "send_message").map((a) => a.id));
+    expect(standingBasis(mixed, "send_message").some((a) => a.playbook_id === "customer-follow-ups")).toBe(false);
+    const alone = computeHandover({ assessment: null, obligations, approvals: reminders, rules: [], now: NOW });
+    const h = computeHandover({ assessment: null, obligations, approvals: mixed, rules: [], now: NOW });
+    expect(rungs(h)["customer-follow-ups"]).toBe("prep");
+    expect(h.next).toMatchObject({ type: "standing", kind: "send_message", job: { id: "payment-reminder" }, capCents: 30_000, basis: { count: 4, maxCents: 24_000 } });
+    expect(alone.next).toMatchObject({ type: "standing", kind: "send_message", capCents: 30_000, basis: { count: 4, maxCents: 24_000 } });
+    expect(h.next.type === "standing" && h.next.recipients.map((r) => r.address)).not.toContain("info@pakkumine.example");
+    expect(handoverSection(h, "et", "c", NOW)).not.toContain("kellele helistada automaatselt");
+    // An invoicing row still counts for its own kind.
+    const invoice = appr({ kind: "send_invoice", outcome: "sent", cents: 50_000, to: { name: "Klient OÜ", address: "arved@klient.example" } });
+    expect(standingBasis([invoice, follow], "send_invoice").map((a) => a.id)).toEqual([invoice.id]);
+  });
+
+  test("a follow-up at prep cannot take a standing card built from unrelated reminder rows, and a fired rule does not reach done", () => {
+    const expiredReminder = appr({ state: "expired", cents: 24_000, to: CLIENTS[0] });
+    const follow = followUp();
+    const h = computeHandover({ assessment: null, obligations, approvals: [expiredReminder, follow], rules: [], now: NOW });
+    expect(rungs(h)).toMatchObject({ "payment-reminder": "mine", "customer-follow-ups": "prep" });
+    expect(standingBasis([expiredReminder, follow], "send_message").map((a) => a.id)).toEqual([expiredReminder.id]);
+    expect(h.next.type).not.toBe("standing");
+    expect(handoverSection(h, "et", "c", NOW)).not.toContain("kellele helistada automaatselt");
+    const ruled = computeHandover({ assessment: null, obligations, approvals: [followUp(), followUp({ rule: "rule_1" })], rules: [rule()], now: NOW });
+    expect(rungs(ruled)["customer-follow-ups"]).toBe("prep");
+    expect(ruled.withoutYou).toBe(0);
+    expect(ruled.next.type).not.toBe("standing");
+    expect(ruled.next).toMatchObject({ type: "playbook", playbookId: "payment-reminder" });
   });
 });

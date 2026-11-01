@@ -379,6 +379,14 @@ describe("agent-facing copy over MCP", () => {
     expect(steps).toContain("Never invent or compute a follow-up date yourself");
     expect(steps).toContain("call request_approval again with a NEW report_id, the same action and owner_confirmation: their words, verbatim");
     expect(steps).toMatch(/get_approval[\s\S]*usable is not false[\s\S]*record_action_outcome with outcome sent/);
+    const send = p.steps.find((x) => x.includes("request_approval with action kind send_message"))!;
+    expect(send).toContain("always omit amount_cents (a follow-up message has no amount)");
+    expect(send).toContain("Each follow-up message is approved one by one, never by a standing approval.");
+    expect(send).not.toContain("auto_approved");
+    expect(send).not.toContain("If the reply is auto_approved");
+    expect(steps).not.toContain("If the reply is auto_approved (the owner's standing approval), go on without asking the owner.");
+    expect(steps).toContain("approved one by one");
+    expect(byId("payment-reminder").steps.join("\n")).toContain("If the reply is auto_approved (the owner's standing approval), go on without asking the owner.");
     expect(steps).toContain("without their consent");
     expect(steps).toContain("existing-customer exception only with an opt-out in that message");
     expect(steps).toContain("Launchpad never stores the customer list or customer messages");
