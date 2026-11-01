@@ -49,6 +49,12 @@ export const APPROVAL_KINDS = ["send_message", "send_invoice", "prepare_payment"
 /** Shared verbatim by the Accounting and Customers custom-connector steps. Do not paraphrase. */
 const CUSTOM_CONNECTOR_NAV = "in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.";
 const CUSTOM_CONNECTOR_FREE_PLAN = "Claude's free plan allows one custom connector and AI Launchpad already uses it: if Add custom connector is greyed out, say so plainly, explain that removing AI Launchpad stops deadlines and approvals, suggest upgrading the plan, and stop here without the last step; never suggest removing AI Launchpad.";
+/** Shared verbatim by the send_message playbooks. Do not paraphrase. */
+const SEND_MESSAGE_AUTO = "If the reply is auto_approved (the owner's standing approval), go on without asking the owner.";
+const SEND_MESSAGE_CONFIRM = "When they say yes, call request_approval again with a NEW report_id, the same action and owner_confirmation: their words, verbatim. That approves it; never ask them to approve again on Launchpad.";
+const SEND_MESSAGE_BEFORE_SEND = "Right before sending, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt)";
+const SEND_MESSAGE_ACT = "Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved (including auto_approved under the owner's standing approval) and usable is not false, send exactly that text to exactly that address with your own tools without asking the owner again; otherwise do not send. Launchpad sends nothing.";
+const SEND_MESSAGE_RECORD = "Call record_action_outcome with outcome sent (or failed).";
 /** Executable job playbooks (#26): deterministic instructions for the owner's
  *  own agent. Launchpad never runs the job; triggers are obligation rule_ids. */
 export interface Playbook {
@@ -119,14 +125,34 @@ export const PLAYBOOKS: Playbook[] = [
     steps: [
       "Find unpaid invoices past their due date in the owner's accounting connector or in a file the owner shares.",
       "Draft a polite reminder in the owner's language with the invoice number, the overdue amount and the due date as they appear on the invoice; the amount in the text is the same amount you put in amount_cents. Do not cite the statute or interest in the reminder unless the owner asks.",
-      "Call request_approval with action kind send_message; recipient.name and recipient.address: the customer and their e-mail; amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000); period: the invoice's period; document.title and document.content: the exact reminder; summary: one line for the owner. If the reply is auto_approved (the owner's standing approval), go on without asking the owner.",
-      "If the reply is pending, show the owner the exact reminder (recipient, address, amount and text) in this chat and ask once whether to send it. When they say yes, call request_approval again with a NEW report_id, the same action and owner_confirmation: their words, verbatim. That approves it; never ask them to approve again on Launchpad.",
-      "Right before sending, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged reminder first. Approvals are valid for 24 hours.",
-      "Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved (including auto_approved under the owner's standing approval) and usable is not false, send exactly that text to exactly that address with your own tools without asking the owner again; otherwise do not send. Launchpad sends nothing.",
-      "Call record_action_outcome with outcome sent (or failed).",
+      `Call request_approval with action kind send_message; recipient.name and recipient.address: the customer and their e-mail; amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000); period: the invoice's period; document.title and document.content: the exact reminder; summary: one line for the owner. ${SEND_MESSAGE_AUTO}`,
+      `If the reply is pending, show the owner the exact reminder (recipient, address, amount and text) in this chat and ask once whether to send it. ${SEND_MESSAGE_CONFIRM}`,
+      `${SEND_MESSAGE_BEFORE_SEND} for the unchanged reminder first. Approvals are valid for 24 hours.`,
+      SEND_MESSAGE_ACT,
+      SEND_MESSAGE_RECORD,
       "Record paid only after a sent outcome, with a NEW report_id (the same report_id conflicts): call record_action_outcome with outcome paid only if you see the payment, for example in the accounting connector. A failed reminder can never become paid.",
     ],
     approval_kind: "send_message", done_when: "The approved reminder was sent and record_action_outcome recorded sent.", verify_with: "The payment in the owner's accounting connector or bank statement; until then the outcome stays sent." },
+  { id: "customer-follow-ups", title: "See who needs a call or message this week", title_et: "Vaata, kellele sel nädalal helistada või kirjutada",
+    summary: "Your assistant lists who needs a call or a message this week and drafts each message. Nothing is sent until you approve the exact text and who it goes to.",
+    source: "https://www.aki.ee/isikuandmed/kkk/interneti-ja-veebitegevused", source_label: "Andmekaitse Inspektsioon (AKI): Interneti- ja veebitegevused",
+    triggers: [],
+    needs: ["The owner's customer tool, if one is linked, or their Kliendid Google Sheet in the AI-hüppelaud Drive folder, and recent mail with each customer. If no customer tool answers and the owner wants one linked, follow the connect-service playbook."],
+    steps: [
+      "Speak plainly, one question per message. Overdue invoices are not this job: if the owner asks about unpaid invoices, follow the payment-reminder playbook instead.",
+      "Read the next follow-up dates from the owner's linked customer tool. If no customer tool answers, read them from the Google Sheet Kliendid in the owner's AI-hüppelaud Drive folder. The sheet columns are customer, next_follow_up, last_call_or_visit and note. Also read recent mail with each customer. Dates come from those records. Never invent or compute a follow-up date yourself.",
+      "List who needs a call or message from today through the next 7 days, and anyone already past due, one line each: the customer, the date on the record, and the reason from the note or the last mail. Ask the owner which ones to act on.",
+      "If there is no customer tool and no sheet, offer once to create the Kliendid sheet (only those four columns: customer, next_follow_up, last_call_or_visit, note) in their AI-hüppelaud Drive folder. Create it only after the owner says yes. A customer gets a row only while a follow-up is due. customer is the name used in the accounting software and is only a join key. Never copy identity, address, debts or e-mail history into the sheet. A phone or e-mail may go in note only for a prospect who is not yet in the accounting software.",
+      "Any sheet change (a new row, a new date, or deleting a row when a follow-up is done) is the owner's own note. Show the exact change, write it only after they say yes, and never write a different value. If your Google Sheets connector cannot edit the sheet, tell the owner exactly what to change in the Google Sheets app instead.",
+      "Do not send a promotional or marketing message to a person without their consent. For the owner's own similar products, use the existing-customer exception only with an opt-out in that message. Launchpad never stores the customer list or customer messages.",
+      `For a message, draft it in the owner's language. Then call request_approval with action kind send_message; recipient.name and recipient.address: the customer and their e-mail; amount_cents: only when the records already show a euro amount, in euro cents exactly as written (e.g. 240,00 € → 24000), and otherwise omit it (a send_message may leave amount_cents out); period: the follow-up date already on the record; document.title and document.content: the exact message; summary: one line for the owner. ${SEND_MESSAGE_AUTO}`,
+      `If the reply is pending, show the owner the exact message (recipient, address and text) in this chat and ask once whether to send it. ${SEND_MESSAGE_CONFIRM}`,
+      `${SEND_MESSAGE_BEFORE_SEND} for the unchanged message first. Approvals are valid for 24 hours.`,
+      SEND_MESSAGE_ACT,
+      SEND_MESSAGE_RECORD,
+      "For a call, the owner calls. Afterwards, offer to set the next follow-up date: show that exact sheet change and write it only after they say yes, and never write a different value.",
+    ],
+    approval_kind: "send_message", done_when: "Each message the owner chose was sent only after its approval, and record_action_outcome recorded sent or failed. A call is the owner's own call.", verify_with: "The owner sees the same follow-up dates on their customer tool or Kliendid sheet, and each sent message matches the approved text." },
   { id: "vat-return-prep", title: "Prepare the monthly VAT return (KMD)", title_et: "Valmista ette käibedeklaratsioon (KMD)",
     summary: "Your assistant gathers the month's invoices and takes the VAT figures from your accounting software's own report. You approve the exact figures, then file the return yourself in e-MTA.",
     source: "https://www.riigiteataja.ee/akt/130062026129", source_label: "Käibemaksuseadus § 27, Riigi Teataja",

@@ -42,6 +42,8 @@ export const JOB_TITLES: Record<string, [string, string]> = {
   "annual-report": ["Majandusaasta aruanne", "Annual report"],
   invoicing: ["Arvete koostamine", "Invoicing"],
   "books-catch-up": ["Raamatupidamine korras", "Books brought up to date"],
+  // No obligation trigger: the row appears only from a tagged approval or a matching assessment label.
+  "customer-follow-ups": ["Kellele helistada", "Who to call"],
 };
 export const DONE_OUTCOMES = ["sent", "submitted", "paid", "accepted", "posted"];
 const RANK: Record<Rung, number> = { done: 0, prep: 1, other: 2, mine: 3 };

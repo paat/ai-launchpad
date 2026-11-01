@@ -5,7 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { openDb } from "../src/db.js";
 import { arikratt } from "../src/arikratt.js";
 import { APPROVAL_KINDS, PLAYBOOKS, searchServices } from "../src/catalog.js";
-import { buildMcpServer, companyObligations, type Ctx } from "../src/mcp.js";
+import { buildMcpServer, companyObligations, TOOL_ARG_KEYS, type Ctx } from "../src/mcp.js";
 import { computeObligations, type CompanyFacts, type Fact } from "../src/obligations.js";
 import { DEMO_FIXTURES } from "../src/fixtures.js";
 
@@ -16,12 +16,12 @@ const byId = (id: string) => PLAYBOOKS.find((p) => p.id === id)!;
 
 describe("executable job playbooks (#26)", () => {
   test("shape: every field present, deterministic copy, known approval kind", () => {
-    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-service", "books-catch-up", "payment-reminder", "vat-return-prep", "annual-report"]);
+    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-service", "books-catch-up", "payment-reminder", "customer-follow-ups", "vat-return-prep", "annual-report"]);
     for (const p of PLAYBOOKS) {
       for (const k of ["id", "title", "title_et", "summary", "source", "source_label", "done_when", "verify_with"] as const) expect(p[k], `${p.id}.${k}`).toMatch(/\S/);
       expect(p.steps.length, p.id).toBeGreaterThan(0);
       expect(p.needs.length, p.id).toBeGreaterThan(0);
-      expect(p.source).toMatch(/^https:\/\/(www\.(riigiteataja|emta)|abiinfo\.rik)\.ee\//);
+      expect(p.source).toMatch(/^https:\/\/(www\.(riigiteataja|emta|aki)|abiinfo\.rik)\.ee\//);
       if (p.approval_kind !== null) expect(APPROVAL_KINDS).toContain(p.approval_kind);
     }
     expect(byId("deadlines-check").approval_kind).toBeNull();
@@ -243,7 +243,7 @@ describe("executable job playbooks (#26)", () => {
   });
 
   test("approval steps name the full action shape with a concrete recipient", () => {
-    const recipient: Record<string, string> = { "payment-reminder": "the customer", "vat-return-prep": "\"EMTA (e-MTA)\"", "annual-report": "\"Äriregister (e-äriregister)\"", "books-catch-up": "the company and its accounting software" };
+    const recipient: Record<string, string> = { "payment-reminder": "the customer", "customer-follow-ups": "the customer", "vat-return-prep": "\"EMTA (e-MTA)\"", "annual-report": "\"Äriregister (e-äriregister)\"", "books-catch-up": "the company and its accounting software" };
     for (const p of PLAYBOOKS.filter((x) => x.approval_kind)) {
       const step = p.steps.find((x) => x.includes("request_approval with action kind"))!;
       expect(step, p.id).toContain(`kind ${p.approval_kind}`);
@@ -286,6 +286,7 @@ describe("agent-facing copy over MCP", () => {
     expect(i).toContain("Pipedrive");
     expect(i).toContain("HubSpot");
     expect(i).toContain("When the owner asks how far their books are for a period, what is missing from those books, or to close a month or year in the books, call check_my_books and follow the books-catch-up playbook it returns: an accounting tool's own month-close check cannot see bank accounts the books do not have yet.");
+    expect(i).toContain("When the owner asks whom to call or follow up, call check_my_customers and follow the customer-follow-ups playbook it returns.");
     const tools = (await c.listTools()).tools;
     expect(tools.find((x) => x.name === "search_services")?.description).toMatch(/^Research catalogue behind the connect-service playbook: when linking a service, query only as that playbook's branch says\./);
   });
@@ -309,6 +310,51 @@ describe("agent-facing copy over MCP", () => {
     expect(r.playbook).toEqual(PLAYBOOKS.find((p) => p.id === "books-catch-up"));
     expect(r.first_step).toContain("any account that appears in a transfer between the company's own accounts");
     expect(r.first_step).toContain("even if the accounting software's month-end check shows nothing unconfirmed");
+  });
+
+  test("check_my_customers: owner phrasing finds it, read-only, returns the customer-follow-ups playbook for any scope", async () => {
+    const db = openDb(":memory:");
+    const c = await connect([], db);
+    const listed = (await c.listTools()).tools;
+    const tool = listed.find((x) => x.name === "check_my_customers")!;
+    expect(tool.annotations?.readOnlyHint).toBe(true);
+    expect(tool.inputSchema).toEqual(listed.find((x) => x.name === "check_my_books")!.inputSchema);
+    for (const w of ["who should I call", "who do I need to follow up", "chase a quote", "renewals coming up", "kellele helistada", "payment-reminder"]) expect(tool.description, w).toContain(w);
+    const r = JSON.parse(((await c.callTool({ name: "check_my_customers", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { playbook: { id: string }; first_step: string };
+    expect(r.playbook).toEqual(PLAYBOOKS.find((p) => p.id === "customer-follow-ups"));
+    expect(r.first_step).toContain("read the follow-up dates first");
+    expect(r.first_step).toContain("Never answer from memory");
+    const started = JSON.parse(((await c.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { tools: string[] };
+    expect(started.tools).toContain("check_my_customers");
+    expect(TOOL_ARG_KEYS.check_my_customers).toEqual(TOOL_ARG_KEYS.check_my_books);
+    const activity = db.prepare("SELECT action, outcome, summary FROM activity WHERE action='check_my_customers'").all() as { action: string; outcome: string; summary: string }[];
+    expect(activity).toEqual([{ action: "check_my_customers", outcome: "ok", summary: "Assistant fetched the customer follow-up guide." }]);
+  });
+
+  test("customer-follow-ups: dates from the sheet or customer tool, sheet notes after a yes, send only through send_message (#96)", () => {
+    const p = byId("customer-follow-ups");
+    expect(p).toMatchObject({ approval_kind: "send_message", triggers: [], title: "See who needs a call or message this week", title_et: "Vaata, kellele sel nädalal helistada või kirjutada" });
+    const steps = p.steps.join("\n");
+    expect(steps).toContain("if the owner asks about unpaid invoices, follow the payment-reminder playbook instead");
+    expect(steps).toContain("columns are customer, next_follow_up, last_call_or_visit and note");
+    expect(steps).toContain("only those four columns: customer, next_follow_up, last_call_or_visit, note");
+    expect(steps).toContain("A customer gets a row only while a follow-up is due");
+    expect(steps).toContain("Never copy identity, address, debts or e-mail history into the sheet");
+    expect(steps).toContain("A phone or e-mail may go in note only for a prospect who is not yet in the accounting software");
+    expect(steps).toContain("Create it only after the owner says yes");
+    expect(steps).toContain("Show the exact change, write it only after they say yes, and never write a different value");
+    expect(steps).toContain("Never invent or compute a follow-up date yourself");
+    expect(steps).toContain("call request_approval again with a NEW report_id, the same action and owner_confirmation: their words, verbatim");
+    expect(steps).toMatch(/get_approval[\s\S]*usable is not false[\s\S]*record_action_outcome with outcome sent/);
+    expect(steps).toContain("without their consent");
+    expect(steps).toContain("existing-customer exception only with an opt-out in that message");
+    expect(steps).toContain("Launchpad never stores the customer list or customer messages");
+    expect(p.needs[0]).toContain("follow the connect-service playbook");
+    expect(p.summary).not.toMatch(/CRM|MCP|API/);
+    const reminder = byId("payment-reminder").steps;
+    expect(reminder[reminder.findIndex((x) => x.startsWith("Right before sending"))]).toBe("Right before sending, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged reminder first. Approvals are valid for 24 hours.");
+    expect(reminder).toContain("Call record_action_outcome with outcome sent (or failed).");
+    expect(reminder.join(" ")).toContain("amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000)");
   });
 
   test("read-only errors: no consent label, request progress:report, tool-accurate copy", async () => {
@@ -396,7 +442,7 @@ describe("agent-facing copy over MCP", () => {
 
   test("every expired-approval renewal asks for a NEW report_id (tribunal T-002)", () => {
     const renewals = PLAYBOOKS.flatMap((p) => p.steps.filter((x) => /expired/.test(x)).map((x) => [p.id, x] as const));
-    expect(renewals.map(([id]) => id)).toEqual(["payment-reminder", "vat-return-prep", "annual-report"]);
+    expect(renewals.map(([id]) => id)).toEqual(["payment-reminder", "customer-follow-ups", "vat-return-prep", "annual-report"]);
     for (const [id, x] of renewals) expect(x, id).toContain("request a fresh approval with a NEW report_id (the same report_id returns the expired receipt)");
   });
   const body = (r: unknown) => JSON.parse((r as { content: { text: string }[] }).content[0].text);
