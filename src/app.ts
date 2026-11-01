@@ -10,11 +10,12 @@ import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { computeHandover, handoverObligations, isDone, largestAmount, offerCapCents, standingBasis } from "./handover.js";
 import type { Assessment } from "./core.js";
 import { runModelJob } from "./model.js";
-import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
+import { CHOOSER_TOPICS, FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
+import { REASONS, chooseAssistant, offerDownload, parseBusiness, parseUses } from "./assistant-choice.js";
 import type { FetchFn } from "./model-quality.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
-import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
+import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, chooserBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
 import { NAIDIS, naidisApproval, naidisBody } from "./naidis.js";
 
@@ -268,7 +269,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   app.use((req: Request, res: Response, next: NextFunction) => {
     const asked = parseLang(req.query.lang);
     const naidis = req.path === "/naidis" || req.path.startsWith("/naidis/");
-    if (asked && !naidis) res.append("set-cookie", `lang=${asked}; Path=/; Max-Age=31536000; SameSite=Lax${cfg.production ? "; Secure" : ""}`);
+    // /vali is a public GET with nothing stored: language stays on the query string, no cookie.
+    if (asked && !naidis && req.path !== "/vali") res.append("set-cookie", `lang=${asked}; Path=/; Max-Age=31536000; SameSite=Lax${cfg.production ? "; Secure" : ""}`);
     res.locals.lang = asked ?? parseLang(cookieVal(req, "lang")) ?? "et";
     next();
   });
@@ -860,6 +862,31 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     })();
     if (ended !== null) logActivity(db, oid(req), "owner", "standing_rule_revoked", "ok", `Standing approval ${id} ended; it approves nothing from now on. ${ended} approved, unused approval expired.`);
     res.redirect("/uhenda#pusiload");
+  });
+
+  // Public chooser: one question per screen, one rule-chosen assistant. Reads a saved card only — never generate().
+  app.get("/vali", (req, res) => {
+    const l = langOf(res), t = tr(l);
+    // Language toggle keeps only answers the rule accepted, so a bad query is never copied into the page.
+    const toggle = (params: Record<string, string>) => { const q = new URLSearchParams(params); q.set("lang", l === "et" ? "en" : "et"); return `/vali?${q}`; };
+    const show = (titleEt: string, titleEn: string, body: string, params: Record<string, string>) => res.type("html").send(publicPage(req, res, t(titleEt, titleEn), body, { toggle: toggle(params) }));
+    const uses = parseUses(typeof req.query.uses === "string" ? req.query.uses : undefined);
+    if (!uses) return show("Kas sa juba kasutad AI-assistenti?", "Do you already use an AI assistant?", chooserBody({ lang: l, step: "uses" }), {});
+    if (uses === "chatgpt" && parseBusiness(req.query.business) === null) return show("Kas sinu ettevõte maksab ChatGPT Businessi eest?", "Does your company pay for ChatGPT Business?", chooserBody({ lang: l, step: "business" }), { uses });
+    // Null only when uses is missing or ChatGPT has no accepted business answer; both already returned.
+    const choice = chooseAssistant({ uses, business: uses === "chatgpt" ? req.query.business : undefined })!;
+    const reason = REASONS[choice.reason];
+    const topic = findTopic(CHOOSER_TOPICS, `choose-${choice.reason}`);
+    const card = publicCards && topic ? publicCards.read(topic, l) : null;
+    const muse = card?.state === "completed" && card.output ? card.output : null;
+    const connectHref = `/uhenda?a=${choice.assistant}${l === "en" ? "&lang=en" : ""}`;
+    const kept: Record<string, string> = { uses };
+    const business = uses === "chatgpt" ? parseBusiness(req.query.business) : null;
+    if (business) kept.business = business;
+    show(choice.assistant === "claude" ? "Kasuta Claude'i" : "Kasuta ChatGPT-d", choice.assistant === "claude" ? "Use Claude" : "Use ChatGPT", chooserBody({
+      lang: l, step: "result", assistant: choice.assistant, reason: reason.text[l], source: reason.source[l],
+      downloadHref: offerDownload(uses, choice.assistant), connectHref, muse,
+    }), kept);
   });
 
   // Opens Claude or ChatGPT with the guide already typed in (not sent). The host is fixed.
