@@ -1,6 +1,6 @@
-import type { Assessment, Coverage } from "./core.js";
+import type { Assessment, ConnectionKind, Coverage } from "./core.js";
 import { isHandled } from "./core.js";
-import { isDone, offerCapCents, type Handover, type Job } from "./handover.js";
+import { isDone, offerCapCents, type ConnectionState, type Handover, type Job, type Status } from "./handover.js";
 import { approvalAddressMissing, normAddress, standingRecipients, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type AssistantMilestones, type Exclusion, type StandingRule } from "./mcp.js";
 import type { CompanyCard } from "./arikratt.js";
 import { ET_OF, SRC, tallinnDate, type FactNeeded, type Obligation, type Source } from "./obligations.js";
@@ -599,8 +599,7 @@ ${TEASER_CSS}
 @media (min-width:760px){.how{grid-template-columns:repeat(4,minmax(0,1fr))}.trust{grid-template-columns:repeat(3,minmax(0,1fr))}.how li{flex-direction:column}.trust{padding:var(--s-4) var(--s-6)}}
 .landing-foot{margin:0}
 /* --- T5 (#61) „Käest ära”: the handover bar (docs/design/progress). One segment = one job; prefix ho-. --- */
-:root{--ho-prep:#3F8A5E}
-/* Compact strip: lives in the Täna hero under the three pills. One tappable line + bar. */
+/* Compact strip: lives in the Täna hero under the three pills. One tappable line. */
 .ho-strip{display:block;margin:var(--s-3) 0 0;padding:var(--s-2) 0 var(--s-3);border-top:1px solid var(--c-divider);color:inherit;text-decoration:none}
 .ho-strip:hover .ho-line b{text-decoration:underline;text-underline-offset:.15em}
 .ho-line{display:flex;align-items:baseline;gap:2px var(--s-3);flex-wrap:wrap;margin:0 0 var(--s-2);font-size:var(--fs-md);line-height:1.35}
@@ -611,14 +610,6 @@ ${TEASER_CSS}
 /* Phones: the whole strip is the link; the „Vaata →” word goes so the first ask card stays in the first viewport. */
 @media (max-width:599px){.ho-line .go{display:none}}
 @media (min-width:600px){.ho-line .go{margin-left:auto}}
-.ho-bar{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;height:14px;margin:0;padding:0;list-style:none}
-.ho-seg{position:relative;border-radius:5px;border:2px solid var(--c-muted);background:#fff}
-.ho-seg--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
-.ho-seg--done{border-color:var(--c-primary);background:var(--c-primary)}
-.ho-seg--other{border-style:dashed;border-color:var(--c-muted);background:repeating-linear-gradient(135deg,transparent 0 4px,var(--c-divider) 4px 8px)}
-.ho-seg--wait::after{content:"";position:absolute;right:-3px;top:-6px;width:10px;height:10px;border-radius:50%;background:var(--c-att);border:2px solid #fff}
-.ho-bar--lg{height:20px;gap:6px}
-.ho-bar--lg .ho-seg{border-radius:6px}
 
 /* Full section (Ühendus → Käest ära). */
 .ho h2{margin-bottom:var(--s-1)}
@@ -627,26 +618,16 @@ ${TEASER_CSS}
 .ho .ho-sum small{display:block;margin-top:var(--s-1);font-size:var(--fs-md);font-weight:400;color:var(--c-muted)}
 .ho-month{margin:var(--s-3) 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
 .ho-month b{color:var(--c-text);font-weight:750;font-variant-numeric:tabular-nums}
-.ho-legend{display:flex;flex-wrap:wrap;gap:var(--s-2) var(--s-4);margin:var(--s-3) 0 0;padding:0;list-style:none;font-size:var(--fs-xs);color:var(--c-muted)}
-.ho-legend li{display:inline-flex;align-items:center;gap:6px}
-.ho-legend i{width:14px;height:10px;border-radius:3px;border:2px solid var(--c-muted);background:#fff}
-.ho-legend i.ho-seg--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
-.ho-legend i.ho-seg--done{border-color:var(--c-primary);background:var(--c-primary)}
-.ho-legend i.ho-seg--other{border-style:dashed}
-
 .ho-jobs{list-style:none;margin:var(--s-4) 0 0;padding:0;border-top:1px solid var(--c-divider)}
-.ho-job{display:grid;grid-template-columns:28px minmax(0,1fr);gap:var(--s-2) var(--s-3);padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider);color:inherit;text-decoration:none}
-.ho-job:hover .ho-title{text-decoration:underline;text-underline-offset:.15em}
-.ho-mark{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-top:2px;border:2px solid var(--c-muted);border-radius:50%;background:#fff;color:#fff;font-style:normal;font-weight:800;font-size:.8rem;line-height:1}
-.ho-mark--prep{border-color:var(--ho-prep);background:var(--ho-prep)}
-.ho-mark--done{border-color:var(--c-primary);background:var(--c-primary)}
-.ho-mark--other{border-style:dashed;color:var(--c-muted)}
-.ho-mark svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
-.ho-title{display:block;font-size:var(--fs-lg);font-weight:750;line-height:1.3}
-.ho-rung{margin:2px 0 0;font-size:var(--fs-md);font-weight:600}
-.ho-rung--done{color:var(--c-primary)}
-.ho-rung--prep{color:#2F6E49}
-.ho-rung--mine{color:var(--c-muted)}
+.ho-job{padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider)}
+.ho-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px var(--s-2)}
+.ho-title{font-size:var(--fs-lg);font-weight:750;line-height:1.3;overflow-wrap:break-word;min-width:0}
+.ho-who{margin:2px 0 0;font-size:var(--fs-md);font-weight:600;color:var(--c-muted)}
+.ho-h3{margin:var(--s-6) 0 var(--s-2);font-size:var(--fs-lg);font-weight:750}
+.ho-conn{margin:0;padding:0;list-style:none;border-top:1px solid var(--c-divider)}
+.ho-conn li{display:flex;align-items:center;justify-content:space-between;gap:var(--s-2);padding:var(--s-2) 0;border-bottom:1px solid var(--c-divider);font-size:var(--fs-sm);font-weight:650}
+.ho-conn small{margin-left:6px;font-weight:400;color:var(--c-muted)}
+.ho-conn .state-chip{white-space:nowrap}
 .ho-ev{margin:2px 0 0;font-size:var(--fs-sm);color:var(--c-muted)}
 .ho-ev .num{font-variant-numeric:tabular-nums}
 .ho-ev .label-chip{vertical-align:1px;margin-left:4px}
@@ -1078,25 +1059,32 @@ ${rows || `<p class="muted">${t("Püsiload puuduvad: iga saatmine ootab sinu kin
 <button type="submit">${t("Lisa püsiluba", "Add standing approval")}</button></form></details></section>`;
 }
 
-// --- „Käest ära” (#61): one segment per job; fills only from stored done work or a live rule that fired. ---
+// --- „Käest ära” (#61): the jobs by what needs the owner now; who does each is a plain line under it. ---
 const HO_MONTH_IN = ["jaanuaris", "veebruaris", "märtsis", "aprillis", "mais", "juunis", "juulis", "augustis", "septembris", "oktoobris", "novembris", "detsembris"];
 const hoMonth = (ym: string, l: Lang) => { const m = Number(ym.slice(5, 7)) - 1; return l === "en" ? `In ${C_PERIOD.en.format(civil(`${ym}-01`)).split(" ")[0]}` : cap(HO_MONTH_IN[m] ?? ""); };
 const hoJobTitle = (j: Job, l: Lang) => (l === "en" ? j.title_en : j.title_et);
-const hoCount = (h: Handover, l: Lang) => tr(l)(`${h.off} ${h.off === 1 ? "töö" : "tööd"} ${h.total}-st`, `${h.off} of ${h.total} ${h.total === 1 ? "job" : "jobs"}`);
-/** „1 ilma sinuta, 1 sinu kinnitusega, 1 teeb keegi teine”: how the counted jobs split. */
-function hoSplit(h: Handover, l: Lang): string {
-  const t = tr(l), withYou = h.jobs.filter((j) => j.rung === "prep" || (j.rung === "done" && j.ceiling === "law")).length, other = h.jobs.filter((j) => j.rung === "other").length;
-  return [h.withoutYou ? t(`${h.withoutYou} ilma sinuta`, `${h.withoutYou} without you`) : "", withYou ? t(`${withYou} sinu kinnitusega`, `${withYou} with your approval`) : "", other ? t(`${other} teeb keegi teine`, `${other} done by someone else`) : ""].filter(Boolean).join(", ");
+const HO_STATUS: Record<Status, { chip: string; et: string; en: string }> = {
+  waiting: { chip: "waiting", et: "Ootab sinu kinnitust", en: "Waiting for your approval" }, overdue: { chip: "rejected", et: "Tähtaeg möödas", en: "Overdue" },
+  due_soon: { chip: "waiting", et: "Tähtaeg läheneb", en: "Due soon" }, open: { chip: "drafted", et: "Tööd ootel", en: "Work waiting" },
+  not_checked: { chip: "drafted", et: "Kontrollimata", en: "Not checked" }, later: { chip: "drafted", et: "Hiljem", en: "Later" }, in_order: { chip: "accepted", et: "Korras", en: "In order" },
+};
+/** The headline answers „do you need me?”: the most urgent status, else nothing. */
+function hoHead(h: Handover, l: Lang): string {
+  const t = tr(l), c = h.count;
+  return c.waiting ? t(`${c.waiting} ootab sinu kinnitust`, `${c.waiting} waiting for your approval`) : c.overdue ? t(`${c.overdue} ${c.overdue === 1 ? "tähtaeg on" : "tähtaega on"} möödas`, `${c.overdue} overdue`)
+    : c.due_soon ? t(`${c.due_soon} ${c.due_soon === 1 ? "tähtaeg läheneb" : "tähtaega lähenevad"}`, `${c.due_soon} due soon`) : t("Täna ei vaja miski sind", "Nothing needs you today");
 }
-const hoSeg = (j: Job) => `ho-seg${j.rung === "mine" ? "" : ` ho-seg--${j.rung}`}${j.evidence.pending ? " ho-seg--wait" : ""}`;
-const HO_RUNG: Record<string, [string, string]> = { mine: ["sinu käes", "yours"], other: ["teeb keegi teine", "done by someone else"], prep: ["assistent valmistab ette, sina kinnitad", "your assistant prepares, you approve"], done: ["assistent teeb ise või lagi käes", "your assistant does it, or at its ceiling"] };
-/** Täna hero: the count and the small bar, one tap to the full section on Ühendus. Not a card. */
+/** „2 korras · 1 kontrollimata · 1 hiljem”: the rest of the jobs, by status. */
+function hoRest(h: Handover, l: Lang): string {
+  const t = tr(l), c = h.count;
+  return [c.open ? t(`${c.open} ${c.open === 1 ? "töö" : "tööd"} ootel`, `${c.open} with work waiting`) : "", c.in_order ? t(`${c.in_order} korras`, `${c.in_order} in order`) : "", c.not_checked ? t(`${c.not_checked} kontrollimata`, `${c.not_checked} not checked yet`) : "", c.later ? t(`${c.later} hiljem`, `${c.later} later`) : ""].filter(Boolean).join(" · ");
+}
+const HO_CONN: Record<ConnectionKind | "register", [string, string]> = { accounting: ["Raamatupidamine", "Accounting"], email: ["E-post", "E-mail"], bank: ["Pank", "Bank"], calendar: ["Kalender", "Calendar"], drive: ["Veebiketas", "Online drive"], customers: ["Kliendid", "Customers"], browser: ["Brauser", "Browser"], register: ["Äriregister", "Business register"] };
+const HO_CONN_STATE: Record<ConnectionState | "public", [string, string, string]> = { linked: ["ühendatud", "linked", "accepted"], file: ["failina", "as a file", "drafted"], not_linked: ["ühendamata", "not linked", "drafted"], unknown: ["teadmata", "not reported", "drafted"], public: ["avalik", "public", "accepted"] };
+/** Täna hero: the headline and the rest, one tap to the full section on Ühendus. Not a card. */
 export function handoverStrip(h: Handover, l: Lang): string {
-  const t = tr(l), pending = h.jobs.reduce((n, j) => n + j.evidence.pending, 0);
-  const wait = pending ? t(`${pending} ootab sinu kinnitust`, `${pending} waiting for your approval`) : "";
-  const sub = h.off ? [hoSplit(h, l), wait].filter(Boolean).join(", ") : wait || t("alusta ühest", "start with one");
-  return `<a class="ho-strip" href="/uhenda#kaest-ara" aria-label="${esc(t(`Käest ära: ${hoCount(h, l)}. ${sub}. Vaata lähemalt.`, `Off your plate: ${hoCount(h, l)}. ${sub}. See more.`))}"><p class="ho-line"><b>${t("Käest ära:", "Off your plate:")} <span class="num">${h.off}</span> ${esc(t(`${h.off === 1 ? "töö" : "tööd"} ${h.total}-st`, `of ${h.total}`))}</b><span>${esc(sub)}</span><span class="go">${t("Vaata →", "See →")}</span></p>
-<ul class="ho-bar" aria-hidden="true">${h.jobs.map((j) => `<li class="${hoSeg(j)}"></li>`).join("")}</ul></a>`;
+  const t = tr(l), head = hoHead(h, l), rest = hoRest(h, l);
+  return `<a class="ho-strip" href="/uhenda#kaest-ara" aria-label="${esc(t(`Kontoritöö: ${head}. ${rest}. Vaata lähemalt.`, `Back office: ${head}. ${rest}. See more.`))}"><p class="ho-line"><b>${esc(t("Kontoritöö:", "Back office:"))} ${esc(head)}</b><span>${esc(rest)}</span><span class="go">${t("Vaata →", "See →")}</span></p></a>`;
 }
 const HO_CAN: Record<string, [string, string]> = {
   "payment-reminder": ["Assistent oskab: leiab tasumata arved ja koostab kirja; sina kinnitad iga kirja täpselt sellisena.", "Your assistant can find unpaid invoices and draft the letter; you approve each letter exactly as it goes."],
@@ -1104,22 +1092,23 @@ const HO_CAN: Record<string, [string, string]> = {
   "annual-report": ["Lagi: allkirjastad ja esitad ise e-äriregistris; assistent paneb aruande andmed valmis.", "Ceiling: you sign and submit in the e-Business Register; your assistant prepares the figures."],
   invoicing: ["Assistent saab arve ette valmistada ja sinu kinnitusel saata.", "Your assistant can prepare an invoice and send it once you approve."],
 };
-const HO_CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>', HO_ARROW = '<svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg>';
-function handoverRow(j: Job, l: Lang, now: Date, sample: boolean): string {
-  const t = tr(l), fx = fixtureText(l, sample), e = j.evidence, assessedChip = labelChip("assistant", t("Assistendi hinnang", "Your assistant's assessment"));
-  const mark = j.rung === "done" ? HO_CHECK : j.rung === "prep" ? HO_ARROW : j.rung === "other" ? "R" : "";
-  const rung = j.rung === "done" ? (j.ceiling === "rule" ? `${t("Assistent teeb ise", "Your assistant does it")} ${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}` : `${t("Assistent valmistab ette, sina esitad", "Your assistant prepares, you file")} ${labelChip("official", t("Lagi käes: seadus", "At its ceiling: the law"))}`)
+function handoverRow(j: Job, h: Handover, l: Lang, now: Date, sample: boolean): string {
+  const t = tr(l), fx = fixtureText(l, sample), e = j.evidence, assessedChip = labelChip("assistant", t("Assistendi hinnang", "Your assistant's assessment")), st = HO_STATUS[j.status];
+  const who = j.rung === "done" ? (j.ceiling === "rule" ? `${t("Assistent teeb ise", "Your assistant does it")} ${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}` : `${t("Assistent valmistab ette, sina esitad", "Your assistant prepares, you file")} ${labelChip("official", t("Lagi: seadus", "Ceiling: the law"))}`)
     : j.rung === "prep" ? t("Assistent valmistab ette, sina kinnitad", "Your assistant prepares, you approve")
-    : j.rung === "other" ? `${esc(t(`Teeb ${j.assessed?.executor}`, `Done by ${fx.plain(j.assessed?.executor ?? "")}`))} ${assessedChip}` : t("Teed ise", "You do it");
+    : j.rung === "other" ? `${esc(t(`Teeb ${j.assessed?.executor}`, `Done by ${fx.plain(j.assessed?.executor ?? "")}`))} ${assessedChip}` : t("Teed praegu ise", "You do it for now");
   const verb = j.kind === "post_entries" ? t("kirjendatud", "posted") : j.ceiling === "law" ? t("esitatud", "filed") : t("saadetud", "sent");
   const lines: string[] = [];
+  if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${C_DAY_MON_YEAR.et.format(civil(j.due))}`, `Was due ${C_DAY_MON_YEAR.en.format(civil(j.due))}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}${j.dueSource ? ` ${sourceLink(j.dueSource, l)}` : ""}`);
+  if (j.source === "assessment" && j.rung !== "other" && j.assessed) lines.push(`„${esc(j.assessed.reason)}”${j.assessed.current && h.assessedAt ? esc(t(` · vaadatud ${fmtWhen(h.assessedAt, l, now)}`, ` · checked ${fmtWhen(h.assessedAt, l, now)}`)) : ""} ${assessedChip}`);
   if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.auto ? t(`, neist <span class="num">${e.auto}</span> ilma sinuta`, `, <span class="num">${e.auto}</span> without you`) : ""}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
   if (e.rule) lines.push(esc(t(`Püsiluba: ${standingRuleName(e.rule, l)} · aegub ${DAY.et.format(new Date(e.rule.expires_at))}`, `Standing approval: ${standingRuleName(e.rule, l)} · ends ${DAY.en.format(new Date(e.rule.expires_at))}`)));
-  if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${C_DAY_MON_YEAR.et.format(civil(j.due))}`, `Was due ${C_DAY_MON_YEAR.en.format(civil(j.due))}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}${j.dueSource ? ` ${sourceLink(j.dueSource, l)}` : ""}`);
-  if (j.source === "assessment" && j.rung !== "other" && j.assessed) lines.push(`„${esc(j.assessed.reason)}” ${assessedChip}`);
-  if (j.rung === "mine" && HO_CAN[j.id]) lines.push(esc(t(...HO_CAN[j.id])));
-  if (e.pending) lines.push(stateChip("waiting", t(`${e.pending} ootab sinu kinnitust`, `${e.pending} waiting for your approval`)));
-  return `<li class="ho-job"><i class="ho-mark${j.rung === "mine" ? "" : ` ho-mark--${j.rung}`}" aria-hidden="true">${mark}</i><div><span class="ho-title">${esc(hoJobTitle(j, l))}</span><p class="ho-rung ho-rung--${j.rung === "other" ? "mine" : j.rung}">${rung}</p>${lines.length ? `<p class="ho-ev">${lines.join("<br>")}</p>` : ""}</div></li>`;
+  if (j.rung === "mine" && j.status !== "in_order" && HO_CAN[j.id]) lines.push(esc(t(...HO_CAN[j.id])));
+  // The connections it needs, each with what the assistant reported: what stands between the job and the assistant.
+  if (j.needs.length && j.status !== "in_order") lines.push(`${t("Vajab:", "Needs:")} ${j.needs.map((k) => { const c = h.connections.find((x) => x.kind === k), [et, en] = HO_CONN_STATE[c?.state ?? "unknown"]; return `${esc(t(...HO_CONN[k]).toLowerCase())} (${esc(t(et, en))})`; }).join(", ")}`);
+  // A waiting job says how many approvals wait; every other status is one word.
+  const chip = j.status === "waiting" && e.pending > 1 ? t(`${e.pending} ootab sinu kinnitust`, `${e.pending} waiting for your approval`) : t(st.et, st.en);
+  return `<li class="ho-job"><div class="ho-head"><span class="ho-title">${esc(hoJobTitle(j, l))}</span>${stateChip(st.chip, chip)}</div><p class="ho-who">${who}</p>${lines.length ? `<p class="ho-ev">${lines.join("<br>")}</p>` : ""}</li>`;
 }
 const HO_CONNECTOR = (l: Lang) => `<a class="tap-link" href="/kataloog?g=raamatupidamine">${tr(l)("Raamatupidamise ühendused → Kataloog", "Accounting connectors → Catalogue")}</a>`;
 const HO_REMINDER_PROMPT: [string, string] = ["Vaata, millised minu arved on tasumata, ja koosta esimesele meeldetuletus. Küsi minult kinnitust enne saatmist.", "Check which of my invoices are unpaid and draft a reminder for the first one. Ask me to approve it before sending."];
@@ -1158,20 +1147,20 @@ ${follow ? `<a class="tap-link" href="/kataloog?g=kliendid">${t("Ühenda oma kli
 ${quote(t("Aita mul ühendada minu raamatupidamisprogramm.", "Help me connect my accounting software."))}
 ${HO_CONNECTOR(l)}`);
 }
-/** Ühendus → Käest ära: count, bar, one row per job with its evidence, one next step, and the expired-unused finding. */
+/** Ühendus → Käest ära: what needs the owner, what the assistant can reach, the jobs by status, one next step, and the expired-unused finding. */
 export function handoverSection(h: Handover, l: Lang, csrf: string, now = new Date(), sample = false): string {
-  const t = tr(l), split = hoSplit(h, l), ex = h.findings.expiredUnused;
-  const sub = h.off ? `${split}.${h.fromAssessment ? ` ${t(`Assistendi hinnang lisas nimekirja ${h.fromAssessment} ${h.fromAssessment === 1 ? "töö" : "tööd"}.`, `Your assistant's assessment added ${h.fromAssessment} ${h.fromAssessment === 1 ? "job" : "jobs"} to the list.`)}` : ""}` : t("Siia tulevad tööd, mille assistent on päriselt ära teinud, mitte klikid ega lubadused.", "Jobs land here only when your assistant has really done them, not clicks or promises.");
-  const month = h.month.done ? `${esc(hoMonth(h.month.ym, l))}: ${t(`<b>${h.month.done}</b> ${h.month.done === 1 ? "töö" : "tööd"} tehtud, <b>${h.month.auto}</b> ilma sinuta.`, `<b>${h.month.done}</b> done, <b>${h.month.auto}</b> without you.`)}` : `${esc(hoMonth(h.month.ym, l))}: ${t("assistent pole veel ühtegi tööd lõpetanud.", "your assistant has not finished a job yet.")}`;
+  const t = tr(l), ex = h.findings.expiredUnused, rest = hoRest(h, l);
+  const month = h.month.done ? `${esc(hoMonth(h.month.ym, l))}: ${t(`assistent lõpetas <b>${h.month.done}</b> ${h.month.done === 1 ? "töö" : "tööd"}, <b>${h.month.auto}</b> ilma sinuta.`, `your assistant finished <b>${h.month.done}</b> ${h.month.done === 1 ? "job" : "jobs"}, <b>${h.month.auto}</b> without you.`)}` : `${esc(hoMonth(h.month.ym, l))}: ${t("assistent pole veel ühtegi tööd lõpetanud.", "your assistant has not finished a job yet.")}`;
   const finding = ex.count && ex.last ? `<p class="ho-finding"><span aria-hidden="true">!</span><span><b>${esc(t(`${ex.count} ${ex.count === 1 ? "kinnitus aegus" : "kinnitust aegusid"} kasutamata`, `${ex.count} ${ex.count === 1 ? "approval" : "approvals"} expired unused`))}</b> (${esc(DAY[l].format(new Date(ex.last.expires_at)))}). ${t("Palu assistendil pärast sinu kinnitust kohe saata ja tulemus kirja panna.", "Ask your assistant to send right after you approve and record the outcome.")} <a class="tap-link" href="/approvals/${esc(encodeURIComponent(ex.last.id))}">${t("Vaata kinnitust", "See the approval")}</a></span></p>` : "";
-  return `<section class="section ho" id="kaest-ara" aria-labelledby="ho-h"><h2 id="ho-h">${t("Käest ära", "Off your plate")}</h2>
-<p class="ho-sum"><span class="num">${h.off}</span> ${esc(t(`${h.off === 1 ? "töö" : "tööd"} ${h.total}-st on sinu käest ära`, `of ${h.total} ${h.total === 1 ? "job is" : "jobs are"} off your plate`))}<small>${esc(sub)}</small></p>
-<ul class="ho-bar ho-bar--lg" aria-label="${esc(t(`${h.total} tööd`, `${h.total} jobs`))}">${h.jobs.map((j) => `<li class="${hoSeg(j)}"><span class="vh">${esc(`${hoJobTitle(j, l)}: ${t(...HO_RUNG[j.rung] as [string, string])}${j.evidence.pending ? t(`; ${j.evidence.pending} ootab praegu`, `; ${j.evidence.pending} waiting now`) : ""}`)}</span></li>`).join("")}</ul>
-<ul class="ho-legend" aria-hidden="true">${(["mine", "prep", "done", "other"] as const).map((r) => `<li><i${r === "mine" ? "" : ` class="ho-seg--${r}"`}></i>${esc(t(...HO_RUNG[r] as [string, string]))}</li>`).join("")}</ul>
+  const conn = (name: string, state: keyof typeof HO_CONN_STATE, service?: string) => { const [et, en, chip] = HO_CONN_STATE[state]; return `<li><span>${esc(name)}${service ? `<small>${esc(service)}</small>` : ""}</span>${stateChip(chip, t(et, en))}</li>`; };
+  const reach = `<h3 class="ho-h3">${t("Kuhu assistent ulatub", "What your assistant can reach")}</h3><ul class="ho-conn">${h.connections.map((c) => conn(t(...HO_CONN[c.kind]), c.state, c.service)).join("")}${conn(t(...HO_CONN.register), "public", "Ärikratt")}</ul>
+<p class="ho-note">${h.assessedAt && h.connections.some((c) => c.state !== "unknown") ? `${esc(t(`Assistendi teade, ${fmtWhen(h.assessedAt, l, now)}.`, `As your assistant reported, ${fmtWhen(h.assessedAt, l, now)}.`))} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}` : esc(t("Assistent pole veel öelnud, millega ta ühendatud on. Palu tal oma töid hinnata.", "Your assistant has not said yet what it is linked to. Ask it to assess your jobs."))}</p>`;
+  return `<section class="section ho" id="kaest-ara" aria-labelledby="ho-h"><h2 id="ho-h">${t("Kontoritöö", "Back office")}</h2>
+<p class="ho-sum">${esc(hoHead(h, l))}${rest ? `<small>${esc(rest)}</small>` : ""}</p>
 <p class="ho-month">${month}</p>
-<div class="ho-grid"><div><ul class="ho-jobs">${h.jobs.map((j) => handoverRow(j, l, now, sample)).join("")}</ul>${finding}</div>
+<div class="ho-grid"><div><ul class="ho-jobs">${h.jobs.map((j) => handoverRow(j, h, l, now, sample)).join("")}</ul>${finding}${reach}</div>
 ${handoverNext(h, l, csrf)}</div>
-<details class="plain"><summary>${t("Kuidas see arvutatakse", "How this is calculated")}</summary><div class="boxed small"><p>${t("Üks lahter = üks töö. Lahter täitub ainult salvestatud kinnitusest, mille tulemus on saadetud, esitatud, makstud või kirjendatud (assistendi teade, AI-hüppelaud seda ei kontrollinud), või kehtivast püsiloast, mis on juba korra töötanud. Ootel kinnitused, lugemised ja sisselogimised lahtrit ei täida. „Teeb raamatupidaja” on assistendi hinnang. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.", "One cell = one job. A cell fills only from a stored approval whose outcome is sent, filed, paid or posted (your assistant's report, not checked by AI Launchpad), or from a live standing approval that has already worked once. Pending approvals, reads and sign-ins fill nothing. “Done by the accountant” is your assistant's assessment. No percentage and no hours saved, because we don't measure them.")}</p></div></details>
+<details class="plain"><summary>${t("Kuidas see arvutatakse", "How this is calculated")}</summary><div class="boxed small"><p>${t("Tööd on järjestatud selle järgi, mis vajab sind praegu: ootel kinnitus, möödunud või lähenev tähtaeg (14 päeva), siis assistendi viimane hinnang. „Korras” tähendab, et töö tehti sel kuul (assistendi teade salvestatud kinnitusel) või assistent vaatas viimase kuu jooksul ja ootel tööd polnud. Tähtajad arvutab reeglistik. Ühendused on assistendi teade; AI-hüppelaud neid ei kontrolli. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.", "Jobs are ordered by what needs you now: a waiting approval, a missed or near deadline (14 days), then your assistant's latest assessment. „In order” means the job was done this month (your assistant's report on a stored approval), or your assistant looked within the last month and found nothing waiting. Deadlines are calculated by rules. Connections are what your assistant reports; AI Launchpad does not check them. No percentage and no hours saved, because we don't measure them.")}</p></div></details>
 </section>`;
 }
 

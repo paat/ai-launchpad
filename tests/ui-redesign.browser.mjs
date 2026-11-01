@@ -392,25 +392,11 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.setContent(pageHtml["tana-demo"]());
   await settle();
-  const strip = await page.evaluate(() => { window.scrollTo(0, 0); const r = document.querySelector(".ho-strip").getBoundingClientRect(), segs = [...document.querySelectorAll(".ho-strip .ho-seg")].map((s) => Math.round(s.getBoundingClientRect().width)); return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height), inHero: !!document.querySelector(".hero .ho-strip"), segs }; });
+  const strip = await page.evaluate(() => { window.scrollTo(0, 0); const r = document.querySelector(".ho-strip").getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height), inHero: !!document.querySelector(".hero .ho-strip"), name: document.querySelector(".ho-strip").getAttribute("aria-label") }; });
   assert.ok(strip.inHero && strip.bottom <= 844 && strip.h >= 44, `t5 strip in the hero, first viewport, ≥ 44 px ${JSON.stringify(strip)}`);
-  assert.ok(strip.segs.length === tanaHandover.total && strip.segs.every((w) => w > 20), `t5 strip: one visible segment per job ${JSON.stringify(strip.segs)}`);
   await page.screenshot({ path: path.join(T2_SHOTS, "t5-tana-390-fold.png") });
-  // review-design-t5-grok medium: the pending dot is ≥ 3:1 against an outlined and a mid-green segment (its white ring carries the
-  // boundary on green), and the strip's accessible name says an approval waits.
-  const dot = await page.evaluate(() => {
-    const rgb = (c) => c.match(/\d+/g).slice(0, 3).map(Number), lum = (c) => { const [r, g, b] = rgb(c).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
-    const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100; };
-    const wait = document.querySelector(".ho-strip .ho-seg--wait"), after = getComputedStyle(wait, "::after");
-    const prep = document.createElement("li"); prep.className = "ho-seg ho-seg--prep"; wait.parentElement.append(prep);
-    const outlined = getComputedStyle(wait).backgroundColor, green = getComputedStyle(prep).backgroundColor; prep.remove();
-    return { fill: after.backgroundColor, ring: after.borderTopColor, ringW: parseFloat(after.borderTopWidth), outlined, green,
-      dotOnOutlined: ratio(after.backgroundColor, outlined), dotOnRing: ratio(after.backgroundColor, after.borderTopColor), ringOnGreen: ratio(after.borderTopColor, green),
-      name: document.querySelector(".ho-strip").getAttribute("aria-label") };
-  });
-  assert.ok(dot.dotOnOutlined >= 3 && dot.dotOnRing >= 3 && dot.ringOnGreen >= 3 && dot.ringW >= 2, `t5 pending dot ≥ 3:1 on outlined and mid-green segments ${JSON.stringify(dot)}`);
-  assert.ok(dot.name.includes("ootab"), `t5 strip accessible name says an approval waits: ${dot.name}`);
-  geometry.t5dot = dot;
+  // review-design-t5-grok medium: the strip's accessible name says an approval waits.
+  assert.ok(strip.name.includes("ootab"), `t5 strip accessible name says an approval waits: ${strip.name}`);
   geometry.t5strip = strip;
   for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
     await page.setViewportSize(vp);

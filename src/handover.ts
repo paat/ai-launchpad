@@ -1,19 +1,25 @@
-// „Käest ära” (#61): how many of this company's back-office jobs are off the owner's
-// plate. Pure: every fill comes from a stored row (a consumed approval with a done
-// outcome, or a live standing rule that has fired). Reads, logins and requests change nothing.
+// „Käest ära” (#61): the company's back-office jobs, ranked by what needs the owner now.
+// Pure: a job's status comes from stored rows only (pending or done approvals, rule-computed
+// dates, the assistant's latest assessment); who does it is a plain line, not the ranking.
 import { PLAYBOOKS } from "./catalog.js";
-import { isHandled, type Assessment } from "./core.js";
+import { CONNECTION_KINDS, isHandled, type Assessment, type ConnectionKind } from "./core.js";
 import { normAddress, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type StandingRule } from "./mcp.js";
 import { tallinnDate, type Obligation, type Source } from "./obligations.js";
 
 export type Rung = "mine" | "other" | "prep" | "done";
+/** What the owner should know about the job now, most urgent first. */
+export const STATUSES = ["waiting", "overdue", "due_soon", "open", "not_checked", "later", "in_order"] as const;
+export type Status = (typeof STATUSES)[number];
+export type ConnectionState = "linked" | "file" | "not_linked" | "unknown";
 export interface Job {
   id: string; title_et: string; title_en: string; kind: string | null;
-  rung: Rung; ceiling: "rule" | "law";
+  rung: Rung; ceiling: "rule" | "law"; status: Status;
+  /** The kinds of connection the job needs; the owner's assistant reports which it can reach. */
+  needs: ConnectionKind[];
   evidence: { done: number; auto: number; paid: number; last: string | null; pending: number; rule?: StandingRule };
   source: "playbook" | "assessment" | "approvals";
   /** The assistant's assessment behind the row: its reason, and who handles the job if handled. */
-  assessed?: { reason: string; executor?: string };
+  assessed?: { reason: string; executor?: string; current?: "in_order" | "open" };
   /** The next rule-computed date for the job, if any, and the official source of its rule (#63 m6). */
   due: string | null; dueSource: Source | null;
 }
@@ -22,7 +28,13 @@ export type NextStep =
   | { type: "playbook"; job: Job; playbookId: string; obligation: Obligation | null }
   | { type: "connector" };
 export interface Handover {
-  jobs: Job[]; off: number; total: number; withoutYou: number;
+  jobs: Job[];
+  /** Jobs per status. */
+  count: Record<Status, number>;
+  /** Every kind some job needs or the assistant reported, in CONNECTION_KINDS order. */
+  connections: { kind: ConnectionKind; state: ConnectionState; service?: string }[];
+  /** When the assistant last assessed: the time behind „in order” and the connections. */
+  assessedAt: string | null;
   /** Done outcomes this Tallinn month; auto = approved by a standing rule. */
   month: { ym: string; done: number; auto: number };
   next: NextStep;
@@ -45,8 +57,16 @@ export const JOB_TITLES: Record<string, [string, string]> = {
   // No obligation trigger: the row appears only from a tagged approval or a matching assessment label.
   "customer-follow-ups": ["Kellele helistada", "Who to call"],
 };
+/** The connections each known job needs (playbook `needs`, by kind). */
+const NEEDS: Record<string, ConnectionKind[]> = {
+  "payment-reminder": ["accounting", "email"], invoicing: ["accounting", "email"], "books-catch-up": ["bank", "accounting"],
+  "vat-return-prep": ["accounting"], "annual-report": ["accounting"], "customer-follow-ups": ["customers", "email"],
+};
+/** A rule date this close (days) makes the job due soon. */
+const SOON_DAYS = 14;
+/** The assistant's „in order” or „open” counts for this long after its assessment (ms). */
+const FRESH_MS = 31 * 86_400_000;
 export const DONE_OUTCOMES = ["sent", "submitted", "paid", "accepted", "posted"];
-const RANK: Record<Rung, number> = { done: 0, prep: 1, other: 2, mine: 3 };
 const norm = (s: string) => s.trim().toLowerCase();
 const payloadOf = (a: ApprovalRow): { kind?: string; recipient?: { name?: string; address?: string }; amount_cents?: number; summary?: string; document?: { title?: string } } => { try { return JSON.parse(a.payload_json); } catch { return {}; } };
 const outcomeOf = (a: ApprovalRow): string | null => { try { return a.outcome_json ? (JSON.parse(a.outcome_json) as { outcome?: string }).outcome ?? null : null; } catch { return null; } };
@@ -72,25 +92,30 @@ export function jobOfApproval(a: ApprovalRow): string | null {
 /** Only a definite (applies "yes") past risk row may become a job's date or next step; a cold cache's conditional one may not (review-polish-grok high). */
 const definitelyOverdue = (x: Obligation, today: string) => x.kind === "risk" && x.applies === "yes" && !!x.effective_due && x.effective_due < today;
 
-export function computeHandover(o: { assessment: Assessment | null; obligations: Obligation[]; approvals: ApprovalRow[]; rules: StandingRule[]; now: Date }): Handover {
-  const today = tallinnDate(o.now), ym = today.slice(0, 7);
+export function computeHandover(o: { assessment: Assessment | null; assessedAt?: string | null; obligations: Obligation[]; approvals: ApprovalRow[]; rules: StandingRule[]; now: Date }): Handover {
+  const today = tallinnDate(o.now), ym = today.slice(0, 7), soon = tallinnDate(new Date(o.now.getTime() + SOON_DAYS * 86_400_000));
+  const assessedAt = o.assessment ? o.assessedAt ?? null : null, fresh = !!assessedAt && o.now.getTime() - Date.parse(assessedAt) <= FRESH_MS;
   const live = o.rules.filter((r) => !r.revoked_at && Date.parse(r.expires_at) > o.now.getTime());
   const rows = (o.assessment?.responsibilities ?? []).filter((r) => r.applicability === "applicable" && !r.is_core);
   const byJob = new Map<string, ApprovalRow[]>();
   for (const a of o.approvals) { const j = jobOfApproval(a); if (j) byJob.set(j, [...(byJob.get(j) ?? []), a]); }
 
   const build = (id: string, kind: string | null, source: Job["source"], assessed: Job["assessed"], dueRow: Obligation | null, titles: [string, string]): Job => {
-    const mine = byJob.get(id) ?? [], done = mine.filter(isDone);
+    // A pending row past its expiry waits for nobody (the app expires it on the next read).
+    const mine = byJob.get(id) ?? [], done = mine.filter(isDone), pending = mine.filter((a) => a.state === "pending" && Date.parse(a.expires_at) > o.now.getTime()).length;
     const ceiling = kind && STANDING_KINDS.includes(kind) ? "rule" as const : "law" as const;
     // Deep green under a rule only once a live rule of this kind has approved a done outcome.
     const rule = ceiling === "rule" ? live.find((r) => r.kind === kind && done.some((a) => a.approved_by_rule === r.id)) : undefined;
     // Book entries need the owner's yes for every month, and each customer follow-up is approved one by one, so both stay at prep and never reach done under a rule (#96).
     const rung: Rung = done.length && kind !== "post_entries" && id !== "customer-follow-ups" && (rule || ceiling === "law") ? "done" : done.length ? "prep" : assessed?.executor ? "other" : "mine";
-    const last = done.map((a) => a.consumed_at ?? "").sort().pop() || null;
-    return { id, title_et: titles[0], title_en: titles[1], kind, rung, ceiling, source, due: dueRow?.effective_due ?? null, dueSource: dueRow?.source ?? null, ...(assessed ? { assessed } : {}),
-      evidence: { done: done.length, auto: done.filter((a) => a.approved_by_rule).length, paid: done.filter((a) => outcomeOf(a) === "paid").length, last, pending: mine.filter((a) => a.state === "pending").length, ...(rule ? { rule } : {}) } };
+    const last = done.map((a) => a.consumed_at ?? "").sort().pop() || null, due = dueRow?.effective_due ?? null, current = fresh ? assessed?.current : undefined;
+    // First match wins: the owner's yes, a missed date, done this month, a near date, the assistant's look, someone else, a far date.
+    const status: Status = pending ? "waiting" : due && due < today ? "overdue" : last && tallinnDate(new Date(last)).startsWith(ym) ? "in_order"
+      : due && due <= soon ? "due_soon" : current ?? (assessed?.executor ? "in_order" : due ? "later" : "not_checked");
+    return { id, title_et: titles[0], title_en: titles[1], kind, rung, ceiling, status, needs: NEEDS[id] ?? [], source, due, dueSource: dueRow?.source ?? null, ...(assessed ? { assessed } : {}),
+      evidence: { done: done.length, auto: done.filter((a) => a.approved_by_rule).length, paid: done.filter((a) => outcomeOf(a) === "paid").length, last, pending, ...(rule ? { rule } : {}) } };
   };
-  const assessedOf = (r: (typeof rows)[number]) => ({ reason: r.reason, ...(isHandled(r) ? { executor: r.executor } : {}) });
+  const assessedOf = (r: (typeof rows)[number]) => ({ reason: r.reason, ...(isHandled(r) ? { executor: r.executor } : {}), ...(r.current_state ? { current: r.current_state } : {}) });
 
   const used = new Set<string>();
   const jobs: Job[] = [];
@@ -107,13 +132,16 @@ export function computeHandover(o: { assessment: Assessment | null; obligations:
     jobs.push(build(k.id, k.kind, k.playbook ? "playbook" : match ? "assessment" : "approvals", match ? assessedOf(match) : undefined, due, titles));
   }
   for (const r of rows) if (!used.has(r.id)) jobs.push(build(`a:${r.id}`, null, "assessment", assessedOf(r), null, [r.label, r.label]));
-  jobs.sort((a, b) => RANK[a.rung] - RANK[b.rung]);
+  jobs.sort((a, b) => STATUSES.indexOf(a.status) - STATUSES.indexOf(b.status));
+  const reported = new Map((o.assessment?.connections ?? []).map((c) => [c.kind, c]));
+  const kinds = CONNECTION_KINDS.filter((k) => reported.has(k) || jobs.some((j) => j.needs.includes(k)));
 
   const monthDone = o.approvals.filter((a) => isDone(a) && a.consumed_at && tallinnDate(new Date(a.consumed_at)).startsWith(ym));
   const expired = o.approvals.filter((a) => a.state === "expired" && a.decided_at).sort((a, b) => (a.decided_at! < b.decided_at! ? 1 : -1));
   return {
-    jobs, off: jobs.filter((j) => j.rung !== "mine").length, total: jobs.length,
-    withoutYou: jobs.filter((j) => j.rung === "done" && j.ceiling === "rule").length,
+    jobs, count: Object.fromEntries(STATUSES.map((st) => [st, jobs.filter((j) => j.status === st).length])) as Record<Status, number>,
+    connections: kinds.map((kind) => { const c = reported.get(kind); return c ? { kind, state: c.state, ...(c.service ? { service: c.service } : {}) } : { kind, state: "unknown" as const }; }),
+    assessedAt,
     month: { ym, done: monthDone.length, auto: monthDone.filter((a) => a.approved_by_rule).length },
     next: nextStep(jobs, live, o.approvals, o.obligations.filter((x) => x.kind !== "risk" || definitelyOverdue(x, today))),
     findings: { expiredUnused: { count: expired.length, last: expired[0] ?? null } },
@@ -145,8 +173,8 @@ function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], o
     const maxCents = largestAmount(basis), capCents = offerCapCents(maxCents);
     return { type: "standing", job: j, kind: j.kind, recipients: [...recipients].map(([address, name]) => ({ name, address })), capCents, basis: { count: basis.length, maxCents } };
   }
-  // Reminders first (they can reach the top rung), then filings by the soonest rule-computed date.
-  const open = jobs.filter((j) => j.rung === "mine" && j.source === "playbook")
+  // Reminders first (they can reach the top rung), then filings by the soonest rule-computed date; a job already in order waits.
+  const open = jobs.filter((j) => j.rung === "mine" && j.source === "playbook" && j.status !== "in_order")
     .sort((a, b) => (a.id === "payment-reminder" ? -1 : b.id === "payment-reminder" ? 1 : (a.due ?? "9999") < (b.due ?? "9999") ? -1 : 1))[0];
   if (open) {
     const trig = PLAYBOOKS.find((p) => p.id === open.id)?.triggers ?? [];

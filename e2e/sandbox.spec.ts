@@ -26,7 +26,7 @@ for (const width of [390, 1280]) test(`interactive sandbox: sample to simulated 
 
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("✓ Saadetud: demo");
   await expect(page.locator("main")).toContainText("päriselt ei saadetud");
-  await expect(page.locator(".ho-strip")).toContainText("Käest ära:");
+  await expect(page.locator(".ho-strip")).toContainText("Kontoritöö:");
   await noOverflow(page);
 
   await page.locator(".ho-strip").click();

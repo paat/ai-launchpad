@@ -1,4 +1,4 @@
-import { computeCoverage } from "./core.js";
+import { computeCoverage, type Assessment } from "./core.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "./fixtures.js";
 import { computeHandover } from "./handover.js";
 import type { ApprovalRow } from "./mcp.js";
@@ -25,10 +25,13 @@ export const pendingApproval: ApprovalRow = { id: "appr_t2", kind: "send_message
 export const longLetterApproval: ApprovalRow = { ...pendingApproval, id: "appr_long_letter", payload_json: JSON.stringify({ ...reminder, document: { ...reminder.document, content: Array.from({ length: 40 }, (_, i) => `Rida ${i + 1}: arve 2026-014 on veel tasumata.`).join("\n") } }) };
 export const approvedApproval: ApprovalRow = { ...pendingApproval, state: "approved", decided_at: "2026-11-03T11:55:00Z" };
 // T3: the prototype's Täna — demo company, one pending reminder, one prepared job, two deadlines.
-export const demoAssessment = DEMO_FIXTURES.alpha;
+// Kontoritöö: the assistant also says what it can reach and that invoicing has work waiting.
+export const demoAssessment: Assessment = { ...DEMO_FIXTURES.alpha, responsibilities: DEMO_FIXTURES.alpha.responsibilities.map((r) => (r.id === "invoicing" ? { ...r, current_state: "open" as const } : r)),
+  connections: [{ kind: "accounting", state: "linked", service: "Merit Aktiva" }, { kind: "email", state: "linked", service: "Gmail" }, { kind: "bank", state: "file", service: "LHV" }, { kind: "drive", state: "linked", service: "Google Drive" }] };
+export const ASSESSED_AT = "2026-10-28T10:00:00Z";
 export const twoDeadlines: DeadlinesView = { ...mariDeadlines, obligations: mari.obligations.slice(0, 2), facts_needed: [] };
 // T5 „Käest ära”: Täna's strip from the same rows; Ühendus in week 2 (3 sent, 1 pending, 1 expired unused, the accountant on KMD).
-export const tanaHandover = computeHandover({ assessment: demoAssessment, obligations: mari.obligations, approvals: [pendingApproval], rules: [], now: NOW });
+export const tanaHandover = computeHandover({ assessment: demoAssessment, assessedAt: ASSESSED_AT, obligations: mari.obligations, approvals: [pendingApproval], rules: [], now: NOW });
 export const sentTo = (i: number, name: string, address: string, cents: number): ApprovalRow => {
   const outcome = i === 2 ? "paid" : "sent", observed_at = `2026-11-0${i}T09:10:00Z`;
   return { ...pendingApproval, id: `appr_sent_${i}`, state: "consumed", created_at: `2026-11-0${i}T08:55:00Z`, decided_at: `2026-11-0${i}T09:00:00Z`, consumed_at: observed_at,
@@ -36,7 +39,7 @@ export const sentTo = (i: number, name: string, address: string, cents: number):
 };
 export const week2 = [sentTo(1, "Demo Klient OÜ", "arved@demo-klient.example", 12000), sentTo(2, "Põhja Puit OÜ", "raamat@pohja-puit.example", 24000), sentTo(3, "Demo Klient OÜ", "arved@demo-klient.example", 18000),
   pendingApproval, { ...pendingApproval, id: "appr_expired", state: "expired", created_at: "2026-11-02T07:55:00Z", decided_at: "2026-11-02T08:00:00Z", expires_at: "2026-11-03T08:00:00Z" }]; // #75: created before its decision, unused and expired 24 h later — the „Käest ära” expired-unused row links here
-export const uhendaHandover = computeHandover({ assessment: demoAssessment, obligations: mari.obligations, approvals: week2, rules: [], now: NOW });
+export const uhendaHandover = computeHandover({ assessment: demoAssessment, assessedAt: ASSESSED_AT, obligations: mari.obligations, approvals: week2, rules: [], now: NOW });
 const syntheticApprovals = [longApproval, pendingApproval, longLetterApproval, approvedApproval, ...week2];
 export const naidisApproval = (id: string) => syntheticApprovals.find((a) => a.id === id);
 
@@ -67,7 +70,7 @@ function sampleLinks(html: string, lang: Lang): string {
 export function naidisBody(step: NaidisStep, lang: Lang, approval = pendingApproval): string {
   const t = tr(lang);
   const body = step === "tana"
-    ? tanaBody({ lang, csrf: "", sample: true, label: "Mari Disain OÜ (näidis)", assessment: demoAssessment, coverage: computeCoverage(demoAssessment), assessedAt: "2026-10-28T10:00:00Z", exclusions: [], approvals: week2, progress: preparedProgress, deadlines: twoDeadlines, needs: [], reportCount: 4, now: NOW, handover: uhendaHandover })
+    ? tanaBody({ lang, csrf: "", sample: true, label: "Mari Disain OÜ (näidis)", assessment: demoAssessment, coverage: computeCoverage(demoAssessment), assessedAt: ASSESSED_AT, exclusions: [], approvals: week2, progress: preparedProgress, deadlines: twoDeadlines, needs: [], reportCount: 4, now: NOW, handover: uhendaHandover })
     : step === "kinnitus"
       ? approvalCardBody({ csrf: "", a: approval, lang, sample: true, now: NOW })
       : activityBody({ rows: activityRows, receipts: [], exclusions: [], assessment: demoAssessment, approvals: week2, rules: [], lang, now: NOW, sample: true })
