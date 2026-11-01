@@ -634,11 +634,14 @@ test("export includes unmet needs; delete removes them (and their public demand)
     const id = (await tool(s, a, { report_id: "e", need: "File VAT", blocker: "portal_without_api" })).data.need_id;
     await s.queue.idle();
     await http(s, "/unmet-needs/decide", { cookie: a.raw, fields: { csrf: a.csrf, need_id: id, decision: "publish" } });
-    const exp = await (await http(s, "/export", { cookie: a.raw })).json() as { unmet_needs: Record<string, unknown>[] };
+    s.db.prepare("INSERT INTO statements_read VALUES('own_a','Swedbank','1884','2026-01-01','2026-10-31',0,'2026-11-01T10:00:00Z')").run();
+    const exp = await (await http(s, "/export", { cookie: a.raw })).json() as { unmet_needs: Record<string, unknown>[]; statements_read: Record<string, unknown>[] };
+    expect(exp.statements_read).toEqual([{ bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 0, read_at: "2026-11-01T10:00:00Z" }]);
     expect(exp.unmet_needs).toEqual([expect.objectContaining({ id, state: "published", need_redacted: "File VAT", demand_label: "VAT return filing", classified_by: BASETEN_MODEL })]);
     expect(await (await http(s, "/demand")).text()).toContain("VAT return filing");
     expect((await http(s, "/delete", { cookie: a.raw, fields: { csrf: a.csrf } })).status).toBe(302);
     expect(s.db.prepare("SELECT count(*) n FROM unmet_needs").get()).toEqual({ n: 0 });
+    expect(s.db.prepare("SELECT count(*) n FROM statements_read").get()).toEqual({ n: 0 });
     expect(await (await http(s, "/demand")).text()).toContain("Avaldatud soove veel pole.");
     const l = openExistingPublicLedger(path);
     try { expect(l.db.prepare("SELECT count(*) n FROM mq_attempts").get()).toEqual({ n: 1 }); } finally { l.close(); }

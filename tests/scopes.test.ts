@@ -61,7 +61,7 @@ async function grant(scopes: string, updates: boolean, actor = "alpha", browser?
   expect(policy).toContain("All connected assistants can search the public service catalogue");
   expect(policy).toContain("progress:report");
   expect(policy).toContain("saves concise assessments, task updates and private service nominations");
-  expect(policy).toContain("saves concise assessments, task updates and private service nominations. It can also ask you to approve a specific message, invoice, payment or filing; nothing happens unless you approve that exact content.");
+  expect(policy).toContain("saves concise assessments, task updates and private service nominations, and which bank statements your assistant read (bank, the account's last four digits, period and closing balance). It can also ask you to approve a specific message, invoice, payment or filing; nothing happens unless you approve that exact content.");
   expect(policy).toContain("Launchpad stores the exact text of each approval request (up to 4,000 characters; it can include a customer's e-mail address, amounts and figures) until you delete your progress. No conversations, files or Google tokens are shared.");
   expect(policy).not.toMatch(/source documents|no documents/i);
   expect(policy).toContain("never authorizes payments, filings or signatures");
@@ -187,9 +187,9 @@ async function consentPage(scopes: string) {
   await b.login();
   return { b, html: await (await b.request("/oauth/consent")).text() };
 }
-const STORED_EN = "If you allow preparing work, we store work status, your assistant's assessment, texts sent for your approval, private service nominations and anonymised requests until you delete them.";
+const STORED_EN = "If you allow preparing work, we store work status, your assistant's assessment, texts sent for your approval, private service nominations, anonymised requests and a summary of each bank statement your assistant read (bank, the account's last four digits, period and closing balance) until you delete them.";
 const reject = async (c: { b: Browser; html: string }) => { await c.b.request("/oauth/consent", { csrf: field(c.html, "csrf"), flow: field(c.html, "flow"), decision: "reject" }); return c.html; };
-const STORED_ET = "Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, kinnitamiseks esitatud tekstid, privaatsed teenusesoovitused ja anonüümseks muudetud soovid, kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.";
+const STORED_ET = "Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, kinnitamiseks esitatud tekstid, privaatsed teenusesoovitused, anonüümseks muudetud soovid ja loetud pangaväljavõtete kokkuvõtte (pank, konto neli viimast numbrit, periood ja lõppsaldo), kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.";
 
 test("consent storage sentence lists private service nominations in both languages for read+report and report-only (#21)", async () => {
   for (const scopes of ["progress:read progress:report", "progress:report"]) {
@@ -201,16 +201,16 @@ test("consent storage sentence lists private service nominations in both languag
 
 test("consent copy is derived from the requested scopes and never claims we store only approvals (#21)", async () => {
   const both = await reject(await consentPage("progress:read progress:report"));
-  expect(both).toContain("näha sinu ettevõtte tähtaegu ja tööde seisu");
+  expect(both).toContain("näha sinu ettevõtte tähtaegu, tööde seisu ja loetud pangaväljavõtete kokkuvõtet (pank, konto neli viimast numbrit, periood ja lõppsaldo)");
   expect(both).toContain(STORED_ET);
   expect(both).toContain("Ilma selleta saab Scope test assistant ainult lugeda.");
   const read = await reject(await consentPage("progress:read"));
-  expect(read).toContain("näha sinu ettevõtte tähtaegu ja tööde seisu");
+  expect(read).toContain("näha sinu ettevõtte tähtaegu, tööde seisu ja loetud pangaväljavõtete kokkuvõtet (pank, konto neli viimast numbrit, periood ja lõppsaldo)");
   expect(read).not.toContain("salvestame");
   expect(read).toContain("Sinu vestlusi ega faile AI-hüppelaud ei saa.");
   // Report-only: no read ability is promised, and the unticked box means no connection (the handler denies it).
   const { b, html } = await consentPage("progress:report");
-  expect(html).not.toContain("tähtaegu ja tööde seisu");
+  expect(html).not.toContain("tähtaegu, tööde seisu");
   expect(html).toContain("öelda, mida ta saab sinu eest ära teha");
   expect(html).toContain("Ilma linnukeseta ühendust ei looda ja Scope test assistant saab teate, et keeldusid.");
   expect(html).not.toContain("ainult lugeda");
