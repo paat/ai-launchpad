@@ -1,19 +1,21 @@
-/** One-shot operator batch for ONE fixed public friction card.
+/** One-shot operator batch for ONE fixed public card (a friction card or a chooser explanation).
  *
  * Dry by default: no key read, no network, no ledger opened. An explicit
- * --live invocation precomputes one allowlisted friction card into the
- * exact existing reviewed ledger; the playbook view then displays that
- * saved card and never calls the model to render. No scheduler, queue
+ * --live invocation precomputes one allowlisted card into the exact
+ * existing reviewed ledger; the playbook view and /vali then display that
+ * saved card and never call the model to render. No scheduler, queue
  * or startup batch. Run: node dist/model-public-cards-cli.js ... (compiled, no tsx), or via the thin scripts/model-public-cards.ts developer wrapper
  */
 import { pathToFileURL } from "node:url";
 import {
-  FRICTION_TOPICS, PublicCards, findTopic, openExistingPublicLedger,
-  parseLocale, publicCardRequestId, type PublicLocale,
+  CHOOSER_TOPICS, FRICTION_TOPICS, PublicCards, findTopic, openExistingPublicLedger,
+  parseLocale, publicCardRequestId, type PublicLocale, type PublicTopic,
 } from "./model-public-cards.js";
 import { BASETEN_MODEL, PRICING_AS_OF, type FetchFn } from "./model-quality.js";
 
 export interface BatchArgs { live: boolean; confirmPricing: boolean; topicId: string | null; locale: PublicLocale; ledgerPath: string | null; list: boolean; }
+
+const BATCH_TOPICS: readonly PublicTopic[] = [...FRICTION_TOPICS, ...CHOOSER_TOPICS];
 
 export function parseArgs(argv: string[]): BatchArgs {
   const out: BatchArgs = { live: false, confirmPricing: false, topicId: null, locale: "en", ledgerPath: null, list: false };
@@ -40,10 +42,10 @@ export function parseArgs(argv: string[]): BatchArgs {
 export async function main(argv = process.argv.slice(2), deps: { env?: NodeJS.ProcessEnv; fetchFn?: FetchFn } = {}): Promise<number> {
   const env = deps.env ?? process.env;
   const args = parseArgs(argv);
-  if (args.list) { console.log(FRICTION_TOPICS.map((t) => t.id).join("\n")); return 0; }
-  const topic = findTopic(FRICTION_TOPICS, args.topicId);
+  if (args.list) { console.log(BATCH_TOPICS.map((t) => t.id).join("\n")); return 0; }
+  const topic = findTopic(BATCH_TOPICS, args.topicId);
   if (!topic) {
-    console.error(`--topic must be one of: ${FRICTION_TOPICS.map((t) => t.id).join(", ")}`);
+    console.error(`--topic must be one of: ${BATCH_TOPICS.map((t) => t.id).join(", ")}`);
     return 2;
   }
   if (!args.live) {
