@@ -1877,7 +1877,7 @@ export function assistantGuidePrompt(lang: Lang, assistant: "chatgpt" | "claude"
   return `Tere! Aita mul ühendada AI-hüppelaud oma ChatGPT-ga. Juhenda mind lihtsate sõnadega, üks samm korraga, ja oota, kuni ütlen „tehtud”.\n1. Ava seadetes ühendused (Apps) ja lisa uus ühendus.\n2. Nimi: AI-hüppelaud. Aadress: ${endpoint}.\n3. Logi sisse ja kinnita.\nKui ühendus töötab, kasuta AI-hüppelaua tööriista get_started.`;
 }
 
-export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; now?: Date; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] }; handover?: Handover }): Promise<string> {
+export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; now?: Date; expanded?: boolean; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] }; handover?: Handover }): Promise<string> {
   const l = o.lang, t = tr(l), now = o.now ?? new Date();
   const base = String(o.baseUrl ?? "").replace(/\/+$/, ""), endpoint = `${base}/mcp`;
   const openPath = `/uhenda/ava?a=${o.assistant}&lang=${l}`;
@@ -1897,11 +1897,13 @@ export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "
   const openLabel = t(`Ava ${name} — juhend on juba sees`, `Open ${name} — the guide is already in`);
   const openHint = t(`Vajuta saatmisnuppu ja tee, mida ${name} ütleb. Kui ${name} hoiatab, et tekst tuli lingist, on see tavaline: tekst on meilt.`, `Press the send button and do what ${name} says. If ${name} warns that the text came from a link, that is normal: the text is from us.`);
   // Without a public HTTPS address the open link would hand a localhost URL to a cloud assistant, so the hero is only the note.
+  // naita=1 is a link, not <details>: the waiting page reloads every 5s and would close a disclosure.
+  const reveal = `/uhenda?a=${o.assistant}&naita=1`;
   const hero = remoteReady
     ? `<a class="btn" href="${openPath}">${esc(openLabel)}</a>
 <p class="small">${esc(openHint)}</p>
 ${qr}
-<details><summary role="button">${t("Näita teksti", "Show the text")}</summary><pre>${esc(prompt)}</pre></details>`
+${o.expanded ? `<pre id="tekst">${esc(prompt)}</pre>` : `<p><a class="tap-link" href="${reveal}#tekst">${t("Näita teksti", "Show the text")}</a></p>`}`
     : httpsNote;
   const s = o.state;
   const chip = s.kind === "connected"
@@ -1918,7 +1920,7 @@ ${o.owner ? `<p class="small"><a class="tap-link" href="/setup">${t("Pole veel a
 <section class="card connect-hero">${hero}</section>
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p><p><a class="tap-link" href="/kataloog?g=raamatupidamine">${t("Järgmine samm: ühenda oma raamatupidamine → Kataloog", "Next step: connect your accounting → Catalogue")}</a></p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
-<details><summary id="steps-h" role="button">${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</summary>
+${o.expanded ? `<section class="card" id="ise"><h2>${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</h2>
 <p class="small">${esc(plan)}</p>
 <ol class="steps-big">${o.assistant === "claude"
     // Claude steps follow the tested Free-plan run (docs/live-pilot.md, 30 Oct 2026).
@@ -1928,7 +1930,7 @@ ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_P
     : `<li><h3 class="step-title">${t("Kopeeri aadress", "Copy the address")}</h3>${address}</li>
 <li><h3 class="step-title">${t("Ava ChatGPT seadetes ühendused, lisa uus ühendus ja kleebi sinna aadress.", "In ChatGPT settings, open connectors, add a new connector and paste the address.")}</h3></li>
 <li><h3 class="step-title">${t("Logi sisse ja vali, mida assistent tohib", "Sign in and choose what your assistant may do")}</h3><p class="small muted">`}${esc(t(`Märgi „Jah: ${name} valmistab ette …”, kui tahad, et ta valmistaks sulle kinnitamiseks kirju, arveid ja deklaratsioone.`, `Tick “Yes: ${name} prepares …” if you want it to prepare messages, invoices and returns for your approval.`))}</p></li></ol>
-<p class="small">${t("Kui assistent küsib tööriista luba, vali ‚Always allow' — AI-hüppelaud ise ei saada midagi; sind seob ainult kinnitus või sinu püsiluba.", "If your assistant asks for tool permission, choose ‘Always allow’ — AI Launchpad itself sends nothing; only an approval or your standing approval binds you.")}</p></details>
+<p class="small">${t("Kui assistent küsib tööriista luba, vali ‚Always allow' — AI-hüppelaud ise ei saada midagi; sind seob ainult kinnitus või sinu püsiluba.", "If your assistant asks for tool permission, choose ‘Always allow’ — AI Launchpad itself sends nothing; only an approval or your standing approval binds you.")}</p></section>` : `<p><a class="tap-link" href="${reveal}#ise">${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</a></p>`}
 ${o.calendar ? calendarSection(l, o.calendar) : ""}
 ${sampleFirst ? "" : handover}
 ${o.standing ? standingSection(l, o.standing, now) : ""}

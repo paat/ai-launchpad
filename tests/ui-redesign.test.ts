@@ -574,45 +574,45 @@ describe("landing and connect", () => {
     for (const k of ["approve", "allow"]) for (const p of ["out", "in", "tap"]) expect(css, `${k}-${p}`).toContain(`@keyframes lp-unpaid-${k}-${p}{`);
   });
 
-  test("connect: one open button, shared guide prompt, QR on public HTTPS, old steps inside details", async () => {
+  test("connect: one open button, shared guide prompt, QR on public HTTPS, old steps inside #ise when expanded", async () => {
     const endpoint = "https://launchpad.example.com/mcp";
-    const html = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
+    const html = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true, expanded: true });
     expect(html).toContain('<a href="/uhenda?a=chatgpt" aria-current="true">ChatGPT</a>');
     expect(html).toContain("Lihtsaim algus: Claude — töötab ka tasuta paketis.");
     expect(html).toContain("ChatGPT Pro paketis töötavad tähtajad ja juhised (ainult lugemine). Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.");
     expect(html).toContain('<a class="btn" href="/uhenda/ava?a=chatgpt&lang=et">Ava ChatGPT — juhend on juba sees</a>');
     expect(html).toContain("Vajuta saatmisnuppu ja tee, mida ChatGPT ütleb. Kui ChatGPT hoiatab, et tekst tuli lingist, on see tavaline: tekst on meilt.");
-    expect(html).toContain(`<pre>${esc(assistantGuidePrompt("et", "chatgpt", endpoint))}</pre>`);
+    expect(html).toContain(`<pre id="tekst">${esc(assistantGuidePrompt("et", "chatgpt", endpoint))}</pre>`);
     expect(html).toContain("<svg");
     expect(html).toContain('role="img"');
     expect(html).toContain("Telefonis: suuna kaamera sellele koodile.");
     expect(html).not.toContain("Jätka telefonis");
     expect(html).not.toContain('class="big-url"');
-    const diyAt = html.indexOf('<summary id="steps-h" role="button">Tee ise, ilma juhendita</summary>');
+    const diyAt = html.indexOf('<section class="card" id="ise"><h2>Tee ise, ilma juhendita</h2>');
     expect(diyAt).toBeGreaterThan(html.indexOf('id="connect-status"'));
     expect(html.slice(0, diyAt)).not.toContain('class="step-title"');
-    const diy = html.slice(diyAt, html.indexOf("</details>", diyAt));
+    const diy = html.slice(diyAt, html.indexOf("</section>", diyAt));
     expect(diy).toContain('class="step-title"');
-    expect(html).not.toMatch(/<details open[^>]*>\s*<summary id="steps-h">/);
+    expect(html).not.toContain('<summary id="steps-h"');
     expect([...html.matchAll(/<h3 class="step-title">(.*?)<\/h3>/g)].map(m => m[1])).toEqual(["Kopeeri aadress", "Ava ChatGPT seadetes ühendused, lisa uus ühendus ja kleebi sinna aadress.", "Logi sisse ja vali, mida assistent tohib"]);
     expect(html).toContain("Ootan, et ChatGPT ühenduks…");
     expect(html).toContain('href="/connection">Andmed ja õigused');
     expect(html).toContain('href="/setup"');
     const main = html.slice(0, html.indexOf('<details class="tech-details">'));
     expect(main).not.toMatch(/\bMCP\b|OAuth|scope|progress:/);
-    const htmlEn = await connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
+    const htmlEn = await connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true, expanded: true });
     expect(htmlEn).toContain("Easiest start: Claude — works on the free plan too.");
     expect(htmlEn).toContain("On ChatGPT Pro, deadlines and guidance work (read-only). Approvals (“Approve exactly this”) need ChatGPT Business.");
     expect(htmlEn).toContain('<a class="btn" href="/uhenda/ava?a=chatgpt&lang=en">Open ChatGPT — the guide is already in</a>');
-    expect(htmlEn).toContain(`<pre>${esc(assistantGuidePrompt("en", "chatgpt", endpoint))}</pre>`);
+    expect(htmlEn).toContain(`<pre id="tekst">${esc(assistantGuidePrompt("en", "chatgpt", endpoint))}</pre>`);
     expect(htmlEn).toContain("On your phone: point the camera at this code.");
     expect(htmlEn).toContain("Press the send button and do what ChatGPT says. If ChatGPT warns that the text came from a link, that is normal: the text is from us.");
-    const claude = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "anon" }, owner: false });
+    const claude = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "anon" }, owner: false, expanded: true });
     expect(claude).toContain('<a class="btn" href="/uhenda/ava?a=claude&lang=et">Ava Claude — juhend on juba sees</a>');
-    expect(claude).toContain(`<pre>${esc(assistantGuidePrompt("et", "claude", endpoint))}</pre>`);
+    expect(claude).toContain(`<pre id="tekst">${esc(assistantGuidePrompt("et", "claude", endpoint))}</pre>`);
     expect(claude).toContain("Claude lubab kohandatud ühendusi igas paketis (tasuta paketis üks ühendus). Testitud Claude&#39;i tasuta paketis (30.10.2026).");
     expect(claude).not.toContain("pole seda veel testitud");
-    const claudeDiy = claude.indexOf('<summary id="steps-h" role="button">Tee ise, ilma juhendita</summary>');
+    const claudeDiy = claude.indexOf('<section class="card" id="ise"><h2>Tee ise, ilma juhendita</h2>');
     expect(claudeDiy).toBeGreaterThan(claude.indexOf('id="connect-status"'));
     expect(claude.indexOf('class="step-title"')).toBeGreaterThan(claudeDiy);
     const steps = [...claude.matchAll(/<h3 class="step-title">(.*?)<\/h3>/g)].map(m => m[1]);
@@ -621,10 +621,10 @@ describe("landing and connect", () => {
     expect(claude).toContain("→ Continue → Add. Ära muuda midagi muud.");
     expect(claude).toContain("Logi sisse, et näha, kas sinu assistent on ühendatud.");
     expect(claude).not.toContain('href="/setup"');
-    const claudeEn = await connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "anon" }, owner: false });
+    const claudeEn = await connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "anon" }, owner: false, expanded: true });
     expect(claudeEn).toContain("Tested on Claude&#39;s Free plan (30 Oct 2026).");
     expect(claudeEn).toContain('<a class="btn" href="/uhenda/ava?a=claude&lang=en">Open Claude — the guide is already in</a>');
-    expect(claudeEn).toContain(`<pre>${esc(assistantGuidePrompt("en", "claude", endpoint))}</pre>`);
+    expect(claudeEn).toContain(`<pre id="tekst">${esc(assistantGuidePrompt("en", "claude", endpoint))}</pre>`);
     expect([...claudeEn.matchAll(/<h3 class="step-title">(.*?)<\/h3>/g)].map(m => m[1])).toEqual(["In Claude open Customize → Connectors → Add custom connector", "Name: AI Launchpad, address:", "Press Connect, sign in and confirm. If Claude asks for tool permission, press Allow."]);
     const ok = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "connected", who: "ChatGPT", at: "2026-11-03T12:32:00Z" }, owner: true, now: NOW });
     expect(ok).toContain("Ühendatud · ChatGPT jõudis kohale kell 14:32");
@@ -636,6 +636,33 @@ describe("landing and connect", () => {
     expect(await link("claude")).toBe("/uhenda/ava?a=claude&lang=et");
     expect(await link("chatgpt")).toBe("/uhenda/ava?a=chatgpt&lang=et");
     expect(await link("claude", "en")).toBe("/uhenda/ava?a=claude&lang=en");
+  });
+
+  test("connect: default hides the prompt and the steps behind naita=1 links; expanded keeps them open (tribunal T-004)", async () => {
+    const endpoint = "https://launchpad.example.com/mcp";
+    const closed = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
+    expect(closed).toContain('<a class="tap-link" href="/uhenda?a=chatgpt&naita=1#tekst">Näita teksti</a>');
+    expect(closed).toContain('<a class="tap-link" href="/uhenda?a=chatgpt&naita=1#ise">Tee ise, ilma juhendita</a>');
+    expect(closed).toContain('<a href="/uhenda?a=chatgpt" aria-current="true">ChatGPT</a>');
+    expect(closed).toContain('<a href="/uhenda?a=claude">Claude</a>');
+    expect(closed).not.toContain("<pre");
+    expect(closed).not.toContain('class="step-title"');
+    expect(closed).not.toContain('class="steps-big"');
+    expect(closed).not.toContain('id="tekst"');
+    expect(closed).not.toContain('id="ise"');
+    const open = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true, expanded: true });
+    expect(open).toContain(`<pre id="tekst">${esc(assistantGuidePrompt("et", "chatgpt", endpoint))}</pre>`);
+    expect(open).not.toContain("Näita teksti");
+    const iseAt = open.indexOf('<section class="card" id="ise">');
+    const ise = open.slice(iseAt, open.indexOf("</section>", iseAt));
+    expect(ise).toContain("<h2>Tee ise, ilma juhendita</h2>");
+    expect([...ise.matchAll(/<h3 class="step-title">(.*?)<\/h3>/g)].map((m) => m[1])).toEqual(["Kopeeri aadress", "Ava ChatGPT seadetes ühendused, lisa uus ühendus ja kleebi sinna aadress.", "Logi sisse ja vali, mida assistent tohib"]);
+    expect(open).toContain('<a href="/uhenda?a=chatgpt" aria-current="true">ChatGPT</a>');
+    const en = await connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "waiting" }, owner: true });
+    expect(en).toContain('<a class="tap-link" href="/uhenda?a=claude&naita=1#tekst">Show the text</a>');
+    expect(en).toContain('<a class="tap-link" href="/uhenda?a=claude&naita=1#ise">Do it yourself, without the guide</a>');
+    expect(en).not.toContain("<pre");
+    expect(en).not.toContain('class="steps-big"');
   });
 
   test("approval card: H1 is the document, why, period, 24 h validity, decided states hand the turn back", () => {
@@ -723,18 +750,26 @@ describe("/uhenda/ava", () => {
     expect(fixed.pathname).toBe("/new");
   });
 
-  test("a local server hides the open link and the prompt; old steps sit in a details element", async () => {
+  test("a local server hides the open link and the prompt; naita=1 shows the do-it-yourself steps", async () => {
     const html = await (await fetch(`${base}/uhenda?a=claude`)).text();
     expect(html).not.toContain("/uhenda/ava");
     expect(html).not.toContain("<pre>");
     expect(html).toContain("Avalik HTTPS-aadress pole selles serveris veel seadistatud");
     expect(html).not.toContain("<svg");
-    expect(html).toMatch(/<details><summary id="steps-h" role="button">Tee ise, ilma juhendita<\/summary>[\s\S]*class="step-title"/);
+    expect(html).toContain('<a class="tap-link" href="/uhenda?a=claude&naita=1#ise">Tee ise, ilma juhendita</a>');
+    expect(html).not.toContain('class="step-title"');
+    expect(html).not.toContain('id="tekst"');
     const en = await (await fetch(`${base}/uhenda?a=chatgpt&lang=en`)).text();
     expect(en).not.toContain("/uhenda/ava");
     expect(en).not.toContain("<pre>");
     expect(en).toContain("A public HTTPS address is not configured on this server yet");
-    expect(en).toMatch(/<details><summary id="steps-h" role="button">Do it yourself, without the guide<\/summary>[\s\S]*class="step-title"/);
+    expect(en).toContain('<a class="tap-link" href="/uhenda?a=chatgpt&naita=1#ise">Do it yourself, without the guide</a>');
+    expect(en).not.toContain('class="step-title"');
+    const open = await (await fetch(`${base}/uhenda?a=claude&naita=1`)).text();
+    expect(open).toContain('<section class="card" id="ise"><h2>Tee ise, ilma juhendita</h2>');
+    expect(open).toContain('class="step-title"');
+    expect(open).not.toContain("<pre>");
+    expect(open).not.toContain('href="/uhenda?a=claude&naita=1#ise"');
   });
 });
 
@@ -755,16 +790,21 @@ describe("QA minors (#21)", () => {
     expect(local).not.toContain("<svg");
     expect(local).not.toContain("/uhenda/ava");
     expect(local).not.toContain("<pre>");
+    expect(local).not.toContain('class="step-title"');
+    expect(local).toContain('<a class="tap-link" href="/uhenda?a=chatgpt&naita=1#ise">Tee ise, ilma juhendita</a>');
+    expect(local).not.toContain("#tekst");
     expect(local).toContain("Avalik HTTPS-aadress pole selles serveris veel seadistatud");
     const localhost = await connectBody({ lang: "et", baseUrl: "http://localhost:3000", assistant: "claude", state: { kind: "anon" }, owner: false });
     expect(localhost).not.toContain("<svg");
     expect(localhost).not.toContain("/uhenda/ava");
     expect(localhost).not.toContain("<pre>");
+    expect(localhost).toContain('<a class="tap-link" href="/uhenda?a=claude&naita=1#ise">Tee ise, ilma juhendita</a>');
     expect(localhost).toContain("Avalik HTTPS-aadress pole selles serveris veel seadistatud");
     const https = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "anon" }, owner: false });
     expect(https).toContain("<svg");
     expect(https).toContain('<a class="btn" href="/uhenda/ava?a=chatgpt&lang=et">Ava ChatGPT — juhend on juba sees</a>');
-    expect(https).toContain(`<pre>${esc(assistantGuidePrompt("et", "chatgpt", "https://launchpad.example.com/mcp"))}</pre>`);
+    expect(https).toContain('<a class="tap-link" href="/uhenda?a=chatgpt&naita=1#tekst">Näita teksti</a>');
+    expect(https).not.toContain("<pre>");
     expect(https).not.toContain("Jätka telefonis");
     expect(https).not.toContain("Avalik HTTPS-aadress pole selles serveris veel seadistatud");
   });

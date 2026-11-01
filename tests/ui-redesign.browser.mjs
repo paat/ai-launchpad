@@ -32,6 +32,17 @@ const { NOW, mariDeadlines, longApproval, pendingApproval, longLetterApproval, a
 const uhendaWaiting = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
 const uhendaHoBody = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: CSRF, rules: [] }, handover: uhendaHandover });
 const uhendaLocalBody = await connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "chatgpt", state: { kind: "anon" }, owner: false });
+const uhendaExpanded = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true, expanded: true });
+assert.match(uhendaWaiting, /<a class="tap-link" href="\/uhenda\?a=chatgpt&naita=1#tekst">Näita teksti<\/a>/);
+assert.match(uhendaWaiting, /<a class="tap-link" href="\/uhenda\?a=chatgpt&naita=1#ise">Tee ise, ilma juhendita<\/a>/);
+assert.equal(uhendaWaiting.includes("<pre"), false, "default /uhenda has no prompt <pre>");
+assert.equal(uhendaWaiting.includes('class="step-title"'), false, "default /uhenda has no steps list");
+assert.match(uhendaLocalBody, /<a class="tap-link" href="\/uhenda\?a=chatgpt&naita=1#ise">Tee ise, ilma juhendita<\/a>/);
+assert.equal(uhendaLocalBody.includes("<pre"), false);
+assert.equal(uhendaLocalBody.includes("#tekst"), false, "local /uhenda has no prompt link");
+assert.match(uhendaExpanded, /<pre id="tekst">/);
+assert.match(uhendaExpanded, /<section class="card" id="ise">[\s\S]*class="step-title"/);
+assert.match(uhendaHoBody, /<a class="tap-link" href="\/uhenda\?a=claude&naita=1#tekst">Näita teksti<\/a>/);
 const tana = (a, extra = {}) => tanaBody({ lang: "et", csrf: CSRF, sample: true, label: "Synthetic OÜ", assessment: a, coverage: computeCoverage(a), assessedAt: a ? "2026-10-28T10:00:00Z" : null, exclusions: [], approvals: [], progress: [], deadlines: null, needs: [], reportCount: 1, now: NOW, ...extra });
 const pageHtml = {
   "connection-https": () =>

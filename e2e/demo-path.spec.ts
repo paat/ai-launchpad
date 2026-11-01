@@ -42,13 +42,16 @@ test("/uhenda: Claude preselected (QA m11), ChatGPT one tap away, no phone hand-
   expect(await page.locator('meta[http-equiv="refresh"]').count()).toBe(0);
   await noOverflow(page);
   await page.screenshot({ path: `${SHOTS}/uhenda-390.png`, fullPage: true });
-  // The old steps and the plan line stay, folded under „Tee ise”.
-  await page.locator("#steps-h").click();
+  // The old steps and the plan line stay behind „Tee ise”; ?naita=1 keeps them open across a reload.
+  await page.getByRole("link", { name: "Tee ise, ilma juhendita" }).click();
+  await expect(page).toHaveURL(/\/uhenda\?a=claude&naita=1#ise$/);
+  await expect(page.locator("#ise")).toBeVisible();
   await expect(page.getByText("Testitud Claude'i tasuta paketis (30.10.2026).", { exact: false })).toBeVisible();
   await expect(page.getByText("Vajuta Connect, logi sisse ja kinnita. Kui Claude küsib tööriista luba, vajuta Allow.")).toBeVisible();
   await page.getByRole("link", { name: "ChatGPT", exact: true }).click();
   await expect(page.getByRole("link", { name: "ChatGPT", exact: true })).toHaveAttribute("aria-current", "true");
-  await page.locator("#steps-h").click();
+  await page.getByRole("link", { name: "Tee ise, ilma juhendita" }).click();
+  await expect(page).toHaveURL(/\/uhenda\?a=chatgpt&naita=1#ise$/);
   await expect(page.getByText("Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", { exact: false })).toBeVisible();
 });
 
@@ -57,7 +60,7 @@ test("/uhenda for a sample owner: „Käest ära” before the setup steps, no a
   await page.getByRole("button", { name: /Mari Disain/ }).click();
   await page.goto("/uhenda");
   const y = async (sel: string) => (await page.locator(sel).boundingBox())!.y;
-  expect(await y("#kaest-ara")).toBeLessThan(await y("#steps-h"));
+  expect(await y("#kaest-ara")).toBeLessThan(await y('a[href="/uhenda?a=claude&naita=1#ise"]'));
   await expect(page.locator(".connect-hero").getByText("Avalik HTTPS-aadress pole selles serveris veel seadistatud", { exact: false })).toBeVisible();
   await expect(page.locator("#connect-status")).toContainText("Näidistööruumis ühenduse olekut ei jälgita.");
   // Neither local-setup notice needs the owner, so neither wears the attention amber (#FFF4D6 / #F0C36B).

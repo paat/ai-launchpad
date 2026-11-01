@@ -689,7 +689,8 @@ describe("standing approvals (#45)", () => {
     const o = owner("std-uhendus"), c = await client(o.token);
     const html0 = await html(o, "/uhenda");
     expect(html0).toContain("Lisa püsiluba");
-    expect(html0).toContain("Kui assistent küsib tööriista luba, vali ‚Always allow' — AI-hüppelaud ise ei saada midagi; sind seob ainult kinnitus või sinu püsiluba.");
+    // The sentence lives in the do-it-yourself steps, opened with ?naita=1 so a refresh cannot fold it (tribunal T-004).
+    expect(await html(o, "/uhenda?naita=1")).toContain("Kui assistent küsib tööriista luba, vali ‚Always allow' — AI-hüppelaud ise ei saada midagi; sind seob ainult kinnitus või sinu püsiluba.");
     // No approved recipients yet: the scoped rule would cover nobody.
     expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "2000" })).status).toBe(409);
     const msg = reminder({ kind: "send_message" });
