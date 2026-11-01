@@ -383,6 +383,15 @@ describe("agent-facing copy over MCP", () => {
     expect(send).toContain("always omit amount_cents (a follow-up message has no amount)");
     expect(send).toContain('playbook_id: REQUIRED, "customer-follow-ups"');
     expect(send).toContain("Each follow-up message is approved one by one, never by a standing approval.");
+    const callAt = p.steps.findIndex((x) => x.startsWith("For a call, the owner calls."));
+    const messageAt = p.steps.findIndex((x) => x.startsWith("For a message, draft it"));
+    expect(callAt).toBeGreaterThan(p.steps.findIndex((x) => x.includes("Ask the owner which ones to act on")));
+    expect(messageAt).toBe(callAt + 1);
+    expect(p.steps.filter((x) => x.startsWith("For a message: ")).map((x) => x.slice("For a message: ".length))).toEqual([
+      "Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved (including auto_approved under the owner's standing approval) and usable is not false, send exactly that text to exactly that address with your own tools without asking the owner again; otherwise do not send. Launchpad sends nothing.",
+      "Call record_action_outcome with outcome sent (or failed).",
+    ]);
+    expect(byId("payment-reminder").steps.some((x) => x.startsWith("For a message:"))).toBe(false);
     expect(send).not.toContain("auto_approved");
     expect(send).not.toContain("If the reply is auto_approved");
     expect(steps).not.toContain("If the reply is auto_approved (the owner's standing approval), go on without asking the owner.");

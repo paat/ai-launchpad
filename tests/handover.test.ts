@@ -300,7 +300,13 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     const et = nextCard(handoverSection(h, "et", "c", NOW));
     const en = nextCard(handoverSection(h, "en", "c", NOW));
     expect(et).toContain("Lase assistendil öelda, kellele sel nädalal helistada või kirjutada");
-    expect(et).toContain("„Kellele peaksin sel nädalal helistada või kirjutada?”");
+    expect(et).toContain("„Kellele peaksin sel nädalal helistama või kirjutama?”");
+    expect(et).toContain('href="/kataloog?g=kliendid"');
+    expect(et).toContain("Ühenda oma kliendinimekiri → Kataloog");
+    expect(en).toContain('href="/kataloog?g=kliendid"');
+    expect(en).toContain("Link your customer list → Catalogue");
+    expect(et).not.toContain("/kataloog?g=raamatupidamine");
+    expect(en).not.toContain("/kataloog?g=raamatupidamine");
     expect(et).toContain("Loeb sinu kliendinimekirja või Kliendid lehte ja iga sõnum kinnitatakse ükshaaval.");
     expect(en).toContain("Let your assistant tell you who to call or message this week");
     expect(en).toContain("„Who should I call or message this week?”");
@@ -351,6 +357,8 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     for (const card of [reminderEt, reminderEn, obligationEt, obligationEn, booksEt, booksEn]) {
       expect(card).not.toContain("Lase assistendil öelda, kellele sel nädalal helistada või kirjutada");
       expect(card).not.toContain("Let your assistant tell you who to call or message this week");
+      expect(card).toContain('href="/kataloog?g=raamatupidamine"');
+      expect(card).not.toContain("/kataloog?g=kliendid");
     }
   });
 });
