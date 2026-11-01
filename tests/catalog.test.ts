@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, test, expect } from "vitest";
 import { safeHttps, searchServices, loadCatalog } from "../src/catalog.js";
 
@@ -70,6 +72,38 @@ describe("safeHttps strict standalone-URL gate", () => {
     });
     expect(byId("trivis").jobs).toContain("contacts, deals, interactions");
     expect(byId("trivis").access_and_price).toContain("write");
+  });
+
+  test("count partitions reconcile with the record total", () => {
+    const raw = JSON.parse(readFileSync(join(import.meta.dirname, "..", "docs", "research", "catalog", "estonian-business-services.json"), "utf8")) as {
+      counts: {
+        records: number; email_calendar_records: number; initial_sector_records: number;
+        supplement_records: number; supporting_records: number;
+        by_research_leg: Record<string, number>; by_group: Record<string, number>; by_interface: Record<string, number>;
+      };
+      records: { research_leg: string; catalog_group: string; interface_class: string }[];
+    };
+    const { counts, records } = raw;
+    expect(records).toHaveLength(counts.records);
+    expect(loadCatalog()).toHaveLength(counts.records);
+    const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0);
+    expect(sum(counts.by_research_leg)).toBe(counts.records);
+    expect(sum(counts.by_group)).toBe(counts.records);
+    expect(sum(counts.by_interface)).toBe(counts.records);
+    const legs = counts.by_research_leg;
+    expect(legs.accounting + legs["banking-data"] + legs["other-b2b"]).toBe(counts.initial_sector_records);
+    expect(legs["email-workspaces"] + legs["email-local"] + legs["email-scheduling"] + legs["email-community"]).toBe(counts.email_calendar_records);
+    expect(legs.couriers + legs.browsers).toBe(counts.supplement_records);
+    expect(legs.supplementary).toBe(counts.supporting_records);
+    expect(counts.initial_sector_records + counts.supporting_records + counts.supplement_records + counts.email_calendar_records).toBe(counts.records);
+    const tally = (key: "research_leg" | "catalog_group" | "interface_class") => {
+      const m: Record<string, number> = {};
+      for (const r of records) m[r[key]] = (m[r[key]] ?? 0) + 1;
+      return m;
+    };
+    expect(tally("research_leg")).toEqual(counts.by_research_leg);
+    expect(tally("catalog_group")).toEqual(counts.by_group);
+    expect(tally("interface_class")).toEqual(counts.by_interface);
   });
 
   test("all actual catalog source URLs stay linkable", () => {

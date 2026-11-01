@@ -4,7 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { openDb } from "../src/db.js";
 import { arikratt } from "../src/arikratt.js";
-import { APPROVAL_KINDS, PLAYBOOKS } from "../src/catalog.js";
+import { APPROVAL_KINDS, PLAYBOOKS, searchServices } from "../src/catalog.js";
 import { buildMcpServer, companyObligations, type Ctx } from "../src/mcp.js";
 import { computeObligations, type CompanyFacts, type Fact } from "../src/obligations.js";
 import { DEMO_FIXTURES } from "../src/fixtures.js";
@@ -128,21 +128,41 @@ describe("executable job playbooks (#26)", () => {
     expect(verify).toContain("or the mailbox they agreed to use instead");
     expect(verify).toContain("e-mail, only the date of the newest message, with no subject or content;");
     expect(verify).toContain("Do not create, change, delete or send anything during setup.");
-    expect(verify).toContain("For customers, only the number of contacts or deals, with no names.");
+    expect(verify).toContain("For customers, ask the connector for the number of contacts or deals; never list or read customer records to count them; if the connector offers no count, report only that one read-only call succeeded, and show or repeat nothing from it.");
+    expect(verify).not.toContain("with no names");
+    expect(p.verify_with).toContain("the owner sees the same number of contacts or deals in their own customer tool");
     const freePlan = "Claude's free plan allows one custom connector and AI Launchpad already uses it: if Add custom connector is greyed out, say so plainly, explain that removing AI Launchpad stops deadlines and approvals, suggest upgrading the plan, and stop here without the last step; never suggest removing AI Launchpad.";
-    expect(customers).toHaveLength(1);
-    const cust = customers[0];
-    expect(cust.startsWith("Customers:")).toBe(true);
-    for (const id of ["pipedrive", "hubspot", "scoro", "trivis"]) expect(cust, id).toContain(`search_services with "${id}"`);
+    const nav = "in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.";
+    expect(customers.length).toBeGreaterThan(1);
+    expect(customers.every((x) => x.startsWith("Customers:"))).toBe(true);
+    const cust = customers.join(" ");
+    for (const id of ["pipedrive", "hubspot", "scoro", "trivis"]) {
+      expect(searchServices(id, 25).map((r) => r.id), id).toContain(id);
+      expect(cust, id).toContain(`search_services with "${id}"`);
+      expect(cust, id).toContain(`quote only the entry with id ${id}`);
+    }
     expect(cust).not.toContain('search_services with "CRM"');
     expect(cust).toContain("if its key or sign-in cannot be limited to reading, say plainly that it cannot be linked safely yet, because the key could also change the books, and stop here: skip all remaining steps.");
-    expect(cust).toContain(freePlan);
     expect(acc.join(" ")).toContain(freePlan);
+    expect(acc.join(" ")).toContain(nav);
+    const scoro = customers.find((x) => x.includes('search_services with "scoro"'))!;
+    const trivis = customers.find((x) => x.includes('search_services with "trivis"'))!;
+    for (const step of [scoro, trivis]) {
+      expect(step).toContain(nav);
+      expect(step).toContain(freePlan);
+      expect(step).toMatch(/Once the connector is added, go to the last step\.$/);
+    }
     expect(cust).toContain("do not search");
     expect(cust).toContain("Do not create or edit any sheet");
     expect(cust).toContain("nothing needs linking");
-    expect(cust).toContain("the customer list is the owner's; Launchpad does not keep it.");
-    expect(cust).toContain("Never send promotional messages to people without their consent, and nothing is sent without the owner's approval.");
+    expect(cust).toContain("The owner is responsible for the customer list and controls it, and Launchpad does not keep it.");
+    expect(cust).toContain("Do not send a promotional message to a person without their consent, unless it is the existing-customer exception for the owner's own similar products, with an opt-out.");
+    expect(cust).toContain("Any message is sent only through a send_message approval.");
+    expect(customers[0]).toContain("If a connector for the owner's customer tool already answers a read-only question, skip to the last step.");
+    expect(cust).toContain("Pipedrive is in this assistant's own connector directory (Claude: Customize → Connectors / Browse; ChatGPT: its apps): offer that, and once it is added, go to the last step.");
+    expect(cust).toContain("HubSpot is in this assistant's own connector directory (Claude: Customize → Connectors / Browse; ChatGPT: its apps): offer that, and once it is added, go to the last step.");
+    expect(cust).toContain("Launchpad does not vouch for it, and once it is added, go to the last step.");
+    expect(customers.find((x) => x.includes("no customer tool"))).toContain("Then stop here without the last step.");
     for (const id of ["payment-reminder", "vat-return-prep", "annual-report"]) expect(byId(id).needs[0], id).toContain("(if no accounting connector answers yet, follow the connect-service playbook)");
   });
 

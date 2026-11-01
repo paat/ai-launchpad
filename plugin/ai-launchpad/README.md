@@ -4,7 +4,7 @@ Back office for Estonian small businesses, inside Claude.
 
 ## Use it
 
-Ask Claude about your deadlines, your annual report or your books, or say "help me connect my accounting" or "link my e-mail". Claude checks public data and your own files first, asks only what nobody else knows, and walks you through linking your accounting software, e-mail or LHV bank in plain words. You do every login yourself.
+Ask Claude about your deadlines, your annual report or your books, or say "help me connect my accounting" or "link my e-mail". Claude checks public data and your own files first, asks only what nobody else knows, and walks you through linking your accounting software, e-mail, LHV bank or customer list in plain words. You do every login yourself.
 
 Nothing is sent, paid or filed until you approve the exact content. You approve once, by saying yes to Claude.
 
