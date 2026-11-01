@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import type { Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { createApp, type Config } from "../src/app.js";
@@ -9,16 +9,16 @@ import type { ApprovalRow } from "../src/mcp.js";
 const SUBJECT = "synthetic-sandbox-test-google";
 type Started = { cfg: Config; db: Db; server: Server; base: string; close: () => Promise<void> };
 
-async function start(db = openDb(":memory:")): Promise<Started> {
-  const cfg: Config = { demo: false, production: true, dbPath: ":memory:", baseUrl: "https://127.0.0.1", modelMode: "test", allowedHosts: ["127.0.0.1"], googleAllowedSubjects: [SUBJECT] };
+async function start(db = openDb(":memory:"), over: Partial<Config> = {}): Promise<Started> {
+  const cfg: Config = { demo: false, production: true, dbPath: ":memory:", baseUrl: "https://127.0.0.1", modelMode: "test", allowedHosts: ["127.0.0.1"], googleAllowedSubjects: [SUBJECT], ...over };
   const { app } = createApp(cfg, db);
   const server = await new Promise<Server>((ok) => { const s = app.listen(0, "127.0.0.1", () => ok(s)); });
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   cfg.baseUrl = base.replace("http:", "https:");
   return { cfg, db, server, base, close: () => new Promise<void>((ok) => { server.close(() => ok()); server.closeAllConnections(); }) };
 }
-async function withServer(run: (s: Started) => Promise<void>) {
-  const s = await start();
+async function withServer(run: (s: Started) => Promise<void>, over: Partial<Config> = {}) {
+  const s = await start(openDb(":memory:"), over);
   try { await run(s); } finally { await s.close(); s.db.close(); }
 }
 const field = (html: string, name: string) => new RegExp(`name="${name}" value="([^"]+)"`).exec(html)![1];
@@ -26,8 +26,8 @@ const count = (db: Db, table: string, ownerId?: string) => (db.prepare(`SELECT c
 
 class Browser {
   cookies = new Map<string, string>();
-  async request(s: Started, method: "GET" | "POST", path: string, fields?: Record<string, string>) {
-    const res = await fetch(s.base + path, { method, redirect: "manual", headers: { connection: "close", cookie: [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; "), ...(fields ? { "content-type": "application/x-www-form-urlencoded", origin: s.cfg.baseUrl } : {}) }, body: fields ? new URLSearchParams(fields) : undefined });
+  async request(s: Started, method: "GET" | "POST", path: string, fields?: Record<string, string>, headers?: Record<string, string>) {
+    const res = await fetch(s.base + path, { method, redirect: "manual", headers: { connection: "close", cookie: [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; "), ...(fields ? { "content-type": "application/x-www-form-urlencoded", origin: s.cfg.baseUrl } : {}), ...headers }, body: fields ? new URLSearchParams(fields) : undefined });
     for (const c of res.headers.getSetCookie()) {
       const [pair] = c.split(";"), i = pair.indexOf("=");
       this.cookies.set(pair.slice(0, i), pair.slice(i + 1));
@@ -45,6 +45,12 @@ async function sandbox(s: Started, browser = new Browser()) {
   const owner = s.db.prepare("SELECT * FROM owners WHERE kind='sandbox' ORDER BY rowid DESC LIMIT 1").get() as { id: string; subject: string; created_at: string };
   const pending = s.db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state='pending'").get(owner.id) as ApprovalRow;
   return { browser, owner, pending, started };
+}
+async function proovi(s: Started, ip?: string) {
+  const browser = new Browser(), headers = ip ? { "x-forwarded-for": ip } : undefined;
+  const form = await browser.request(s, "GET", "/proovi", undefined, headers);
+  expect(form.status).toBe(200);
+  return browser.request(s, "POST", "/proovi", { preauth: field(form.body, "preauth") }, headers);
 }
 function google(s: Started, id = "own_google") {
   const now = new Date().toISOString(), raw = `google-session-${id}`;
@@ -181,13 +187,53 @@ test("POST /proovi allows five attempts per IP per ten minutes, then renders a 4
   expect(count(s.db, "owners")).toBe(5);
 }));
 
+test("six addresses in one IPv6 /64 share the sandbox limit; another /64 is independent", async () => withServer(async (s) => {
+  for (const ip of ["2001:db8:abcd:12::1", "2001:db8:abcd:12::2", "2001:db8:abcd:12:aaaa:bbbb:cccc:dddd", "2001:db8:abcd:12:1:2:3:4", "2001:DB8:ABCD:12:ffff::ee"]) expect((await proovi(s, ip)).status).toBe(302);
+  const blocked = await proovi(s, "2001:0db8:abcd:0012::9");
+  expect(blocked.status).toBe(429);
+  expect(blocked.body).toContain("Liiga palju katseid. Oota kümme minutit ja proovi uuesti.");
+  expect((await proovi(s, "2001:db8:abcd:13::1")).status).toBe(302);
+  expect((await proovi(s, "2001:db8:abcd:12::ffff")).status).toBe(429);
+  expect(count(s.db, "owners")).toBe(6);
+}, { trustLoopbackProxy: true }));
+
+test("mapped IPv4 is limited as that IPv4, not as one shared prefix", async () => withServer(async (s) => {
+  for (let i = 1; i <= 6; i++) expect((await proovi(s, `::ffff:198.51.100.${i}`)).status).toBe(302);
+  for (let i = 0; i < 5; i++) expect((await proovi(s, "203.0.113.10")).status).toBe(302);
+  for (const ip of ["::ffff:203.0.113.10", "0:0:0:0:0:ffff:203.0.113.10", "::ffff:cb00:710a"]) {
+    const blocked = await proovi(s, ip);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body).toContain("Liiga palju katseid. Oota kümme minutit ja proovi uuesti.");
+  }
+  expect(count(s.db, "owners")).toBe(11);
+}, { trustLoopbackProxy: true }));
+
 test("the global active-sandbox cap renders the plain-language 503 page and creates nothing", async () => withServer(async (s) => {
   const insert = s.db.prepare("INSERT INTO owners(id,subject,kind,created_at) VALUES(?,?,'sandbox',?)"), now = new Date().toISOString();
-  for (let i = 0; i < 300; i++) insert.run(`old-${i}`, `sandbox:capacity-${i}`, now);
+  for (let i = 0; i < 999; i++) insert.run(`old-${i}`, `sandbox:capacity-${i}`, now);
+  await sandbox(s);
+  expect(count(s.db, "owners")).toBe(1000);
   const browser = new Browser(), form = await browser.request(s, "GET", "/proovi");
+  const sessions = count(s.db, "sessions");
   const full = await browser.request(s, "POST", "/proovi", { preauth: field(form.body, "preauth") });
   expect(full.status).toBe(503); expect(full.body).toContain("Näidistööruume on praegu liiga palju, proovi hiljem.");
-  expect(count(s.db, "owners")).toBe(300); expect(count(s.db, "sessions")).toBe(0);
+  expect(count(s.db, "owners")).toBe(1000); expect(count(s.db, "sessions")).toBe(sessions);
+}));
+
+test("POST /delete reissues a sandbox session for two hours", async () => withServer(async (s) => {
+  const { browser } = await sandbox(s);
+  const deleted = await browser.request(s, "POST", "/delete", { csrf: await browser.csrf(s) });
+  expect(deleted.status).toBe(302);
+  expect(deleted.headers.get("location")).toBe("/");
+  expect(deleted.headers.getSetCookie().join(" ")).toContain("Max-Age=7200");
+  expect((await browser.request(s, "GET", "/")).status).toBe(200);
+  const now = Date.now();
+  const clock = vi.spyOn(Date, "now").mockReturnValue(now + 3 * 3600_000);
+  try {
+    const later = await browser.request(s, "GET", "/");
+    expect(later.status).toBe(302);
+    expect(later.headers.get("location")).toBe("/login");
+  } finally { clock.mockRestore(); }
 }));
 
 const ownerTables = ["workspaces", "sessions", "mcp_tokens", "assessments", "reports", "progress", "candidates", "activity", "approvals", "unmet_needs", "calendar_feeds", "standing_approvals", "oauth_pending", "oauth_grants"];

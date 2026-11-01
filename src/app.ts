@@ -1,6 +1,7 @@
 import { LaunchpadOAuth, CONSENT_PATH, connectCookie, touchLastUsed } from "./oauth.js";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { isIP } from "node:net";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
 import { arikratt } from "./arikratt.js";
@@ -82,6 +83,42 @@ function toggleHref(req: Request, l: Lang): string {
 }
 const isLoopback = (req: Request) => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? "");
 
+// Sandbox attempts are keyed by client prefix, not the raw address. An IPv6
+// client can rotate inside one /64; those share five starts per ten minutes.
+// IPv4-mapped IPv6 (`::ffff:a.b.c.d`, any spelling) is that IPv4.
+function sandboxRateKey(ip: string): string {
+  const raw = ip.trim().toLowerCase();
+  if (isIP(raw) === 4) return raw;
+  if (isIP(raw) !== 6) return raw || "?";
+  const hextets = ipv6Hextets(raw);
+  if (!hextets) return raw;
+  if (hextets.slice(0, 5).every((h) => h === "0000") && hextets[5] === "ffff") {
+    const hi = Number.parseInt(hextets[6], 16), lo = Number.parseInt(hextets[7], 16);
+    return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  }
+  return hextets.slice(0, 4).join(":");
+}
+function ipv6Hextets(ip: string): string[] | null {
+  let s = ip;
+  const zone = s.indexOf("%");
+  if (zone >= 0) s = s.slice(0, zone);
+  const colon = s.lastIndexOf(":");
+  const dotted = s.slice(colon + 1);
+  if (dotted.includes(".")) {
+    const nums = dotted.split(".").map((p) => /^\d{1,3}$/.test(p) ? Number(p) : NaN);
+    if (nums.length !== 4 || nums.some((n) => !Number.isInteger(n) || n > 255)) return null;
+    s = `${s.slice(0, colon + 1)}${((nums[0] << 8) | nums[1]).toString(16)}:${((nums[2] << 8) | nums[3]).toString(16)}`;
+  }
+  const halves = s.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  if ((halves.length === 1 && head.length !== 8) || (halves.length === 2 && head.length + tail.length >= 8)) return null;
+  const full = [...head, ...Array(8 - head.length - tail.length).fill("0"), ...tail];
+  if (full.length !== 8 || full.some((h) => !/^[0-9a-f]{1,4}$/.test(h))) return null;
+  return full.map((h) => h.padStart(4, "0"));
+}
+
 // Calendar feed limit (per process, in memory): 60 fetches per token per
 // hour, so a leaked feed URL cannot be used as a lookup proxy.
 const FEED_FETCHES_PER_HOUR = 60, FEED_WINDOW_MS = 3600_000;
@@ -130,7 +167,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const o = db.prepare("SELECT kind,subject FROM owners WHERE id=?").get(ownerId) as { kind: string; subject: string } | undefined;
     return !!o && o.kind === "sandbox" && o.subject.startsWith("sandbox:");
   }
-  const SANDBOX_TTL_MS = 24 * 3600_000, SANDBOX_LIMIT = 300;
+  const SANDBOX_TTL_MS = 24 * 3600_000, SANDBOX_LIMIT = 1000, SANDBOX_SESSION_MS = 2 * 3600_000;
   const sandboxOwnerTables = ["workspaces", "sessions", "mcp_tokens", "assessments", "reports", "progress", "candidates", "activity", "approvals", "unmet_needs", "calendar_feeds", "standing_approvals"];
   function cleanupSandboxes(now = Date.now()) {
     const expired = db.prepare("SELECT id FROM owners WHERE kind='sandbox' AND created_at<=?").all(new Date(now - SANDBOX_TTL_MS).toISOString()) as { id: string }[];
@@ -270,6 +307,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     return row;
   }
   function startSession(req: Request, res: Response, ownerId: string, maxAgeMs = 8 * 3600_000) {
+    // Two hours for every sandbox path, including POST /delete. Callers cannot extend it.
+    if ((db.prepare("SELECT kind FROM owners WHERE id=?").get(ownerId) as { kind: string } | undefined)?.kind === "sandbox") maxAgeMs = SANDBOX_SESSION_MS;
     // Rotate: any session the browser already held is invalidated at sign-in.
     const old = cookieVal(req, "lp_session");
     if (old) db.prepare("DELETE FROM sessions WHERE id_hash=?").run(sha256(old));
@@ -347,7 +386,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   }
   const sandboxAttempts = new Map<string, number[]>();
   function sandboxRateOk(req: Request): boolean {
-    const ip = req.ip || req.socket.remoteAddress || "?";
+    const ip = sandboxRateKey(req.ip || req.socket.remoteAddress || "?");
     const now = Date.now();
     const recent = (sandboxAttempts.get(ip) ?? []).filter((t) => now - t < 600_000);
     if (recent.length >= 5) { sandboxAttempts.set(ip, recent); return false; }
@@ -402,7 +441,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (active >= SANDBOX_LIMIT) return prooviError(req, res, 503, t("Proovi veidi hiljem", "Try again later"), t("Näidistööruume on praegu liiga palju, proovi hiljem.", "There are too many sample workspaces right now. Please try later."));
     const ownerId = ensureOwner(`sandbox:${randomBytes(24).toString("base64url")}`, null, "sandbox", "Mari Disain OÜ (näidis)");
     seedSandbox(ownerId);
-    startSession(req, res, ownerId, 2 * 3600_000);
+    startSession(req, res, ownerId, SANDBOX_SESSION_MS);
     res.append("set-cookie", "lp_preauth=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
     logActivity(db, ownerId, "owner", "sandbox_started", "ok", "Temporary synthetic sandbox started; nothing is really sent.");
     res.redirect("/");
