@@ -211,11 +211,12 @@ Set stale_after to 1 year from today unless the fact has its own end date. Keep 
 ];
 export const DOMAINS = ["money", "customers", "people", "legal_sector", "operations"] as const;
 export const FRAMEWORK = {
-  version: "assessment-framework/3",
+  version: "assessment-framework/4",
   domains: DOMAINS,
   questions: [
     "What responsibilities matter here (applicable / not applicable / unresolved, core or non-core, with short reason and evidence references)? Use each responsibility id once; missing domains stay visibly unassessed.",
     "Who handles each one? To claim arrangement 'assistant_assessed' (agent judgment: handled), name the actual arrangement via executor, their access/connection, the success criterion and the next checkpoint. Without all four it does not count as handled. It is still not independent verification.",
+    "What is the state of each job right now? When you have just looked (books, invoices, bank), set current_state: 'in_order' when nothing is outstanding, 'open' when work is waiting; leave it out when you have not checked. Which services can you reach? List connections by kind (accounting, email, bank, calendar, drive for an online drive such as Google Drive or OneDrive, customers, browser): 'linked' for a working connector, 'file' when the owner shares exports instead, 'not_linked' otherwise, with the service name.",
     "Where is the leverage: which single next action removes the most owner work, and why first (R-001)?",
     "What remains uncertain, unsupported, or owner-only? Never silently drop unfinished work: retain every previously mapped row; omissions are rejected. Explicitly mark a responsibility not_applicable with a new reason when it no longer applies. Explain every change of applicability or core status. report_progress task_id must match a mapped responsibility in this workspace.",
     "Final assessment (yours, as the agent): short conclusion, scope, assumptions, gaps, estimated effort saved with honest uncertainty (mark whether it is an estimate or observed; leave it out rather than invent hours).",

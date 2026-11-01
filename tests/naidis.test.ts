@@ -102,7 +102,7 @@ describe("#21 public synthetic walkthrough", () => {
     expect(today).toContain("Saadetud: demo");
     expect(today).toContain("Makstud: demo");
     expect(today).toContain("Valmistas ette: KMD ettevalmistus");
-    expect(today).toContain("Käest ära:");
+    expect(today).toContain("Kontoritöö:");
     const approval = await (await fetch(`${base}/naidis/kinnitus`)).text();
     expect(approval).toContain(NAIDIS.pendingApproval.id);
     expect(approval).toContain(`action="/approvals/${NAIDIS.pendingApproval.id}/decide"`);
@@ -112,7 +112,7 @@ describe("#21 public synthetic walkthrough", () => {
   test("Tehtud has a sent receipt, „Käest ära” and the closing connection action", async () => {
     const html = await (await fetch(`${base}/naidis/tehtud`)).text();
     expect(html).toContain("Saadetud: demo");
-    expect(html).toContain("Käest ära:");
+    expect(html).toContain("Kontoritöö:");
     expect(html).toContain("Iga toimingu kviitung ja see, mis on sinu käest ära.");
     expect(html).toContain('<p class="naidis-cta"><a class="btn" href="/uhenda">Ühenda oma assistent</a></p>');
     const english = await (await fetch(`${base}/naidis/tehtud?lang=en`)).text();

@@ -386,11 +386,11 @@ describe("landing and connect", () => {
     for (const s of ["Tegele sellega, milles oled hea. <span>Kontoritöö teeb sinu AI-assistent.</span>", "Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud aitab: ütleb, milliseid ühendusi vaja, küsib enne iga saatmist sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude&#39;iga.",
       '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "ühendatud: raamatupidamine, e-post, AI-hüppelaud", "Kes mulle võlgu on?", `Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${fmtEur(72000, "et")}. Koostasin igale viisaka meeldetuletuse.`,
       "Maksemeeldetuletus · 1/3", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud sinu e-postist: demo", `<span class="mock-allow">Luba sarnased automaatselt</span><span class="mock-rule">Püsiluba: meeldetuletused kuni ${fmtEur(50000, "et")}</span>`,
-      "Järgmised saadan ise.", "Raamatupidamise järgi on oktoobris 14 müügi- ja 9 ostuarvet.", "Mida assistent saab ära teha", '<a href="/kataloog">vaata kataloogist</a>, mis sinu programmile olemas on.',
+      "Järgmised saadan ise.", "Raamatupidamise järgi on oktoobris 14 müügi- ja 9 ostuarvet.", "Mõned tööd, mida assistent saab sinult üle võtta", '<p class="job-more">Ja palju muud. Küsi oma assistendilt: <strong>„Mida veel saad minu eest ära teha?”</strong> Ta vaatab üle sinu ettevõtte tähtajad ja ütleb, milliseid töid ta saab sinu eest teha. <a href="/kataloog">Kataloogist</a> leiad ühendused oma programmidele.</p>', '<a href="/kataloog">Kataloogist</a>', "Näited. Raamatupidamise, panga ja e-posti ühendused on nende pakkujate omad. Ärikratti soovitame tungivalt: sellest tulevad sinu ettevõtte registriandmed.",
       "Kuidas alustada", "Ühenda oma ChatGPT või Claude", "Ühenda ka oma raamatupidamine ja e-post — assistent ütleb, milline ühendus sobib", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega — või luba edaspidi automaatselt", 'href="/demand"']) expect(et, s).toContain(s);
     for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Your assistant does the office work through your accounting, bank and e-mail connections. AI Launchpad helps: it tells you which connections you need, asks for your approval before anything is sent, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude.", "Connect your assistant", ">Sample<", "connected: accounting, e-mail, AI Launchpad",
       "Who owes me money?", `Your accounting software shows three invoices overdue, ${fmtEur(72000, "en")} in total. I drafted a polite reminder for each.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "✓ Approved · Sent from your e-mail: demo", "Allow similar ones automatically", `Standing approval: reminders up to ${fmtEur(50000, "en")}`,
-      "I&#39;ll send the next ones myself.", "Your books show 14 sales and 9 purchase invoices for October.", "What your assistant can take off you", '<a href="/kataloog">see the catalogue</a> for what exists for your software.', "How to start", "Connect your accounting software and e-mail too — your assistant tells you which connector fits", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
+      "I&#39;ll send the next ones myself.", "Your books show 14 sales and 9 purchase invoices for October.", "A few jobs your assistant can take off you", '<p class="job-more">And much more. Ask your assistant: <strong>“What else can you take off me?”</strong> It checks your company&#39;s deadlines and tells you which jobs it can do for you. The <a href="/kataloog">catalogue</a> lists connectors for your software.</p>', '<a href="/kataloog">catalogue</a>', "Examples. Accounting, bank and e-mail connectors belong to their providers. We strongly recommend Ärikratt: it supplies your company&#39;s register data.", "How to start", "Connect your accounting software and e-mail too — your assistant tells you which connector fits", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
     expect(et.match(/<ol class="how">.*?<\/ol>/s)![0].match(/<li>/g)).toHaveLength(4);
     expect(shell({ title: "x", active: "none", csrf: "", body: "" })).toContain(".how li>span{min-width:0;overflow-wrap:break-word}");
     expect(et).toContain("<li>Midagi ei saadeta ilma sinu loata</li><li>Smart-ID ja allkiri jäävad sinu kätte</li><li>Maksud ja tähtajad arvutab reeglistik, mitte tehisaru</li>");
@@ -455,15 +455,20 @@ describe("landing and connect", () => {
         });
         expect([...positions].sort((a, b) => a - b)).toEqual(positions);
       }
-      expect(html).toContain(`<h2 id="jobs-h">${lang === "et" ? "Mida assistent saab ära teha" : "What your assistant can take off you"}</h2>`);
+      expect(html).toContain(`<h2 id="jobs-h">${lang === "et" ? "Mõned tööd, mida assistent saab sinult üle võtta" : "A few jobs your assistant can take off you"}</h2>`);
       expect(html).toContain('<ul class="job-switcher" aria-labelledby="jobs-h">');
       expect(html).not.toMatch(/data-job-prev|data-job-next|data-job-status|job-track/);
+      expect(html).toContain(lang === "et"
+        ? '<p class="job-more">Ja palju muud. Küsi oma assistendilt: <strong>„Mida veel saad minu eest ära teha?”</strong> Ta vaatab üle sinu ettevõtte tähtajad ja ütleb, milliseid töid ta saab sinu eest teha. <a href="/kataloog">Kataloogist</a> leiad ühendused oma programmidele.</p>'
+        : '<p class="job-more">And much more. Ask your assistant: <strong>“What else can you take off me?”</strong> It checks your company&#39;s deadlines and tells you which jobs it can do for you. The <a href="/kataloog">catalogue</a> lists connectors for your software.</p>');
+      expect(html).toContain(lang === "et" ? '<a href="/kataloog">Kataloogist</a>' : '<a href="/kataloog">catalogue</a>');
       expect(scripts(html)).toContain("prefers-reduced-motion: reduce");
     }
     const css = shell({ title: "x", active: "none", csrf: "", body: "" });
     expect(css).toContain('.job-switcher{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))');
     expect(css).not.toContain('.job-card--active::after');
     expect(css).toContain('border-top:var(--s-1) solid var(--c-primary)');
+    expect(css).toContain(".job-more{");
   });
 
   for (const lang of ["et", "en"] as const) {
@@ -658,6 +663,25 @@ describe("landing and connect", () => {
     const ok = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "connected", who: "ChatGPT", at: "2026-11-03T12:32:00Z" }, owner: true, now: NOW });
     expect(ok).toContain("Ühendatud · ChatGPT jõudis kohale kell 14:32");
     expect(ok).toContain("Proovi kohe: „Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?”");
+  });
+
+  test("connect: computer and phone are equal alternatives, with shared notes below, in both languages", async () => {
+    for (const lang of ["et", "en"] as const) {
+      const html = await connectBody({ lang, baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "anon" }, owner: false });
+      const row = html.match(/<div class="connect-options">([\s\S]*?)<\/figure><\/div>/)?.[1];
+      expect(row).toBeDefined();
+      expect(row).toContain(`<div class="connect-option"><h2 class="connect-here">${lang === "et" ? "Selles arvutis" : "On this computer"}</h2>`);
+      expect(row).toContain(`<span class="connect-or">${lang === "et" ? "või" : "or"}</span>`);
+      expect(row).toMatch(new RegExp(`<figure class="connect-option qr-card"><h2>${lang === "et" ? "Telefonis" : "On your phone"}</h2><div class="qr-box"><svg role="img" aria-label="[^"]+"`));
+      expect(row).not.toContain(lang === "et" ? "Claude lubab" : "Claude allows");
+      expect(html.indexOf(lang === "et" ? "Claude lubab" : "Claude allows")).toBeGreaterThan(html.indexOf("</figure></div>"));
+      expect(html.indexOf(`#tekst"`)).toBeGreaterThan(html.indexOf("</figure></div>"));
+    }
+    for (const options of [{ baseUrl: "http://localhost:3000" }, { baseUrl: "https://launchpad.example.com", sandbox: true }]) {
+      const html = await connectBody({ lang: "en", assistant: "claude", state: { kind: "anon" }, owner: false, ...options });
+      expect(html).not.toContain('class="connect-options"');
+      expect(html).not.toContain('class="connect-option qr-card"');
+    }
   });
 
   test("connect: the open link follows the selected assistant and language", async () => {
@@ -976,13 +1000,12 @@ describe("„Käest ära” (#61)", () => {
   const consumed = approval({ id: "appr_done", state: "consumed", decided_at: "2026-11-02T09:00:00Z", consumed_at: "2026-11-02T10:00:00Z", outcome_json: JSON.stringify({ outcome: "sent", history: [] }) });
   const h = computeHandover({ assessment, obligations: mari.obligations, approvals: [consumed, approval()], rules: [], now: NOW });
 
-  test("Täna: one strip under the pills with the count, linking to Ühendus, before the primary action; no percentage", () => {
+  test("Täna: one strip under the pills with what needs the owner, linking to Ühendus, before the primary action; no percentage", () => {
     const html = tana({ handover: h, approvals: [approval()] });
     const strip = html.match(/<a class="ho-strip"[^]*?<\/a>/)![0];
     expect(strip).toContain('href="/uhenda#kaest-ara"');
-    expect(strip).toContain(`<b>Käest ära: <span class="num">1</span> töö ${h.total}-st</b>`);
+    expect(strip).toContain("<b>Kontoritöö: 1 ootab sinu kinnitust</b>");
     expect(strip).not.toContain("%");
-    expect(strip.match(/<li class="ho-seg/g)).toHaveLength(h.total);
     expect(html.indexOf('class="today-sum"')).toBeLessThan(html.indexOf('class="ho-strip"'));
     expect(html.indexOf('class="ho-strip"')).toBeLessThan(html.indexOf('class="btn" href="/approvals/'));
     expect(tana()).not.toContain("ho-strip");
@@ -999,7 +1022,8 @@ describe("„Käest ära” (#61)", () => {
     expect(section).toContain("Kuidas see arvutatakse");
     expect(section).toContain("Assistendi hinnang");
     const en = await connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: "csrf-x", rules: [] }, handover: h });
-    expect(en).toContain(`of ${h.total} jobs are off your plate`);
+    expect(en).toContain('<h2 id="ho-h">Back office</h2>');
+    expect(en).toContain("What your assistant can reach");
     expect(await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "anon" }, owner: false, handover: h })).not.toContain("kaest-ara");
   });
 });

@@ -109,12 +109,12 @@ test("„Käest ära” (#61): the pre-filled offer on Ühendus creates the rule
     await expect(page.locator("section.standing-offer h2")).toHaveText("Luba edaspidi sarnased automaatselt: ainult Synthetic Client OÜ, kuni 300\u00a0€");
     await expect(page.locator("#so-max")).toHaveValue("300");
     await page.goto(`${cfg.baseUrl}/uhenda`);
-    // Approved but not reported: still yours.
-    await expect(ho.locator(".ho-sum")).toContainText("0 tööd 1-st");
+    // Approved but not reported: not done, and no longer waiting.
+    await expect(ho.locator(".ho-head .state-chip")).toHaveText("Kontrollimata");
     await sent("ho-1-sent", first);
     await page.goto(`${cfg.baseUrl}/uhenda`);
-    await expect(ho.locator(".ho-sum")).toContainText("1 töö 1-st on sinu käest ära");
-    await expect(ho.locator(".ho-bar .ho-seg--prep")).toHaveCount(1);
+    await expect(ho.locator(".ho-head .state-chip")).toHaveText("Korras");
+    await expect(ho.locator(".ho-who")).toHaveText("Assistent valmistab ette, sina kinnitad");
     await expect(ho.locator(".ask")).toContainText("Ainult Synthetic Client OÜ (senised saajad), kuni 300 € kirja kohta");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     // QA M1: the same on Ühendus.
@@ -125,21 +125,20 @@ test("„Käest ära” (#61): the pre-filled offer on Ühendus creates the rule
     await ho.locator("details").getByRole("button", { name: "Luba automaatselt" }).click();
     await expect(page).toHaveURL(/\/uhenda#pusiload$/);
     await expect(page.locator("#pusiload")).toContainText("Sõnumid: billing@client.example, kuni 350");
-    // A live rule that has not fired yet does not fill the top rung.
-    await expect(ho.locator(".ho-bar .ho-seg--prep")).toHaveCount(1);
+    // A live rule that has not fired yet does not make the assistant the one who does it.
+    await expect(ho.locator(".ho-who")).toHaveText("Assistent valmistab ette, sina kinnitad");
 
     const next = await ask("ho-2", "2026-015", 18000);
     expect(next).toMatchObject({ state: "approved", auto_approved: true });
     await page.reload();
-    await expect(ho.locator(".ho-bar .ho-seg--done")).toHaveCount(0);
+    await expect(ho.locator(".ho-who")).not.toContainText("Assistent teeb ise");
     await sent("ho-2-sent", next);
     // A hash-only goto would not reload the page.
     await page.goto(`${cfg.baseUrl}/uhenda`);
-    await expect(ho.locator(".ho-bar .ho-seg--done")).toHaveCount(1);
     await expect(ho.locator(".ho-job")).toContainText("Assistent teeb ise");
-    await expect(ho.locator(".ho-month")).toContainText("2 tööd tehtud, 1 ilma sinuta");
+    await expect(ho.locator(".ho-month")).toContainText("assistent lõpetas 2 tööd, 1 ilma sinuta");
     await page.goto(cfg.baseUrl);
-    await expect(page.locator(".ho-strip")).toContainText("Käest ära: 1 töö 1-st");
+    await expect(page.locator(".ho-strip")).toContainText("Kontoritöö: Täna ei vaja miski sind");
     await page.goto(`${cfg.baseUrl}/uhenda#kaest-ara`);
     await ho.screenshot({ path: `${SHOTS}/t5-handover-done-390.png` });
   } finally { await client.close(); await new Promise<void>(resolve => server.close(() => resolve())); db.close(); }
