@@ -34,7 +34,7 @@ for (const width of [390, 1280]) {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Claude Pro");
     await expect(page.locator("#alusta-prompt")).toBeVisible();
     expect(await page.locator("#alusta-prompt").inputValue()).not.toContain("saladusXYZ");
-    await expect(page.getByText("Näidis")).toBeVisible();
+    await expect(page.getByText("Näidis", { exact: true })).toBeVisible();
     await noScroll(page);
   });
 }
