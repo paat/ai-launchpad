@@ -386,11 +386,11 @@ describe("landing and connect", () => {
     for (const s of ["Tegele sellega, milles oled hea. <span>Kontoritöö teeb sinu AI-assistent.</span>", "Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud juhib tööd: ütleb, milliseid ühendusi vaja, küsib sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude&#39;iga.",
       '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "ühendatud: raamatupidamine, e-post, AI-hüppelaud", "Kes mulle võlgu on?", `Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${fmtEur(72000, "et")}. Koostasin igale viisaka meeldetuletuse.`,
       "Maksemeeldetuletus · 1/3", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud sinu e-postist: demo", `<span class="mock-allow">Luba sarnased automaatselt</span><span class="mock-rule">Püsiluba: meeldetuletused kuni ${fmtEur(50000, "et")}</span>`,
-      "Järgmised saadan ise.", "Raamatupidamise järgi on oktoobris 14 müügi- ja 9 ostuarvet.", "Mida assistent saab ära teha", '<a href="/kataloog">vaata kataloogist</a>, mis sinu programmile olemas on.',
+      "Järgmised saadan ise.", "Raamatupidamise järgi on oktoobris 14 müügi- ja 9 ostuarvet.", "Mõned tööd, mida assistent saab sinult üle võtta", '<p class="job-more">Ja palju muud. Küsi oma assistendilt: <strong>„Mida veel saad minu eest ära teha?”</strong> Ta otsib <a href="/kataloog">kataloogist</a> sinu programmile sobiva ühenduse. Kui sobivat veel pole, annab ta soovi meile edasi.</p>', '<a href="/kataloog">kataloogist</a>', "Näited. Raamatupidamise, panga ja e-posti ühendused on nende pakkujate omad. Ärikratti soovitame tungivalt: sellest tulevad sinu ettevõtte registriandmed.",
       "Kuidas alustada", "Ühenda oma ChatGPT või Claude", "Ühenda ka oma raamatupidamine ja e-post — assistent ütleb, milline ühendus sobib", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega — või luba edaspidi automaatselt", 'href="/demand"']) expect(et, s).toContain(s);
     for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Your assistant does the office work through your accounting, bank and e-mail connectors. AI Launchpad runs the work: it tells you which connectors you need, asks for your approval, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude.", "Connect your assistant", ">Sample<", "connected: accounting, e-mail, AI Launchpad",
       "Who owes me money?", `Your accounting software shows three invoices overdue, ${fmtEur(72000, "en")} in total. I drafted a polite reminder for each.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "✓ Approved · Sent from your e-mail: demo", "Allow similar ones automatically", `Standing approval: reminders up to ${fmtEur(50000, "en")}`,
-      "I&#39;ll send the next ones myself.", "Your books show 14 sales and 9 purchase invoices for October.", "What your assistant can take off you", '<a href="/kataloog">see the catalogue</a> for what exists for your software.', "How to start", "Connect your accounting software and e-mail too — your assistant tells you which connector fits", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
+      "I&#39;ll send the next ones myself.", "Your books show 14 sales and 9 purchase invoices for October.", "A few jobs your assistant can take off you", '<p class="job-more">And much more. Ask your assistant: <strong>“What else can you take off me?”</strong> It looks in the <a href="/kataloog">catalogue</a> for a connector that fits your software. If nothing fits yet, it passes the wish on to us.</p>', '<a href="/kataloog">catalogue</a>', "Examples. Accounting, bank and e-mail connectors belong to their providers. We strongly recommend Ärikratt: it supplies your company&#39;s register data.", "How to start", "Connect your accounting software and e-mail too — your assistant tells you which connector fits", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
     expect(et.match(/<ol class="how">.*?<\/ol>/s)![0].match(/<li>/g)).toHaveLength(4);
     expect(shell({ title: "x", active: "none", csrf: "", body: "" })).toContain(".how li>span{min-width:0;overflow-wrap:break-word}");
     expect(et).toContain("<li>Midagi ei saadeta ilma sinu loata</li><li>Smart-ID ja allkiri jäävad sinu kätte</li><li>Maksud ja tähtajad arvutab reeglistik, mitte tehisaru</li>");
@@ -451,8 +451,12 @@ describe("landing and connect", () => {
         });
         expect([...positions].sort((a, b) => a - b)).toEqual(positions);
       }
-      expect(html).toContain(`<h2 id="jobs-h">${lang === "et" ? "Mida assistent saab ära teha" : "What your assistant can take off you"}</h2>`);
-      expect(html).toContain(`role="region" aria-label="${lang === "et" ? "Mida assistent saab ära teha" : "What your assistant can take off you"}" tabindex="0"`);
+      expect(html).toContain(`<h2 id="jobs-h">${lang === "et" ? "Mõned tööd, mida assistent saab sinult üle võtta" : "A few jobs your assistant can take off you"}</h2>`);
+      expect(html).toContain(`role="region" aria-label="${lang === "et" ? "Mõned tööd, mida assistent saab sinult üle võtta" : "A few jobs your assistant can take off you"}" tabindex="0"`);
+      expect(html).toContain(lang === "et"
+        ? '<p class="job-more">Ja palju muud. Küsi oma assistendilt: <strong>„Mida veel saad minu eest ära teha?”</strong> Ta otsib <a href="/kataloog">kataloogist</a> sinu programmile sobiva ühenduse. Kui sobivat veel pole, annab ta soovi meile edasi.</p>'
+        : '<p class="job-more">And much more. Ask your assistant: <strong>“What else can you take off me?”</strong> It looks in the <a href="/kataloog">catalogue</a> for a connector that fits your software. If nothing fits yet, it passes the wish on to us.</p>');
+      expect(html).toContain(lang === "et" ? '<a href="/kataloog">kataloogist</a>' : '<a href="/kataloog">catalogue</a>');
       expect(html).toContain(`data-job-prev hidden>${lang === "et" ? "‹ Eelmine" : "‹ Previous"}</button>`);
       expect(html).toContain(`data-job-next hidden>${lang === "et" ? "Järgmine ›" : "Next ›"}</button>`);
       expect(html).toContain('aria-live="polite" data-job-status hidden>1 / 8</span>');
@@ -461,6 +465,7 @@ describe("landing and connect", () => {
     const css = shell({ title: "x", active: "none", csrf: "", body: "" });
     expect(css).toContain("overflow-x:auto;scroll-snap-type:x mandatory");
     expect(css).toContain("scroll-snap-align:start");
+    expect(css).toContain(".job-more{");
   });
 
   test("landing carousel: scroll end preserves a visible active card, then prefers the first visible or nearest card (#69)", () => {
