@@ -314,8 +314,9 @@ describe("agent-facing copy over MCP", () => {
     // Phone tests 31 Oct–1 Nov: replies read like audit logs (checked lists, IBANs, law paragraphs, 31-receipt lists).
     expect(i).toContain(OWNER_VOICE);
     const books = byId("books-catch-up").steps.join(" ");
-    expect(books).toContain("Show at most five vendors and say how many more there are.");
-    expect(books).toContain("Call each account by its bank's name, not its number; if two accounts are at one bank, add the last four digits.");
+    expect(books).toContain("Show at most five vendors at a time and say how many more there are; name the rest when the owner asks or once those are in.");
+    expect(books).not.toMatch(/Anthropic|OpenAI|Gmail/);
+    expect(books).toContain("Call each account by its bank's name, not its number; if the bank is unknown or two accounts are at one bank, add the last four digits.");
     expect(books).not.toMatch(/grouped by vendor/);
     // Grok r1: absence in the books never answers a TSD question, and approvals are never shortened.
     expect(OWNER_VOICE).toContain("seeing no payment is never an answer, and a bank total is never the owner's turnover");
