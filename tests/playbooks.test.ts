@@ -464,7 +464,7 @@ describe("agent-facing copy over MCP", () => {
     expect(steps).toContain("Never copy identity, address, debts or e-mail history into the sheet");
     expect(steps).toContain("A phone or e-mail may go in Note only for a prospect who is not yet in the accounting software");
     expect(steps).toContain("Create it only after the owner says yes");
-    expect(steps).toContain("If you cannot read their Google Drive, never say that sheet exists");
+    expect(steps).toContain("read them from it; if you cannot read their Google Drive either, never say that sheet exists");
     expect(steps).toContain("If there is no customer tool and you read their Google Drive and it has no Kliendid sheet, offer once to create");
     expect(steps).toContain("Show the exact change, write it only after they say yes, and never write a different value");
     expect(steps).toContain("Never invent or compute a follow-up date yourself");
