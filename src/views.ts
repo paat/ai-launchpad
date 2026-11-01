@@ -1682,7 +1682,7 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
 <section class="landing-hero" aria-labelledby="hero-h"><div>
 <h1 id="hero-h">${t("Tegele sellega, milles oled hea.", "Focus on what you're good at.")} <span>${t("Kontoritöö teeb sinu AI-assistent.", "Your AI assistant does the office work.")}</span></h1>
 <p class="lede">${esc(t("Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud juhib tööd: ütleb, milliseid ühendusi vaja, küsib sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude'iga.", "Your assistant does the office work through your accounting, bank and e-mail connectors. AI Launchpad runs the work: it tells you which connectors you need, asks for your approval, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude."))}</p>
-<div class="landing-actions"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a><a class="tap-link" href="/naidis">${t("Vaata näidist", "See a sample")}</a></div></div>
+<div class="landing-actions"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a><a class="tap-link" href="/naidis">${t("Vaata näidist", "See a sample")}</a><a class="tap-link" href="/proovi">${t("Proovi ise", "Try it yourself")}</a></div></div>
 <figure class="teaser" id="landing-phone">
 <input type="checkbox" id="teaser-pause" class="vh-input">
 ${jobs.map(conversation).join("\n")}

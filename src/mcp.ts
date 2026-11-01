@@ -60,12 +60,12 @@ function validAssessmentReceipt(db: Db, ownerId: string, row: { report_id: strin
   return { at: row.created_at, reportId: row.report_id, receiptId: r.receipt_id, version: r.version };
 }
 
-// Owner-scoped read-only milestones. Demo owners return synthetic:true with no
+// Owner-scoped read-only milestones. Sample owners return synthetic:true with no
 // real milestones; missing owners yield no evidence, never another owner's.
 export function getAssistantMilestones(db: Db, ownerId: string): AssistantMilestones {
   const owner = db.prepare("SELECT kind FROM owners WHERE id=?").get(ownerId) as { kind: string } | undefined;
   if (!owner) return { synthetic: false, lastContact: null, firstSavedAssessment: null };
-  if (owner.kind === "demo") return { synthetic: true, lastContact: null, firstSavedAssessment: null };
+  if (owner.kind === "demo" || owner.kind === "sandbox") return { synthetic: true, lastContact: null, firstSavedAssessment: null };
   const inList = ASSISTANT_CONTACT_ACTIONS.map(() => "?").join(",");
   const contact = db.prepare(`SELECT action,created_at FROM activity WHERE owner_id=? AND actor='assistant' AND outcome='ok' AND action IN (${inList}) ORDER BY id DESC LIMIT 1`).get(ownerId, ...ASSISTANT_CONTACT_ACTIONS) as { action: string; created_at: string } | undefined;
   const reports = db.prepare("SELECT report_id,receipt_json,created_at FROM reports WHERE owner_id=? AND kind='assessment' ORDER BY created_at ASC, rowid ASC").all(ownerId) as { report_id: string; receipt_json: string; created_at: string }[];
@@ -187,6 +187,40 @@ export function getApproval(db: Db, ownerId: string, id: string) {
 
 function saveReceipt(db: Db, ownerId: string, kind: string, reportId: string, payload: unknown, receipt: Record<string, unknown>) {
   db.prepare("INSERT INTO reports(owner_id,report_id,kind,payload_hash,payload_json,receipt_json,created_at) VALUES(?,?,?,?,?,?,?)").run(ownerId, reportId, kind, sha256(JSON.stringify(payload)), JSON.stringify(payload), JSON.stringify(receipt), nowIso());
+}
+
+export interface ActionOutcomeInput { report_id: string; approval_id: string; digest: string; outcome: string; observed_at: string; evidence_refs?: string[] }
+/** The single persistence path behind record_action_outcome and simulated sandbox outcomes. */
+export function recordActionOutcome(db: Db, ownerId: string, args: ActionOutcomeInput, activitySummary?: string): { receipt: Record<string, unknown> } | { error: string } {
+  if (Number.isNaN(Date.parse(args.observed_at)) || Date.parse(args.observed_at) > Date.now() + 5 * 60_000) return { error: "observed_at is not a plausible timestamp. Nothing was recorded." };
+  const prior = idempotent(db, ownerId, "outcome", args.report_id, args);
+  if (prior === "conflict") return { error: "Conflict: report_id already used with a different payload. Nothing was recorded." };
+  if (prior) return prior;
+  const capacityError = reportCapacityError(db, ownerId);
+  if (capacityError) return { error: capacityError };
+  const a = getApproval(db, ownerId, args.approval_id);
+  if (!a) return { error: "Unknown approval_id in this workspace. Nothing was recorded." };
+  if (args.digest !== a.digest) return { error: "Digest does not match the approved content. The payload changed: request a new approval for the changed payload and wait for the owner. Nothing was recorded." };
+  const prev = a.outcome_json ? JSON.parse(a.outcome_json) as { outcome: string; history: unknown[] } : null;
+  if (a.state === "pending") return { error: "The owner has not approved this yet. Do not act. Nothing was recorded." };
+  if (a.state === "expired") return { error: "This approval expired before an outcome was recorded; request a new approval. Nothing was recorded." };
+  if (a.state === "approved" && approvalAddressMissing(a)) return { error: `${ADDRESS_MISSING}. Nothing was recorded.` };
+  const first = OUTCOME_FIRST[a.kind ?? ""] ?? [];
+  if (a.state === "approved" && !first.includes(args.outcome)) return { error: `A ${a.kind} approval's first outcome must be ${first.join(" or ")}. Nothing was recorded.` };
+  if (a.state === "consumed" ? !OUTCOME_NEXT[prev?.outcome ?? ""]?.includes(args.outcome) : a.state !== "approved") {
+    return { error: a.state === "consumed"
+      ? `This approval was already used (last outcome: ${prev?.outcome}). Approvals are one-use; an outcome may only advance sent → accepted/rejected/paid or submitted → accepted/rejected. Nothing was recorded.`
+      : `This approval is ${a.state}; nothing may be done under it. Request a new approval. Nothing was recorded.` };
+  }
+  const entry = { outcome: args.outcome, observed_at: args.observed_at, evidence_refs: args.evidence_refs ?? [], evidence_label: "assistant_reported" as const };
+  const savedAt = nowIso();
+  const receipt = { receipt_id: newId("rcpt"), kind: "action_outcome_saved", approval_id: a.id, state: "consumed", ...entry, saved_at: savedAt, meaning: "Launchpad recorded what your assistant reported. It did not send, pay or file anything and did not verify this outcome." };
+  db.transaction(() => {
+    db.prepare("UPDATE approvals SET state='consumed',consumed_at=COALESCE(consumed_at,?),outcome_json=? WHERE id=? AND owner_id=?").run(savedAt, JSON.stringify({ ...entry, history: [...(prev?.history ?? []), { ...entry, recorded_at: savedAt }] }), a.id, ownerId);
+    saveReceipt(db, ownerId, "outcome", args.report_id, args, receipt);
+  })();
+  logActivity(db, ownerId, "assistant", "record_action_outcome", "ok", activitySummary ?? `Outcome ${args.outcome} for approval ${a.id} (assistant reported, not verified).`);
+  return { receipt };
 }
 
 // Deadlines (issue #19): rules compute, models read. Assistant-supplied facts
@@ -447,35 +481,8 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
 
   server.registerTool("record_action_outcome", { description: "Record what happened after you acted on an approved action with your own tools. Requires the approval's exact digest; a changed payload needs a new approval. The first outcome must be recorded before expires_at, must fit the kind (send_message/send_invoice: sent or failed; prepare_payment: paid or failed; prepare_filing: submitted or failed; post_entries: posted or failed) and consumes the approval (one use); later outcomes, also after expiry, may only advance it (sent → accepted/rejected/paid, submitted → accepted/rejected). Outcomes are labelled assistant_reported, never verified. Idempotent by report_id.", inputSchema: { report_id: s(80), approval_id: s(80), digest: s(64), outcome: z.enum(["sent", "submitted", "accepted", "rejected", "paid", "posted", "failed"]), observed_at: s(40), evidence_refs: evidenceRefs.optional() } }, async (args) => {
     const gate = sharingGate("Nothing was recorded."); if (gate) return err(gate);
-    if (Number.isNaN(Date.parse(args.observed_at)) || Date.parse(args.observed_at) > Date.now() + 5 * 60_000) return err("observed_at is not a plausible timestamp. Nothing was recorded.");
-    const prior = idempotent(db, ctx.ownerId, "outcome", args.report_id, args);
-    if (prior === "conflict") return err("Conflict: report_id already used with a different payload. Nothing was recorded.");
-    if (prior) return json(prior.receipt);
-    const capacityError = reportCapacityError(db, ctx.ownerId);
-    if (capacityError) return err(capacityError);
-    const a = getApproval(db, ctx.ownerId, args.approval_id);
-    if (!a) return err("Unknown approval_id in this workspace. Nothing was recorded.");
-    if (args.digest !== a.digest) return err("Digest does not match the approved content. The payload changed: request a new approval for the changed payload and wait for the owner. Nothing was recorded.");
-    const prev = a.outcome_json ? JSON.parse(a.outcome_json) as { outcome: string; history: unknown[] } : null;
-    if (a.state === "pending") return err("The owner has not approved this yet. Do not act. Nothing was recorded.");
-    if (a.state === "expired") return err("This approval expired before an outcome was recorded; request a new approval. Nothing was recorded.");
-    if (a.state === "approved" && approvalAddressMissing(a)) return err(`${ADDRESS_MISSING}. Nothing was recorded.`);
-    const first = OUTCOME_FIRST[a.kind ?? ""] ?? [];
-    if (a.state === "approved" && !first.includes(args.outcome)) return err(`A ${a.kind} approval's first outcome must be ${first.join(" or ")}. Nothing was recorded.`);
-    if (a.state === "consumed" ? !OUTCOME_NEXT[prev?.outcome ?? ""]?.includes(args.outcome) : a.state !== "approved") {
-      return err(a.state === "consumed"
-        ? `This approval was already used (last outcome: ${prev?.outcome}). Approvals are one-use; an outcome may only advance sent → accepted/rejected/paid or submitted → accepted/rejected. Nothing was recorded.`
-        : `This approval is ${a.state}; nothing may be done under it. Request a new approval. Nothing was recorded.`);
-    }
-    const entry = { outcome: args.outcome, observed_at: args.observed_at, evidence_refs: args.evidence_refs ?? [], evidence_label: "assistant_reported" as const };
-    const savedAt = nowIso();
-    const receipt = { receipt_id: newId("rcpt"), kind: "action_outcome_saved", approval_id: a.id, state: "consumed", ...entry, saved_at: savedAt, meaning: "Launchpad recorded what your assistant reported. It did not send, pay or file anything and did not verify this outcome." };
-    db.transaction(() => {
-      db.prepare("UPDATE approvals SET state='consumed',consumed_at=COALESCE(consumed_at,?),outcome_json=? WHERE id=? AND owner_id=?").run(savedAt, JSON.stringify({ ...entry, history: [...(prev?.history ?? []), { ...entry, recorded_at: savedAt }] }), a.id, ctx.ownerId);
-      saveReceipt(db, ctx.ownerId, "outcome", args.report_id, args, receipt);
-    })();
-    logActivity(db, ctx.ownerId, "assistant", "record_action_outcome", "ok", `Outcome ${args.outcome} for approval ${a.id} (assistant reported, not verified).`);
-    return json(receipt);
+    const result = recordActionOutcome(db, ctx.ownerId, args);
+    return "error" in result ? err(result.error) : json(result.receipt);
   });
 
   server.registerTool("report_unmet_need", { description: "Report a job the owner asked for that you could not do (no connector, needs the owner's PIN or signature, a portal without an API, not supported yet, or unclear). Describe the job generically; never include names of people, customers or employees. Write it in the owner's language, without company names, amounts, account numbers, personal or registry codes, e-mail addresses, phone numbers or other identifiers. Launchpad also replaces identifiers it detects before storing the text or showing it to any model, and keeps only that de-identified text. Launchpad then classifies it in the background (Meta's open model when live, a labelled mock locally); nothing is published unless the owner approves it on the Status page, and then only as anonymous open demand (category, short label, one-line spec). Idempotent by report_id.", inputSchema: { report_id: s(80), need: s(MAX_NEED_CHARS).describe("The job the owner asked for. Describe the job generically; never include names of people, customers or employees."), blocker: z.enum(BLOCKERS), job_hint: s(MAX_JOB_HINT_CHARS).optional() } }, async (args) => {

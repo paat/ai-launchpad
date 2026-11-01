@@ -194,7 +194,7 @@ describe("#21 public synthetic walkthrough", () => {
 
   test("the landing hero links to the sample and keeps its primary connection action", async () => {
     const html = await (await fetch(`${base}/`)).text();
-    expect(html).toContain('<div class="landing-actions"><a class="btn" href="/uhenda">Ühenda oma assistent</a><a class="tap-link" href="/naidis">Vaata näidist</a></div>');
+    expect(html).toContain('<div class="landing-actions"><a class="btn" href="/uhenda">Ühenda oma assistent</a><a class="tap-link" href="/naidis">Vaata näidist</a><a class="tap-link" href="/proovi">Proovi ise</a></div>');
   });
 
   test("POSTing the synthetic approval id keeps the normal unauthorised response and changes nothing", async () => {

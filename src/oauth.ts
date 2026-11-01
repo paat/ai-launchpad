@@ -114,7 +114,11 @@ export class LaunchpadOAuth implements OAuthServerProvider {
     if (!client.redirect_uris.includes(params.redirectUri)) { res.status(400).send("Exact registered redirect required."); return; }
     const scopes = this.scopes(params.scopes?.length ? params.scopes : ["progress:read"]);
     if (scopes.some(s => !client.scope?.split(" ").includes(s)) || params.resource?.href !== this.resource || !/^[A-Za-z0-9_-]{43}$/.test(params.codeChallenge) || (params.state?.length ?? 0) > 512) throw new InvalidRequestError("Invalid scopes, resource, state or S256 challenge.");
-    const raw = opaque(), sessionRow = this.session(res.req), s = sessionRow && this.ownerAllowed(sessionRow.owner_id) ? sessionRow : null;
+    const sessionRow = this.session(res.req);
+    // A browser-only sandbox must not fall back to an anonymous OAuth flow:
+    // refuse before allocating a pending row or setting a connect cookie.
+    if (sessionRow && !this.ownerAllowed(sessionRow.owner_id)) { res.status(403).send("Access is not available for this account."); return; }
+    const raw = opaque(), s = sessionRow;
     const epoch = s ? (this.db.prepare("SELECT epoch FROM owners WHERE id=?").get(s.owner_id) as { epoch: number }).epoch : null;
     const previous = connectCookie(res.req);
     // Transactional replacement: this browser's own live flow frees its slot
