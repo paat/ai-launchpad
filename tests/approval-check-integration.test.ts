@@ -215,6 +215,25 @@ test("MCP pending, reused digest and idempotent replay carry the live check with
   expect(live.check).toHaveBeenCalledTimes(1);
 });
 
+test.each(["unavailable", "ok"])("pending approval with %s advice explicitly forbids acting", async (state) => {
+  const db = dbForTest(), oid = owner(db);
+  const live = checker(state === "ok" ? output() : { kind: "failed", reason: "provider_failed" });
+  const c = await client(db, oid, live);
+  const pending = await request(c, `pending-${state}`);
+  for (const receipt of [pending, await get(c, pending.approval_id), await request(c, `pending-${state}`)]) {
+    expect(receipt.check.state).toBe(state);
+    expect(receipt.assistant_instruction).toContain("Do not act before the approval is approved.");
+    expect(receipt.assistant_instruction).not.toContain("act as usual");
+  }
+  db.prepare("UPDATE approvals SET state='approved' WHERE id=?").run(pending.approval_id);
+  expect((await get(c, pending.approval_id)).assistant_instruction).toContain("act as usual");
+  db.prepare("UPDATE approvals SET payload_json=? WHERE id=?").run(JSON.stringify({ ...action, recipient: { name: action.recipient.name } }), pending.approval_id);
+  const unusable = await get(c, pending.approval_id);
+  expect(unusable.usable).toBe(false);
+  expect(unusable.assistant_instruction).toContain("Do not act under this unusable approval.");
+  expect(unusable.assistant_instruction).not.toContain("act as usual");
+});
+
 test("MCP running receipt and replays expose the eventual result without another call", async () => {
   vi.useFakeTimers();
   const db = dbForTest(), oid = owner(db);
