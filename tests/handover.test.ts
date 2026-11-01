@@ -285,3 +285,72 @@ describe("customer follow-ups are never standing-approved (#96, tribunal T-001/T
     expect(ruled.next).toMatchObject({ type: "playbook", playbookId: "payment-reminder" });
   });
 });
+
+describe("customer follow-ups next step (tribunal T-004, #96)", () => {
+  const nextCard = (page: string) => {
+    const start = page.indexOf('<div class="ho-next">');
+    return page.slice(start, page.indexOf("</div></div>", start) + "</div></div>".length);
+  };
+  const fired = () => appr({ outcome: "sent", cents: 10_000, rule: "rule_1" });
+
+  test("the follow-up card asks who to call or message, in ET and EN, with no filing or invoice copy", () => {
+    const pending = appr({ state: "pending", playbook: "customer-follow-ups", to: { name: "Pakkumine OÜ", address: "info@pakkumine.example" }, title: "Järgmine kõne", summary: "Follow up on the quote" });
+    const h = computeHandover({ assessment: null, obligations: [], approvals: [fired(), pending], rules: [rule()], now: NOW });
+    expect(h.next).toMatchObject({ type: "playbook", playbookId: "customer-follow-ups", obligation: null, job: { kind: "send_message" } });
+    const et = nextCard(handoverSection(h, "et", "c", NOW));
+    const en = nextCard(handoverSection(h, "en", "c", NOW));
+    expect(et).toContain("Lase assistendil öelda, kellele sel nädalal helistada või kirjutada");
+    expect(et).toContain("„Kellele peaksin sel nädalal helistada või kirjutada?”");
+    expect(et).toContain("Loeb sinu kliendinimekirja või Kliendid lehte ja iga sõnum kinnitatakse ükshaaval.");
+    expect(en).toContain("Let your assistant tell you who to call or message this week");
+    expect(en).toContain("„Who should I call or message this week?”");
+    expect(en).toContain("It reads your customer list or the Kliendid sheet, and every message is approved one by one.");
+    for (const card of [et, en]) {
+      expect(card).not.toMatch(/arve|esitan|esita|invoice|file/i);
+      expect(card).not.toContain("Valmista ette:");
+      expect(card).not.toContain("Prepare:");
+    }
+  });
+
+  test("payment-reminder, obligation and post_entries cards keep their copy", () => {
+    const reminder = computeHandover({ assessment: null, obligations, approvals: [], rules: [], now: NOW });
+    expect(reminder.next).toMatchObject({ type: "playbook", playbookId: "payment-reminder" });
+    const reminderEt = nextCard(handoverSection(reminder, "et", "c", NOW));
+    const reminderEn = nextCard(handoverSection(reminder, "en", "c", NOW));
+    expect(reminderEt).toContain("Lase assistendil koostada esimene maksemeeldetuletus");
+    expect(reminderEt).toContain("Vaata, millised minu arved on tasumata, ja koosta esimesele meeldetuletus. Küsi minult kinnitust enne saatmist.");
+    expect(reminderEt).toContain("Kõige kiirem võit: see on ainus igakuine töö, mille saab hiljem püsiloaga täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.");
+    expect(reminderEn).toContain("Let your assistant draft the first payment reminder");
+    expect(reminderEn).toContain("Check which of my invoices are unpaid and draft a reminder for the first one. Ask me to approve it before sending.");
+    expect(reminderEn).toContain("The quickest win: the only monthly job a standing approval can later take off your plate completely. It needs your unpaid invoices: your accounting connector or a file you share with your assistant.");
+
+    const late = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2027-07-05T10:00:00Z"), months: 2 }).obligations.find((x) => x.rule_id === "annual-report-overdue")!;
+    const overdue = { ...late, effective_due: "2026-11-11", statutory_due: "2026-11-11" } as Obligation;
+    const obligation = computeHandover({ assessment: null, obligations: [overdue], approvals: [appr({ outcome: "sent", cents: 10_000 }), fired()], rules: [rule()], now: NOW });
+    expect(obligation.next).toMatchObject({ type: "playbook", playbookId: "annual-report", obligation: { rule_id: "annual-report-overdue" } });
+    const obligationEt = nextCard(handoverSection(obligation, "et", "c", NOW));
+    const obligationEn = nextCard(handoverSection(obligation, "en", "c", NOW));
+    expect(obligationEt).toContain("Lase assistendil ette valmistada: Majandusaasta aruanne");
+    expect(obligationEt).toContain("Koosta mulle sammud hilinenud majandusaasta aruande esitamiseks.");
+    expect(obligationEt).toContain("Vajab kuu arveid: sinu raamatupidamisprogrammi ühendust või faile, mille assistendile jagad.");
+    expect(obligationEn).toContain("Let your assistant prepare: Annual report");
+    expect(obligationEn).toContain("Lay out the steps for me to file the overdue annual report.");
+    expect(obligationEn).toContain("It needs the period&#39;s invoices: your accounting connector or files you share with your assistant.");
+
+    const posted = appr({ kind: "post_entries", state: "pending", cents: 45_320, to: { name: "Näidis OÜ, e-arveldaja" }, title: "Oktoober 2026", summary: "October entries" });
+    const books = computeHandover({ assessment: null, obligations: [], approvals: [fired(), posted], rules: [rule()], now: NOW });
+    expect(books.next).toMatchObject({ type: "playbook", playbookId: "books-catch-up", obligation: null, job: { kind: "post_entries" } });
+    const booksEt = nextCard(handoverSection(books, "et", "c", NOW));
+    const booksEn = nextCard(handoverSection(books, "en", "c", NOW));
+    expect(booksEt).toContain("Lase assistendil ette valmistada: Raamatupidamine korras");
+    expect(booksEt).toContain("Valmista ette: Raamatupidamine korras. Küsi minult iga kuu kannete kohta kinnitust enne kirjendamist.");
+    expect(booksEt).toContain("Vajab iga kuu pangaliikumisi (LHV ühendus või pangast alla laaditud väljavõte) ja sinu raamatupidamisprogrammi ühendust. Iga kuu kirjendatakse alles pärast sinu kinnitust.");
+    expect(booksEn).toContain("Let your assistant prepare: Books brought up to date");
+    expect(booksEn).toContain("Prepare: Books brought up to date. Ask me to approve each month&#39;s entries before you post them.");
+    expect(booksEn).toContain("It needs each month&#39;s bank movements (your LHV connector or a statement you download from your bank) and your accounting connector. Each month is posted only after you approve it.");
+    for (const card of [reminderEt, reminderEn, obligationEt, obligationEn, booksEt, booksEn]) {
+      expect(card).not.toContain("Lase assistendil öelda, kellele sel nädalal helistada või kirjutada");
+      expect(card).not.toContain("Let your assistant tell you who to call or message this week");
+    }
+  });
+});

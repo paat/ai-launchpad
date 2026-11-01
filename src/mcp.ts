@@ -411,7 +411,8 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
       logActivity(db, ctx.ownerId, "assistant", "approved_in_assistant", "ok", `Owner approved in the assistant chat: ${args.action.kind} to ${args.action.recipient.name} (digest ${digest.slice(0, 12)}). Launchpad sent, paid and filed nothing.`);
       return json(receipt);
     }
-    const rule = matchStandingRule(db, ctx.ownerId, args.action);
+    // Follow-ups are approved one by one. A live send_message rule must not cover this playbook (#96).
+    const rule = args.playbook_id === "customer-follow-ups" ? null : matchStandingRule(db, ctx.ownerId, args.action);
     if (rule) {
       const id = newId("appr"), digest = approvalDigest(args.action), now = nowIso(), expires = new Date(Date.now() + 24 * 3600_000).toISOString(), ruleName = standingRuleName(rule);
       const receipt = { approval_id: id, state: "approved", auto_approved: true, approved_by_rule: rule.id, rule_name: ruleName, digest, decided_at: now, expires_at: expires, approve_url: `${ctx.baseUrl}/approvals/${id}`,

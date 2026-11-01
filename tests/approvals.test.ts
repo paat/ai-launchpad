@@ -762,6 +762,20 @@ describe("playbook_id on approvals („Käest ära”, #61)", () => {
     expect(row(auto.approval_id).playbook_id).toBe("payment-reminder");
   });
 
+  test("customer-follow-ups stays pending inside a live send_message rule; the same action as a payment reminder still auto-approves (tribunal T-003, #96)", async () => {
+    const o = owner("pb-follow"), c = await client(o.token);
+    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "any", max_eur: "2000" })).status).toBe(302);
+    const action = msg({ summary: "same action, amount inside the rule" });
+    const follow = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "fu-1", action, playbook_id: "customer-follow-ups" } }));
+    expect(follow.state).toBe("pending");
+    expect(follow.auto_approved).toBeUndefined();
+    expect(row(follow.approval_id)).toMatchObject({ state: "pending", playbook_id: "customer-follow-ups", approved_by_rule: null });
+    const reminderReq = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "fu-2", action, playbook_id: "payment-reminder" } }));
+    expect(reminderReq).toMatchObject({ state: "approved", auto_approved: true });
+    expect(row(reminderReq.approval_id).playbook_id).toBe("payment-reminder");
+    expect(db.prepare("SELECT count(*) n FROM activity WHERE owner_id='pb-follow' AND action='standing_auto_approved'").get()).toEqual({ n: 1 });
+  });
+
   test("reads, logins and requests fill nothing; only a recorded done outcome fills a segment", async () => {
     const o = owner("pb-fill"), c = await client(o.token);
     const count = async () => (await page(o, "/uhenda")).match(/<p class="ho-sum"><span class="num">(\d+)<\/span>/)?.[1];

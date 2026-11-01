@@ -381,6 +381,7 @@ describe("agent-facing copy over MCP", () => {
     expect(steps).toMatch(/get_approval[\s\S]*usable is not false[\s\S]*record_action_outcome with outcome sent/);
     const send = p.steps.find((x) => x.includes("request_approval with action kind send_message"))!;
     expect(send).toContain("always omit amount_cents (a follow-up message has no amount)");
+    expect(send).toContain('playbook_id: REQUIRED, "customer-follow-ups"');
     expect(send).toContain("Each follow-up message is approved one by one, never by a standing approval.");
     expect(send).not.toContain("auto_approved");
     expect(send).not.toContain("If the reply is auto_approved");
