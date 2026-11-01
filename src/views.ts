@@ -580,7 +580,7 @@ ${TEASER_CSS}
 .job-switcher{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s-3);margin:0;padding:0;list-style:none}
 .job-card{position:relative;min-width:0;border:1px solid var(--c-border);border-radius:var(--r-lg);background:#fff}
 .job-card--active{border-color:var(--c-primary);background:var(--c-primary);color:#fff}
-.job-activate{width:100%;height:100%;min-height:var(--tap);margin:0;padding:var(--s-3) var(--s-4);border:0;border-radius:var(--r-lg);background:none;color:inherit;font:inherit;font-weight:750;line-height:1.4;text-align:left}
+.job-activate{width:100%;height:100%;min-height:var(--tap);margin:0;padding:var(--s-3) var(--s-4);border:0;border-radius:var(--r-lg);background:none;color:inherit;font:inherit;font-weight:750;line-height:1.4;text-align:center}
 .job-activate:hover{background:var(--c-surface-2);color:var(--c-text)}
 .job-card--active .job-activate:hover{background:var(--c-primary);color:#fff}
 .job-detail{position:relative;margin:0;padding:var(--s-4);border:1px solid var(--c-primary);border-top:var(--s-1) solid var(--c-primary);border-radius:0 0 var(--r-xl) var(--r-xl);background:#fff}
