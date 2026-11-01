@@ -240,6 +240,11 @@ test("MCP pending, reused digest and idempotent replay carry the live check with
   expect(approved).toMatchObject({ approval_id: pending.approval_id, state: "approved", approved_in_assistant: true, check: pending.check });
   const replay = await request(c, "pending");
   expect(replay).toMatchObject({ state: "approved", current_state: "approved", check: pending.check });
+  for (const receipt of [approved, replay, await get(c, pending.approval_id)]) {
+    expect(receipt.assistant_instruction).toContain("Muse's concerns in one line");
+    expect(receipt.assistant_instruction).toContain("act only if they still want it");
+    expect(receipt.assistant_instruction).not.toContain("act with your own tools");
+  }
   expect(live.check).toHaveBeenCalledTimes(1);
   db.prepare("UPDATE approvals SET check_state='unavailable',check_json=? WHERE id=?").run('{"reason":"provider_failed"}', pending.approval_id);
   expect((await request(c, "pending")).check).toMatchObject({ state: "unavailable", reason: "provider_failed" });
@@ -338,15 +343,42 @@ test.each([null, "unknown-provider"])("valid ok output without recognized proven
   expect((await get(c, id)).check).toEqual({ state: "unavailable", by, reason: "invalid_output" });
 });
 
-test("new assistant-approved and standing-rule approvals are checked without changing their state", async () => {
-  const db = dbForTest(), oid = owner(db), live = checker(output(review)), c = await client(db, oid, live);
-  const assistant = await request(c, "assistant", { owner_confirmation: "Yes, send." });
-  expect(assistant).toMatchObject({ state: "approved", approved_in_assistant: true, check: { state: "review" } });
-  db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,'send_invoice',20000,10,?,?)").run("synthetic-rule", oid, new Date(Date.now() + 86_400_000).toISOString(), new Date().toISOString());
-  const standing = await request(c, "standing", { action: { ...action, summary: "Send the second synthetic invoice." } });
-  expect(standing).toMatchObject({ state: "approved", auto_approved: true, check: { state: "review" } });
-  expect(live.check).toHaveBeenCalledTimes(2);
-  expect((await get(c, standing.approval_id)).state).toBe("approved");
+test.each(["assistant", "standing"])("%s approval instructions respect the check on creation, replay and get_approval", async (route) => {
+  vi.useFakeTimers();
+  const db = dbForTest(), oid = owner(db);
+  let finish!: (r: CheckOutcome) => void;
+  const live = checker();
+  live.check.mockImplementation((_id, _digest, _input, onStart) => new Promise((resolve) => { onStart?.(); finish = resolve; }));
+  if (route === "standing") db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,'send_invoice',20000,10,?,?)").run("synthetic-rule", oid, new Date(Date.now() + 86_400_000).toISOString(), new Date().toISOString());
+  const c = await client(db, oid, live);
+  const extra = route === "assistant" ? { owner_confirmation: "Yes, send." } : {};
+  const actNow = route === "assistant" ? "act with your own tools using exactly this content" : "Proceed without asking the owner again";
+  for (const state of ["review", "ok", "unavailable", "running"]) {
+    const result = request(c, state, extra);
+    await vi.advanceTimersByTimeAsync(0);
+    if (state === "running") await vi.advanceTimersByTimeAsync(20_000);
+    else finish(state === "unavailable" ? { kind: "failed", reason: "provider_failed" } : output(state === "review" ? review : ok));
+    const initial = await result;
+    expect(initial).toMatchObject({ state: "approved", [route === "assistant" ? "approved_in_assistant" : "auto_approved"]: true });
+    const replay = await request(c, state, extra), read = await get(c, initial.approval_id);
+    for (const receipt of [initial, replay, read]) {
+      expect(receipt).toMatchObject({ state: "approved", check: { state } });
+      if (state === "review" || state === "running") {
+        expect(receipt.assistant_instruction).not.toContain("The owner approved this exact content");
+        expect(receipt.assistant_instruction).not.toContain("act with your own tools");
+        expect(receipt.assistant_instruction).not.toContain("Proceed without asking");
+        expect(receipt.assistant_instruction).not.toContain("act as usual");
+        if (state === "review") {
+          expect(receipt.assistant_instruction).toContain("Muse's concerns in one line");
+          expect(receipt.assistant_instruction).toContain("act only if they still want it");
+        } else expect(receipt.assistant_instruction).toContain("Before acting, call get_approval once");
+      } else expect(receipt.assistant_instruction).toContain(receipt === read ? "act as usual" : actNow);
+    }
+    if (state === "running") { finish(output()); await vi.advanceTimersByTimeAsync(0); }
+    // A fresh exact action is needed for the next check in the assistant route.
+    db.prepare("UPDATE approvals SET state='consumed' WHERE id=?").run(initial.approval_id);
+  }
+  expect(live.check).toHaveBeenCalledTimes(4);
 });
 
 async function httpApp(mode: "test" | "disabled" | "public_cards", seedLedger?: (ledger: ModelQualityLedger) => void) {

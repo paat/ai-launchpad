@@ -205,11 +205,18 @@ export const OWNER_DAILY_APPROVAL_CHECKS = 30;
 export const APPROVAL_CHECK_WAIT_MS = 20_000;
 export const CHECK_INSTRUCTION = "The check is advisory and never changes approval state. If check.state is review, tell the owner its concerns in one line and act only if they still want it and the approval is approved and usable. If check.state is running, call get_approval once before acting to read it. If check.state is unavailable, say nothing about the check unless asked.";
 
-function approvalCheckInstruction(a: ApprovalRow): string {
-  if (a.state === "pending") return `Do not act before the approval is approved. ${CHECK_INSTRUCTION}`;
-  if (a.state !== "approved") return `This approval is ${a.state}. Do not act under it.`;
-  if (approvalAddressMissing(a)) return `Do not act under this unusable approval. ${CHECK_INSTRUCTION}`;
-  return `${CHECK_INSTRUCTION} If check.state is unavailable, act as usual under the approval.`;
+function approvalCheckInstruction(a: ApprovalRow, instruction?: unknown): string {
+  let advice: string;
+  if (a.state === "pending") advice = `Do not act before the approval is approved. ${CHECK_INSTRUCTION}`;
+  else if (a.state !== "approved") advice = `This approval is ${a.state}. Do not act under it.`;
+  else if (approvalAddressMissing(a)) advice = `Do not act under this unusable approval. ${CHECK_INSTRUCTION}`;
+  else {
+    const check = approvalCheckReceipt(a);
+    if (check.state === "review") return "Tell the owner Muse's concerns in one line and act only if they still want it. The approval must still be approved and usable.";
+    if (check.state === "running") return "Before acting, call get_approval once to read Muse's check and follow its instruction.";
+    advice = `${CHECK_INSTRUCTION} If check.state is unavailable, act as usual under the approval.`;
+  }
+  return [instruction, advice].filter(Boolean).join(" ");
 }
 
 export function approvalCheckReceipt(a: Pick<ApprovalRow, "check_state" | "check_json" | "check_by">) {
@@ -547,7 +554,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
       assistant_instruction: `This approval is ${state}. Do not send, pay or file anything for it. If the owner still wants this done, make a new request_approval with a new report_id.` };
     const instruction = state === "approved" && a && approvalAddressMissing(a) ? ADDRESS_MISSING : state === "approved" && owner_instruction ? APPROVED_NOW : assistant_instruction;
     return { ...rest, state, ...(replayed ? { current_state: state } : {}), check, ...(state === "pending" && owner_instruction ? { owner_instruction } : {}),
-      assistant_instruction: [instruction, approvalCheckInstruction(a!)].filter(Boolean).join(" ") };
+      assistant_instruction: approvalCheckInstruction(a!, instruction) };
   };
   const startCheck = async (id: string) => waitForApprovalCheck(startApprovalCheck(db, ctx.ownerId, id, hooks.approvalChecker === undefined ? mockChecker : hooks.approvalChecker));
   server.registerTool("request_approval", { description: "Record the owner's approval of one exact action (message, invoice, payment, filing or a month's book entries). Usual flow: show the owner the exact content in this chat and ask once; when they say yes, call this with owner_confirmation set to their words, and the reply is state approved at once (approved_in_assistant: true): act without asking them to approve again on Launchpad. Without owner_confirmation the approval waits (pending) for the owner on the Launchpad approval page; use that only when the owner is not in this chat. A later call with owner_confirmation and the same action (new report_id) approves that waiting request. The digest binds every field of action; any change needs a new approval. send_message and send_invoice must name recipient.address, the exact e-mail or e-invoice address you will send to. Launchpad never sends, pays or files: after get_approval returns approved, act with your own tools using exactly this content, then call record_action_outcome before expires_at. Expires 24 hours after the request, for deciding and for acting: an approved approval with no outcome recorded by then becomes expired. Idempotent by report_id; a replay returns the creation receipt plus the live current_state. If the owner set a standing approval that covers the action (send_message/send_invoice only: kind, recipient, amount cap, daily limit, expiry), the reply is already state approved with auto_approved: true: proceed without asking the owner again. Filings and payments are never auto-approved. Returns an advisory Meta Muse check of the exact stored action, which never changes approval state.", inputSchema: { report_id: s(80), action: approvalActionSchema, owner_confirmation: s(300).describe("The owner's own reply in this chat approving exactly this content, quoted verbatim (e.g. \"jah, saada\"). Pass it only after you showed the owner the exact recipient, amount and text and they said yes. Optional.").optional(), playbook_id: z.enum(PLAYBOOK_IDS).describe("The playbook you are following (get_started playbooks[].id), so the owner sees which job this is. Optional.").optional() } }, async (args) => {

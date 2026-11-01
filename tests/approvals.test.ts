@@ -583,7 +583,9 @@ describe("standing approvals (#45)", () => {
     const r = await ask(c, next);
     expect(r).toMatchObject({ state: "approved", auto_approved: true, approved_by_rule: rule.id, digest: approvalDigest({ ...next, currency: "EUR" }) });
     expect(r.rule_name).toMatch(/^Arved: billing@client\.example, kuni 2000/);
-    expect(r.assistant_instruction).toContain("Proceed without asking the owner again");
+    expect(r.check.state).toBe("review"); // The document omits the invoice amount.
+    expect(r.assistant_instruction).toContain("act only if they still want it");
+    expect(r.assistant_instruction).not.toContain("Proceed without asking");
     expect(row(r.approval_id)).toMatchObject({ state: "approved", approved_by_rule: rule.id });
     expect(row(r.approval_id).decided_at).toBeTruthy();
     // One audit row names the rule and the digest.
