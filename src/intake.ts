@@ -329,20 +329,22 @@ export function mockIntake(): IntakeClient {
   };
 }
 
-const planOk = (output: string) => {
+/** The string that passed the 600-character cap, or null. Padding does not count. */
+const acceptedPlan = (output: string): string | null => {
   const t = output.trim();
-  return t.length > 0 && t.length <= 600;
+  return t.length > 0 && t.length <= 600 ? t : null;
 };
 
 /** Live Meta calls through the caller's ledger. Failures become { ok: false } and never throw. */
 export function liveIntake(opts: { ledger: ModelQualityLedger; apiKey: string; fetchFn?: FetchFn }): IntakeClient {
-  async function call(job: "intake_extract" | "intake_plan", input: string, accept: (output: string) => boolean): Promise<IntakeResult> {
+  async function call(job: "intake_extract" | "intake_plan", input: string, accept: (output: string) => string | null): Promise<IntakeResult> {
     try {
       const r = await runModelQualityAttempt({
         job, input, requestId: intakeRequestId(job, input),
         ledger: opts.ledger, apiKey: opts.apiKey, fetchFn: opts.fetchFn, confirmCurrentPricing: true,
       });
-      if (r.status === "completed" && r.output && accept(r.output)) return { ok: true, output: r.output, mock: false };
+      const kept = r.status === "completed" && r.output ? accept(r.output) : null;
+      if (kept) return { ok: true, output: kept, mock: false };
       if (r.status === "completed") return { ok: false, reason: "invalid_output", mock: false };
       return { ok: false, reason: r.errorCode ?? r.status, mock: false };
     } catch (e) {
@@ -355,11 +357,11 @@ export function liveIntake(opts: { ledger: ModelQualityLedger; apiKey: string; f
       const body = normalizeExtract(text);
       if (!body) return { ok: false, reason: "empty", mock: false };
       const input = JSON.stringify({ text: body });
-      return call("intake_extract", input, (output) => parseExtract(output) !== null);
+      return call("intake_extract", input, (output) => (parseExtract(output) !== null ? output : null));
     },
     async summarize(input) {
       if (typeof input !== "string" || input.trim() === "") return { ok: false, reason: "empty", mock: false };
-      return call("intake_plan", input, planOk);
+      return call("intake_plan", input, acceptedPlan);
     },
   };
 }

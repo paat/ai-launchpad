@@ -322,6 +322,20 @@ describe("intake clients and limiter", () => {
       fetchFn: (async () => chat(long)) as FetchFn,
     });
     await expect(summary.summarize('{"lang":"en","paid_note":false}')).resolves.toEqual({ ok: false, reason: "invalid_output", mock: false });
+    const padded = `${" ".repeat(601)}Short bottom line.`;
+    const paddedPlan = liveIntake({
+      ledger: good, apiKey: "synthetic-key-not-real",
+      fetchFn: (async () => chat(padded)) as FetchFn,
+    });
+    const trimmed = await paddedPlan.summarize('{"lang":"en","paid_note":true}');
+    expect(trimmed).toEqual({ ok: true, output: "Short bottom line.", mock: false });
+    if (trimmed.ok) expect(trimmed.output).toHaveLength(18);
+    const over = "y".repeat(601);
+    const overPlan = liveIntake({
+      ledger: good, apiKey: "synthetic-key-not-real",
+      fetchFn: (async () => chat(over)) as FetchFn,
+    });
+    await expect(overPlan.summarize('{"lang":"en","paid_note":false,"over":true}')).resolves.toEqual({ ok: false, reason: "invalid_output", mock: false });
     const short = liveIntake({
       ledger: good, apiKey: "synthetic-key-not-real",
       fetchFn: (async () => chat("Lühike kokkuvõte.")) as FetchFn,
