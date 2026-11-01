@@ -15,7 +15,7 @@ import { REASONS, chooseAssistant, offerDownload, parseBusiness, parseUses } fro
 import type { FetchFn } from "./model-quality.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
-import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, chooserBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
+import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, chooserBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, aboutBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
 import { NAIDIS, naidisApproval, naidisBody } from "./naidis.js";
 
@@ -408,9 +408,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // Deadlines: only for a known registry code (assessment ref or synthetic demo company).
   const ownerDeadlines = (assessment: Assessment | null) => { const ref = assessment?.company_registry_ref?.trim(); return ref && /^\d{8}$/.test(ref) ? companyObligations(register, { registryCode: ref, months: 2, cacheOnly: true }) : Promise.resolve(null); };
   // „Käest ära” (#61): once per request, from the stored approvals and rules plus the rule-computed deadlines.
-  const ownerHandover = (ownerId: string, assessment: Assessment | null, deadlines: Awaited<ReturnType<typeof ownerDeadlines>>) => {
+  const ownerHandover = (ownerId: string, st: { assessment: Assessment | null; assessed_at: string | null }, deadlines: Awaited<ReturnType<typeof ownerDeadlines>>) => {
     expireApprovals(db, ownerId);
-    return computeHandover({ assessment, obligations: deadlines?.ok ? handoverObligations(deadlines) : [], approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(ownerId) as ApprovalRow[], rules: ownerRules(ownerId), now: new Date() });
+    return computeHandover({ assessment: st.assessment, assessedAt: st.assessed_at, obligations: deadlines?.ok ? handoverObligations(deadlines) : [], approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(ownerId) as ApprovalRow[], rules: ownerRules(ownerId), now: new Date() });
   };
 
   const oauth = new LaunchpadOAuth(db, cfg, session, ownerAllowed);
@@ -592,7 +592,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       approvals, progress: st.progress as unknown as { task_id: string; milestone: string; observed_at: string }[],
       // A checksum-invalid ref is the only lookup that computes nothing: say so instead of dropping the section.
       deadlines: !deadlines ? null : !deadlines.ok ? "invalid_code" : failure?.unavailable === "not_found" ? "not_found" : failure ? { unavailable_reason: failure.reason } : unavailable === "not_cached" ? "not_cached" : unavailable ? { unavailable_reason: deadlines.result.company.unavailable_reason ?? unavailable } : deadlines.result as DeadlinesView,
-      needs: ownerNeeds(db, oid(req)), reportCount, rules: ownerRules(oid(req)), handover: ownerHandover(oid(req), st.assessment, deadlines),
+      needs: ownerNeeds(db, oid(req)), reportCount, rules: ownerRules(oid(req)), handover: ownerHandover(oid(req), st, deadlines),
     })));
   } catch (e) { next(e); } });
   app.post("/unmet-needs/decide", requireOwner, refuseSandbox, csrfOk, (req, res) => {
@@ -635,6 +635,20 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     // Shared caches may keep it briefly, per language cookie; never a response that sets the cookie.
     if (!parseLang(req.query.lang)) res.set({ "cache-control": "public, max-age=60", vary: "Cookie" });
     res.type("html").send(publicPage(req, res, tr(langOf(res))("Avatud soovid", "Open demand"), demandBody(aggregateDemand(db), langOf(res))));
+  });
+
+  // Public, login-free About page. Never reads a session or owner data.
+  // A ?lang= response stays private: the language middleware sets the cookie.
+  app.get("/meist", (req, res) => {
+    if (!parseLang(req.query.lang)) res.set({ "cache-control": "public, max-age=300", vary: "Cookie" });
+    const l = langOf(res);
+    res.type("html").send(publicPage(req, res, tr(l)("Meist", "About"), aboutBody(l)));
+  });
+  app.get("/about", (req, res) => {
+    const p = new URLSearchParams();
+    const v = req.query.lang;
+    if (typeof v === "string" && parseLang(v)) p.set("lang", v);
+    res.redirect(302, p.size ? `/meist?${p}` : "/meist");
   });
 
   app.get("/activity", requireOwner, (req, res) => {
@@ -790,8 +804,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const a = getApproval(db, oid(req), req.params.id);
     if (!a) return ownerError(req, res, 404, t("Kinnitust ei leitud", "Approval not found"), t("Sellist kinnitust sinu tööruumis pole. Midagi ei kinnitatud.", "Approval not found in your workspace. Nothing was approved."));
     // Once the assistant has recorded a done outcome, the receipt shows the owner's „Käest ära” strip (#63).
-    const assessment = isDone(a) ? getState(db, oid(req)).assessment : null;
-    const handover = isDone(a) ? ownerHandover(oid(req), assessment, await ownerDeadlines(assessment)) : undefined;
+    const st = isDone(a) ? getState(db, oid(req)) : null;
+    const handover = st ? ownerHandover(oid(req), st, await ownerDeadlines(st.assessment)) : undefined;
     res.type("html").send(page(req, res, t("Kinnitus", "Approval"), "none", approvalCardBody({ csrf: (req as Authed).csrf, a, lang: langOf(res), sample: isSampleKind((req as Authed).ownerKind), rules: ownerRules(oid(req)), handover,
       // The same default cap as the Ühendus offer, from this send and the owner's past approvals of its job (QA m4).
       capCents: offerCapCents(largestAmount([a, ...standingBasis(db.prepare("SELECT * FROM approvals WHERE owner_id=? AND kind=?").all(oid(req), a.kind ?? "") as ApprovalRow[], a.kind ?? "")])) })));
@@ -932,9 +946,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     }
     // Sandbox reuses the demo sample state and omits the open-assistant hero, token, setup and calendar actions (those 403).
     const sandboxOwner = kind === "sandbox";
-    const assessment = s ? getState(db, s.owner_id).assessment : null;
+    const st = s ? getState(db, s.owner_id) : null, assessment = st?.assessment ?? null;
     const feed = s && !sandboxOwner ? db.prepare("SELECT created_at FROM calendar_feeds WHERE owner_id=?").get(s.owner_id) as { created_at: string } | undefined : undefined;
-    const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : "claude", state, owner: !!s && !sandboxOwner, sandbox: sandboxOwner, expanded: req.query.naita === "1", ...(s ? { ...(sandboxOwner ? {} : { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null } }), standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, assessment, await ownerDeadlines(assessment)) } : {}) });
+    const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : "claude", state, owner: !!s && !sandboxOwner, sandbox: sandboxOwner, expanded: req.query.naita === "1", ...(s ? { ...(sandboxOwner ? {} : { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null } }), standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, st!, await ownerDeadlines(assessment)) } : {}) });
     res.type("html").send(shell({ title: tr(l)("Ühenda", "Connect"), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, sample: isSampleKind(kind), toggle: toggleHref(req, l), body,
       // Zero JS: while an owner waits for the first assistant contact, the page reloads itself.
       head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "", ...sandboxGuides(kind) }));

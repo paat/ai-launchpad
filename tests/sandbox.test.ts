@@ -135,7 +135,7 @@ test("public Try it links create an isolated seeded sandbox; approve simulates s
   const simulated = s.db.prepare("SELECT summary FROM activity WHERE owner_id=? AND action='record_action_outcome' ORDER BY id DESC LIMIT 1").get(owner.id) as { summary: string };
   expect(simulated.summary).toContain("Näidis: assistent saatis — päriselt ei saadetud");
   const receipt = await browser.request(s, "GET", `/approvals/${pending.id}`);
-  expect(receipt.body).toContain("Saadetud: demo"); expect(receipt.body).toContain("päriselt ei saadetud"); expect(receipt.body).toContain("Käest ära:");
+  expect(receipt.body).toContain("Saadetud: demo"); expect(receipt.body).toContain("päriselt ei saadetud"); expect(receipt.body).toContain("Kontoritöö:");
 
   const rule = await browser.request(s, "POST", "/standing-approvals", { csrf, approval_id: pending.id, scope: "recipient", max_eur: "500" });
   expect(rule.status).toBe(302); expect(count(s.db, "standing_approvals", owner.id)).toBe(1);
@@ -592,7 +592,8 @@ test("no sandbox page links to a route that refuses sandboxes", async () => with
   }
   const csrf = await browser.csrf(s);
   for (const action of posts) {
-    if (action === "/auth/logout" || action === "/delete") continue;
+    // /proovi rejects every post that lacks its one-time cookie. The public About page links to the sample, which links here. That 403 is not a sandbox refusal.
+    if (action === "/auth/logout" || action === "/delete" || action === "/proovi") continue;
     const res = await browser.request(s, "POST", action, { csrf });
     expect(res.status, action).not.toBe(403);
   }

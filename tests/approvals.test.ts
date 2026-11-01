@@ -211,7 +211,7 @@ describe("approval cards over MCP", () => {
     // Wow (#63): once „Saadetud” is recorded, the receipt shows the „Käest ära” strip, a count without a percentage.
     expect(decided).not.toContain('class="ho-strip"');
     expect(consumedCard).toContain('<a class="ho-strip" href="/uhenda#kaest-ara"');
-    expect(consumedCard).toMatch(/Käest ära: <span class="num">1<\/span> töö \d+-st/); expect(consumedCard.match(/<a class="ho-strip"[\s\S]*?<\/a>/)![0]).not.toMatch(/%/);
+    expect(consumedCard).toMatch(/<b>Kontoritöö: [^<]+<\/b><span>[^<]*1 korras/); expect(consumedCard.match(/<a class="ho-strip"[\s\S]*?<\/a>/)![0]).not.toMatch(/%/);
 
     // Tehtud rows name their object, and the time never runs into the verb (QA D-15, D-17).
     const tehtud = await (await fetch(`${base}/activity`, { headers: { cookie: o.cookie } })).text();
@@ -805,20 +805,20 @@ describe("playbook_id on approvals („Käest ära”, #61)", () => {
     expect(p).toContain("arved@demo-klient.example");
   });
 
-  test("reads, logins and requests fill nothing; only a recorded done outcome fills a segment", async () => {
+  test("reads and logins change nothing; a request waits; only a recorded done outcome reads as in order", async () => {
     const o = owner("pb-fill"), c = await client(o.token);
-    const count = async () => (await page(o, "/uhenda")).match(/<p class="ho-sum"><span class="num">(\d+)<\/span>/)?.[1];
-    expect(await count()).toBe("0");
+    const count = async () => (await page(o, "/uhenda")).match(/<span class="ho-title">Maksemeeldetuletused<\/span><span class="state-chip state-chip--\w+">([^<]+)<\/span>/)?.[1];
+    expect(await count()).toBe("Kontrollimata");
     for (const [name, args] of [["get_started", {}], ["get_progress", {}], ["search_services", { query: "arve" }], ["get_obligations", { registry_code: "19990001" }]] as const) await c.callTool({ name, arguments: args });
     const req = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "fill-1", action: msg(), playbook_id: "payment-reminder" } }));
-    expect(await count()).toBe("0");
+    expect(await count()).toBe("Ootab sinu kinnitust");
     const tana = await page(o, "/");
     expect(tana).toContain('class="ho-strip" href="/uhenda#kaest-ara"');
-    expect(tana).toContain('<span class="num">0</span> tööd 1-st');
+    expect(tana).toContain("<b>Kontoritöö: 1 ootab sinu kinnitust</b>");
     await decide(o, req.approval_id, { decision: "approve", digest: req.digest });
-    expect(await count()).toBe("0");
+    expect(await count()).toBe("Kontrollimata");
     await c.callTool({ name: "record_action_outcome", arguments: { report_id: "fill-o", approval_id: req.approval_id, digest: req.digest, outcome: "sent", observed_at: new Date().toISOString() } });
-    expect(await count()).toBe("1");
+    expect(await count()).toBe("Korras");
     const uhendus = await page(o, "/uhenda");
     const section = uhendus.slice(uhendus.indexOf('id="kaest-ara"'), uhendus.indexOf('id="pusiload"'));
     expect(section).not.toContain("%");

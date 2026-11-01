@@ -16,6 +16,8 @@ export const responsibilitySchema = z.object({
   access: s(300).optional(),
   success_criterion: s(300).optional(),
   next_checkpoint: s(200).optional(),
+  // What the agent saw when it last looked: nothing outstanding, or work waiting. Left out = not checked.
+  current_state: z.enum(["in_order", "open"]).optional(),
 }).strict();
 export type Responsibility = z.infer<typeof responsibilitySchema>;
 
@@ -26,6 +28,12 @@ export function isHandled(r: Responsibility): boolean {
   return r.arrangement === "assistant_assessed" && !!r.executor?.trim() && !!r.access?.trim() && !!r.success_criterion?.trim() && !!r.next_checkpoint?.trim();
 }
 
+/** Kinds of service the owner's assistant can reach; the business register is public and always reachable. */
+export const CONNECTION_KINDS = ["accounting", "email", "bank", "calendar", "drive", "customers", "browser"] as const;
+export type ConnectionKind = (typeof CONNECTION_KINDS)[number];
+export const connectionSchema = z.object({ kind: z.enum(CONNECTION_KINDS), state: z.enum(["linked", "file", "not_linked"]), service: s(80).optional() }).strict();
+export type Connection = z.infer<typeof connectionSchema>;
+
 export const assessmentSchema = z.object({
   assessed_domains: z.array(z.enum(DOMAINS)).max(5),
   responsibilities: z.array(responsibilitySchema).max(60),
@@ -34,6 +42,7 @@ export const assessmentSchema = z.object({
   company_label: s(120).optional(),
   company_registry_ref: s(60).optional(),
   assumptions: z.array(s(400)).max(10).optional(),
+  connections: z.array(connectionSchema).max(CONNECTION_KINDS.length).optional(),
   next_action: z.object({
     title: s(200), rationale: s(600),
     estimated_effort_saved: s(200).optional(),
@@ -46,6 +55,7 @@ export const assessmentSchema = z.object({
     if (ids.has(r.id)) ctx.addIssue({ code: "custom", message: `Duplicate responsibility id '${r.id}'. Each responsibility may appear once; padding is rejected.` });
     ids.add(r.id);
   }
+  if (a.connections && new Set(a.connections.map((c) => c.kind)).size !== a.connections.length) ctx.addIssue({ code: "custom", message: "Duplicate connections kind." });
   if (new Set(a.assessed_domains).size !== a.assessed_domains.length) ctx.addIssue({ code: "custom", message: "Duplicate assessed_domains entries." });
 });
 export type Assessment = z.infer<typeof assessmentSchema>;
