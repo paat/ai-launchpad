@@ -13,6 +13,7 @@ const originalFetch = globalThis.fetch;
 let external = 0;
 const SAVED = "Before asking the owner any stable fact, check the saved facts (the remember-facts playbook).";
 const SWITCH = "If this chat has not picked up from the owner's other assistant yet, follow the switch-assistant playbook first.";
+const DESCRIPTION = "Start here. Start with the owner's deadlines (get_obligations), then offer the matching playbook. Public assessment framework, executable job playbooks and reporting guidance for any authenticated connection; with progress:read it also returns this workspace's company_ref, label and sharing state.";
 
 beforeEach(async () => {
   cfg = { demo: true, production: false, dbPath: ":memory:", baseUrl: "http://127.0.0.1", allowedHosts: ["127.0.0.1"], modelMode: "test" };
@@ -69,16 +70,16 @@ async function started(token: string) {
 }
 
 function expectSwitch(step: string, description: string, on: boolean) {
+  expect(description).toBe(DESCRIPTION);
+  expect(description).not.toContain(SAVED);
+  expect(description).not.toContain(SWITCH);
   expect(step).toContain(SAVED);
-  expect(description).toContain(SAVED);
   expect(step).toContain("Start with the owner's deadlines (get_obligations), then offer the matching playbook.");
   if (on) {
     expect(step.startsWith(SWITCH)).toBe(true);
-    expect(description).toContain(SWITCH);
   } else {
     expect(step.startsWith(SAVED)).toBe(true);
     expect(step).not.toContain("switch-assistant");
-    expect(description).not.toContain("switch-assistant");
   }
 }
 
@@ -99,6 +100,8 @@ test("two clients with different names: the second connection is told to follow 
   const second = await grant("Pebble assistant", "alpha", browser);
   const after = await started(second.tokens.access_token);
   expectSwitch(after.body.first_step, after.description, true);
+  expect(after.description).toBe(before.description);
+  expect(after.body.first_step).not.toBe(before.body.first_step);
   const blob = `${after.body.first_step}\n${after.description}`;
   expect(blob).not.toContain("Quartz assistant");
   expect(blob).not.toContain("Pebble assistant");

@@ -13,12 +13,14 @@ const PLAYBOOK_IDS = PLAYBOOKS.map((p) => p.id) as [string, ...string[]];
 export interface Ctx { ownerId: string; scopes: string[]; companyRef: string; label: string; reportingEnabled: boolean; baseUrl: string; anotherAssistant?: boolean; }
 const SAVED_FACTS_CHECK = "Before asking the owner any stable fact, check the saved facts (the remember-facts playbook).";
 const SWITCH_ASSISTANT_HINT = "If this chat has not picked up from the owner's other assistant yet, follow the switch-assistant playbook first.";
+const GET_STARTED_ONWARDS = "Start with the owner's deadlines (get_obligations), then offer the matching playbook.";
+// MCP hosts cache tools/list, so this description is the same for every connection.
+const GET_STARTED_DESCRIPTION = `Start here. ${GET_STARTED_ONWARDS} Public assessment framework, executable job playbooks and reporting guidance for any authenticated connection; with progress:read it also returns this workspace's company_ref, label and sharing state.`;
 function gettingStarted(anotherAssistant: boolean) {
   const lead = anotherAssistant ? `${SWITCH_ASSISTANT_HINT} ` : "";
-  const onwards = `Start with the owner's deadlines (get_obligations), then offer the matching playbook.`;
   return {
-    first_step: `${lead}${SAVED_FACTS_CHECK} ${onwards} Rules compute every date and each row has its official source; ask the owner only for the facts it lists in facts_needed. A row with a playbook_id has a job you can prepare: follow that playbook's steps; the owner only approves. ${OWNER_VOICE}`,
-    description: `Start here. ${lead}${SAVED_FACTS_CHECK} ${onwards} Public assessment framework, executable job playbooks and reporting guidance for any authenticated connection; with progress:read it also returns this workspace's company_ref, label and sharing state.`,
+    first_step: `${lead}${SAVED_FACTS_CHECK} ${GET_STARTED_ONWARDS} Rules compute every date and each row has its official source; ask the owner only for the facts it lists in facts_needed. A row with a playbook_id has a job you can prepare: follow that playbook's steps; the owner only approves. ${OWNER_VOICE}`,
+    description: GET_STARTED_DESCRIPTION,
   };
 }
 const readOnly = (nothing: string) => `The owner connected you read-only. Tell the owner: „Et saaksin seda sinu eest ette valmistada, ühenda mind AI-hüppelauaga uuesti ja luba nõusolekulehel töid ette valmistada.” When reconnecting, request the progress:report scope; the owner must allow it on the consent page. ${nothing}`;
