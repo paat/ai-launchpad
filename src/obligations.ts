@@ -20,9 +20,9 @@ export interface CompanyFacts {
   latest_annual_report_figures?: Fact<AnnualReportFigures>;
   /** Assistant-supplied only: this calendar year's Estonian turnover so far. */
   ytd_turnover_this_year?: Fact<number>;
-  /** Assistant-supplied only: payouts (salary, board fee, dividends) in the last calendar month. */
+  /** Assistant-supplied only: payouts declared in TSD (salary, board fee, dividends, service-contract fees to private persons) in the last calendar month. */
   payouts_last_month?: Fact<boolean>;
-  /** Assistant-supplied only: an employee (even unpaid) or another TSD trigger in the last calendar month. */
+  /** Assistant-supplied only: an employee (even unpaid), fringe benefits, gifts, donations, entertainment or non-business costs in the last calendar month. */
   other_tsd_triggers_last_month?: Fact<boolean>;
   /** Assistant-supplied only: a hire or a paid board fee is about to start (TÖR). */
   hire_or_board_fee_starting?: Fact<boolean>;
@@ -99,8 +99,8 @@ const EN_MONTH = ["January", "February", "March", "April", "May", "June", "July"
 export const HANDOFF: Record<string, Handoff> = {
   "vat-return-kmd": { assistant_et: "kogub {kuu} arved kokku ja kontrollib, et ükski pole puudu", assistant_en: "gathers {month}'s invoices and checks none are missing", owner_et: "esitad KMD e-MTA-s oma Smart-ID-ga", owner_en: "file the VAT return in e-MTA with your Smart-ID",
     prompt_et: "Valmista {kuu} KMD jaoks arved ette ja küsi minult kinnitust enne, kui midagi saadad.", prompt_en: "Prepare the invoices for the {month} VAT return and ask me before you send anything." },
-  "tsd-monthly-return:if": { assistant_et: "küsib, kas maksid {kuu} palka või oli töötaja; kui kumbagi polnud, kaob see rida", assistant_en: "asks whether you made payouts or had an employee in {month}; if neither, this row goes away", owner_et: "vastad „jah” või „ei”", owner_en: "answer yes or no",
-    prompt_et: "Küsi minult {kuu} väljamaksete kohta ja ütle, kas TSD-d on vaja.", prompt_en: "Ask me about {month}'s payouts and tell me whether a TSD is needed." },
+  "tsd-monthly-return:if": { assistant_et: "otsib {kuu} väljamakseid raamatupidamisest ja pangast; kui neid ega töötajat polnud, kaob see rida", assistant_en: "looks for {month}'s payouts in your books and bank; if there were none and no employee, this row goes away", owner_et: "vastad „jah” või „ei”", owner_en: "answer yes or no",
+    prompt_et: "Vaata minu raamatupidamisest ja pangast {kuu} väljamaksed üle ja ütle, kas TSD-d on vaja.", prompt_en: "Check my books and bank for {month}'s payouts and tell me whether a TSD is needed." },
   "tsd-monthly-return:yes": { assistant_et: "paneb väljamaksed kokku ja valmistab TSD andmed ette", assistant_en: "collects the payouts and prepares the TSD data", owner_et: "esitad TSD e-MTA-s", owner_en: "file the TSD in e-MTA",
     prompt_et: "Pane {kuu} väljamaksed kokku ja valmista TSD andmed ette. Küsi minult kinnitust enne, kui midagi saadad.", prompt_en: "Collect {month}'s payouts and prepare the TSD data. Ask me before you send anything." },
   "annual-report": { assistant_et: "paneb aruande jaoks vajalikud andmed kokku", assistant_en: "gathers what the report needs", owner_et: "kinnitad ja allkirjastad e-äriregistris", owner_en: "approve and sign in the e-Business Register",
@@ -175,18 +175,18 @@ function compute(facts: CompanyFacts, today: Date, months: number): { obligation
     const period_label_et = `${ET_MONTH[p.m0]} ${p.y} väljamaksed`;
     const otherYes = known(others) && others.value;
     // Ask about last month's payouts only when that month's TSD row is in the window and could still go away.
-    if (isLast && !known(payouts) && !otherYes) need("payouts_last_month", `Kas maksid ${ET_IN[p.m0]} palka, juhatuse liikme tasu või dividende?`, `Did the company pay salary, a board member fee or dividends in ${EN_MONTH[p.m0]}?`, period_label_et);
+    if (isLast && !known(payouts) && !otherYes) need("payouts_last_month", `Kas maksid ${ET_IN[p.m0]} palka, juhatuse liikme tasu, dividende või tasu eraisikule?`, `Did the company pay salary, a board member fee, dividends or a fee to a private person in ${EN_MONTH[p.m0]}?`, period_label_et);
     let row: Pick<Obligation, "applies" | "condition_et" | "condition_en" | "reason_et" | "reason_en"> | null;
-    if (isLast && known(payouts) && payouts.value) row = { applies: "yes", reason_et: `Kehtib, sest maksid ${ET_IN[p.m0]} palka, juhatuse liikme tasu või dividende.`, reason_en: `Applies because the company made payouts in ${EN_MONTH[p.m0]}.` };
-    else if (isLast && otherYes) row = { applies: "yes", reason_et: `Kehtib, sest assistendi sõnul oli ${ET_IN[p.m0]} töötaja või muu TSD kohustus.`, reason_en: `Applies because your assistant reports an employee or another TSD obligation in ${EN_MONTH[p.m0]}.` };
+    if (isLast && known(payouts) && payouts.value) row = { applies: "yes", reason_et: `Kehtib, sest maksid ${ET_IN[p.m0]} palka, juhatuse liikme tasu, dividende või tasu eraisikule.`, reason_en: `Applies because the company made payouts in ${EN_MONTH[p.m0]}.` };
+    else if (isLast && otherYes) row = { applies: "yes", reason_et: `Kehtib, sest assistendi sõnul oli ${ET_IN[p.m0]} töötaja, erisoodustus, kingitus, annetus või muu deklareeritav kulu.`, reason_en: `Applies because your assistant reports an employee, a fringe benefit, a gift, a donation or another declarable cost in ${EN_MONTH[p.m0]}.` };
     else if (isLast && saidNo(payouts) && saidNo(others)) row = null; // EMTA: no zero-return without payouts or employees.
     else {
-      const et = isLast && known(payouts) ? "Kehtib, kui sul on töölepinguga töötaja, kelle töötamine pole TÖR-is peatatud." : `Kehtib, kui maksid ${ET_IN[p.m0]} palka, juhatuse liikme tasu või dividende või kui sul on töölepinguga töötaja.`;
-      const en = isLast && known(payouts) ? "Applies if you have an employee under an employment contract whose work is not suspended in the employment register." : `Applies if you paid salary, a board member fee or dividends in ${EN_MONTH[p.m0]} or have an employee under an employment contract.`;
+      const et = isLast && known(payouts) ? "Kehtib, kui sul on töölepinguga töötaja, kelle töötamine pole TÖR-is peatatud, või kui andsid erisoodustusi, tegid kingitusi, annetusi, vastuvõtukulusid või ettevõtlusega mitteseotud kulusid." : `Kehtib, kui tegid ${ET_IN[p.m0]} väljamakseid või kulusid, mis tuleb TSD-s deklareerida, või kui sul on töölepinguga töötaja.`;
+      const en = isLast && known(payouts) ? "Applies if you have an employee under an employment contract whose work is not suspended in the employment register, or gave fringe benefits, gifts or donations, or paid for entertainment or non-business costs." : `Applies if the company made payouts or costs in ${EN_MONTH[p.m0]} that are declared in the TSD, or has an employee under an employment contract.`;
       // Register labour taxes are quarterly and lagged: a likely signal, never a definite yes.
       const likely = known(labour) && labour.value > 0;
       row = { applies: "if", condition_et: et, condition_en: en, reason_et: likely ? "Tõenäoliselt kehtib: viimases kvartalis deklareeriti tööjõumakse." : et, reason_en: likely ? "Likely applies: labour taxes were declared in the latest quarter." : en };
-      if (isLast && known(payouts) && !known(others)) need("other_tsd_triggers_last_month", `Kas sul oli ${ET_IN[p.m0]} töölepinguga töötaja (ka palgata) või muu TSD kohustus?`, `Did the company have an employee under an employment contract (even unpaid) or any other TSD obligation in ${EN_MONTH[p.m0]}?`, period_label_et);
+      if (isLast && known(payouts) && !known(others)) need("other_tsd_triggers_last_month", `Kas sul oli ${ET_IN[p.m0]} töölepinguga töötaja (ka palgata) või andsid erisoodustusi, tegid kingitusi, annetusi, vastuvõtukulusid või ettevõtlusega mitteseotud kulusid?`, `In ${EN_MONTH[p.m0]}, did the company have an employee under an employment contract (even unpaid), or give fringe benefits, gifts or donations, or pay for entertainment or non-business costs?`, period_label_et);
     }
     if (!row) continue;
     out.push({ rule_id: "tsd-monthly-return", covers: ["tsd-monthly-return", "tsd-tax-payment", "cit-distribution"], kind: "deadline", title_et: "TSD ja maksud", title_en: "Income and social tax return (TSD) and taxes",

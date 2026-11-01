@@ -164,7 +164,7 @@ describe("Täna", () => {
     // 3 Nov: the October question goes with the 10 Nov row (October payouts), even when the 10 Dec row is listed first.
     const reordered = { ...mariDeadlines, obligations: [...mariDeadlines.obligations].reverse() };
     const html = tana({ deadlines: reordered });
-    expect(html).toContain("„Kas maksid oktoobris palka, juhatuse liikme tasu või dividende?” Kui ei maksnud ega olnud töötajat, kaob 10. novembri TSD rida.");
+    expect(html).toContain("„Kas maksid oktoobris palka, juhatuse liikme tasu, dividende või tasu eraisikule?” Kui ei maksnud ega olnud töötajat, kaob 10. novembri TSD rida.");
     expect(html).not.toContain("detsembri TSD");
     // 30 Oct: September's TSD (due 12 Oct) is past, so no September question is asked at all.
     const oct30 = new Date("2026-10-30T10:00:00Z"), m = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: oct30, months: 2 });
@@ -172,7 +172,7 @@ describe("Täna", () => {
     expect(page).not.toContain("septembris");
     expect(page).not.toContain("TSD rida.");
     // The handoff matches the engine: the row goes away only when there were no payouts and no employee.
-    expect(html).toContain("küsib, kas maksid oktoobri palka või oli töötaja; kui kumbagi polnud, kaob see rida");
+    expect(html).toContain("otsib oktoobri väljamakseid raamatupidamisest ja pangast; kui neid ega töötajat polnud, kaob see rida");
     expect(html).not.toContain("kui väljamakseid polnud, kaob see rida");
   });
 
