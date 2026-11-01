@@ -441,10 +441,15 @@ details.tech-details{margin:var(--s-2) 0 0;padding:0;border:0;background:none}
 .steps-big>li::before{content:counter(step);position:absolute;left:0;top:0;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:var(--c-primary);color:var(--c-on-primary);font-weight:800}
 .step-title{margin:3px 0 6px;font-size:var(--fs-lg);font-weight:750;line-height:1.3}
 .step-shot{display:block;width:100%;height:auto;margin:var(--s-2) 0;border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface-2)}
-.qr-card{display:flex;align-items:center;gap:var(--s-4)}
+.connect-options{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:var(--s-3)}
+.connect-option{display:flex;flex-direction:column;align-items:flex-start;gap:var(--s-3);min-width:0;margin:0;padding:var(--s-4);border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface)}
+.connect-option h2,.connect-option p{margin:0}
+.connect-option .btn{width:100%;min-height:var(--tap)}
+.connect-or{display:flex;flex-direction:column;align-items:center;gap:var(--s-3);color:var(--c-muted);font-size:var(--fs-sm)}
+.connect-or::before,.connect-or::after{content:"";flex:1;width:1px;background:var(--c-border)}
 .qr-box{flex:none;width:132px;height:132px;padding:8px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:#fff}
 .qr-box svg{display:block;width:100%;height:100%}
-@media (max-width:719px){.qr-card{display:none}}
+@media (max-width:719px){.connect-options{grid-template-columns:minmax(0,1fr)}.qr-card,.connect-or{display:none}}
 
 /* --- Lists and cards --- */
 .link-row{display:flex;align-items:center;gap:var(--s-3);min-height:56px;padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider);color:inherit;text-decoration:none}
@@ -1929,17 +1934,19 @@ export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "
   const caption = t("Telefonis: suuna kaamera sellele koodile.", "On your phone: point the camera at this code.");
   // A sandbox sample has nothing to open: /uhenda/ava only redirects back here, on a public HTTPS address too.
   const openAssistant = remoteReady && !o.sandbox;
-  const qr = openAssistant ? `<figure class="qr-card"><div class="qr-box">${(await QRCode.toString(`${base}${openPath}`, { type: "svg", margin: 1 })).trim().replace("<svg", `<svg role="img" aria-label="${esc(caption)}"`)}</div><figcaption class="small muted">${esc(caption)}</figcaption></figure>` : "";
+  const qr = openAssistant ? `<figure class="connect-option qr-card"><h2>${t("Telefonis", "On your phone")}</h2><div class="qr-box">${(await QRCode.toString(`${base}${openPath}`, { type: "svg", margin: 1 })).trim().replace("<svg", `<svg role="img" aria-label="${esc(caption)}"`)}</div><figcaption class="small muted">${t("Suuna kaamera sellele koodile.", "Point the camera at this code.")}</figcaption></figure>` : "";
   const openLabel = t(`Ava ${name} — juhend on juba sees`, `Open ${name} — the guide is already in`);
   const openHint = t(`Vajuta saatmisnuppu ja tee, mida ${name} ütleb. Kui ${name} hoiatab, et tekst tuli lingist, on see tavaline: tekst on meilt.`, `Press the send button and do what ${name} says. If ${name} warns that the text came from a link, that is normal: the text is from us.`);
   // Without a public HTTPS address the open link would hand a localhost URL to a cloud assistant, so the hero is only the note.
   // naita=1 is a link, not <details>: the waiting page reloads every 5s and would close a disclosure.
   const reveal = `/uhenda?a=${o.assistant}&naita=1`;
   const hero = openAssistant
-    ? `<a class="btn" href="${openPath}">${esc(openLabel)}</a>
-<p class="small">${esc(openHint)}</p>
+    ? `<div class="connect-options"><div class="connect-option"><h2>${t("Selles arvutis", "On this computer")}</h2>
+<a class="btn" href="${openPath}">${esc(openLabel)}</a>
+<p class="small">${esc(openHint)}</p></div>
+<span class="connect-or">${t("või", "or")}</span>
+${qr}</div>
 <p class="small">${esc(plan)}</p>
-${qr}
 ${o.expanded ? `<pre id="tekst">${esc(prompt)}</pre>` : `<p><a class="tap-link" href="${reveal}#tekst">${t("Näita teksti", "Show the text")}</a></p>`}`
     : remoteReady ? "" : httpsNote;
   const s = o.state;

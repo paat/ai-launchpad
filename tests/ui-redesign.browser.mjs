@@ -436,6 +436,23 @@ try {
     await page.setContent(pageHtml.uhenda());
     const shown = await page.locator(".qr-card").isVisible();
     assert.equal(shown, visible, `public-HTTPS /uhenda @${width}: .qr ${visible ? "visible" : "not visible"}`);
+    assert.equal(await page.locator(".connect-or").isVisible(), visible, `public-HTTPS /uhenda @${width}: divider follows QR visibility`);
+    const options = await page.locator(".connect-options").evaluate((row) => {
+      const [computer, , phone] = row.children;
+      const a = computer.getBoundingClientRect(), b = phone.getBoundingClientRect();
+      return { computer: { x: a.x, y: a.y, width: a.width, height: a.height }, phone: { x: b.x, y: b.y, width: b.width, height: b.height }, rowWidth: row.getBoundingClientRect().width, scroll: document.documentElement.scrollWidth, viewport: innerWidth, tap: computer.querySelector(".btn").getBoundingClientRect().height };
+    });
+    assert.ok(options.scroll <= options.viewport, `public-HTTPS /uhenda @${width}: no horizontal scroll ${JSON.stringify(options)}`);
+    assert.ok(options.tap >= 44, `public-HTTPS /uhenda @${width}: button ≥44px`);
+    if (visible) {
+      assert.ok(Math.abs(options.computer.width - options.phone.width) <= 1, "equal option widths");
+      assert.equal(options.computer.y, options.phone.y, "options align at the top");
+      assert.equal(options.computer.height, options.phone.height, "equal option heights");
+      assert.ok(options.phone.x > options.computer.x + options.computer.width, "phone option sits beside computer option");
+    } else {
+      assert.equal(options.computer.width, options.rowWidth, "computer option fills mobile row");
+    }
+    console.log(`Connect alternatives @${width}: ${JSON.stringify(options)}`);
   }
 
   // #63 wow: after „Saadetud” the receipt carries the „Käest ära” strip, so the approval and the progress show in one shot.
