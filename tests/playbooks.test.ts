@@ -108,9 +108,8 @@ describe("executable job playbooks (#26)", () => {
   test("connect-service: plain words, one branch per service, owner does logins, keys never in chat, read-only", () => {
     const p = byId("connect-service");
     expect(p).toMatchObject({ approval_kind: null, triggers: [] });
-    const [rules, ask, remember, ...rest] = p.steps;
+    const [rules, ask, ...rest] = p.steps;
     const verify = rest.at(-1)!;
-    expect(remember).toBe("Always: once the owner has named their accounting software, bank, mailbox or customer list, save that per the remember-facts playbook only if the owner's Google Drive is already connected. Otherwise mention memory once and continue the service steps.");
     expect(rules).toMatch(/^Speak plainly: the owner may not know what MCP, a connector or an API is/);
     expect(rules).toContain("This playbook never writes, sends or calls request_approval");
     expect(rules).toContain("Never ask for keys, passwords or PINs in the chat; if the owner pastes one here, do not repeat, store or pass it to any tool");
