@@ -263,7 +263,11 @@ test.each(["unavailable", "ok"])("pending approval with %s advice explicitly for
     expect(receipt.assistant_instruction).not.toContain("act as usual");
   }
   db.prepare("UPDATE approvals SET state='approved' WHERE id=?").run(pending.approval_id);
-  expect((await get(c, pending.approval_id)).assistant_instruction).toContain("act as usual");
+  const approvedInstruction = (await get(c, pending.approval_id)).assistant_instruction;
+  if (state === "ok") {
+    expect(approvedInstruction).toContain("Act now under this approval using exactly the stored content, then call record_action_outcome");
+    expect(approvedInstruction).not.toContain("If check.state is unavailable");
+  } else expect(approvedInstruction).toContain("act as usual");
   db.prepare("UPDATE approvals SET payload_json=? WHERE id=?").run(JSON.stringify({ ...action, recipient: { name: action.recipient.name } }), pending.approval_id);
   const unusable = await get(c, pending.approval_id);
   expect(unusable.usable).toBe(false);
@@ -372,6 +376,9 @@ test.each(["assistant", "standing"])("%s approval instructions respect the check
           expect(receipt.assistant_instruction).toContain("Muse's concerns in one line");
           expect(receipt.assistant_instruction).toContain("act only if they still want it");
         } else expect(receipt.assistant_instruction).toContain("Before acting, call get_approval once");
+      } else if (state === "ok") {
+        expect(receipt.assistant_instruction).toContain("Act now under this approval using exactly the stored content, then call record_action_outcome");
+        expect(receipt.assistant_instruction).not.toContain("If check.state is unavailable");
       } else expect(receipt.assistant_instruction).toContain(receipt === read ? "act as usual" : actNow);
     }
     if (state === "running") { finish(output()); await vi.advanceTimersByTimeAsync(0); }

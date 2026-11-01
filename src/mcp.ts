@@ -214,7 +214,9 @@ function approvalCheckInstruction(a: ApprovalRow, instruction?: unknown): string
     const check = approvalCheckReceipt(a);
     if (check.state === "review") return "Tell the owner Muse's concerns in one line and act only if they still want it. The approval must still be approved and usable.";
     if (check.state === "running") return "Before acting, call get_approval once to read Muse's check and follow its instruction.";
-    advice = `${CHECK_INSTRUCTION} If check.state is unavailable, act as usual under the approval.`;
+    advice = check.state === "ok"
+      ? "Act now under this approval using exactly the stored content, then call record_action_outcome with this digest before expires_at."
+      : `${CHECK_INSTRUCTION} If check.state is unavailable, act as usual under the approval.`;
   }
   return [instruction, advice].filter(Boolean).join(" ");
 }
