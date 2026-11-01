@@ -368,8 +368,8 @@ test("consent names Grok Bot when the client registers as Cursor and returns to 
     return { et: await (await b.request("/oauth/consent")).text(), en: await (await b.request("/oauth/consent?lang=en")).text() };
   };
   const grok = await page("Cursor", "https://www.cursor.com/oauth/callback");
-  expect(grok.et).toContain("Kasutad Grok Boti? See ühendub nime Cursor all.");
-  expect(grok.en).toContain("Using Grok Bot? It connects under the name Cursor.");
+  expect(grok.et).toContain("Kasutad Grok Boti? See võib siin olla nime Cursor all.");
+  expect(grok.en).toContain("Using Grok Bot? It may show up here as Cursor.");
   // A client that only calls itself Cursor does not get the note: the return address decides.
   expect((await page("Cursor", "https://evil.example/cursor.com/callback")).et).not.toContain("Grok Bot");
   expect((await page("Scope test assistant", "https://www.cursor.com/oauth/callback")).et).not.toContain("Grok Bot");
