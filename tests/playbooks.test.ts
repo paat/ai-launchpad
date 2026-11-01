@@ -125,8 +125,8 @@ describe("executable job playbooks (#26)", () => {
     expect(all).not.toContain("use them without asking again");
     expect(p.steps[0]).toContain(freshFact);
     expect(p.steps[0]).toContain(fileValue);
-    expect(p.summary).toContain(freshFact);
-    expect(p.summary).toContain(fileValue);
+    expect(p.summary).toBe("Your assistant reads the facts you already saved and offers to link again each service named there, one at a time. You are not asked again for a statement already read. An old fact is checked with you once, a saved value never goes into a payment or message without your yes, and an earlier yes does not carry over.");
+    expect(p.summary).not.toMatch(/stale_after|remember-facts/);
     expect(p.verify_with).toContain(freshFact);
     expect(p.verify_with).toContain(fileValue);
     expect(p.verify_with).toContain("The owner is not asked again for a statement already read.");
