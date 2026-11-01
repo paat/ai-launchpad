@@ -3,8 +3,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  ABSOLUTE_MAX_ATTEMPTS, BASETEN_CHAT_URL, BASETEN_MODEL, MAX_CONTEXT_TOKENS, MAX_INPUT_BYTES, ModelQualityLedger,
-  calculateCostMicroUsd, inputTokenBound, payloadHash, reservationMicroUsd, runModelQualityAttempt, validateInput, type FetchFn,
+  ABSOLUTE_MAX_ATTEMPTS, BASETEN_CHAT_URL, BASETEN_MODEL, FIXED_INSTRUCTIONS, JOB_MAX_OUTPUT_TOKENS, MAX_CONTEXT_TOKENS, MAX_INPUT_BYTES, ModelQualityLedger,
+  PROMPT_VERSION, calculateCostMicroUsd, inputTokenBound, payloadHash, reservationMicroUsd, runModelQualityAttempt, validateInput, validateJob, type FetchFn,
 } from "../src/model-quality.js";
 import { SYNTHETIC_CASES, main, parseArgs } from "../scripts/model-quality.js";
 
@@ -384,5 +384,26 @@ describe("model quality harness (Baseten)", () => {
     expect(JSON.parse(logs[0])).toMatchObject({ mock: true, provider: "dry-run-no-provider", model: BASETEN_MODEL, allocatedMicroUsd: 0 });
     // Live without a ledger exits 2 before any key read, ledger open or network call.
     expect(await main(["--live", "--case", "en-connector-help", "--request-id", "r1", "--confirm-current-pricing"])).toBe(2);
+  });
+
+  test("intake jobs keep the ledger prompt version and send their own max_tokens", async () => {
+    expect(PROMPT_VERSION).toBe("baseten-chat-v1");
+    expect(validateJob("intake_extract")).toBe("intake_extract");
+    expect(validateJob("intake_plan")).toBe("intake_plan");
+    expect(JOB_MAX_OUTPUT_TOKENS.intake_extract).toBe(256);
+    expect(JOB_MAX_OUTPUT_TOKENS.intake_plan).toBe(400);
+    expect(FIXED_INSTRUCTIONS.intake_extract).toContain("Give bounded help only");
+    expect(FIXED_INSTRUCTIONS.intake_extract).toContain('{"products":[{"name":string,"kind":"accounting"|"bank"|"email"|"customers"|"other"}]}');
+    expect(FIXED_INSTRUCTIONS.intake_plan).toContain("Give bounded help only");
+    expect(FIXED_INSTRUCTIONS.intake_plan).toContain("best result needs a paid AI plan");
+    expect(FIXED_INSTRUCTIONS.classify_unmet_need).not.toContain("intake_extract");
+    const ledger = ModelQualityLedger.open(":memory:");
+    const extract = fakeFetch(() => jsonRes(okChat()));
+    await runModelQualityAttempt(base(ledger, extract.fetchFn, { job: "intake_extract", input: "{\"text\":\"synthetic\"}", requestId: "in-extract-1" }));
+    expect(extract.calls[0].body.max_tokens).toBe(256);
+    const plan = fakeFetch(() => jsonRes(okChat()));
+    await runModelQualityAttempt(base(ledger, plan.fetchFn, { job: "intake_plan", input: "{\"lang\":\"et\"}", requestId: "in-plan-1" }));
+    expect(plan.calls[0].body.max_tokens).toBe(400);
+    ledger.close();
   });
 });

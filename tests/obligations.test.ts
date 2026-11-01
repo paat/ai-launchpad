@@ -250,6 +250,15 @@ describe("rules engine (memo § 3, pure)", () => {
 // --- Fake Ärikratt MCP: in-process SDK server, synthetic values, real field names ---
 const PERSON = "Synthetic Person Name", PERSON_CODE = "38001010000";
 let fake: Server; let fakeUrl = ""; let toolCalls = 0;
+function fakeSearch(query: string) {
+  if (query === "Nobody Matches") return [];
+  if (query === "Sole Trader") return [
+    { name: "Synthetic Register OÜ", registry_code: FAKE_VALID, legal_form: "Osaühing" },
+    { name: "Synthetic Sole Trader", registry_code: SLOW, legal_form: "Füüsilisest isikust ettevõtja" },
+    { name: "Synthetic Sole Trader Upper", registry_code: "10000018", legal_form: "FÜÜSILISEST ISIKUST ETTEVÕTJA" },
+  ];
+  return [{ name: "Synthetic Register OÜ", registry_code: FAKE_VALID, employees: 1, representatives: [{ name: PERSON, personal_code: PERSON_CODE }] }];
+}
 function fakeCompany(code: string) {
   return {
     snapshot_id: "20261029T054510Z", as_of: "2026-10-29", found: true, disclaimer: "Ametlike avaandmete väljavõte; mitte ametlik registriväljavõte, õigusnõu ega krediidiotsus.",
@@ -275,7 +284,7 @@ beforeAll(async () => {
       expect(sections).toEqual(["report_status", "tax"]);
       return { content: [{ type: "text", text: JSON.stringify(fakeCompany(registry_code)) }] };
     });
-    s.registerTool("search_companies", { inputSchema: { query: z.string(), limit: z.number().optional() } }, async ({ query }) => ({ content: [{ type: "text", text: JSON.stringify({ companies: query === "Nobody Matches" ? [] : [{ name: "Synthetic Register OÜ", registry_code: FAKE_VALID, employees: 1, representatives: [{ name: PERSON, personal_code: PERSON_CODE }] }] }) }] }));
+    s.registerTool("search_companies", { inputSchema: { query: z.string(), limit: z.number().optional() } }, async ({ query }) => ({ content: [{ type: "text", text: JSON.stringify({ companies: fakeSearch(query) }) }] }));
     const t = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => { void t.close(); void s.close(); });
     await s.connect(t); await t.handleRequest(req, res, req.body);
@@ -310,7 +319,8 @@ describe("Ärikratt adapter", () => {
     expect(r.facts.tax_debt_on_list?.value).toBe(false);
     expect(r.facts.payouts_last_month).toBeUndefined(); // assistant-supplied only
     const cached = db.prepare("SELECT * FROM company_facts").all();
-    for (const blob of [JSON.stringify(r), JSON.stringify(cached)]) for (const p of [PERSON, PERSON_CODE, "board", "members", "emtak"]) expect(blob).not.toContain(p);
+    for (const blob of [JSON.stringify(r), JSON.stringify(cached)]) for (const p of [PERSON, PERSON_CODE, "board", "members"]) expect(blob).not.toContain(p);
+    expect(r.company).toMatchObject({ legal_form: null, emtak_code: "74101", emtak_label: null });
     const found = await arikratt(db, { apiKey: "test-key", url: fakeUrl }).search("Synthetic");
     expect(found).toEqual({ ok: true, matches: [{ name: "Synthetic Register OÜ", registry_code: FAKE_VALID }] });
   });
@@ -319,6 +329,13 @@ describe("Ärikratt adapter", () => {
     expect(company).toMatchObject({ label_et: "Ametlikud avaandmed (Ärikratt) · Äriregister ja EMTA, seisuga 29.10.2026", label_en: "Official open data (via Ärikratt) · Business Register and EMTA, as of 29 October 2026", disclaimer: "Ametlike avaandmete väljavõte; mitte ametlik registriväljavõte, õigusnõu ega krediidiotsus." });
     expect(JSON.stringify(company)).not.toMatch(/Ametlik allikas|Official source/);
     expect(mapCompany(FAKE_VALID, {}).company.disclaimer).toBeUndefined();
+    expect(mapCompany(FAKE_VALID, fakeCompany(FAKE_VALID)).company).toMatchObject({ legal_form: null, emtak_code: "74101", emtak_label: null });
+    expect(mapCompany(FAKE_VALID, { profile: { legal_form: "Osaühing", emtak_code: "74101", emtak_label: "Disain" } }).company).toMatchObject({ legal_form: "Osaühing", emtak_code: "74101", emtak_label: "Disain" });
+    expect(mapCompany(FAKE_VALID, { profile: { legal_form: "  ", emtak_code: "", emtak_label: null } }).company).toMatchObject({ legal_form: null, emtak_code: null, emtak_label: null });
+  });
+  test("search drops sole traders when the row names that legal form", async () => {
+    const found = await arikratt(openDb(":memory:"), { apiKey: "test-key", url: fakeUrl }).search("Sole Trader");
+    expect(found).toEqual({ ok: true, matches: [{ name: "Synthetic Register OÜ", registry_code: FAKE_VALID }] });
   });
   test("maps the live financials object to latest annual revenue with the report year, and profile.founded (#43)", () => {
     const { facts } = mapCompany(FAKE_VALID, { as_of: "2026-10-29", profile: { vat_number: null }, financials: { year: 2025, report_basis: "annual_report", revenue: 45000, revenue_reason: null, employees_avg: 1 } });

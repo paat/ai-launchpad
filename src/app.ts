@@ -890,8 +890,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const uses = parseUses(typeof req.query.uses === "string" ? req.query.uses : undefined);
     if (!uses) return show("Kas sa juba kasutad AI-assistenti?", "Do you already use an AI assistant?", chooserBody({ lang: l, step: "uses" }), {});
     if (uses === "chatgpt" && parseBusiness(req.query.business) === null) return show("Kas sinu ettevõte maksab ChatGPT Businessi eest?", "Does your company pay for ChatGPT Business?", chooserBody({ lang: l, step: "business" }), { uses });
-    // Null only when uses is missing or ChatGPT has no accepted business answer; both already returned.
-    const choice = chooseAssistant({ uses, business: uses === "chatgpt" ? req.query.business : undefined })!;
+    // /vali does not ask which Claude plan. The recommendation does not depend on it, so pass a tier
+    // only to satisfy the shared rule. The page copy is unchanged.
+    const choice = chooseAssistant({ uses, business: uses === "chatgpt" ? req.query.business : undefined, tier: uses === "claude" ? "free" : undefined })!;
     const reason = REASONS[choice.reason];
     const topic = findTopic(CHOOSER_TOPICS, `choose-${choice.reason}`);
     const card = publicCards && topic ? publicCards.read(topic, l) : null;

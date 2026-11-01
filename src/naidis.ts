@@ -9,7 +9,7 @@ import { activityBody, approvalCardBody, esc, handoverSection, tanaBody, tr, typ
 // render these same synthetic rows; none of them is loaded from a database.
 export const NOW = new Date("2026-11-03T12:00:00Z");
 export const mari = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: NOW, months: 2 });
-export const mariDeadlines: DeadlinesView = { company: { name: "Mari Disain OÜ", registry_code: "19990001", synthetic: true, provenance: "synthetic_fixture", label_et: "Näidis", label_en: "Sample", snapshot_id: null, as_of: null, sources: [], attribution: "" }, obligations: mari.obligations, facts_needed: mari.facts_needed };
+export const mariDeadlines: DeadlinesView = { company: { name: "Mari Disain OÜ", registry_code: "19990001", legal_form: null, emtak_code: null, emtak_label: null, synthetic: true, provenance: "synthetic_fixture", label_et: "Näidis", label_en: "Sample", snapshot_id: null, as_of: null, sources: [], attribution: "" }, obligations: mari.obligations, facts_needed: mari.facts_needed };
 
 // An 80-character document title on a consumed (sent) approval: the receipt and list must wrap it.
 export const LONG_TITLE = "Maksemeeldetuletus: arve 2026-011 Kase Konsult OÜ tellitud strateegiaseminari eest";

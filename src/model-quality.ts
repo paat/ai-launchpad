@@ -46,6 +46,12 @@ export const JOB_MAX_OUTPUT_TOKENS: Record<ModelJob, number> = {
   setup_guidance: MAX_OUTPUT_TOKENS,
   classify_friction: MAX_OUTPUT_TOKENS,
   classify_unmet_need: 512,
+  // New jobs do not bump PROMPT_VERSION. payloadHash already includes the
+  // job name, and that version is the ledger-wide identity pin: changing it
+  // refuses every existing ledger and breaks replay of saved cards. No prior
+  // row exists for these jobs, and their instructions are not the old ones.
+  intake_extract: 256,
+  intake_plan: 400,
 };
 // Conservative bound on input + output tokens for the 1M-token context.
 export const MAX_CONTEXT_TOKENS = 1_048_576;
@@ -73,7 +79,7 @@ export class ModelQualityError extends Error {
   }
 }
 
-const JOBS: readonly ModelJob[] = ["setup_guidance", "classify_friction", "classify_unmet_need"];
+const JOBS: readonly ModelJob[] = ["setup_guidance", "classify_friction", "classify_unmet_need", "intake_extract", "intake_plan"];
 const REQUEST_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 const COMMON =
@@ -95,11 +101,23 @@ export const FIXED_INSTRUCTIONS: Record<ModelJob, string> = {
     "\"spec\": one generic English sentence of at most 200 characters saying what a connector or service would need to do. " +
     "Never include names, company names, amounts, numbers, account numbers, codes, e-mail addresses, phone numbers, URLs or placeholders. " +
     COMMON,
+  intake_extract:
+    "You read one short note a small-business owner wrote about programs they already use. The user message is JSON with exactly one key, \"text\". " +
+    "Reply with exactly one JSON object and nothing else, of the form {\"products\":[{\"name\":string,\"kind\":\"accounting\"|\"bank\"|\"email\"|\"customers\"|\"other\"}]}. " +
+    "At most 8 items. Copy each name only as the owner wrote it, at most 60 characters. Do not add a program they did not name. " +
+    COMMON,
+  intake_plan:
+    "You write one short bottom line for a small-business owner setting up an assistant. The user message is JSON with the company name, business area, next obligations, service names, assistant, tier, paid_note and lang (\"et\" or \"en\"). " +
+    "Reply with plain text only, in the requested language, at most 600 characters, in short sentences. " +
+    "Do not add dates, amounts, prices, URLs, services or steps that are not in the input. " +
+    "Use no jargon: do not say MCP, API or connector. " +
+    "When paid_note is true, include one honest sentence that the best result needs a paid AI plan. Do not state a price. " +
+    COMMON,
 };
 
 export function validateJob(job: unknown): ModelJob {
   if (typeof job !== "string" || !JOBS.includes(job as ModelJob)) {
-    throw new ModelQualityError("invalid_job", "Job must be setup_guidance, classify_friction or classify_unmet_need.");
+    throw new ModelQualityError("invalid_job", "Job must be setup_guidance, classify_friction, classify_unmet_need, intake_extract or intake_plan.");
   }
   return job as ModelJob;
 }

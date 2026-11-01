@@ -4,21 +4,22 @@ import { chmodSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp, type Config } from "../src/app.js";
-import { REASONS, chooseAssistant, offerDownload, parseBusiness, parseUses } from "../src/assistant-choice.js";
+import { PLAN_NOTE, REASONS, chooseAssistant, offerDownload, parseBusiness, parseUses } from "../src/assistant-choice.js";
 import { openDb } from "../src/db.js";
 import { CHOOSER_TOPICS, FRICTION_TOPICS, PublicCards, openExistingPublicLedger, publicCardRequestId } from "../src/model-public-cards.js";
 import { main as batchMain, parseArgs as parseBatchArgs } from "../src/model-public-cards-cli.js";
 import { ModelQualityLedger, payloadHash, reservationMicroUsd, type FetchFn } from "../src/model-quality.js";
 
 test("chooseAssistant covers every rule and never guesses", () => {
-  expect(chooseAssistant({ uses: "claude" })).toEqual({ assistant: "claude", reason: "already_claude" });
-  expect(chooseAssistant({ uses: "claude", business: "no" })).toEqual({ assistant: "claude", reason: "already_claude" });
+  expect(chooseAssistant({ uses: "claude", tier: "free" })).toEqual({ assistant: "claude", reason: "already_claude" });
+  expect(chooseAssistant({ uses: "claude", tier: "paid" })).toEqual({ assistant: "claude", reason: "already_claude" });
+  expect(chooseAssistant({ uses: "claude", tier: "unsure", business: "no" })).toEqual({ assistant: "claude", reason: "already_claude" });
   expect(chooseAssistant({ uses: "chatgpt", business: "yes" })).toEqual({ assistant: "chatgpt", reason: "chatgpt_business" });
   expect(chooseAssistant({ uses: "chatgpt", business: "no" })).toEqual({ assistant: "claude", reason: "chatgpt_no_approvals" });
   expect(chooseAssistant({ uses: "chatgpt", business: "unsure" })).toEqual({ assistant: "claude", reason: "chatgpt_no_approvals" });
   expect(chooseAssistant({ uses: "other" })).toEqual({ assistant: "claude", reason: "other_untested" });
   expect(chooseAssistant({ uses: "none" })).toEqual({ assistant: "claude", reason: "none" });
-  for (const answers of [{}, { uses: "chatgpt" }, { uses: "chatgpt", business: "maybe" }, { uses: "Claude" }, { uses: "" }, { business: "yes" }, { uses: ["claude"] }]) {
+  for (const answers of [{}, { uses: "chatgpt" }, { uses: "chatgpt", business: "maybe" }, { uses: "Claude" }, { uses: "" }, { business: "yes" }, { uses: ["claude"] }, { uses: "claude" }, { uses: "claude", tier: "maybe" }]) {
     expect(chooseAssistant(answers)).toBeNull();
   }
   expect(parseUses("none")).toBe("none");
@@ -35,6 +36,9 @@ test("chooseAssistant covers every rule and never guesses", () => {
       expect(text).not.toMatch(/\b(MCP|connector|API|OAuth|IBAN)\b/);
     }
   }
+  expect(PLAN_NOTE.source.et).toBe("Claude'i tasuta paketis on üks oma ühendus (kontrollitud 31.10.2026)");
+  expect(PLAN_NOTE.source.en).toBe("Claude's free plan has one custom connector (checked 31 Oct 2026)");
+  expect(`${PLAN_NOTE.text.et} ${PLAN_NOTE.connect.et} ${PLAN_NOTE.source.et}`).not.toMatch(/\b(MCP|API|connector)\b/);
   expect(CHOOSER_TOPICS.map((t) => t.id)).toEqual([
     "choose-already_claude", "choose-already_grok", "choose-chatgpt_business", "choose-chatgpt_no_approvals", "choose-other_untested", "choose-none",
   ]);

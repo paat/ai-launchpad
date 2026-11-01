@@ -72,11 +72,45 @@ export const REASONS: Record<ReasonId, { assistant: AssistantId; text: Record<"e
   },
 };
 
+export const TIERS = ["free", "paid", "unsure"] as const;
+export type Tier = (typeof TIERS)[number];
+
+/** Dated, sourced limit of Claude's free plan. No prices. Estonian stays in plain words. */
+export const PLAN_NOTE: {
+  text: Record<"et" | "en", string>;
+  source: Record<"et" | "en", string>;
+  connect: Record<"et" | "en", string>;
+} = {
+  text: {
+    et: "Claude'i tasuta pakett näitab tähtaegu ja teeb kinnitused. Sellel on üks oma ühendus, mida AI-hüppelaud kasutab. Raamatupidamise, panga või e-posti ühendamiseks on vaja tasulist paketti.",
+    en: "Claude's free plan does deadlines and approvals. It allows one custom connector, which AI Launchpad uses. Connecting accounting, bank or e-mail needs a paid plan.",
+  },
+  source: {
+    et: "Claude'i tasuta paketis on üks oma ühendus (kontrollitud 31.10.2026)",
+    en: "Claude's free plan has one custom connector (checked 31 Oct 2026)",
+  },
+  connect: {
+    et: "Sinu pakett saab need ka ühendada.",
+    en: "Your plan can connect these too.",
+  },
+};
+
 export function parseUses(v: unknown): Uses | null {
   return v === "claude" || v === "chatgpt" || v === "grok" || v === "other" || v === "none" ? v : null;
 }
 export function parseBusiness(v: unknown): Business | null {
   return v === "yes" || v === "no" || v === "unsure" ? v : null;
+}
+export function parseTier(v: unknown): Tier | null {
+  return v === "free" || v === "paid" || v === "unsure" ? v : null;
+}
+
+/** Honest paid-plan sentence. True when we cannot rely on a plan that connects accounting, bank or e-mail. */
+export function needsPaidNote(uses: Uses | null, tier: Tier | null, business: Business | null): boolean {
+  if (uses === "none" || uses === "other") return true;
+  if (uses === "claude") return tier === "free" || tier === "unsure";
+  if (uses === "chatgpt") return business === "no" || business === "unsure";
+  return false;
 }
 
 /** Download page only when the recommended assistant is not the one they already use. */
@@ -85,7 +119,7 @@ export function offerDownload(uses: Uses, assistant: AssistantId): string | null
   return ASSISTANT_DOWNLOAD[assistant];
 }
 
-export function chooseAssistant(answers: { uses?: unknown; business?: unknown }): AssistantChoice | null {
+export function chooseAssistant(answers: { uses?: unknown; business?: unknown; tier?: unknown }): AssistantChoice | null {
   const uses = parseUses(answers.uses);
   if (!uses) return null;
   if (uses === "chatgpt") {
@@ -93,7 +127,11 @@ export function chooseAssistant(answers: { uses?: unknown; business?: unknown })
     if (!business) return null;
     return business === "yes" ? { assistant: "chatgpt", reason: "chatgpt_business" } : { assistant: "claude", reason: "chatgpt_no_approvals" };
   }
-  if (uses === "claude") return { assistant: "claude", reason: "already_claude" };
+  if (uses === "claude") {
+    // Same shape as the ChatGPT plan question: no tier, or a tier we do not know, is no answer.
+    if (!parseTier(answers.tier)) return null;
+    return { assistant: "claude", reason: "already_claude" };
+  }
   if (uses === "grok") return { assistant: "grok", reason: "already_grok" };
   if (uses === "other") return { assistant: "claude", reason: "other_untested" };
   return { assistant: "claude", reason: "none" };

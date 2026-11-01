@@ -274,7 +274,7 @@ export async function companyObligations(ar: Arikratt, o: { registryCode?: strin
   const tsdAsk = r.facts_needed.some((n) => n.fact === "payouts_last_month" || n.fact === "other_tsd_triggers_last_month");
   const confirmCompany: FactNeeded[] = which ? [{ fact: "confirm_company", question_et: `Kas ${which} on sinu ettevõte?`, question_en: `Is ${which} your company?` }] : [];
   const company: CompanyCard & { unavailable?: string; unavailable_reason?: string } = lookup?.ok ? lookup.company : {
-    name: facts.company_name?.value ?? null, registry_code: code ?? "", synthetic: false, provenance: "assistant_supplied", label_et: "Assistendi teade · avalikust registrist ei loetud", label_en: "Your assistant says · not read from a public register",
+    name: facts.company_name?.value ?? null, registry_code: code ?? "", legal_form: null, emtak_code: null, emtak_label: null, synthetic: false, provenance: "assistant_supplied", label_et: "Assistendi teade · avalikust registrist ei loetud", label_en: "Your assistant says · not read from a public register",
     snapshot_id: null, as_of: null, sources: [], attribution: "", ...(lookup && !lookup.ok ? { unavailable: lookup.unavailable, unavailable_reason: lookup.reason } : miss ?? {}),
   };
   return { ok: true as const, result: {
