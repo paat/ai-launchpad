@@ -58,7 +58,8 @@ describe("„Käest ära” states", () => {
     // Cap = the largest owner-approved amount (240 €) rounded up to the next 100 €; recipients = the owner-approved addresses.
     expect(h.next).toMatchObject({ type: "standing", kind: "send_message", capCents: 30_000, basis: { maxCents: 24_000 } });
     expect(h.next.type === "standing" && h.next.recipients.map((r) => r.address).sort()).toEqual(CLIENTS.map((c) => c.address).sort());
-    expect(h.fromAssessment).toBe(1);
+    // Invoicing is now backed by a playbook, so it counts as a playbook job, not fromAssessment.
+    expect(h.fromAssessment).toBe(0);
     const page = html(h);
     expect(page).toContain('<span class="num">2</span> tööd 4-st on sinu käest ära');
     expect(page).toContain("Teeb raamatupidaja");
@@ -124,7 +125,13 @@ describe("„Käest ära” honesty rules", () => {
     }
     const page = handoverSection(computeHandover({ assessment: alpha, obligations, approvals: [], rules: [], now: NOW }), "et", "c", NOW);
     const rows = page.match(/<li class="ho-job">[^]*?<\/li>/g)!;
-    for (const id of ["Arvete koostamine", "KMD ettevalmistus"]) expect(rows.find((r) => r.includes(id))).toContain("Assistendi hinnang");
+    // KMD ettevalmistus is assessed to accountant (rung: other), so it carries „Assistendi hinnang”.
+    expect(rows.find((r) => r.includes("KMD ettevalmistus"))).toContain("Assistendi hinnang");
+    // Arvete koostamine is now backed by a playbook, so it shows the assistant can prepare it rather than raw assessment text.
+    expect(rows.find((r) => r.includes("Arvete koostamine"))).toContain("Assistent saab arve ette valmistada");
+    // Non-playbook assessment rows (e.g. from beta) still carry „Assistendi hinnang”.
+    const betaPage = handoverSection(computeHandover({ assessment: DEMO_FIXTURES.beta, obligations, approvals: [], rules: [], now: NOW }), "et", "c", NOW);
+    expect(betaPage).toContain("Assistendi hinnang");
   });
 
   test("books-catch-up: a posted month joins the job at prep, never done, and reads as posted, not filed", () => {
@@ -360,5 +367,24 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
       expect(card).toContain('href="/kataloog?g=raamatupidamine"');
       expect(card).not.toContain("/kataloog?g=kliendid");
     }
+  });
+
+  test("invoicing appearance rule: an owner with no invoicing assessment row and no send_invoice approval has no invoicing job (#120)", () => {
+    // 1. No assessment, no approvals: three baseline jobs, no invoicing.
+    const h1 = computeHandover({ assessment: null, obligations, approvals: [], rules: [], now: NOW });
+    expect(h1.jobs.some((j) => j.id === "invoicing")).toBe(false);
+
+    // 2. Assessment without invoicing (e.g. beta: payroll, bookkeeping-access, consulting): no invoicing job.
+    const hBeta = computeHandover({ assessment: DEMO_FIXTURES.beta, obligations, approvals: [], rules: [], now: NOW });
+    expect(hBeta.jobs.some((j) => j.id === "invoicing")).toBe(false);
+
+    // 3. Invoicing appears when an assessment responsibility names it.
+    const hAlpha = computeHandover({ assessment: alpha, obligations, approvals: [], rules: [], now: NOW });
+    expect(hAlpha.jobs.some((j) => j.id === "invoicing")).toBe(true);
+
+    // 4. Invoicing appears when an approval with kind send_invoice exists, even with no assessment.
+    const invoiceAppr = appr({ kind: "send_invoice", outcome: "sent", cents: 50_000, to: { name: "Demo Klient OÜ", address: "arved@demo-klient.example" } });
+    const hAppr = computeHandover({ assessment: null, obligations, approvals: [invoiceAppr], rules: [], now: NOW });
+    expect(hAppr.jobs.some((j) => j.id === "invoicing")).toBe(true);
   });
 });

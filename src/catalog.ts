@@ -56,6 +56,7 @@ const SEND_MESSAGE_AUTO = "If the reply is auto_approved (the owner's standing a
 const SEND_MESSAGE_CONFIRM = "When they say yes, call request_approval again with a NEW report_id, the same action and owner_confirmation: their words, verbatim. That approves it; never ask them to approve again on Launchpad.";
 const SEND_MESSAGE_BEFORE_SEND = "Right before sending, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt)";
 const SEND_MESSAGE_ACT = "Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved (including auto_approved under the owner's standing approval) and usable is not false, send exactly that text to exactly that address with your own tools without asking the owner again; otherwise do not send. Launchpad sends nothing.";
+const SEND_INVOICE_ACT = "Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved (including auto_approved under the owner's standing approval) and usable is not false, e-mail the invoice PDF with your own e-mail tool to exactly that address (or deliver the e-invoice from the accounting software) without asking the owner again; otherwise do not send. Launchpad sends nothing.";
 const SEND_MESSAGE_RECORD = "Call record_action_outcome with outcome sent (or failed).";
 /** Executable job playbooks (#26): deterministic instructions for the owner's
  *  own agent. Launchpad never runs the job; triggers are obligation rule_ids. */
@@ -177,6 +178,27 @@ Set stale_after to 1 year from today unless the fact has its own end date. Keep 
       `For a message: ${SEND_MESSAGE_RECORD}`,
     ],
     approval_kind: "send_message", done_when: "Each message the owner chose was sent only after its approval, and record_action_outcome recorded sent or failed. A call is the owner's own call.", verify_with: "The owner sees the same follow-up dates on their customer tool or Kliendid sheet, and each sent message matches the approved text." },
+  { id: "invoicing", title: "Send a customer invoice", title_et: "Saada kliendile arve",
+    summary: "Your assistant prepares the invoice from your accounting software and sends it after you approve the exact invoice, amount and recipient.",
+    source: "https://www.riigiteataja.ee/akt/516062025001", source_label: "Raamatupidamise seadus § 7¹ (masintöödeldav arve), Riigi Teataja",
+    triggers: [],
+    needs: [
+      "The owner's accounting connector (if none answers, follow the connect-service playbook) to create the invoice and its PDF.",
+      "The owner's own e-mail tool to send it.",
+      "The buyer's details from the accounting software's customer record or the owner's customer tool.",
+    ],
+    steps: [
+      "Ask what was sold, to whom, and for how much only if the owner has not said it; take the buyer's name and invoice e-mail from the accounting software's customer record (never guess an address; if there is none, ask the owner once).",
+      "Create the invoice in the owner's accounting software through its connector (draft, not confirmed/sent by the software), so numbering and VAT come from the software, not from you. If the software has no connector, draft the invoice lines and total for the owner and say the owner must create it in their software; stop there.",
+      "E-invoice: ask the owner once, \"Has this buyer asked you for an e-invoice?\" (Accounting Act § 7¹(7): a buyer registered as an e-invoice recipient may require one). If yes, the invoice is delivered as an e-invoice through the accounting software, and recipient.address is the buyer's e-invoice address as the software shows it. Do not look anything up in a register.",
+      `Call request_approval with action kind send_invoice; playbook_id: "invoicing"; recipient.name and recipient.address: the buyer and their invoice e-mail (or e-invoice address); amount_cents: REQUIRED, the invoice total in euro cents exactly as on the invoice; period: the invoice date's month; document.title: the invoice number; document.content: the exact e-mail text plus the invoice's lines, total and due date as they appear on it; summary: one line for the owner. ${SEND_MESSAGE_AUTO}`,
+      `If the reply is pending, show the owner the exact invoice (recipient, address, amount and text) in this chat and ask once whether to send it. ${SEND_MESSAGE_CONFIRM}`,
+      `${SEND_MESSAGE_BEFORE_SEND} for the unchanged invoice first. Approvals are valid for 24 hours.`,
+      SEND_INVOICE_ACT,
+      SEND_MESSAGE_RECORD,
+      "Record paid only after a sent outcome, with a NEW report_id (the same report_id conflicts): call record_action_outcome with outcome paid only if you see the payment, for example in the accounting connector. A failed invoice can never become paid.",
+    ],
+    approval_kind: "send_invoice", done_when: "The approved invoice was sent and record_action_outcome recorded sent.", verify_with: "The payment in the owner's accounting connector or bank statement; until then the outcome stays sent." },
   { id: "vat-return-prep", title: "Prepare the monthly VAT return (KMD)", title_et: "Valmista ette käibedeklaratsioon (KMD)",
     summary: "Your assistant gathers the month's invoices and takes the VAT figures from your accounting software's own report. You approve the exact figures, then file the return yourself in e-MTA.",
     source: "https://www.riigiteataja.ee/akt/130062026129", source_label: "Käibemaksuseadus § 27, Riigi Teataja",

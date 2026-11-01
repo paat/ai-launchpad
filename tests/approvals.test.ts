@@ -9,6 +9,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { createApp, type Config } from "../src/app.js";
 import { openDb, sha256 } from "../src/db.js";
 import { approvalDigest, canonicalJson, type ApprovalRow } from "../src/mcp.js";
+import { jobOfApproval, JOB_TITLES } from "../src/handover.js";
 import { approvalCardBody } from "../src/views.js";
 
 // Synthetic Google-style owners with direct sessions/tokens; no OIDC.
@@ -774,6 +775,34 @@ describe("playbook_id on approvals („Käest ära”, #61)", () => {
     expect(reminderReq).toMatchObject({ state: "approved", auto_approved: true });
     expect(row(reminderReq.approval_id).playbook_id).toBe("payment-reminder");
     expect(db.prepare("SELECT count(*) n FROM activity WHERE owner_id='pb-follow' AND action='standing_auto_approved'").get()).toEqual({ n: 1 });
+  });
+
+  test("request_approval with playbook_id: 'invoicing' and a synthetic .example recipient is accepted; the approval shows the job title (#120)", async () => {
+    const o = owner("pb-inv"), c = await client(o.token);
+    const invoice = {
+      kind: "send_invoice",
+      recipient: { name: "Demo Klient OÜ", address: "arved@demo-klient.example" },
+      amount_cents: 125000,
+      period: "2026-11",
+      document: { title: "Arve 2026-0042", content: "Arve 2026-0042\nSumma: 1 250,00 €\nTähtaeg: 2026-11-20" },
+      summary: "Customer invoice for software design",
+    };
+    const res = await c.callTool({ name: "request_approval", arguments: { report_id: "inv-pb-1", action: invoice, playbook_id: "invoicing" } });
+    expect((res as { isError?: boolean }).isError).toBeUndefined();
+    const parsedRes = parsed(res);
+    expect(parsedRes.state).toBe("pending");
+
+    const r = row(parsedRes.approval_id);
+    expect(r.playbook_id).toBe("invoicing");
+    expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: parsedRes.approval_id } })).playbook_id).toBe("invoicing");
+    const jobId = jobOfApproval(r);
+    expect(jobId).toBe("invoicing");
+    expect(JOB_TITLES[jobId!]).toEqual(["Arvete koostamine", "Invoicing"]);
+
+    const p = await page(o, `/approvals/${r.id}`);
+    expect(p).toContain("Arve");
+    expect(p).toContain("Demo Klient OÜ");
+    expect(p).toContain("arved@demo-klient.example");
   });
 
   test("reads, logins and requests fill nothing; only a recorded done outcome fills a segment", async () => {

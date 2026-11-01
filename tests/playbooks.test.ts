@@ -16,7 +16,7 @@ const byId = (id: string) => PLAYBOOKS.find((p) => p.id === id)!;
 
 describe("executable job playbooks (#26)", () => {
   test("shape: every field present, deterministic copy, known approval kind", () => {
-    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-service", "remember-facts", "books-catch-up", "payment-reminder", "customer-follow-ups", "vat-return-prep", "annual-report"]);
+    expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-service", "remember-facts", "books-catch-up", "payment-reminder", "customer-follow-ups", "invoicing", "vat-return-prep", "annual-report"]);
     for (const p of PLAYBOOKS) {
       for (const k of ["id", "title", "title_et", "summary", "source", "source_label", "done_when", "verify_with"] as const) expect(p[k], `${p.id}.${k}`).toMatch(/\S/);
       expect(p.steps.length, p.id).toBeGreaterThan(0);
@@ -275,7 +275,7 @@ describe("executable job playbooks (#26)", () => {
   });
 
   test("approval steps name the full action shape with a concrete recipient", () => {
-    const recipient: Record<string, string> = { "payment-reminder": "the customer", "customer-follow-ups": "the customer", "vat-return-prep": "\"EMTA (e-MTA)\"", "annual-report": "\"Äriregister (e-äriregister)\"", "books-catch-up": "the company and its accounting software" };
+    const recipient: Record<string, string> = { "payment-reminder": "the customer", "customer-follow-ups": "the customer", invoicing: "the buyer", "vat-return-prep": "\"EMTA (e-MTA)\"", "annual-report": "\"Äriregister (e-äriregister)\"", "books-catch-up": "the company and its accounting software" };
     for (const p of PLAYBOOKS.filter((x) => x.approval_kind)) {
       const step = p.steps.find((x) => x.includes("request_approval with action kind"))!;
       expect(step, p.id).toContain(`kind ${p.approval_kind}`);
@@ -485,6 +485,39 @@ describe("agent-facing copy over MCP", () => {
     expect(reminder.join(" ")).toContain("amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000)");
   });
 
+  test("invoicing: drafts in software first, e-invoice question, approval before sending (#120)", async () => {
+    const p = byId("invoicing");
+    expect(p).toMatchObject({
+      id: "invoicing",
+      title: "Send a customer invoice",
+      title_et: "Saada kliendile arve",
+      summary: "Your assistant prepares the invoice from your accounting software and sends it after you approve the exact invoice, amount and recipient.",
+      approval_kind: "send_invoice",
+      triggers: [],
+      source: "https://www.riigiteataja.ee/akt/516062025001",
+      source_label: "Raamatupidamise seadus § 7¹ (masintöödeldav arve), Riigi Teataja",
+    });
+    expect(p.needs).toEqual([
+      "The owner's accounting connector (if none answers, follow the connect-service playbook) to create the invoice and its PDF.",
+      "The owner's own e-mail tool to send it.",
+      "The buyer's details from the accounting software's customer record or the owner's customer tool.",
+    ]);
+    const c = await connect(["progress:read"]);
+    const started = body(await c.callTool({ name: "get_started", arguments: {} }));
+    const fromStarted = started.playbooks.find((x: { id: string }) => x.id === "invoicing");
+    expect(fromStarted).toBeDefined();
+    expect(fromStarted.approval_kind).toBe("send_invoice");
+
+    const steps = p.steps.join("\n");
+    expect(steps).toContain("send_invoice");
+    expect(steps).toContain("amount_cents: REQUIRED");
+    expect(steps).toContain("Has this buyer asked you for an e-invoice?");
+    expect(steps).toContain("Launchpad sends nothing");
+    for (const step of p.steps) {
+      expect(step).not.toMatch(/\b(paying|filing|signing)\b/i);
+    }
+  });
+
   test("remember_business_facts: owner phrasing finds it, read-only, returns the remember-facts playbook for any scope", async () => {
     const db = openDb(":memory:");
     const c = await connect([], db);
@@ -583,7 +616,7 @@ describe("agent-facing copy over MCP", () => {
 
   test("every expired-approval renewal asks for a NEW report_id (tribunal T-002)", () => {
     const renewals = PLAYBOOKS.flatMap((p) => p.steps.filter((x) => /expired/.test(x)).map((x) => [p.id, x] as const));
-    expect(renewals.map(([id]) => id)).toEqual(["payment-reminder", "customer-follow-ups", "vat-return-prep", "annual-report"]);
+    expect(renewals.map(([id]) => id)).toEqual(["payment-reminder", "customer-follow-ups", "invoicing", "vat-return-prep", "annual-report"]);
     for (const [id, x] of renewals) expect(x, id).toContain("request a fresh approval with a NEW report_id (the same report_id returns the expired receipt)");
   });
   const body = (r: unknown) => JSON.parse((r as { content: { text: string }[] }).content[0].text);

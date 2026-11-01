@@ -32,10 +32,7 @@ export interface Handover {
 }
 
 /** Jobs Launchpad knows how to attribute. Playbook jobs apply by rule; invoicing appears when the assessment or an approval names it. */
-const KNOWN = [
-  ...PLAYBOOKS.filter((p) => p.approval_kind).map((p) => ({ id: p.id, kind: p.approval_kind as string, triggers: p.triggers, playbook: true })),
-  { id: "invoicing", kind: "send_invoice", triggers: [] as string[], playbook: false },
-];
+const KNOWN = PLAYBOOKS.filter((p) => p.approval_kind).map((p) => ({ id: p.id, kind: p.approval_kind as string, triggers: p.triggers, playbook: true }));
 export const JOB_TITLES: Record<string, [string, string]> = {
   "payment-reminder": ["Maksemeeldetuletused", "Payment reminders"],
   "vat-return-prep": ["KMD ettevalmistus", "VAT return (KMD)"],
