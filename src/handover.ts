@@ -59,11 +59,13 @@ export const JOB_TITLES: Record<string, [string, string]> = {
 };
 /** The connections each known job needs (playbook `needs`, by kind). */
 const NEEDS: Record<string, ConnectionKind[]> = {
-  "payment-reminder": ["accounting", "email"], invoicing: ["accounting", "email"], "books-catch-up": ["bank", "accounting"],
-  "vat-return-prep": ["accounting"], "annual-report": ["accounting"], "customer-follow-ups": ["customers", "email"],
+  "payment-reminder": ["accounting", "email"], invoicing: ["accounting", "email"], "books-catch-up": ["bank", "accounting", "email"],
+  "vat-return-prep": ["accounting"], "annual-report": ["accounting"], "customer-follow-ups": ["customers", "drive", "email"],
 };
 /** Jobs that go on: a recorded outcome is one step, never the whole job. */
 const ONGOING = ["customer-follow-ups", "books-catch-up"];
+/** A Tallinn calendar date plus whole days (no DST drift). */
+const addDays = (ymd: string, n: number) => { const [y, m, d] = ymd.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
 /** A rule date this close (days) makes the job due soon. */
 const SOON_DAYS = 14;
 /** The assistant's „in order” or „open” counts for this long after its assessment (ms). */
@@ -95,7 +97,7 @@ export function jobOfApproval(a: ApprovalRow): string | null {
 const definitelyOverdue = (x: Obligation, today: string) => x.kind === "risk" && x.applies === "yes" && !!x.effective_due && x.effective_due < today;
 
 export function computeHandover(o: { assessment: Assessment | null; assessedAt?: string | null; obligations: Obligation[]; approvals: ApprovalRow[]; rules: StandingRule[]; now: Date }): Handover {
-  const today = tallinnDate(o.now), ym = today.slice(0, 7), soon = tallinnDate(new Date(o.now.getTime() + SOON_DAYS * 86_400_000));
+  const today = tallinnDate(o.now), ym = today.slice(0, 7), soon = addDays(today, SOON_DAYS);
   const assessedAt = o.assessment ? o.assessedAt ?? null : null, fresh = !!assessedAt && o.now.getTime() - Date.parse(assessedAt) <= FRESH_MS;
   const live = o.rules.filter((r) => !r.revoked_at && Date.parse(r.expires_at) > o.now.getTime());
   const rows = (o.assessment?.responsibilities ?? []).filter((r) => r.applicability === "applicable" && !r.is_core);
