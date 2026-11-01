@@ -449,7 +449,7 @@ details.tech-details{margin:var(--s-2) 0 0;padding:0;border:0;background:none}
 .connect-or::before,.connect-or::after{content:"";flex:1;width:1px;background:var(--c-border)}
 .qr-box{flex:none;width:132px;height:132px;padding:8px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:#fff}
 .qr-box svg{display:block;width:100%;height:100%}
-@media (max-width:719px){.connect-options{grid-template-columns:minmax(0,1fr)}.qr-card,.connect-or{display:none}}
+@media (max-width:719px){.connect-options{grid-template-columns:minmax(0,1fr)}.connect-option{border:0;padding:0}.qr-card,.connect-or,.connect-here{display:none}}
 
 /* --- Lists and cards --- */
 .link-row{display:flex;align-items:center;gap:var(--s-3);min-height:56px;padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider);color:inherit;text-decoration:none}
@@ -1941,7 +1941,7 @@ export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "
   // naita=1 is a link, not <details>: the waiting page reloads every 5s and would close a disclosure.
   const reveal = `/uhenda?a=${o.assistant}&naita=1`;
   const hero = openAssistant
-    ? `<div class="connect-options"><div class="connect-option"><h2>${t("Selles arvutis", "On this computer")}</h2>
+    ? `<div class="connect-options"><div class="connect-option"><h2 class="connect-here">${t("Selles arvutis", "On this computer")}</h2>
 <a class="btn" href="${openPath}">${esc(openLabel)}</a>
 <p class="small">${esc(openHint)}</p></div>
 <span class="connect-or">${t("või", "or")}</span>

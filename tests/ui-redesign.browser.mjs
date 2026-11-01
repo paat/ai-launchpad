@@ -450,6 +450,7 @@ try {
       assert.equal(options.computer.height, options.phone.height, "equal option heights");
       assert.ok(options.phone.x > options.computer.x + options.computer.width, "phone option sits beside computer option");
     } else {
+      assert.equal(await page.locator(".connect-here").isVisible(), false, "computer heading is hidden on mobile");
       assert.equal(options.computer.width, options.rowWidth, "computer option fills mobile row");
     }
     console.log(`Connect alternatives @${width}: ${JSON.stringify(options)}`);

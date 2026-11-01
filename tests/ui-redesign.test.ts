@@ -642,7 +642,7 @@ describe("landing and connect", () => {
       const html = await connectBody({ lang, baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "anon" }, owner: false });
       const row = html.match(/<div class="connect-options">([\s\S]*?)<\/figure><\/div>/)?.[1];
       expect(row).toBeDefined();
-      expect(row).toContain(`<div class="connect-option"><h2>${lang === "et" ? "Selles arvutis" : "On this computer"}</h2>`);
+      expect(row).toContain(`<div class="connect-option"><h2 class="connect-here">${lang === "et" ? "Selles arvutis" : "On this computer"}</h2>`);
       expect(row).toContain(`<span class="connect-or">${lang === "et" ? "või" : "or"}</span>`);
       expect(row).toMatch(new RegExp(`<figure class="connect-option qr-card"><h2>${lang === "et" ? "Telefonis" : "On your phone"}</h2><div class="qr-box"><svg role="img" aria-label="[^"]+"`));
       expect(row).not.toContain(lang === "et" ? "Claude lubab" : "Claude allows");
