@@ -5,7 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { openDb } from "../src/db.js";
 import { arikratt } from "../src/arikratt.js";
 import { APPROVAL_KINDS, OWNER_VOICE, PLAYBOOKS, searchServices } from "../src/catalog.js";
-import { buildMcpServer, companyObligations, TOOL_ARG_KEYS, type Ctx } from "../src/mcp.js";
+import { buildMcpServer, companyObligations, monthsCovered, TOOL_ARG_KEYS, type Ctx } from "../src/mcp.js";
 import { computeObligations, type CompanyFacts, type Fact } from "../src/obligations.js";
 import { DEMO_FIXTURES } from "../src/fixtures.js";
 
@@ -366,7 +366,7 @@ describe("agent-facing copy over MCP", () => {
     const call = async (name: string, args: Record<string, unknown>) => (await c.callTool({ name, arguments: args })) as { isError?: boolean; content: { text: string }[] };
     const books = async () => JSON.parse((await call("check_my_books", {})).content[0].text) as { statements_read: Record<string, unknown>[]; first_step: string };
     expect((await books()).statements_read).toEqual([]);
-    expect((await books()).first_step).toContain("never ask for those months again. Each time you read a statement file, call record_statement_read.");
+    expect((await books()).first_step).toContain("never ask for that statement again. Read alone never makes a month done");
     const ok = await call("record_statement_read", { bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 0 });
     expect(ok.isError).toBeFalsy();
     // Same account and period again replaces the balance instead of adding a row.
@@ -374,16 +374,26 @@ describe("agent-facing copy over MCP", () => {
     // Grok r1: a second chat's spelling of the bank updates the same row; a blank bank is refused.
     await call("record_statement_read", { bank: " swedbank ", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 125 });
     expect((await call("record_statement_read", { bank: "  ", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 0 })).isError).toBe(true);
-    expect((await books()).first_step).toContain("counts as read for every month that lies wholly inside its period");
+    expect((await books()).first_step).toContain("counts as read for each month in its months_covered");
     const rows = (await books()).statements_read;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 125 });
-    for (const bad of [{ last4: "EE63" }, { last4: "41884" }, { period_from: "2026-02-30" }, { period_from: "2026-11-01" }, { period_to: "2999-12-31" }]) {
+    // Grok r2: the server lists the whole months a statement covers; the model does not do interval logic.
+    expect(rows[0].months_covered).toEqual(["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"]);
+    expect(monthsCovered("2026-01-15", "2026-03-30")).toEqual(["2026-02"]);
+    expect(monthsCovered("2024-02-01", "2024-02-29")).toEqual(["2024-02"]);
+    expect(monthsCovered("2026-12-01", "2027-01-31")).toEqual(["2026-12", "2027-01"]);
+    for (const bad of [{ bank: "EE632200221090471884" }, { bank: "Swedbank 1884" }, { last4: "EE63" }, { last4: "41884" }, { period_from: "2026-02-30" }, { period_from: "2026-11-01" }, { period_to: "2999-12-31" }]) {
       const r = await call("record_statement_read", { bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 0, ...bad });
       expect(r.isError, JSON.stringify(bad)).toBe(true);
     }
     expect(db.prepare("SELECT COUNT(*) n FROM statements_read").get()).toEqual({ n: 1 });
-    expect(byId("books-catch-up").steps.join(" ")).toContain("has no check_my_books statements_read row whose period wholly covers the month");
+    // Row cap: an owner keeps at most 200 statements; updating a known one still works at the cap.
+    const ins = db.prepare("INSERT INTO statements_read VALUES('o','LHV',?,'2025-01-01','2025-01-31',0,'2026-11-01T10:00:00Z')");
+    for (let i = 0; i < 199; i++) ins.run(String(i).padStart(4, "0"));
+    expect((await call("record_statement_read", { bank: "SEB", last4: "0001", period_from: "2026-01-01", period_to: "2026-01-31", closing_balance_cents: 0 })).isError).toBe(true);
+    expect((await call("record_statement_read", { bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 0 })).isError).toBeFalsy();
+    expect(byId("books-catch-up").steps.join(" ")).toContain("has no check_my_books statements_read row listing the month in months_covered");
   });
   test("record_statement_read needs progress:report; check_my_books shows statements only with progress:read", async () => {
     const db = openDb(":memory:");
