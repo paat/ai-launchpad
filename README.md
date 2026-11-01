@@ -84,7 +84,9 @@ Shipped, behind `src/model-quality.ts` (`meta-models/muse-spark-open-1026` via B
 | Where | What the code does |
 |---|---|
 | Unmet-need classification | Background job in `src/unmet-needs.ts` after the `report_unmet_need` tool. Live output is labelled „AI liigitus · Meta Muse Spark Open”; mock output is labelled „Näidis”. `/demand` lists only rows an owner published. |
-| Public setup cards | An operator generates them with `src/model-public-cards-cli.ts` (job `setup_guidance`). `/vali` shows „Selgitab Muse Spark (Meta) · salvestatud vastus” only when a completed card is saved. `/setup` shows „General guidance · Meta/Baseten” the same way. Opening the page does not call the model. |
+| Public setup cards | An operator generates them with `src/model-public-cards-cli.ts` (job `setup_guidance`). `/setup` shows „General guidance · Meta/Baseten” only when a completed card is saved. Opening `/setup` does not call the model. `/vali` redirects to `/alusta`. |
+| Onboarding: name the programs | `/alusta` job `intake_extract`. Muse Spark names programs the visitor wrote. A catalogue name match is used when the limit, a failure, or model-off applies, and the page says so. The same text replays one ledger row. |
+| Onboarding: one plan line | `/alusta` job `intake_plan`. One short line from facts the rules already computed. Prices, dates and steps stay on the rules. If Muse is unavailable the page says so and still shows the rules plan. The same facts replay one ledger row. |
 | Saved friction cards | The same operator path, job `classify_friction`. `/playbooks` shows a saved card when one exists („Salvestatud juhis”) and does not call the model on GET. |
 
 Not in this repo: Muse Voice Transcribe, a vision setup helper (screenshot to a tap target), Muse Spark vision, Muse Glimmer, and Muse Code turning requests into adapters. Setup input is fixed text. There is no chatbot competing with the owner's assistant.
@@ -96,7 +98,7 @@ Meta's own consumer agent app (Muse) is available only in the US and Canada as o
 ## Hackathon scope and target demo
 
 - **Scope:** the free micro-entrepreneur service only. [Enterprise measurement](docs/design/future-enterprise-measurement.md) is future design; billing and enterprise features are excluded.
-- **Shipped:** `get_started` and the playbooks in `src/catalog.ts` (`src/mcp.ts`); the obligations calendar from `get_obligations` and `src/obligations.ts` (signed-in `/`, public walkthrough `/naidis`); approval cards via `request_approval` / `get_approval` / `record_action_outcome` and `/approvals`; the friction loop via `report_unmet_need`, the owner's publish decision on Täna, and the public list `/demand`; the per-visitor sample workspace `/proovi` (approve and decline, nothing really sent); the temporary text setup helper `/setup` for a signed-in owner (a sample session is refused).
+- **Shipped:** `get_started` and the playbooks in `src/catalog.ts` (`src/mcp.ts`); the obligations calendar from `get_obligations` and `src/obligations.ts` (signed-in `/`, public walkthrough `/naidis`); approval cards via `request_approval` / `get_approval` / `record_action_outcome` and `/approvals`; the friction loop via `report_unmet_need`, the owner's publish decision on Täna, and the public list `/demand`; the per-visitor sample workspace `/proovi` (approve and decline, nothing really sent); the public onboarding chat `/alusta` (company, programs, assistant and a rules plan, nothing stored); the temporary text setup helper `/setup` for a signed-in owner (a sample session is refused).
 - **Not shipped:** the five-minute "Google search to phone" Path B story. Muse Voice Transcribe and a vision setup helper have no call site.
 - **Out:** payments, unattended filing or signing, payroll submission, a marketplace UI beyond the demand list, FIE/e-resident/employer variants.
 

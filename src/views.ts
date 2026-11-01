@@ -531,6 +531,22 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .landing-hero .btn{width:100%;font-size:var(--fs-lg)}
 .landing-actions{display:flex;flex-wrap:wrap;align-items:center;gap:0 var(--s-4)}
 @media (min-width:880px){.landing-hero{grid-template-areas:"text phone" "jobs phone";grid-template-columns:minmax(0,1fr) 360px;grid-template-rows:auto 1fr;gap:var(--s-6) 56px;margin-top:var(--s-6)}.landing-hero .btn{width:auto;padding:12px 32px}}
+.landing-choices{display:flex;flex-direction:column;gap:var(--s-3);margin:0 0 var(--s-4)}
+.landing-choice{display:flex;flex-direction:column;min-width:0;flex:1 1 0}
+.landing-choice .small{margin:0}
+.landing-hero .landing-choice .btn{width:100%}
+@media (min-width:880px){.landing-choices{flex-direction:row;align-items:flex-start;gap:var(--s-4)}.landing-hero .landing-choice .btn{width:100%;padding:12px 18px}}
+.intake{position:relative;min-width:0;overflow-wrap:anywhere}
+.hp{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.landing-choice .btn{width:100%}
+.intake-log{display:flex;flex-direction:column;gap:var(--s-2);margin:0 0 var(--s-4)}
+.bubble--me{align-self:flex-end;border-bottom-right-radius:6px;background:var(--c-primary);color:#fff}
+.bubble--ai{align-self:flex-start;border:1px solid var(--c-border);border-bottom-left-radius:6px;background:#fff}
+.why{width:100%;table-layout:fixed;border-collapse:collapse;font-size:var(--fs-sm);overflow-wrap:anywhere}
+.why th,.why td{padding:6px 4px;border-bottom:1px solid var(--c-divider);vertical-align:top;text-align:left;overflow-wrap:anywhere}
+.why caption{font-weight:750;text-align:left;margin:0 0 var(--s-2)}
+@media (max-width:700px){.why,.why tbody,.why tr,.why td{display:block;width:100%}.why thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.why td::before{content:attr(data-label);display:block;font-weight:700;color:var(--c-muted)}}
+#alusta-prompt{white-space:pre-wrap}
 .teaser{position:relative;width:100%;max-width:360px;margin:0 auto}
 .teaser::before{content:"";position:absolute;inset:8% 0 4%;z-index:-1;border-radius:50%;background:radial-gradient(closest-side,#c9dcbf,transparent);opacity:.9}
 .teaser figcaption{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:var(--s-2);margin-top:var(--s-3)}
@@ -1631,25 +1647,28 @@ const STEP_ICONS = [
 // One selection controls both the decorative conversation and its connector details.
 const JOB_SWITCHER_SCRIPT = `<script>(function(){var cards=[].slice.call(document.querySelectorAll("[data-job-card]")),phone=document.getElementById("landing-phone"),conversations=[].slice.call(document.querySelectorAll("[data-job-conversation]")),details=[].slice.call(document.querySelectorAll("[data-job-detail]"));function activate(card){var id=card.getAttribute("data-job-card");for(var i=0;i<cards.length;i++){var on=cards[i]===card;cards[i].classList.toggle("job-card--active",on);cards[i].querySelector("[data-job-activate]").setAttribute("aria-pressed",on?"true":"false");}var shown=null,revealed=false;for(var j=0;j<conversations.length;j++){var show=conversations[j].getAttribute("data-job-conversation")===id;if(show){revealed=conversations[j].hidden;shown=conversations[j];}conversations[j].hidden=!show;}for(var d=0;d<details.length;d++)details[d].hidden=details[d].getAttribute("data-job-detail")!==id;var pause=document.getElementById("teaser-pause");if(pause&&pause.checked&&revealed&&shown){var finalMs=14000;var seek=function(){var anims=shown.getAnimations({subtree:true});for(var a=0;a<anims.length;a++)anims[a].currentTime=finalMs;return anims;};Promise.all(seek().map(function(anim){return anim.ready;})).then(function(){if(pause.checked)seek();});}if(window.matchMedia("(max-width: 879px)").matches&&phone.getBoundingClientRect().top<0)phone.scrollIntoView({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});}for(var k=0;k<cards.length;k++)(function(card){card.querySelector("[data-job-activate]").addEventListener("click",function(){activate(card);});})(cards[k]);})();</script>`;
 
-const CHOOSE_LINK: [string, string] = ["Pole veel AI-assistenti? Aita mul valida", "No AI assistant yet? Help me choose"];
+/** Two equal ways in: connect an assistant the visitor already has, or start from nothing. */
+function startChoices(l: Lang): string {
+  const t = tr(l);
+  const q = l === "en" ? "?lang=en" : "";
+  const choice = (href: string, label: string, hint: string) => `<div class="landing-choice"><a class="btn" href="${href}">${label}</a><p class="small">${esc(hint)}</p></div>`;
+  return `<div class="landing-choices">${choice(`/uhenda${q}`, t("Ühenda oma ChatGPT või Claude", "Connect my ChatGPT or Claude"), t("Kasutan juba AI-assistenti", "I already use an AI assistant"))}${choice(`/alusta${q}`, t("Aita mul alustada", "Help me get started"), t("AI-assistenti veel pole või ei tea, mida valida", "No AI assistant yet, or not sure which"))}</div>`;
+}
 
-/** Public /vali: one question per screen, then one recommendation. Zero JS. English links carry ?lang=en because this page sets no cookie. */
-export function chooserBody(o: { lang: Lang; step: "uses" } | { lang: Lang; step: "business" } | { lang: Lang; step: "result"; assistant: "claude" | "chatgpt" | "grok"; reason: string; source: string; downloadHref: string | null; connectHref: string; muse: string | null }): string {
-  const l = o.lang, t = tr(l);
-  const href = (params: Record<string, string> = {}) => { const q = new URLSearchParams(params); if (l === "en") q.set("lang", "en"); const s = q.toString(); return `/vali${s ? `?${s}` : ""}`; };
-  const option = (params: Record<string, string>, label: string) => `<a class="btn secondary" href="${esc(href(params))}">${esc(label)}</a>`;
-  if (o.step === "uses") return `<h1>${esc(t("Kas sa juba kasutad AI-assistenti?", "Do you already use an AI assistant?"))}</h1>
-<nav aria-label="${esc(t("Vastus", "Answer"))}">${option({ uses: "chatgpt" }, "ChatGPT")}${option({ uses: "claude" }, "Claude")}${option({ uses: "grok" }, "Grok")}${option({ uses: "other" }, t("Mõni teine (Gemini, Copilot, Meta AI …)", "Another one (Gemini, Copilot, Meta AI …)"))}${option({ uses: "none" }, t("Ei", "No"))}</nav>`;
-  if (o.step === "business") return `<h1>${esc(t("Kas sinu ettevõte maksab ChatGPT Businessi eest?", "Does your company pay for ChatGPT Business?"))}</h1>
-<nav aria-label="${esc(t("Vastus", "Answer"))}">${option({ uses: "chatgpt", business: "yes" }, t("Jah", "Yes"))}${option({ uses: "chatgpt", business: "no" }, t("Ei", "No"))}${option({ uses: "chatgpt", business: "unsure" }, t("Pole kindel", "Not sure"))}</nav>`;
-  const name = o.assistant === "claude" ? t("Kasuta Claude'i", "Use Claude") : o.assistant === "grok" ? t("Kasuta Grok Boti", "Use Grok Bot") : t("Kasuta ChatGPT-d", "Use ChatGPT");
-  return `<h1>${esc(name)}</h1>
-<p>${esc(o.reason)}</p>
-<p class="small muted">${esc(o.source)}</p>
-${o.downloadHref ? `<p><a class="tap-link" href="${esc(o.downloadHref)}" rel="noopener noreferrer">${t("Hangi see", "Get it")}</a></p>` : ""}
-<p><a class="btn" href="${esc(o.connectHref)}">${t("Ühenda see AI-hüppelauaga", "Connect it to AI Launchpad")}</a></p>
-${o.muse ? `<p class="small muted">${esc(t("Selgitab Muse Spark (Meta) · salvestatud vastus", "Explained by Muse Spark (Meta) · saved answer"))}</p><p>${esc(o.muse)}</p>` : ""}
-<p><a class="tap-link" href="${esc(href())}">${t("Alusta uuesti", "Start over")}</a></p>`;
+/** Public /alusta. Bubbles and the question are escaped here. main and after are already escaped by the caller. */
+export function alustaBody(o: {
+  lang: Lang; action: string; preauth: string;
+  hidden: Record<string, string>;
+  bubbles: { side: "me" | "ai"; text: string }[];
+  question: string; main: string; showForm: boolean; after?: string;
+}): string {
+  const t = tr(o.lang);
+  const log = o.bubbles.length ? `<div class="intake-log">${o.bubbles.map((b) => `<p class="bubble bubble--${b.side === "me" ? "me" : "ai"}">${esc(b.text)}</p>`).join("")}</div>` : "";
+  const h1 = o.question ? `<h1 id="alusta-h">${esc(o.question)}</h1>` : "";
+  const hp = `<div class="hp"><label>${esc(t("Veebileht", "Website"))}<input name="website" tabindex="-1" autocomplete="off" value=""></label></div>`;
+  const hidden = Object.entries({ preauth: o.preauth, ...o.hidden }).map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`).join("");
+  const form = o.showForm ? `<form method="post" action="${esc(o.action)}" autocomplete="off">${hp}${hidden}${o.main}</form>` : o.main;
+  return `<div class="intake">${log}${h1}${form}${o.after ?? ""}</div>`;
 }
 
 export function landingBody(o: { lang: Lang; demo: boolean; rand?: () => number }): string {
@@ -1740,8 +1759,8 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
 <section class="landing-hero" aria-labelledby="hero-h"><div>
 <h1 id="hero-h">${t("Tegele sellega, milles oled hea.", "Focus on what you're good at.")} <span>${t("Kontoritöö teeb sinu AI-assistent.", "Your AI assistant does the office work.")}</span></h1>
 <p class="lede">${esc(t("Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud aitab: ütleb, milliseid ühendusi vaja, küsib enne iga saatmist sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude'iga.", "Your assistant does the office work through your accounting, bank and e-mail connections. AI Launchpad helps: it tells you which connections you need, asks for your approval before anything is sent, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude."))}</p>
-<div class="landing-actions"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a><a class="tap-link" href="/naidis">${t("Vaata näidist", "See a sample")}</a><a class="tap-link" href="/proovi">${t("Proovi ise", "Try it yourself")}</a></div>
-<p class="small"><a class="tap-link" href="/vali">${t(...CHOOSE_LINK)}</a></p></div>
+${startChoices(l)}
+<div class="landing-actions"><a class="tap-link" href="/naidis">${t("Vaata näidist", "See a sample")}</a><a class="tap-link" href="/proovi">${t("Proovi ise", "Try it yourself")}</a></div></div>
 <figure class="teaser" id="landing-phone">
 <input type="checkbox" id="teaser-pause" class="vh-input">
 ${jobs.map(conversation).join("\n")}
@@ -2015,7 +2034,7 @@ ${COPY_SCRIPT}`;
 ${sampleFirst ? handover : ""}
 <p class="small">${esc(t("Lihtsaim algus: Claude — töötab ka tasuta paketis.", "Easiest start: Claude — works on the free plan too."))}</p>
 <nav class="choice" aria-label="${t("Vali assistent", "Choose your assistant")}"><a href="/uhenda?a=chatgpt"${o.assistant === "chatgpt" ? ' aria-current="true"' : ""}>ChatGPT</a><a href="/uhenda?a=claude"${o.assistant === "claude" ? ' aria-current="true"' : ""}>Claude</a><a href="/uhenda?a=grok"${o.assistant === "grok" ? ' aria-current="true"' : ""}>Grok Bot</a></nav>
-<p class="small"><a class="tap-link" href="/vali">${t(...CHOOSE_LINK)}</a></p>
+${startChoices(l)}
 ${hero ? `<section class="card connect-hero">${hero}</section>` : ""}
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "anon" ? `<p><a class="tap-link" href="/proovi">${esc(t("Proovi näidistööruumis", "Try the sample workspace"))}</a></p>` : ""}

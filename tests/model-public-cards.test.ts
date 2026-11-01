@@ -78,11 +78,14 @@ function makeOwner(db: Db, id: string, subject: string, kind: string) {
   return { raw, csrf };
 }
 async function req(base: string, path: string, opts: { cookie?: string; fields?: Record<string, string> } = {}) {
-  return fetch(base + path, {
+  const res = await fetch(base + path, {
     method: opts.fields ? "POST" : "GET", redirect: "manual",
     headers: { connection: "close", ...(opts.cookie ? { cookie: `lp_session=${opts.cookie}` } : {}), ...(opts.fields ? { "content-type": "application/x-www-form-urlencoded", origin: base } : {}) },
     body: opts.fields ? new URLSearchParams(opts.fields) : undefined,
   });
+  // Read the body now. A later server.closeAllConnections() aborts a socket whose parser is still paused on an unread page, and undici then throws.
+  const body = await res.arrayBuffer();
+  return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
 }
 const postSetup = (s: Started, a: { raw: string; csrf: string }, fields: Record<string, string>) =>
   req(s.base, "/setup", { cookie: a.raw, fields: { csrf: a.csrf, ...fields } });

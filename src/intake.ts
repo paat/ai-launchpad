@@ -179,6 +179,8 @@ export interface IntakePlan {
   assistant: AssistantId | null;
   reason: string;
   reasons: Recommendation["reasons"];
+  /** The same recommendation the plan was built from, including a free start and a stay-with-yours row. */
+  recommendation: Recommendation;
   paidNote: boolean;
   planNote?: string;
   /** Candidate plans for the why table: plan, published cost, tax, own connections, phone, tested. */
@@ -241,6 +243,7 @@ export function buildIntakePlan(args: IntakePlanArgs): IntakePlan {
       assistant: null,
       reason,
       reasons,
+      recommendation: rec,
       paidNote: false,
       why: whyRows(sheet, lang),
       candidates: [...sheet],
@@ -268,6 +271,7 @@ export function buildIntakePlan(args: IntakePlanArgs): IntakePlan {
     assistant,
     reason,
     reasons,
+    recommendation: rec,
     paidNote: rec.paidNote,
     ...(rec.paidNote ? { planNote: reason } : {}),
     why: whyRows(candidates, lang),

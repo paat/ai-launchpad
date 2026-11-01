@@ -627,7 +627,7 @@ describe("landing and connect", () => {
     expect([...html.matchAll(/<h3 class="step-title">(.*?)<\/h3>/g)].map(m => m[1])).toEqual(["Kopeeri aadress", "Ava ChatGPT seadetes ühendused, lisa uus ühendus ja kleebi sinna aadress.", "Logi sisse ja vali, mida assistent tohib"]);
     expect(html).toContain("Ootan, et ChatGPT ühenduks…");
     expect(html).toContain('href="/connection">Andmed ja õigused');
-    expect(html).toContain('href="/vali"');
+    expect(html).toContain('href="/alusta"');
     expect(html).not.toContain('href="/setup"');
     const main = html.slice(0, html.indexOf('<details class="tech-details">'));
     expect(main).not.toMatch(/\bMCP\b|OAuth|scope|progress:/);
@@ -653,7 +653,7 @@ describe("landing and connect", () => {
     expect(claude).toContain("<code>https:/<wbr>/<wbr>launchpad.example.com/<wbr>mcp</code>");
     expect(claude).toContain("→ Continue → Add. Ära muuda midagi muud.");
     expect(claude).toContain("Logi sisse, et näha, kas sinu assistent on ühendatud.");
-    expect(claude).toContain('href="/vali"');
+    expect(claude).toContain('href="/alusta"');
     expect(claude).not.toContain('href="/setup"');
     const claudeEn = await connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "anon" }, owner: false, expanded: true });
     expect(claudeEn).toContain("Tested on Claude&#39;s Free plan (30 Oct 2026).");
@@ -685,7 +685,8 @@ describe("landing and connect", () => {
   });
 
   test("connect: the open link follows the selected assistant and language", async () => {
-    const link = async (assistant: "chatgpt" | "claude", lang: "et" | "en" = "et") => (await connectBody({ lang, baseUrl: "https://launchpad.example.com", assistant, state: { kind: "anon" }, owner: false })).match(/<a class="btn" href="([^"]+)">/)?.[1];
+    // The two equal start choices sit above the hero, so the open link is the button inside it.
+    const link = async (assistant: "chatgpt" | "claude", lang: "et" | "en" = "et") => (await connectBody({ lang, baseUrl: "https://launchpad.example.com", assistant, state: { kind: "anon" }, owner: false })).match(/<section class="card connect-hero">[\s\S]*?<a class="btn" href="([^"]+)">/)?.[1];
     expect(await link("claude")).toBe("/uhenda/ava?a=claude&lang=et");
     expect(await link("chatgpt")).toBe("/uhenda/ava?a=chatgpt&lang=et");
     expect(await link("claude", "en")).toBe("/uhenda/ava?a=claude&lang=en");
