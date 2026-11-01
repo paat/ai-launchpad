@@ -452,7 +452,7 @@ try {
   await page.screenshot({ path: path.join(T2_SHOTS, "receipt-strip-390.png") });
   geometry.receiptStrip = receiptStrip;
 
-  // --- T4 (#59) landing fold: header, headline, button and the switcher heading in the first 1280×800 viewport beside a 656 px phone
+  // --- T4 (#59) landing fold: header, headline, button and the switcher heading in the first 1280×800 viewport beside a 616 px phone
   // whose first and last bubbles are not clipped (#63 m1); at 390 the fold shows the headline, the button and the top of the phone ---
   const landingFold = () => page.evaluate(() => {
     document.getAnimations().forEach((a) => { a.pause(); a.currentTime = 14000; }); // the teaser's final frame
@@ -472,9 +472,26 @@ try {
   const fold1280 = await landingFold();
   const inFold = (b) => b.top >= 0 && b.bottom <= fold1280.innerH;
   assert.ok([fold1280.header, fold1280.h1, fold1280.btn].every(inFold) && fold1280.jobsHeading.top >= 0 && fold1280.jobsHeading.top < fold1280.innerH, `t4 landing@1280: header, headline, button and switcher heading in 800 px ${JSON.stringify(fold1280)}`);
-  assert.ok(fold1280.phone.h === 656 && fold1280.phone.bottom <= fold1280.innerH && fold1280.phone.left > fold1280.h1.left + 300, `t4 landing@1280: 656 px phone in the fold beside the text ${JSON.stringify(fold1280.phone)}`);
+  assert.ok(fold1280.phone.h === 616 && fold1280.phone.bottom <= fold1280.innerH && fold1280.phone.left > fold1280.h1.left + 300, `t4 landing@1280: 616 px phone in the fold beside the text ${JSON.stringify(fold1280.phone)}`);
   assert.ok(fold1280.last.top >= fold1280.chat.top - 1 && fold1280.last.bottom <= fold1280.chat.bottom + 1, `t4 landing@1280: last bubble not clipped ${JSON.stringify(fold1280)}`);
   assert.ok(fold1280.first.top >= fold1280.chat.top - 1, `t4 landing@1280: the opening question is not under the chat header ${JSON.stringify(fold1280)}`);
+  // The fixed phone heights are hand-fitted: every case's final frame must fit its chat at each height breakpoint, in both languages.
+  for (const width of [1280, 879, 381, 380, 359, 320]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const lang of ["et", "en"]) {
+      await page.setContent(lang === "et" ? pageHtml.landing() : pageHtml["landing-en"]());
+      const clipped = await page.evaluate(() => [...document.querySelectorAll("[data-job-conversation]")].flatMap((c) => {
+        c.hidden = false;
+        c.getAnimations({ subtree: true }).forEach((a) => { a.pause(); a.currentTime = 14000; });
+        const chat = c.querySelector(".chat"), st = getComputedStyle(chat);
+        const need = [...chat.children].reduce((s, e) => s + e.getBoundingClientRect().height, 0) + parseFloat(st.paddingTop) + parseFloat(st.paddingBottom);
+        return need > chat.clientHeight + 1 ? [`${c.dataset.jobConversation} ${Math.round(need)}>${chat.clientHeight}`] : [];
+      }));
+      assert.deepEqual(clipped, [], `t4 landing@${width}/${lang}: every case fits the phone`);
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.setContent(pageHtml.landing());
   assert.equal(fold1280.h1Size, "52px", "t4 landing@1280: --fs-display headline");
   assert.equal(fold1280.trustBg, "rgb(15, 61, 37)", "t4 landing: .trust on --c-deep");
   assert.ok(fold1280.transcriptFirst, "t4 landing: the transcript <ol> stays first in the teaser");

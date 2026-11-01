@@ -305,7 +305,7 @@ describe("landing and connect", () => {
     }
     const css = shell({ title: "x", active: "none", csrf: "", body: "" });
     expect(css).toContain(".job-card--active{border-color:var(--c-primary)");
-    expect(css).toContain(".chat{display:flex;flex:1;flex-direction:column;justify-content:flex-end;min-height:540px");
+    expect(css).toContain(".chat{display:flex;flex:1;flex-direction:column;justify-content:flex-start;min-height:0");
   });
 
   test("landing conversations: every case has its scripted ET and EN transcript (#69 step 2b)", () => {
