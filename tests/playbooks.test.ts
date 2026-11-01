@@ -4,7 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { openDb } from "../src/db.js";
 import { arikratt } from "../src/arikratt.js";
-import { APPROVAL_KINDS, OWNER_VOICE, PLAYBOOKS, searchServices } from "../src/catalog.js";
+import { APPROVAL_KINDS, OWNER_VOICE, PLAYBOOKS, SEND_INVOICE_ACT, searchServices } from "../src/catalog.js";
 import { buildMcpServer, companyObligations, monthsCovered, TOOL_ARG_KEYS, type Ctx } from "../src/mcp.js";
 import { computeObligations, type CompanyFacts, type Fact } from "../src/obligations.js";
 import { DEMO_FIXTURES } from "../src/fixtures.js";
@@ -516,6 +516,18 @@ describe("agent-facing copy over MCP", () => {
     for (const step of p.steps) {
       expect(step).not.toMatch(/\b(paying|filing|signing)\b/i);
     }
+  });
+
+  test("invoicing: pre-approval steps decide channel without acting; act comes after request_approval (#120)", () => {
+    const p = byId("invoicing");
+    const approvalIdx = p.steps.findIndex((s) => s.includes("request_approval"));
+    expect(approvalIdx).toBeGreaterThan(0);
+    const preApproval = p.steps.slice(0, approvalIdx);
+    for (const step of preApproval) {
+      expect(step).not.toMatch(/is delivered|deliver it|send it|e-mail the invoice/i);
+    }
+    const actIdx = p.steps.indexOf(SEND_INVOICE_ACT);
+    expect(actIdx).toBeGreaterThan(approvalIdx);
   });
 
   test("remember_business_facts: owner phrasing finds it, read-only, returns the remember-facts playbook for any scope", async () => {

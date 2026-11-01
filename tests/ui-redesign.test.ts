@@ -4,7 +4,7 @@ import { createApp, type Config } from "../src/app.js";
 import { openDb } from "../src/db.js";
 import { esc, shell, loginBody, tanaBody, deadlinesList, approvalsListBody, activityBody, connectionBody, setupBody, landingBody, connectBody, assistantGuidePrompt, approvalCardBody, fmtEur, fmtDeadline, deadlineParts, fmtPeriod, fmtWhen, jobCardAfterScroll, type TanaOpts } from "../src/views.js";
 import { computeObligations } from "../src/obligations.js";
-import { SYNTHETIC_COMPANIES } from "../src/fixtures.js";
+import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import type { ApprovalRow, StandingRule } from "../src/mcp.js";
 import { assessmentSchema, computeCoverage } from "../src/core.js";
 import { computeHandover } from "../src/handover.js";
@@ -951,7 +951,14 @@ describe("activity and setup", () => {
 
 describe("„Käest ära” (#61)", () => {
   const consumed = approval({ id: "appr_done", state: "consumed", decided_at: "2026-11-02T09:00:00Z", consumed_at: "2026-11-02T10:00:00Z", outcome_json: JSON.stringify({ outcome: "sent", history: [] }) });
-  const h = computeHandover({ assessment, obligations: mari.obligations, approvals: [consumed, approval()], rules: [], now: NOW });
+  const handoverAssessment = assessmentSchema.parse({
+    ...assessment,
+    responsibilities: [
+      ...assessment.responsibilities,
+      DEMO_FIXTURES.beta.responsibilities[1],
+    ],
+  });
+  const h = computeHandover({ assessment: handoverAssessment, obligations: mari.obligations, approvals: [consumed, approval()], rules: [], now: NOW });
 
   test("Täna: one strip under the pills with the count, linking to Ühendus, before the primary action; no percentage", () => {
     const html = tana({ handover: h, approvals: [approval()] });
@@ -974,6 +981,7 @@ describe("„Käest ära” (#61)", () => {
     expect((section.replace(/<details>[\s\S]*?<\/details>/g, "").match(/<button type="submit">/g) ?? []).length).toBeLessThanOrEqual(1);
     expect(section).not.toContain("%");
     expect(section).toContain("Kuidas see arvutatakse");
+    expect(section).toContain("Assistendi hinnang");
     expect(section).toContain("assistendi hinnang");
     const en = await connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: "csrf-x", rules: [] }, handover: h });
     expect(en).toContain(`of ${h.total} jobs are off your plate`);

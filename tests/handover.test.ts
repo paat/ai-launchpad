@@ -369,6 +369,19 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     }
   });
 
+  test("invoicing next step: tailored prompt and description, no filing fallback (#120)", () => {
+    const h = computeHandover({ assessment: alpha, obligations: [], approvals: [fired()], rules: [rule()], now: NOW });
+    expect(h.next).toMatchObject({ type: "playbook", playbookId: "invoicing", obligation: null, job: { kind: "send_invoice" } });
+    const et = nextCard(handoverSection(h, "et", "c", NOW));
+    const en = nextCard(handoverSection(h, "en", "c", NOW));
+    expect(et).toContain("Valmista järgmine arve ette. Näita mulle täpset arvet ja küsi kinnitust enne saatmist.");
+    expect(et).toContain("Vajab sinu raamatupidamisprogrammi ühendust (arve ja PDF) ja sinu e-posti. Arve saadetakse alles pärast sinu kinnitust.");
+    expect(et).not.toContain("kinnitust enne, kui midagi esitan");
+    expect(en).toContain("Prepare the next invoice. Show me the exact invoice and ask me to approve before you send it.");
+    expect(en).toContain("It needs your accounting connector (the invoice and its PDF) and your e-mail. The invoice is sent only after you approve it.");
+    expect(en).not.toContain("file anything");
+  });
+
   test("invoicing appearance rule: an owner with no invoicing assessment row and no send_invoice approval has no invoicing job (#120)", () => {
     // 1. No assessment, no approvals: three baseline jobs, no invoicing.
     const h1 = computeHandover({ assessment: null, obligations, approvals: [], rules: [], now: NOW });
