@@ -13,7 +13,7 @@ below. No new live calls were made for this docs update.
   succeeded with unchanged synthetic workspace. Receipts mean stored reports,
   not external verification. Claude was not tested on 28 Oct; see the
   dated Claude (Free plan) entry below.
-- Catalogue: 181 research records, not 181 verified integrations. No provider
+- Catalogue: 182 research records, not 182 verified integrations. No provider
   brokerage, public-register reads, external verifier, moderation, or 100%
   claim.
 

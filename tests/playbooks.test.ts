@@ -4,7 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { openDb } from "../src/db.js";
 import { arikratt } from "../src/arikratt.js";
-import { APPROVAL_KINDS, PLAYBOOKS } from "../src/catalog.js";
+import { APPROVAL_KINDS, PLAYBOOKS, searchServices } from "../src/catalog.js";
 import { buildMcpServer, companyObligations, type Ctx } from "../src/mcp.js";
 import { computeObligations, type CompanyFacts, type Fact } from "../src/obligations.js";
 import { DEMO_FIXTURES } from "../src/fixtures.js";
@@ -83,14 +83,14 @@ describe("executable job playbooks (#26)", () => {
     expect(rules).toContain("This playbook never writes, sends or calls request_approval");
     expect(rules).toContain("Never ask for keys, passwords or PINs in the chat; if the owner pastes one here, do not repeat, store or pass it to any tool");
     expect(p.needs.join(" ")).toContain("never ask for, repeat or accept a password or PIN in the chat");
-    expect(ask).toMatch(/^Ask one question unless the owner already said it: what should be linked \(accounting software, e-mail or bank\)/);
+    expect(ask).toMatch(/^Ask one question unless the owner already said it: what should be linked \(accounting software, e-mail, bank or customer list\)/);
     expect(ask).toContain("Follow only the steps that start with that service's name; each one says how to finish. A connector for a different service never lets you skip these steps.");
     expect(ask).toContain("if a connector for that same service already answers, name it and use it instead of asking");
     expect(ask).not.toMatch(/go straight to the last step/);
     // Branch-specific steps are scoped by their prefix; each non-accounting branch ends explicitly.
     const branch = rest.slice(0, -1);
-    for (const x of branch) expect(x).toMatch(/^(E-mail|Bank|Accounting): /);
-    const email = branch.filter((x) => x.startsWith("E-mail:")), bank = branch.filter((x) => x.startsWith("Bank:")), acc = branch.filter((x) => x.startsWith("Accounting:"));
+    for (const x of branch) expect(x).toMatch(/^(E-mail|Bank|Accounting|Customers): /);
+    const email = branch.filter((x) => x.startsWith("E-mail:")), bank = branch.filter((x) => x.startsWith("Bank:")), acc = branch.filter((x) => x.startsWith("Accounting:")), customers = branch.filter((x) => x.startsWith("Customers:"));
     expect([email.length, bank.length]).toEqual([1, 1]);
     expect(email[0]).toContain("if it is Gmail or Microsoft 365, offer your built-in connector (if it is already connected, skip the offer), and once it is connected, go to the last step.");
     expect(email[0]).toContain("only if your Gmail or Microsoft 365 connector is already connected, offer in one line to use that mailbox for sending instead");
@@ -104,10 +104,13 @@ describe("executable job playbooks (#26)", () => {
     expect(bank[0]).toContain("own Smart-ID (never automate it)");
     expect(bank[0]).toContain("Any other bank: say plainly that it cannot be linked live yet and explain the statement route instead: when a job needs bank data, the owner downloads the account statement for that period from their internet bank as a file and shares it, and it is used only for that job. Then stop here without the last step. Never start a bank key, credential or payment setup, and never offer community bank tools.");
     expect(verify).toContain("LHV, only the date of the latest transaction, with no amounts.");
-    for (const s of ["paste the key values", "Add custom connector", "API access permits", "search_services with \"werkzeug\""]) {
+    for (const s of ["paste the key values", "API access permits", "search_services with \"werkzeug\""]) {
       expect(branch.filter((x) => x.includes(s)).every((x) => x.startsWith("Accounting:")), s).toBe(true);
       expect(acc.some((x) => x.includes(s)), s).toBe(true);
     }
+    // The free-plan sentence is shared with Customers; "Add custom connector" is no longer accounting-only.
+    expect(branch.filter((x) => x.includes("Add custom connector")).every((x) => x.startsWith("Accounting:") || x.startsWith("Customers:"))).toBe(true);
+    expect(acc.some((x) => x.includes("Add custom connector"))).toBe(true);
     const readOnly = acc.findIndex((x) => x.includes("before any key is created, choose reading only"));
     const create = acc.findIndex((x) => x.includes("guide the owner to create the key"));
     expect(readOnly).toBeGreaterThanOrEqual(0);
@@ -125,6 +128,41 @@ describe("executable job playbooks (#26)", () => {
     expect(verify).toContain("or the mailbox they agreed to use instead");
     expect(verify).toContain("e-mail, only the date of the newest message, with no subject or content;");
     expect(verify).toContain("Do not create, change, delete or send anything during setup.");
+    expect(verify).toContain("For customers, ask the connector for the number of contacts or deals; never list or read customer records to count them; if the connector offers no count, report only that one read-only call succeeded, and show or repeat nothing from it.");
+    expect(verify).not.toContain("with no names");
+    expect(p.verify_with).toContain("the owner sees the same number of contacts or deals in their own customer tool");
+    const freePlan = "Claude's free plan allows one custom connector and AI Launchpad already uses it: if Add custom connector is greyed out, say so plainly, explain that removing AI Launchpad stops deadlines and approvals, suggest upgrading the plan, and stop here without the last step; never suggest removing AI Launchpad.";
+    const nav = "in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.";
+    expect(customers.length).toBeGreaterThan(1);
+    expect(customers.every((x) => x.startsWith("Customers:"))).toBe(true);
+    const cust = customers.join(" ");
+    for (const id of ["pipedrive", "hubspot", "scoro", "trivis"]) {
+      expect(searchServices(id, 25).map((r) => r.id), id).toContain(id);
+      expect(cust, id).toContain(`search_services with "${id}"`);
+      expect(cust, id).toContain(`quote only the entry with id ${id}`);
+    }
+    expect(cust).not.toContain('search_services with "CRM"');
+    expect(cust).toContain("if its key or sign-in cannot be limited to reading, say plainly that it cannot be linked safely yet, because the key could also change the books, and stop here: skip all remaining steps.");
+    expect(acc.join(" ")).toContain(freePlan);
+    expect(acc.join(" ")).toContain(nav);
+    const scoro = customers.find((x) => x.includes('search_services with "scoro"'))!;
+    const trivis = customers.find((x) => x.includes('search_services with "trivis"'))!;
+    for (const step of [scoro, trivis]) {
+      expect(step).toContain(nav);
+      expect(step).toContain(freePlan);
+      expect(step).toMatch(/Once the connector is added, go to the last step\.$/);
+    }
+    expect(cust).toContain("do not search");
+    expect(cust).toContain("Do not create or edit any sheet");
+    expect(cust).toContain("nothing needs linking");
+    expect(cust).toContain("The owner is responsible for the customer list and controls it, and Launchpad does not keep it.");
+    expect(cust).toContain("Do not send a promotional message to a person without their consent, unless it is the existing-customer exception for the owner's own similar products, with an opt-out.");
+    expect(cust).toContain("Any message is sent only through a send_message approval.");
+    expect(customers[0]).toContain("If a connector for the owner's customer tool already answers a read-only question, skip to the last step.");
+    expect(cust).toContain("Pipedrive is in this assistant's own connector directory (Claude: Customize → Connectors / Browse; ChatGPT: its apps): offer that, and once it is added, go to the last step.");
+    expect(cust).toContain("HubSpot is in this assistant's own connector directory (Claude: Customize → Connectors / Browse; ChatGPT: its apps): offer that, and once it is added, go to the last step.");
+    expect(cust).toContain("Launchpad does not vouch for it, and once it is added, go to the last step.");
+    expect(customers.find((x) => x.includes("no customer tool"))).toContain("Then stop here without the last step.");
     for (const id of ["payment-reminder", "vat-return-prep", "annual-report"]) expect(byId(id).needs[0], id).toContain("(if no accounting connector answers yet, follow the connect-service playbook)");
   });
 
@@ -244,6 +282,9 @@ describe("agent-facing copy over MCP", () => {
     expect(i).not.toMatch(/CAMT|ISO|XML/);
     expect(i).toContain("Before asking the owner for any fact or document, check both public data (get_obligations public_facts) and the owner's own connected files, such as Google Drive; ask only if neither has it. Always ask the facts_needed questions from get_obligations, and never let a file stand in for the owner's answer to them, except that a TSD payout the connected books or bank show answers yes.");
     expect(i).toContain("call connect_my_services and follow the connect-service playbook it returns before answering from your own connector directory; it says which lookups are allowed.");
+    expect(i).toContain("customers");
+    expect(i).toContain("Pipedrive");
+    expect(i).toContain("HubSpot");
     expect(i).toContain("When the owner asks how far their books are for a period, what is missing from those books, or to close a month or year in the books, call check_my_books and follow the books-catch-up playbook it returns: an accounting tool's own month-close check cannot see bank accounts the books do not have yet.");
     const tools = (await c.listTools()).tools;
     expect(tools.find((x) => x.name === "search_services")?.description).toMatch(/^Research catalogue behind the connect-service playbook: when linking a service, query only as that playbook's branch says\./);
@@ -253,7 +294,7 @@ describe("agent-facing copy over MCP", () => {
     const c = await connect([]);
     const tool = (await c.listTools()).tools.find((x) => x.name === "connect_my_services")!;
     expect(tool.annotations?.readOnlyHint).toBe(true);
-    for (const w of ["e-mail", "Proton Mail", "Gmail", "bank", "LHV", "accounting software", "e-arveldaja", "send invoices from their mailbox", "before searching your own connector directory"]) expect(tool.description, w).toContain(w);
+    for (const w of ["e-mail", "Proton Mail", "Gmail", "bank", "LHV", "accounting software", "e-arveldaja", "send invoices from their mailbox", "before searching your own connector directory", "customers", "Pipedrive", "HubSpot"]) expect(tool.description, w).toContain(w);
     const r = JSON.parse(((await c.callTool({ name: "connect_my_services", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { playbook: { id: string; steps: string[] }; first_step: string };
     expect(r.playbook).toEqual(PLAYBOOKS.find((p) => p.id === "connect-service"));
     expect(r.first_step).toContain("one plain question per message");

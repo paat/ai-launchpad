@@ -1345,6 +1345,7 @@ export const CATALOGUE_GROUPS = [
   { id: "oigus", et: "Õigus", en: "Legal", match: /legal|contract/ },
   { id: "andmed", et: "Avalikud ja äriandmed", en: "Public and business data", match: /public|business data|government|statistics|^procurement$|tax/ },
   { id: "brauser", et: "Brauser ja automaatika", en: "Browser and automation", match: /browser/ },
+  { id: "kliendid", et: "Kliendid (CRM)", en: "Customers (CRM)", match: /crm/ },
   { id: "muu", et: "Muu", en: "Other", match: /(?:)/ },
 ] as const;
 export type CatalogueGroup = (typeof CATALOGUE_GROUPS)[number]["id"];
