@@ -981,7 +981,7 @@ describe("„Käest ära” (#61)", () => {
     expect((section.replace(/<details>[\s\S]*?<\/details>/g, "").match(/<button type="submit">/g) ?? []).length).toBeLessThanOrEqual(1);
     expect(section).not.toContain("%");
     expect(section).toContain("Kuidas see arvutatakse");
-    expect(section).toContain("Assistendi hinnang");
+    expect(section).toMatch(/<span class="label-chip label-chip--assistant">Assistendi hinnang<\/span>/);
     expect(section).toContain("assistendi hinnang");
     const en = await connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: "csrf-x", rules: [] }, handover: h });
     expect(en).toContain(`of ${h.total} jobs are off your plate`);
