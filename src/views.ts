@@ -435,7 +435,8 @@ details.tech-details{margin:var(--s-2) 0 0;padding:0;border:0;background:none}
 
 /* --- Connect page parts --- */
 .choice{display:flex;gap:4px;margin:var(--s-2) 0;padding:4px;border:1px solid var(--c-border);border-radius:14px;background:var(--c-surface-3)}
-.choice a{flex:1 1 0;display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:var(--r-md);color:var(--c-text);font-weight:700;text-decoration:none}
+.choice a{flex:1 1 0;display:flex;align-items:center;justify-content:center;min-width:0;min-height:48px;padding:6px 4px;border-radius:var(--r-md);color:var(--c-text);font-weight:700;line-height:1.15;text-align:center;text-decoration:none}
+.connect-option pre,.connect-option button{align-self:stretch;box-sizing:border-box;max-width:100%}
 .choice a[aria-current="true"]{background:var(--c-primary);color:var(--c-on-primary)}
 .steps-big{list-style:none;margin:var(--s-2) 0 0;padding:0;counter-reset:step}
 .steps-big>li{counter-increment:step;position:relative;padding:0 0 var(--s-5) 44px}
@@ -540,15 +541,17 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .tp-resume,#teaser-pause:checked~figcaption .tp-pause{display:none}#teaser-pause:checked~figcaption .tp-resume{display:inline}
 #teaser-pause:checked~.teaser-conversation .phone *{animation-play-state:paused!important}
 @media (prefers-reduced-motion:reduce){.teaser-pause,.vh-input{display:none}}
-/* Fixed phone and chat heights fit every case's longest final frame in ET and EN at 360 px and desktop; switching cases cannot resize the phone. */
-.phone{height:672px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
-@media (max-width:380px){.phone{height:700px}}@media (max-width:359px){.phone{height:772px}}@media (min-width:880px){.phone{height:656px}}
+/* Fixed phone heights fit every case's longest final frame in ET and EN from 320 px to desktop; switching cases cannot resize the phone.
+   The chat fills from the top above a composer, like the real apps, so a short case leaves the screen calm instead of half empty. */
+.phone{height:632px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
+@media (max-width:380px){.phone{height:656px}}@media (max-width:359px){.phone{height:712px}}@media (min-width:880px){.phone{height:616px}}
 .phone-screen{display:flex;flex-direction:column;height:100%;overflow:hidden;border-radius:36px;background:var(--c-surface-2)}
 .phone-bar{display:flex;align-items:center;gap:10px;padding:22px 16px 10px;background:#fff;border-bottom:1px solid var(--c-divider)}
 .phone-ava{flex:none;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1a4d2e,#6f9c63)}
 .phone-who{line-height:1.25}.phone-who b{display:block;font-size:var(--fs-sm)}.phone-who small{color:var(--c-muted);font-size:.75rem}
-.chat{display:flex;flex:1;flex-direction:column;justify-content:flex-end;min-height:540px;overflow:hidden;padding:4px 12px 14px;font-size:.875rem;line-height:1.4}
-@media (max-width:380px){.chat{min-height:568px}}@media (max-width:359px){.chat{min-height:640px}}
+.chat{display:flex;flex:1;flex-direction:column;justify-content:flex-start;min-height:0;overflow:hidden;padding:4px 12px 14px;font-size:.875rem;line-height:1.4}
+.phone-input{display:flex;flex:none;align-items:center;justify-content:space-between;margin:0 12px 14px;padding:5px 5px 5px 14px;border:1px solid var(--c-border);border-radius:999px;background:#fff;color:var(--c-muted);font-size:.8125rem}
+.phone-input i{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--c-primary);color:#fff;font-style:normal;font-weight:800}
 .beat{display:flex;flex:none;flex-direction:column;overflow:hidden;animation-duration:18s;animation-timing-function:ease-out;animation-iteration-count:infinite}
 .beat>*{margin:10px 0 0}.beat--ai+.beat--ai>*{margin-top:4px}
 .bubble{max-width:88%;padding:8px 12px;border-radius:18px}
@@ -584,7 +587,7 @@ ${TEASER_CSS}
 .job-activate{width:100%;height:100%;min-height:var(--tap);margin:0;padding:var(--s-3) var(--s-4);border:0;border-radius:var(--r-lg);background:none;color:inherit;font:inherit;font-weight:750;line-height:1.4;text-align:center}
 .job-activate:hover{background:var(--c-surface-2);color:var(--c-text)}
 .job-card--active .job-activate:hover{background:var(--c-primary);color:#fff}
-.job-detail{position:relative;margin:0;padding:var(--s-4);border:1px solid var(--c-primary);border-top:var(--s-1) solid var(--c-primary);border-radius:0 0 var(--r-xl) var(--r-xl);background:#fff}
+.job-detail{position:relative;margin:var(--s-5) 0 0;padding:var(--s-4);border:1px solid var(--c-border);border-top:var(--s-1) solid var(--c-primary);border-radius:var(--r-xl);background:#fff;box-shadow:0 6px 16px -10px rgba(26,36,29,.25)}
 .job-detail>p{margin:0 0 var(--s-3)}.job-detail>p.job-detail-title{margin:0 0 var(--s-2);font-size:var(--fs-md);font-weight:750;overflow-wrap:anywhere}
 .job-detail>p.job-needs{margin:var(--s-4) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}
 .job-detail>p.job-register,.job-detail>p.job-help{margin:var(--s-2) 0 0}
@@ -1146,10 +1149,10 @@ function handoverNext(h: Handover, l: Lang, csrf: string): string {
   }
   if (n.type === "playbook") {
     const reminder = n.playbookId === "payment-reminder", follow = n.playbookId === "customer-follow-ups", title = hoJobTitle(n.job, l);
-    const prompt = follow ? t("Kellele peaksin sel nädalal helistama või kirjutama?", "Who should I call or message this week?") : reminder ? t(...HO_REMINDER_PROMPT) : n.obligation ? t(n.obligation.handoff.prompt_et, n.obligation.handoff.prompt_en) : n.job.kind === "post_entries" ? t(`Valmista ette: ${title}. Küsi minult iga kuu kannete kohta kinnitust enne kirjendamist.`, `Prepare: ${title}. Ask me to approve each month's entries before you post them.`) : t(`Valmista ette: ${title}. Küsi minult kinnitust enne, kui midagi esitan.`, `Prepare: ${title}. Ask me to approve before I file anything.`);
+    const prompt = follow ? t("Kellele peaksin sel nädalal helistama või kirjutama?", "Who should I call or message this week?") : reminder ? t(...HO_REMINDER_PROMPT) : n.obligation ? t(n.obligation.handoff.prompt_et, n.obligation.handoff.prompt_en) : n.job.kind === "post_entries" ? t(`Valmista ette: ${title}. Küsi minult iga kuu kannete kohta kinnitust enne kirjendamist.`, `Prepare: ${title}. Ask me to approve each month's entries before you post them.`) : n.job.kind === "send_invoice" ? t("Valmista järgmine arve ette. Näita mulle täpset arvet ja küsi kinnitust enne saatmist.", "Prepare the next invoice. Show me the exact invoice and ask me to approve before you send it.") : t(`Valmista ette: ${title}. Küsi minult kinnitust enne, kui midagi esitan.`, `Prepare: ${title}. Ask me to approve before I file anything.`);
     return card(t("Järgmine samm: anna üks töö ära", "Next step: hand over one job"), `<span class="labels">${labelChip("rule", t("Mängukava", "Playbook"))}</span>
 <span class="ask-title">${esc(follow ? t("Lase assistendil öelda, kellele sel nädalal helistada või kirjutada", "Let your assistant tell you who to call or message this week") : reminder ? t("Lase assistendil koostada esimene maksemeeldetuletus", "Let your assistant draft the first payment reminder") : t(`Lase assistendil ette valmistada: ${title}`, `Let your assistant prepare: ${title}`))}</span>
-<p class="muted">${esc(follow ? t("Loeb sinu kliendinimekirja või Kliendid lehte ja iga sõnum kinnitatakse ükshaaval.", "It reads your customer list or the Kliendid sheet, and every message is approved one by one.") : reminder ? t("Kõige kiirem võit: see on ainus igakuine töö, mille saab hiljem püsiloaga täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.", "The quickest win: the only monthly job a standing approval can later take off your plate completely. It needs your unpaid invoices: your accounting connector or a file you share with your assistant.") : n.job.kind === "post_entries" ? t("Vajab iga kuu pangaliikumisi (LHV ühendus või pangast alla laaditud väljavõte) ja sinu raamatupidamisprogrammi ühendust. Iga kuu kirjendatakse alles pärast sinu kinnitust.", "It needs each month's bank movements (your LHV connector or a statement you download from your bank) and your accounting connector. Each month is posted only after you approve it.") : t("Vajab kuu arveid: sinu raamatupidamisprogrammi ühendust või faile, mille assistendile jagad.", "It needs the period's invoices: your accounting connector or files you share with your assistant."))}</p>
+<p class="muted">${esc(follow ? t("Loeb sinu kliendinimekirja või Kliendid lehte ja iga sõnum kinnitatakse ükshaaval.", "It reads your customer list or the Kliendid sheet, and every message is approved one by one.") : reminder ? t("Kõige kiirem võit: püsiloaga saab selle hiljem täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.", "The quickest win: a standing approval can later take it off your plate completely. It needs your unpaid invoices: your accounting connector or a file you share with your assistant.") : n.job.kind === "post_entries" ? t("Vajab iga kuu pangaliikumisi (LHV ühendus või pangast alla laaditud väljavõte) ja sinu raamatupidamisprogrammi ühendust. Iga kuu kirjendatakse alles pärast sinu kinnitust.", "It needs each month's bank movements (your LHV connector or a statement you download from your bank) and your accounting connector. Each month is posted only after you approve it.") : n.job.kind === "send_invoice" ? t("Vajab sinu raamatupidamisprogrammi ühendust (arve ja PDF) ja sinu e-posti. Arve saadetakse alles pärast sinu kinnitust.", "It needs your accounting connector (the invoice and its PDF) and your e-mail. The invoice is sent only after you approve it.") : t("Vajab kuu arveid: sinu raamatupidamisprogrammi ühendust või faile, mille assistendile jagad.", "It needs the period's invoices: your accounting connector or files you share with your assistant."))}</p>
 ${quote(prompt)}
 ${follow ? `<a class="tap-link" href="/kataloog?g=kliendid">${t("Ühenda oma kliendinimekiri → Kataloog", "Link your customer list → Catalogue")}</a>` : HO_CONNECTOR(l)}`);
   }
@@ -1631,15 +1634,15 @@ const JOB_SWITCHER_SCRIPT = `<script>(function(){var cards=[].slice.call(documen
 const CHOOSE_LINK: [string, string] = ["Pole veel AI-assistenti? Aita mul valida", "No AI assistant yet? Help me choose"];
 
 /** Public /vali: one question per screen, then one recommendation. Zero JS. English links carry ?lang=en because this page sets no cookie. */
-export function chooserBody(o: { lang: Lang; step: "uses" } | { lang: Lang; step: "business" } | { lang: Lang; step: "result"; assistant: "claude" | "chatgpt"; reason: string; source: string; downloadHref: string | null; connectHref: string; muse: string | null }): string {
+export function chooserBody(o: { lang: Lang; step: "uses" } | { lang: Lang; step: "business" } | { lang: Lang; step: "result"; assistant: "claude" | "chatgpt" | "grok"; reason: string; source: string; downloadHref: string | null; connectHref: string; muse: string | null }): string {
   const l = o.lang, t = tr(l);
   const href = (params: Record<string, string> = {}) => { const q = new URLSearchParams(params); if (l === "en") q.set("lang", "en"); const s = q.toString(); return `/vali${s ? `?${s}` : ""}`; };
   const option = (params: Record<string, string>, label: string) => `<a class="btn secondary" href="${esc(href(params))}">${esc(label)}</a>`;
   if (o.step === "uses") return `<h1>${esc(t("Kas sa juba kasutad AI-assistenti?", "Do you already use an AI assistant?"))}</h1>
-<nav aria-label="${esc(t("Vastus", "Answer"))}">${option({ uses: "chatgpt" }, "ChatGPT")}${option({ uses: "claude" }, "Claude")}${option({ uses: "other" }, t("Mõni teine (Gemini, Copilot, Meta AI …)", "Another one (Gemini, Copilot, Meta AI …)"))}${option({ uses: "none" }, t("Ei", "No"))}</nav>`;
+<nav aria-label="${esc(t("Vastus", "Answer"))}">${option({ uses: "chatgpt" }, "ChatGPT")}${option({ uses: "claude" }, "Claude")}${option({ uses: "grok" }, "Grok")}${option({ uses: "other" }, t("Mõni teine (Gemini, Copilot, Meta AI …)", "Another one (Gemini, Copilot, Meta AI …)"))}${option({ uses: "none" }, t("Ei", "No"))}</nav>`;
   if (o.step === "business") return `<h1>${esc(t("Kas sinu ettevõte maksab ChatGPT Businessi eest?", "Does your company pay for ChatGPT Business?"))}</h1>
 <nav aria-label="${esc(t("Vastus", "Answer"))}">${option({ uses: "chatgpt", business: "yes" }, t("Jah", "Yes"))}${option({ uses: "chatgpt", business: "no" }, t("Ei", "No"))}${option({ uses: "chatgpt", business: "unsure" }, t("Pole kindel", "Not sure"))}</nav>`;
-  const name = o.assistant === "claude" ? t("Kasuta Claude'i", "Use Claude") : t("Kasuta ChatGPT-d", "Use ChatGPT");
+  const name = o.assistant === "claude" ? t("Kasuta Claude'i", "Use Claude") : o.assistant === "grok" ? t("Kasuta Grok Boti", "Use Grok Bot") : t("Kasuta ChatGPT-d", "Use ChatGPT");
   return `<h1>${esc(name)}</h1>
 <p>${esc(o.reason)}</p>
 <p class="small muted">${esc(o.source)}</p>
@@ -1712,7 +1715,7 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
     return `<div class="teaser-conversation" data-job-conversation="${esc(id)}"${index === 0 ? "" : " hidden"}>
 <div class="vh"><p>${t("Näidisvestlus:", "Sample conversation:")}</p><ol>${transcript.map(([who, value]) => `<li>${esc(who)}: ${esc(value)}</li>`).join("")}</ol></div>
 <div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${esc(subtitle(job))}</small></span></div>
-<div class="chat">${chat.join("\n")}</div></div></div></div>`;
+<div class="chat">${chat.join("\n")}</div><div class="phone-input"><span>${t("Küsi midagi", "Ask anything")}</span><i>↑</i></div></div></div></div>`;
   };
   const jobs = [...LANDING_CARDS], rand = o.rand ?? Math.random;
   for (let i = jobs.length - 1; i > 0; i--) {
@@ -1935,6 +1938,13 @@ const CLAUDE_CONNECTOR_STEP: Record<Lang, string> = {
   en: "On a computer: Customize → Connectors → Add custom connector. In the phone app: Settings → Connectors → + → Add custom connector.",
 };
 
+/** One sentence to paste into Grok Bot. Host only, no path: that is what was tried on 1 Nov 2026. */
+export function grokPasteSentence(lang: Lang, host: string): string {
+  return lang === "en"
+    ? `I want AI Launchpad to help with my company's paperwork. Connect it to you: ${host}`
+    : `Tahan, et AI-hüppelaud aitaks mu ettevõtte paberitöödega. Ühenda see endaga: ${host}`;
+}
+
 /** Words shared by the connect page and GET /uhenda/ava. The assistant only types them; the person sends. */
 export function assistantGuidePrompt(lang: Lang, assistant: "chatgpt" | "claude", endpoint: string): string {
   if (assistant === "claude" && lang === "en") return `Hi! Help me connect AI Launchpad to my Claude. Guide me in plain words, one step at a time, and wait until I say "done".\n1. ${CLAUDE_CONNECTOR_STEP.en}\n2. Name: AI Launchpad. Address: ${endpoint}. Press Continue, then Add. Change nothing else.\n3. Press Connect, sign in and confirm. If asked for tool permission, choose Always allow.\nOnce the connection works, use the AI Launchpad tool get_started.`;
@@ -1943,39 +1953,57 @@ export function assistantGuidePrompt(lang: Lang, assistant: "chatgpt" | "claude"
   return `Tere! Aita mul ühendada AI-hüppelaud oma ChatGPT-ga. Juhenda mind lihtsate sõnadega, üks samm korraga, ja oota, kuni ütlen „tehtud”.\n1. Ava seadetes ühendused (Apps) ja lisa uus ühendus.\n2. Nimi: AI-hüppelaud. Aadress: ${endpoint}.\n3. Logi sisse ja kinnita.\nKui ühendus töötab, kasuta AI-hüppelaua tööriista get_started.`;
 }
 
-export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; sandbox?: boolean; now?: Date; expanded?: boolean; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] }; handover?: Handover }): Promise<string> {
+export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude" | "grok"; state: ConnectState; owner: boolean; sandbox?: boolean; now?: Date; expanded?: boolean; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] }; handover?: Handover }): Promise<string> {
   const l = o.lang, t = tr(l), now = o.now ?? new Date();
   const base = String(o.baseUrl ?? "").replace(/\/+$/, ""), endpoint = `${base}/mcp`;
-  const openPath = `/uhenda/ava?a=${o.assistant}&lang=${l}`;
+  const grok = o.assistant === "grok";
+  // Grok's phone code opens this page (the sentence), never a Grok address. ChatGPT and Claude still open /uhenda/ava.
+  const openPath = grok ? `/uhenda?a=grok&lang=${l}` : `/uhenda/ava?a=${o.assistant}&lang=${l}`;
   let parsed: URL | null = null;
   try { parsed = new URL(base); } catch { parsed = null; }
   const remoteReady = parsed !== null && parsed.protocol === "https:" && !isLocalOrPrivateHost(parsed.hostname);
-  const name = o.assistant === "claude" ? "Claude" : "ChatGPT";
+  const name = grok ? "Grok Bot" : o.assistant === "claude" ? "Claude" : "ChatGPT";
   const wbr = (u: string) => esc(u).replace(/\//g, "/<wbr>");
   const plan = o.assistant === "claude"
     ? t("Claude lubab kohandatud ühendusi igas paketis (tasuta paketis üks ühendus). Testitud Claude'i tasuta paketis (30.10.2026).", "Claude allows custom connectors on every plan (Free: one connector). Tested on Claude's Free plan (30 Oct 2026).")
-    : t("ChatGPT Pro paketis töötavad tähtajad ja juhised (ainult lugemine). Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", "On ChatGPT Pro, deadlines and guidance work (read-only). Approvals (“Approve exactly this”) need ChatGPT Business.");
+    : grok
+      ? t("Kinnitused on Grok Botis proovitud 1.11.2026.", "Approvals tested on Grok Bot, 1 Nov 2026.")
+      : t("ChatGPT Pro paketis töötavad tähtajad ja juhised (ainult lugemine). Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", "On ChatGPT Pro, deadlines and guidance work (read-only). Approvals (“Approve exactly this”) need ChatGPT Business.");
   const httpsNote = `<div class="note"><p class="small">${t("Avalik HTTPS-aadress pole selles serveris veel seadistatud, seega pilves töötav assistent ei saa veel ühenduda.", "A public HTTPS address is not configured on this server yet, so a cloud assistant cannot connect yet.")}</p></div>`;
   const address = remoteReady ? `<div class="endpoint"><code>${wbr(endpoint)}</code></div><p class="small muted">${t("Vali aadress ja kopeeri see.", "Select the address and copy it.")}</p>` : httpsNote;
-  const prompt = assistantGuidePrompt(l, o.assistant, endpoint);
-  const caption = t("Telefonis: suuna kaamera sellele koodile.", "On your phone: point the camera at this code.");
+  const prompt = o.assistant === "grok" ? "" : assistantGuidePrompt(l, o.assistant, endpoint);
+  const caption = grok
+    ? t("Telefonis: suuna kaamera sellele koodile. See avab selle lehe, et saaksid lause kopeerida.", "On your phone: point the camera at this code. It opens this page so you can copy the sentence.")
+    : t("Telefonis: suuna kaamera sellele koodile.", "On your phone: point the camera at this code.");
+  const qrCaption = grok
+    ? t("Kood avab selle lehe, et saaksid lause telefonis kopeerida.", "This code opens this page so you can copy the sentence on your phone.")
+    : t("Suuna kaamera sellele koodile.", "Point the camera at this code.");
   // A sandbox sample has nothing to open: /uhenda/ava only redirects back here, on a public HTTPS address too.
   const openAssistant = remoteReady && !o.sandbox;
-  const qr = openAssistant ? `<figure class="connect-option qr-card"><h2>${t("Telefonis", "On your phone")}</h2><div class="qr-box">${(await QRCode.toString(`${base}${openPath}`, { type: "svg", margin: 1 })).trim().replace("<svg", `<svg role="img" aria-label="${esc(caption)}"`)}</div><figcaption class="small muted">${t("Suuna kaamera sellele koodile.", "Point the camera at this code.")}</figcaption></figure>` : "";
+  const qr = openAssistant ? `<figure class="connect-option qr-card"><h2>${t("Telefonis", "On your phone")}</h2><div class="qr-box">${(await QRCode.toString(`${base}${openPath}`, { type: "svg", margin: 1 })).trim().replace("<svg", `<svg role="img" aria-label="${esc(caption)}"`)}</div><figcaption class="small muted">${qrCaption}</figcaption></figure>` : "";
   const openLabel = t(`Ava ${name} — juhend on juba sees`, `Open ${name} — the guide is already in`);
   const openHint = t(`Vajuta saatmisnuppu ja tee, mida ${name} ütleb. Kui ${name} hoiatab, et tekst tuli lingist, on see tavaline: tekst on meilt.`, `Press the send button and do what ${name} says. If ${name} warns that the text came from a link, that is normal: the text is from us.`);
   // Without a public HTTPS address the open link would hand a localhost URL to a cloud assistant, so the hero is only the note.
   // naita=1 is a link, not <details>: the waiting page reloads every 5s and would close a disclosure.
   const reveal = `/uhenda?a=${o.assistant}&naita=1`;
-  const hero = openAssistant
-    ? `<div class="connect-options"><div class="connect-option"><h2 class="connect-here">${t("Selles arvutis", "On this computer")}</h2>
+  const sentence = grok && parsed ? grokPasteSentence(l, parsed.host) : "";
+  const guidedHero = `<div class="connect-options"><div class="connect-option"><h2 class="connect-here">${t("Selles arvutis", "On this computer")}</h2>
 <a class="btn" href="${openPath}">${esc(openLabel)}</a>
 <p class="small">${esc(openHint)}</p></div>
 <span class="connect-or">${t("või", "or")}</span>
 ${qr}</div>
 <p class="small">${esc(plan)}</p>
-${o.expanded ? `<pre id="tekst">${esc(prompt)}</pre>` : `<p><a class="tap-link" href="${reveal}#tekst">${t("Näita teksti", "Show the text")}</a></p>`}`
-    : remoteReady ? "" : httpsNote;
+${o.expanded ? `<pre id="tekst">${esc(prompt)}</pre>` : `<p><a class="tap-link" href="${reveal}#tekst">${t("Näita teksti", "Show the text")}</a></p>`}`;
+  // No deep link: Grok Bot has none that fills a message. The same copy control as the connection page copies the one sentence.
+  const grokHero = `<div class="connect-options"><div class="connect-option"><h2 class="connect-here">${t("Selles arvutis", "On this computer")}</h2>
+<p>${esc(t("Ava Grok Bot ja kleebi see üks lause.", "Open the Grok Bot app and paste this one sentence."))}</p>
+<pre id="tekst">${esc(sentence)}</pre>
+${copyBlock("grok", t("Kopeeri lause", "Copy the sentence"), sentence, l)}</div>
+<span class="connect-or">${t("või", "or")}</span>
+${qr}</div>
+<p class="small">${esc(plan)}</p>
+${COPY_SCRIPT}`;
+  const hero = openAssistant ? (grok ? grokHero : guidedHero) : remoteReady ? "" : httpsNote;
   const s = o.state;
   const chip = s.kind === "connected"
     ? (() => { const d = new Date(s.at), time = TIME[l].format(d), sameDay = tallinnYmd(d) === tallinnYmd(now); const who = s.who ?? t("Sinu assistent", "Your assistant"); return `<div class="status-chip" id="connect-status" data-state="connected" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${esc(t(`Ühendatud · ${who} jõudis kohale ${sameDay ? "" : `${DAY.et.format(d)} `}kell ${time}`, `Connected · ${who} reached AI Launchpad ${sameDay ? "" : `on ${DAY.en.format(d)} `}at ${time}`))}</span></div>`; })()
@@ -1983,16 +2011,16 @@ ${o.expanded ? `<pre id="tekst">${esc(prompt)}</pre>` : `<p><a class="tap-link" 
   // A sample workspace has nothing to set up, so „Käest ära” comes first (QA M2).
   const handover = o.standing && o.handover ? handoverSection(o.handover, l, o.standing.csrf, now, s.kind === "sample") : "", sampleFirst = s.kind === "sample";
   return `<h1>${t("Ühenda oma assistent", "Connect your assistant")}</h1>
-<p class="lede">${t("Sinu ChatGPT või Claude näeb sinu tähtaegu ja valmistab töid ette. Sina kinnitad ainult selle, mis sind seob.", "Your ChatGPT or Claude sees your deadlines and prepares work for you. You approve only what binds you.")}</p>
+<p class="lede">${t("Sinu ChatGPT, Claude või Grok Bot näeb sinu tähtaegu ja valmistab töid ette. Sina kinnitad ainult selle, mis sind seob.", "Your ChatGPT, Claude or Grok Bot sees your deadlines and prepares work for you. You approve only what binds you.")}</p>
 ${sampleFirst ? handover : ""}
 <p class="small">${esc(t("Lihtsaim algus: Claude — töötab ka tasuta paketis.", "Easiest start: Claude — works on the free plan too."))}</p>
-<nav class="choice" aria-label="${t("Vali assistent", "Choose your assistant")}"><a href="/uhenda?a=chatgpt"${o.assistant === "chatgpt" ? ' aria-current="true"' : ""}>ChatGPT</a><a href="/uhenda?a=claude"${o.assistant === "claude" ? ' aria-current="true"' : ""}>Claude</a></nav>
+<nav class="choice" aria-label="${t("Vali assistent", "Choose your assistant")}"><a href="/uhenda?a=chatgpt"${o.assistant === "chatgpt" ? ' aria-current="true"' : ""}>ChatGPT</a><a href="/uhenda?a=claude"${o.assistant === "claude" ? ' aria-current="true"' : ""}>Claude</a><a href="/uhenda?a=grok"${o.assistant === "grok" ? ' aria-current="true"' : ""}>Grok Bot</a></nav>
 <p class="small"><a class="tap-link" href="/vali">${t(...CHOOSE_LINK)}</a></p>
 ${hero ? `<section class="card connect-hero">${hero}</section>` : ""}
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "anon" ? `<p><a class="tap-link" href="/proovi">${esc(t("Proovi näidistööruumis", "Try the sample workspace"))}</a></p>` : ""}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p><p><a class="tap-link" href="/kataloog?g=raamatupidamine">${t("Järgmine samm: ühenda oma raamatupidamine → Kataloog", "Next step: connect your accounting → Catalogue")}</a></p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
-${o.expanded ? `<section class="card" id="ise"><h2>${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</h2>
+${grok ? "" : o.expanded ? `<section class="card" id="ise"><h2>${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</h2>
 <ol class="steps-big">${o.assistant === "claude"
     // Claude steps follow the tested Free-plan run (docs/live-pilot.md, 30 Oct 2026).
     ? `<li><h3 class="step-title">${t(CLAUDE_CONNECTOR_STEP.et, CLAUDE_CONNECTOR_STEP.en)}</h3></li>

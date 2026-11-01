@@ -44,10 +44,7 @@ export interface Handover {
 }
 
 /** Jobs Launchpad knows how to attribute. Playbook jobs apply by rule; invoicing appears when the assessment or an approval names it. */
-const KNOWN = [
-  ...PLAYBOOKS.filter((p) => p.approval_kind).map((p) => ({ id: p.id, kind: p.approval_kind as string, triggers: p.triggers, playbook: true })),
-  { id: "invoicing", kind: "send_invoice", triggers: [] as string[], playbook: false },
-];
+const KNOWN = PLAYBOOKS.filter((p) => p.approval_kind).map((p) => ({ id: p.id, kind: p.approval_kind as string, triggers: p.triggers, playbook: true }));
 export const JOB_TITLES: Record<string, [string, string]> = {
   "payment-reminder": ["Maksemeeldetuletused", "Payment reminders"],
   "vat-return-prep": ["KMD ettevalmistus", "VAT return (KMD)"],
@@ -171,6 +168,11 @@ export const largestAmount = (rows: ApprovalRow[]) => Math.max(0, ...rows.map((a
 /** A standing offer's default cap, on the approval card and on Ühendus alike (QA m4): the largest approved amount rounded up to the next 100 €, else the default. */
 export const offerCapCents = (maxCents: number) => maxCents ? Math.ceil(maxCents / 10_000) * 10_000 : STANDING_DEFAULTS.maxAmountCents;
 
+/** Open playbook next-step order: payment reminders first, then the soonest due. Equal dues compare equal so the status order is kept (#153). */
+export function byOpenPlaybookOrder(a: { id: string; due: string | null }, b: { id: string; due: string | null }): number {
+  return a.id === "payment-reminder" ? -1 : b.id === "payment-reminder" ? 1 : (a.due ?? "9999") < (b.due ?? "9999") ? -1 : (a.due ?? "9999") > (b.due ?? "9999") ? 1 : 0;
+}
+
 /** One next step, first match wins: standing offer → playbook prompt → connector. */
 function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], obligations: Obligation[]): NextStep {
   for (const j of jobs) {
@@ -183,9 +185,8 @@ function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], o
     const maxCents = largestAmount(basis), capCents = offerCapCents(maxCents);
     return { type: "standing", job: j, kind: j.kind, recipients: [...recipients].map(([address, name]) => ({ name, address })), capCents, basis: { count: basis.length, maxCents } };
   }
-  // Reminders first (they can reach the top rung), then filings by the soonest rule-computed date; a job already in order waits.
-  const open = jobs.filter((j) => j.rung === "mine" && j.source === "playbook" && j.status !== "in_order")
-    .sort((a, b) => (a.id === "payment-reminder" ? -1 : b.id === "payment-reminder" ? 1 : (a.due ?? "9999") < (b.due ?? "9999") ? -1 : 1))[0];
+  // Reminders first (they can reach the top rung), then the soonest rule-computed date. Equal dues keep the status order (#153). A job already in order waits.
+  const open = jobs.filter((j) => j.rung === "mine" && j.source === "playbook" && j.status !== "in_order").sort(byOpenPlaybookOrder)[0];
   if (open) {
     const trig = PLAYBOOKS.find((p) => p.id === open.id)?.triggers ?? [];
     // No future date: the job is there because a trigger is already past (e.g. annual-report-overdue), so use the latest such row.
