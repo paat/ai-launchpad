@@ -82,6 +82,7 @@ describe("advisory approval check cards", () => {
       expect(html).toContain(lang === "et" ? `Kontrolli ei tehtud: ${et}` : `Not checked: ${en}`);
       expect(html).not.toContain("✓ Muse");
       expect(html).not.toContain("<script>");
+      expect(html).not.toContain("Meta muse-spark-open-1026 · Baseten");
     }
   });
 

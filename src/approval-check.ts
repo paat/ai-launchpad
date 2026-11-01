@@ -17,7 +17,7 @@ export interface ApprovalCheckOutput {
 export type CheckOutcome = { kind: "text"; text: string } | { kind: "failed"; reason: string };
 export interface ApprovalChecker {
   readonly by: "mock" | typeof BASETEN_MODEL;
-  check(approvalId: string, digest: string, input: string): Promise<CheckOutcome>;
+  check(approvalId: string, digest: string, input: string, onStart?: () => void): Promise<CheckOutcome>;
 }
 
 interface StoredAction {
@@ -110,11 +110,15 @@ export const mockChecker: ApprovalChecker = {
 export function liveChecker(opts: { ledger: ModelQualityLedger; apiKey: string; fetchFn?: FetchFn }): ApprovalChecker {
   return {
     by: BASETEN_MODEL,
-    async check(approvalId, digest, input) {
+    async check(approvalId, digest, input, onStart) {
       try {
         const r = await runModelQualityAttempt({
           job: "check_approval", input, requestId: approvalCheckRequestId(approvalId, digest),
-          ledger: opts.ledger, apiKey: opts.apiKey, fetchFn: opts.fetchFn, confirmCurrentPricing: true,
+          ledger: opts.ledger, apiKey: opts.apiKey, confirmCurrentPricing: true,
+          fetchFn: (url, init) => {
+            onStart?.();
+            return (opts.fetchFn ?? fetch)(url, init);
+          },
         });
         if (r.status === "completed" && r.output) {
           return parseApprovalCheck(r.output).ok ? { kind: "text", text: r.output } : { kind: "failed", reason: "invalid_output" };

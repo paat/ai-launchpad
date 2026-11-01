@@ -36,7 +36,10 @@ const ok = { verdict: "ok", summary_et: "Näidisostja saab arve summas 125 eurot
 const review = { ...ok, verdict: "review", concerns_et: ["Kontrolli saaja nime."], concerns_en: ["Check the recipient name."] };
 const output = (value = ok): CheckOutcome => ({ kind: "text", text: JSON.stringify(value) });
 function checker(result: CheckOutcome = output()) {
-  const check = vi.fn(async () => result);
+  const check = vi.fn<ApprovalChecker["check"]>(async (_id, _digest, _input, onStart) => {
+    if (result.kind !== "failed" || !["budget_exhausted", "suppressed_after_breach", "attempt_in_flight"].includes(result.reason)) onStart?.();
+    return result;
+  });
   return { by: BASETEN_MODEL, check } satisfies ApprovalChecker;
 }
 function owner(db: Db, id = "synthetic-owner", kind = "google") {
@@ -79,6 +82,7 @@ test("disabled is unavailable without a call, and repeated reads do not start it
   expect(live.check).not.toHaveBeenCalled();
   expect(approvalCheckReceipt(getApproval(db, oid, id)!)).toMatchObject({ state: "unavailable", reason: "disabled" });
   expect(getApproval(db, oid, id)?.check_at).toBeNull();
+  expect(getApproval(db, oid, id)?.check_by).toBeNull();
 });
 
 test("real owner input is derived from stored action and metadata only", async () => {
@@ -99,6 +103,7 @@ test("the 30-check rolling limit counts started failures, ignores older checks a
   expect(live.check).toHaveBeenCalledTimes(30);
   expect(approvalCheckReceipt(getApproval(db, oid, blocked)!)).toMatchObject({ state: "unavailable", reason: "daily_limit" });
   expect(getApproval(db, oid, blocked)?.check_at).toBeNull();
+  expect(getApproval(db, oid, blocked)?.check_by).toBeNull();
   await startApprovalCheck(db, other, approval(db, other, "other-check"), live);
   expect(live.check).toHaveBeenCalledTimes(31);
   db.prepare("UPDATE approvals SET check_at=? WHERE id='recent-0'").run(new Date(Date.now() - 86_400_001).toISOString());
@@ -110,7 +115,7 @@ test("20-second wait returns running while one background call completes and is 
   vi.useFakeTimers();
   const db = dbForTest(), oid = owner(db), id = approval(db, oid);
   let finish!: (r: CheckOutcome) => void;
-  const live: ApprovalChecker = { by: BASETEN_MODEL, check: vi.fn(() => new Promise((resolve) => { finish = resolve; })) };
+  const live: ApprovalChecker = { by: BASETEN_MODEL, check: vi.fn<ApprovalChecker["check"]>((_id, _digest, _input, onStart) => new Promise((resolve) => { onStart?.(); finish = resolve; })) };
   const work = startApprovalCheck(db, oid, id, live);
   let waited = false;
   const wait = waitForApprovalCheck(work).then(() => { waited = true; });
@@ -143,11 +148,13 @@ test("a busy ledger keeps the approval running until its one model call can star
   await vi.advanceTimersByTimeAsync(4_000);
   expect(getApproval(db, oid, id)?.check_state).toBe("running");
   expect(fetchFn).not.toHaveBeenCalled();
+  expect(getApproval(db, oid, id)?.check_by).toBeNull();
   ledger.finalize("other-attempt", { status: "completed" });
   await vi.advanceTimersByTimeAsync(2_000);
   await work;
   expect(getApproval(db, oid, id)?.check_state).toBe("ok");
   expect(fetchFn).toHaveBeenCalledTimes(1);
+  expect(getApproval(db, oid, id)?.check_by).toBe(BASETEN_MODEL);
   expect(reserve).toHaveBeenCalledTimes(4);
   expect(new Set(reserve.mock.calls.map(([requestId]) => requestId))).toEqual(new Set([approvalCheckRequestId(id, approvalDigest(action))]));
   expect((ledger.db.prepare("SELECT count(*) n FROM mq_attempts").get() as { n: number }).n).toBe(2);
@@ -170,17 +177,42 @@ test("a ledger slot still busy after 60 seconds becomes terminal unavailable", a
   expect(live.check).toHaveBeenCalledTimes(31);
 });
 
+test("waiting checks without model provenance still count toward the daily limit", async () => {
+  vi.useFakeTimers();
+  const db = dbForTest(), oid = owner(db);
+  const live = checker({ kind: "failed", reason: "attempt_in_flight" });
+  const work = Array.from({ length: 30 }, (_, i) => startApprovalCheck(db, oid, approval(db, oid, `waiting-${i}`), live));
+  expect(getApproval(db, oid, "waiting-0")).toMatchObject({ check_state: "running", check_by: null });
+  const blocked = approval(db, oid, "blocked");
+  await startApprovalCheck(db, oid, blocked, live);
+  expect(live.check).toHaveBeenCalledTimes(30);
+  expect(approvalCheckReceipt(getApproval(db, oid, blocked)!)).toEqual({ state: "unavailable", by: null, reason: "daily_limit" });
+  expect(getApproval(db, oid, blocked)?.check_at).toBeNull();
+  await vi.advanceTimersByTimeAsync(60_000);
+  await Promise.all(work);
+});
+
 test.each(["budget_exhausted", "suppressed_after_breach", "timeout", "provider_uncertain", "provider_failed"])("%s never changes approval state or becomes a pass", async (reason) => {
   const db = dbForTest(), oid = owner(db), id = approval(db, oid), live = checker({ kind: "failed", reason });
   await startApprovalCheck(db, oid, id, live);
   expect(getApproval(db, oid, id)?.state).toBe("approved");
-  expect(approvalCheckReceipt(getApproval(db, oid, id)!)).toEqual({ state: "unavailable", by: BASETEN_MODEL, reason });
+  expect(approvalCheckReceipt(getApproval(db, oid, id)!)).toEqual({ state: "unavailable", by: ["budget_exhausted", "suppressed_after_breach"].includes(reason) ? null : BASETEN_MODEL, reason });
 });
 
 test("invalid checker output is rejected before storage", async () => {
   const db = dbForTest(), oid = owner(db), id = approval(db, oid);
   await startApprovalCheck(db, oid, id, checker({ kind: "text", text: '{"verdict":"ok"}' }));
   expect(getApproval(db, oid, id)).toMatchObject({ state: "approved", check_state: "unavailable", check_json: '{"reason":"invalid_output"}' });
+});
+
+test("an exhausted ledger makes no fetch and records no model provenance", async () => {
+  const db = dbForTest(), oid = owner(db), id = approval(db, oid);
+  const ledger = ModelQualityLedger.open(":memory:", 0);
+  cleanup.push(() => ledger.close());
+  const fetchFn = vi.fn<FetchFn>();
+  await startApprovalCheck(db, oid, id, liveChecker({ ledger, apiKey: "synthetic-key", fetchFn }));
+  expect(fetchFn).not.toHaveBeenCalled();
+  expect(approvalCheckReceipt(getApproval(db, oid, id)!)).toEqual({ state: "unavailable", by: null, reason: "budget_exhausted" });
 });
 
 test("restart marks an interrupted running check unavailable without a retry", async () => {
@@ -238,7 +270,7 @@ test("MCP running receipt and replays expose the eventual result without another
   vi.useFakeTimers();
   const db = dbForTest(), oid = owner(db);
   let finish!: (r: CheckOutcome) => void;
-  const live: ApprovalChecker = { by: BASETEN_MODEL, check: vi.fn(() => new Promise((resolve) => { finish = resolve; })) };
+  const live: ApprovalChecker = { by: BASETEN_MODEL, check: vi.fn<ApprovalChecker["check"]>((_id, _digest, _input, onStart) => new Promise((resolve) => { onStart?.(); finish = resolve; })) };
   const c = await client(db, oid, live);
   const pendingRequest = request(c, "slow");
   await vi.advanceTimersByTimeAsync(20_000);
@@ -258,7 +290,8 @@ test.each(["consumed", "declined"])("initial MCP receipt reflects %s during the 
   const db = dbForTest(), oid = owner(db);
   let finish!: (r: CheckOutcome) => void, started!: (id: string) => void;
   const checkStarted = new Promise<string>((resolve) => { started = resolve; });
-  const live: ApprovalChecker = { by: BASETEN_MODEL, check: vi.fn((id) => {
+  const live: ApprovalChecker = { by: BASETEN_MODEL, check: vi.fn<ApprovalChecker["check"]>((id, _digest, _input, onStart) => {
+    onStart?.();
     started(id);
     return new Promise((resolve) => { finish = resolve; });
   }) };
@@ -279,7 +312,8 @@ test("owner approval during the model wait replaces the initial pending prompt",
   const db = dbForTest(), oid = owner(db);
   let finish!: (r: CheckOutcome) => void, started!: (id: string) => void;
   const checkStarted = new Promise<string>((resolve) => { started = resolve; });
-  const live: ApprovalChecker = { by: BASETEN_MODEL, check: vi.fn((id) => {
+  const live: ApprovalChecker = { by: BASETEN_MODEL, check: vi.fn<ApprovalChecker["check"]>((id, _digest, _input, onStart) => {
+    onStart?.();
     started(id);
     return new Promise((resolve) => { finish = resolve; });
   }) };

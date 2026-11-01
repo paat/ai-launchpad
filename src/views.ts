@@ -1219,7 +1219,7 @@ function approvalCheckBlock(a: ApprovalRow, l: Lang): string {
     }
     line = `${t("Kontrolli ei tehtud", "Not checked")}: ${t(...(reasons[reason] ?? ["kontroll ei olnud saadaval", "the check was unavailable"]))}`;
   }
-  const provenance = mock ? t("Näidis, mitte mudel", "Sample, not a model") : a.check_by === BASETEN_MODEL ? t("Meta muse-spark-open-1026 · Baseten · nõuanne, mitte garantii", "Meta muse-spark-open-1026 · Baseten · advice, not a guarantee") : "";
+  const provenance = mock ? t("Näidis, mitte mudel", "Sample, not a model") : a.check_by === BASETEN_MODEL && ["running", "ok", "review"].includes(a.check_state ?? "") ? t("Meta muse-spark-open-1026 · Baseten · nõuanne, mitte garantii", "Meta muse-spark-open-1026 · Baseten · advice, not a guarantee") : "";
   return `<div class="approval-check small"><p><strong>${t("Meta Muse kontroll", "Meta Muse check")}</strong></p><p>${esc(line)}</p>${concerns.length ? `<ul>${concerns.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}${summary ? `<p>${esc(summary)}</p>` : ""}${provenance ? `<p class="small muted">${esc(provenance)}</p>` : ""}</div>`;
 }
 

@@ -235,22 +235,24 @@ export async function startApprovalCheck(db: Db, ownerId: string, id: string, co
   const unavailable = (reason: string) => db.prepare("UPDATE approvals SET check_state='unavailable',check_json=? WHERE id=? AND owner_id=?")
     .run(JSON.stringify({ reason }), id, ownerId);
   if (!checker) { unavailable("disabled"); return; }
-  db.prepare("UPDATE approvals SET check_by=? WHERE id=? AND owner_id=?").run(checker.by, id, ownerId);
   if (checker.by !== "mock") {
     const since = new Date(Date.now() - 86_400_000).toISOString();
-    const { n } = db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=? AND check_by=? AND check_at>=?").get(ownerId, checker.by, since) as { n: number };
+    // Admission time also counts waiting checks, before they have provenance.
+    const { n } = db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=? AND (check_by=? OR check_by IS NULL) AND check_at>=?").get(ownerId, checker.by, since) as { n: number };
     if (n >= OWNER_DAILY_APPROVAL_CHECKS) { unavailable("daily_limit"); return; }
   }
   db.prepare("UPDATE approvals SET check_state='running',check_at=? WHERE id=? AND owner_id=?").run(nowIso(), id, ownerId);
+  const started = () => db.prepare("UPDATE approvals SET check_by=? WHERE id=? AND owner_id=?").run(checker.by, id, ownerId);
+  if (checker.by === "mock") started();
   try {
     const input = buildApprovalCheckInput(JSON.parse(a.payload_json), a.owner_confirmation, a.playbook_id);
     const slotDeadline = Date.now() + 60_000;
-    let result = await checker.check(a.id, a.digest, input);
+    let result = await checker.check(a.id, a.digest, input, started);
     // Only wait for a slot: no reservation or provider call has happened yet.
     // Keep the same approval/digest (and thus ledger request ID) throughout.
     while (result.kind === "failed" && result.reason === "attempt_in_flight" && Date.now() < slotDeadline) {
       await new Promise<void>((resolve) => setTimeout(resolve, Math.min(2_000, slotDeadline - Date.now())));
-      result = await checker.check(a.id, a.digest, input);
+      result = await checker.check(a.id, a.digest, input, started);
     }
     if (result.kind === "failed") { unavailable(result.reason); return; }
     const parsed = parseApprovalCheck(result.text);
