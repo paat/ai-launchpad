@@ -237,7 +237,14 @@ export async function startApprovalCheck(db: Db, ownerId: string, id: string, co
   db.prepare("UPDATE approvals SET check_state='running',check_at=? WHERE id=? AND owner_id=?").run(nowIso(), id, ownerId);
   try {
     const input = buildApprovalCheckInput(JSON.parse(a.payload_json), a.owner_confirmation, a.playbook_id);
-    const result = await checker.check(a.id, a.digest, input);
+    const slotDeadline = Date.now() + 60_000;
+    let result = await checker.check(a.id, a.digest, input);
+    // Only wait for a slot: no reservation or provider call has happened yet.
+    // Keep the same approval/digest (and thus ledger request ID) throughout.
+    while (result.kind === "failed" && result.reason === "attempt_in_flight" && Date.now() < slotDeadline) {
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(2_000, slotDeadline - Date.now())));
+      result = await checker.check(a.id, a.digest, input);
+    }
     if (result.kind === "failed") { unavailable(result.reason); return; }
     const parsed = parseApprovalCheck(result.text);
     if (!parsed.ok) { unavailable(parsed.reason); return; }

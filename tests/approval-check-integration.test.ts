@@ -9,7 +9,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { createApp, type Config } from "../src/app.js";
 import { openDb, sha256, type Db } from "../src/db.js";
 import { BASETEN_MODEL, ModelQualityLedger, type FetchFn } from "../src/model-quality.js";
-import { type ApprovalChecker, type CheckOutcome } from "../src/approval-check.js";
+import { approvalCheckRequestId, liveChecker, type ApprovalChecker, type CheckOutcome } from "../src/approval-check.js";
 import { approvalCheckReceipt, approvalDigest, buildMcpServer, getApproval, startApprovalCheck, waitForApprovalCheck } from "../src/mcp.js";
 
 // No inference in this suite reaches a provider, even if mode wiring regresses.
@@ -125,6 +125,49 @@ test("20-second wait returns running while one background call completes and is 
   await work;
   expect(getApproval(db, oid, id)).toMatchObject({ state: "approved", check_state: "review" });
   expect(approvalCheckReceipt(getApproval(db, oid, id)!)).toMatchObject({ state: "review", ...review });
+});
+
+test("a busy ledger keeps the approval running until its one model call can start", async () => {
+  vi.useFakeTimers();
+  const db = dbForTest(), oid = owner(db), id = approval(db, oid);
+  const ledger = ModelQualityLedger.open(":memory:");
+  cleanup.push(() => ledger.close());
+  ledger.reserve("other-attempt", "setup_guidance", "synthetic-hash", 10000);
+  const reserve = vi.spyOn(ledger, "reserve");
+  const fetchFn = vi.fn<FetchFn>(async () => new Response(JSON.stringify({
+    model: BASETEN_MODEL, choices: [{ finish_reason: "stop", message: { content: JSON.stringify(ok) } }],
+    usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 },
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+  const live = liveChecker({ ledger, apiKey: "synthetic-key", fetchFn });
+  const work = startApprovalCheck(db, oid, id, live);
+  await vi.advanceTimersByTimeAsync(4_000);
+  expect(getApproval(db, oid, id)?.check_state).toBe("running");
+  expect(fetchFn).not.toHaveBeenCalled();
+  ledger.finalize("other-attempt", { status: "completed" });
+  await vi.advanceTimersByTimeAsync(2_000);
+  await work;
+  expect(getApproval(db, oid, id)?.check_state).toBe("ok");
+  expect(fetchFn).toHaveBeenCalledTimes(1);
+  expect(reserve).toHaveBeenCalledTimes(4);
+  expect(new Set(reserve.mock.calls.map(([requestId]) => requestId))).toEqual(new Set([approvalCheckRequestId(id, approvalDigest(action))]));
+  expect((ledger.db.prepare("SELECT count(*) n FROM mq_attempts").get() as { n: number }).n).toBe(2);
+});
+
+test("a ledger slot still busy after 60 seconds becomes terminal unavailable", async () => {
+  vi.useFakeTimers();
+  const db = dbForTest(), oid = owner(db), id = approval(db, oid);
+  const live = checker({ kind: "failed", reason: "attempt_in_flight" });
+  const work = startApprovalCheck(db, oid, id, live);
+  await vi.advanceTimersByTimeAsync(59_999);
+  expect(getApproval(db, oid, id)?.check_state).toBe("running");
+  expect(live.check).toHaveBeenCalledTimes(30);
+  await vi.advanceTimersByTimeAsync(1);
+  await work;
+  expect(approvalCheckReceipt(getApproval(db, oid, id)!)).toMatchObject({ state: "unavailable", reason: "attempt_in_flight" });
+  expect(live.check).toHaveBeenCalledTimes(31);
+  await vi.advanceTimersByTimeAsync(2_000);
+  await startApprovalCheck(db, oid, id, live);
+  expect(live.check).toHaveBeenCalledTimes(31);
 });
 
 test.each(["budget_exhausted", "suppressed_after_breach", "timeout", "provider_uncertain", "provider_failed"])("%s never changes approval state or becomes a pass", async (reason) => {

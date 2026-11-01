@@ -105,8 +105,8 @@ export const mockChecker: ApprovalChecker = {
   },
 };
 
-/** One attempt only, through the existing shared ledger. Refusals and failed
- * answers are terminal advice states, never substitutes for a pass. */
+/** One allocated attempt only, through the existing shared ledger. The caller
+ * may wait and retry attempt_in_flight refusals, which allocate nothing. */
 export function liveChecker(opts: { ledger: ModelQualityLedger; apiKey: string; fetchFn?: FetchFn }): ApprovalChecker {
   return {
     by: BASETEN_MODEL,
