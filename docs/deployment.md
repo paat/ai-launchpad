@@ -145,6 +145,8 @@ packaging so the host extractor can reject **all** symlinks.
    second origin (the app accepts only `LAUNCHPAD_BASE_URL`, and OAuth and
    the MCP address stay on `huppelaud`). It needs its own DNS record
    pointing at the host, proxied through Cloudflare like `huppelaud`.
+   It is for browsers only: never give it as an MCP or OAuth address (a
+   302 turns a POST into a GET).
    TLS issuance is Caddy's normal ACME once DNS resolves. The origin
    accepts Cloudflare traffic only (operator-owned firewall), and the
    vhost overwrites `X-Forwarded-For` with the Cloudflare

@@ -1,6 +1,6 @@
 # Judge guide: trying AI-hüppelaud / AI Launchpad
 
-Live product: `https://launchpad.arikratt.ee` (opens the site in English; the site itself is `https://huppelaud.arikratt.ee`). MCP address: `https://huppelaud.arikratt.ee/mcp`. Repo: `https://github.com/paat/ai-launchpad`. Everything you can try uses **synthetic data** (company "Mari Disain OÜ", customer "Demo Klient OÜ", `.example` addresses), labelled **NÄIDIS**. The live site is updated by a later deploy; screens described here as "as of the next deploy" may not be live yet.
+Live product: `https://huppelaud.arikratt.ee/?lang=en` (English; the short link `https://launchpad.arikratt.ee` redirects there once its DNS record is live). MCP address: `https://huppelaud.arikratt.ee/mcp`. Repo: `https://github.com/paat/ai-launchpad`. Everything you can try uses **synthetic data** (company "Mari Disain OÜ", customer "Demo Klient OÜ", `.example` addresses), labelled **NÄIDIS**. The live site is updated by a later deploy; screens described here as "as of the next deploy" may not be live yet.
 
 ## Which access applies
 
