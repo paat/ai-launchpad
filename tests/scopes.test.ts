@@ -142,7 +142,7 @@ test("scope alignment across real OAuth grants: report-only public get_started, 
     const queries = [];
     for (const c of [cReport, cRead, cCombined]) {
       const res = parse(await c.callTool({ name: "search_services", arguments: { query: "accounting", limit: 3 } }));
-      expect(res.catalog_size).toBe(182);
+      expect(res.catalog_size).toBe(192);
       expect(res.results.length).toBeGreaterThan(0);
       queries.push(JSON.stringify(res.results));
       expect(JSON.stringify(res)).not.toContain("Mari Disain");

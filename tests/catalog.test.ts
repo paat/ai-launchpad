@@ -78,7 +78,7 @@ describe("safeHttps strict standalone-URL gate", () => {
     const raw = JSON.parse(readFileSync(join(import.meta.dirname, "..", "docs", "research", "catalog", "estonian-business-services.json"), "utf8")) as {
       counts: {
         records: number; email_calendar_records: number; initial_sector_records: number;
-        supplement_records: number; supporting_records: number;
+        supplement_records: number; supporting_records: number; phone_records: number;
         by_research_leg: Record<string, number>; by_group: Record<string, number>; by_interface: Record<string, number>;
       };
       records: { research_leg: string; catalog_group: string; interface_class: string }[];
@@ -95,7 +95,9 @@ describe("safeHttps strict standalone-URL gate", () => {
     expect(legs["email-workspaces"] + legs["email-local"] + legs["email-scheduling"] + legs["email-community"]).toBe(counts.email_calendar_records);
     expect(legs.couriers + legs.browsers).toBe(counts.supplement_records);
     expect(legs.supplementary).toBe(counts.supporting_records);
-    expect(counts.initial_sector_records + counts.supporting_records + counts.supplement_records + counts.email_calendar_records).toBe(counts.records);
+    expect(legs.phone).toBe(10);
+    expect(counts.phone_records).toBe(10);
+    expect(counts.initial_sector_records + counts.supporting_records + counts.supplement_records + counts.email_calendar_records + counts.phone_records).toBe(counts.records);
     const tally = (key: "research_leg" | "catalog_group" | "interface_class") => {
       const m: Record<string, number> = {};
       for (const r of records) m[r[key]] = (m[r[key]] ?? 0) + 1;
@@ -104,6 +106,37 @@ describe("safeHttps strict standalone-URL gate", () => {
     expect(tally("research_leg")).toEqual(counts.by_research_leg);
     expect(tally("catalog_group")).toEqual(counts.by_group);
     expect(tally("interface_class")).toEqual(counts.by_interface);
+  });
+
+  test("phone and language rows carry an Estonian value; search returns it only when set", () => {
+    const phone = ["retell-ai", "speko", "bland-ai", "telnyx-ai-connector", "vapi", "elevenlabs-agents", "agentphone", "synthflow", "twilio-voice", "azure-speech"];
+    const want: Record<string, string> = {
+      "retell-ai": "no", speko: "partial", "bland-ai": "no", "telnyx-ai-connector": "partial", vapi: "partial",
+      "elevenlabs-agents": "yes", agentphone: "unknown", synthflow: "no", "twilio-voice": "unknown", "azure-speech": "yes",
+      "ekilex-community": "yes", "voro-community": "partial", "vendus-agentibus": "unknown",
+      pactum: "unknown", "tommos-crm": "unknown",
+    };
+    for (const id of phone) {
+      const rec = byId(id);
+      expect(rec.research_leg, id).toBe("phone");
+      expect(rec.checked_on, id).toBe("2026-11-01");
+      expect(rec.runtime_tested, id).toBe(false);
+      expect(["phone/voice", "speech"], id).toContain(rec.sector);
+    }
+    for (const [id, value] of Object.entries(want)) {
+      const rec = byId(id);
+      expect(rec.estonian_language, id).toBe(value);
+      expect(rec.estonian_note, id).toMatch(/\S/);
+      expect(safeHttps(rec.estonian_source), id).toBe(rec.estonian_source);
+      const hit = searchServices(rec.name, 25).find((x) => x.id === id);
+      expect(hit?.estonian_language, id).toBe(value);
+      expect(hit?.estonian_note, id).toBe(rec.estonian_note);
+      expect(hit, id).not.toHaveProperty("estonian_source");
+    }
+    const hub = searchServices("hubspot", 5).find((x) => x.id === "hubspot");
+    expect(hub).not.toHaveProperty("estonian_language");
+    expect(hub).not.toHaveProperty("estonian_note");
+    for (const id of ["werkzeug", "lhv-ai", "omniva"]) expect(byId(id).estonian_language, id).toBeUndefined();
   });
 
   test("all actual catalog source URLs stay linkable", () => {
@@ -150,4 +183,48 @@ describe("safeHttps strict standalone-URL gate", () => {
     expect(safeHttps(undefined)).toBeNull();
     expect(safeHttps("")).toBeNull();
   });
+
+  test("CSV export matches JSON, including empty Estonian columns", () => {
+    const dir = join(import.meta.dirname, "..", "docs", "research", "catalog");
+    const raw = JSON.parse(readFileSync(join(dir, "estonian-business-services.json"), "utf8")) as { records: Record<string, unknown>[] };
+    const rows = parseCsv(readFileSync(join(dir, "estonian-business-services.csv"), "utf8"));
+    const header = rows[0];
+    expect(header.slice(-3)).toEqual(["estonian_language", "estonian_note", "estonian_source"]);
+    const body = rows.slice(1);
+    expect(body).toHaveLength(raw.records.length);
+    const at = Object.fromEntries(header.map((name, i) => [name, i]));
+    const cell = (rec: Record<string, unknown>, key: string) => {
+      if (key === "sources") return ((rec.sources as string[] | undefined) ?? []).join(" | ");
+      if (key === "runtime_tested" || key === "parent_source_reopened") return rec[key] ? "True" : "False";
+      const v = rec[key];
+      return v == null ? "" : String(v);
+    };
+    for (let i = 0; i < raw.records.length; i++) {
+      const rec = raw.records[i];
+      const row = body[i];
+      expect(row, String(rec.id)).toHaveLength(header.length);
+      for (const key of header) expect(row[at[key]], `${rec.id} ${key}`).toBe(cell(rec, key));
+    }
+  });
 });
+
+/** RFC 4180 reader for the catalog export. Fields do not contain raw newlines. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [], cell = "", quoted = false;
+  const s = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quoted) {
+      if (c === '"') {
+        if (s[i + 1] === '"') { cell += '"'; i++; }
+        else quoted = false;
+      } else cell += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += c;
+  }
+  if (cell.length || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => !(r.length === 1 && r[0] === ""));
+}

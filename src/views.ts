@@ -298,6 +298,7 @@ h1,h2,h3,.link-row-title,.receipt-head{overflow-wrap:anywhere}
 .label-chip--owner{background:var(--lbl-owner-bg);color:var(--lbl-owner-fg);border-color:var(--lbl-owner-bd)}
 .label-chip--ai{background:var(--lbl-ai-bg);color:var(--lbl-ai-fg);border-color:var(--lbl-ai-bd)}
 .label-chip--where{background:var(--lbl-where-bg);color:var(--lbl-where-fg);border-color:var(--lbl-where-bd)}
+.label-chip--amber{background:var(--c-att-bg);color:var(--c-att-dark);border-color:var(--c-att-bd)}
 .label-chip--sample{background:var(--lbl-sample-bg);color:var(--lbl-sample-fg);border:1px dashed var(--lbl-sample-bd);text-transform:uppercase;letter-spacing:.05em}
 .state-chip{border-radius:999px;padding:2px 10px 2px 8px}
 .state-chip::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:currentColor}
@@ -722,7 +723,7 @@ const timeEl = (iso: string, text: string) => `<time datetime="${esc(iso)}">${es
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // --- Chips: one label system (design-spec §2.2–2.3) ---
-const labelChip = (kind: "official" | "rule" | "assistant" | "owner" | "ai" | "sample" | "where", text: string) => `<span class="label-chip label-chip--${kind}">${esc(text)}</span>`;
+const labelChip = (kind: "official" | "rule" | "assistant" | "owner" | "ai" | "sample" | "where" | "amber", text: string) => `<span class="label-chip label-chip--${kind}">${esc(text)}</span>`;
 const stateChip = (kind: string, text: string, demo = false) => `<span class="state-chip state-chip--${kind}${demo ? " state-chip--demo" : ""}">${esc(text)}</span>`;
 const sampleChip = (l: Lang) => labelChip("sample", tr(l)("Näidis", "Sample"));
 const techDetails = (l: Lang, inner: string) => `<details class="tech-details"><summary>${tr(l)("Tehniline info", "Technical details")}</summary>${inner}</details>`;
@@ -1350,6 +1351,7 @@ export const CATALOGUE_GROUPS = [
   { id: "andmed", et: "Avalikud ja äriandmed", en: "Public and business data", match: /public|business data|government|statistics|^procurement$|tax/ },
   { id: "brauser", et: "Brauser ja automaatika", en: "Browser and automation", match: /browser/ },
   { id: "kliendid", et: "Kliendid (CRM)", en: "Customers (CRM)", match: /crm/ },
+  { id: "telefon", et: "Telefonikõned", en: "Phone calls", match: /phone|voice|speech/ },
   { id: "muu", et: "Muu", en: "Other", match: /(?:)/ },
 ] as const;
 export type CatalogueGroup = (typeof CATALOGUE_GROUPS)[number]["id"];
@@ -1368,6 +1370,13 @@ export const whereItWorks = (ic: string | undefined): [string, string] =>
 const isCatalogueConn = (c: unknown): c is Conn => typeof c === "string" && Object.hasOwn(CONN, c);
 const fmtYmd = (ymd: string) => /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd.split("-").reverse().join(".") : ymd;
 
+const ESTONIAN_BADGE = {
+  yes: { kind: "official", et: "Eesti keel: jah", en: "Estonian: yes" },
+  partial: { kind: "amber", et: "Eesti keel: osaliselt", en: "Estonian: partly" },
+  no: { kind: "amber", et: "Eesti keel: ei", en: "Estonian: no" },
+  unknown: { kind: "assistant", et: "Eesti keel: teadmata", en: "Estonian: unknown" },
+} as const;
+
 function serviceCard(r: ServiceRecord, l: Lang): string {
   const t = tr(l), conn = CONN[r.interface_class as Conn];
   // The provider's own connection URL first; research citations only when there is none (#52).
@@ -1375,8 +1384,12 @@ function serviceCard(r: ServiceRecord, l: Lang): string {
   const link = [r.connection, ...(r.sources ?? [])].map(safeHttps).find((u): u is string => !!u && !/\{|%7B/i.test(new URL(u).pathname)) ?? null;
   // Research text is English; mark it so screen readers switch voice on the Estonian page.
   const en = l === "en" ? "" : ' lang="en"';
+  const badge = r.estonian_language ? ESTONIAN_BADGE[r.estonian_language] : undefined;
+  const etChip = badge ? labelChip(badge.kind, t(badge.et, badge.en)) : "";
+  const etNote = r.estonian_note ? `<p class="svc-et"${en}>${esc(r.estonian_note)}</p>` : "";
   return `<article class="card svc" data-service="${esc(r.id)}"><h3>${esc(r.name)}</h3>
-<div class="labels">${labelChip("rule", t(conn[0], conn[1]))}${labelChip("where", t(...whereItWorks(r.interface_class)))}${labelChip("assistant", r.runtime_tested ? t("Testitud", "Tested") : t("Uuritud · AI-hüppelauaga pole testitud", "Researched · not tested with AI Launchpad"))}</div>
+<div class="labels">${labelChip("rule", t(conn[0], conn[1]))}${labelChip("where", t(...whereItWorks(r.interface_class)))}${labelChip("assistant", r.runtime_tested ? t("Testitud", "Tested") : t("Uuritud · AI-hüppelauaga pole testitud", "Researched · not tested with AI Launchpad"))}${etChip}</div>
+${etNote}
 <p class="svc-k">${t("Mida assistent selle abil teha saab", "What your assistant can do with it")}</p><p class="svc-v"${en}>${esc(r.jobs)}</p>
 <dl class="svc-facts"><dt>${t("Ligipääs ja hind", "Access and price")}</dt><dd${en}>${esc(r.access_and_price)}</dd><dt>${t("Peamine piirang", "Key limitation")}</dt><dd${en}>${esc(r.limitations ?? "")}</dd></dl>
 ${link ? `<a class="tap-link" href="${esc(link)}" rel="noopener noreferrer">${t("Teenusepakkuja leht", "Provider page")}: ${esc(new URL(link).hostname)}</a>` : ""}</article>`;

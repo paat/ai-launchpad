@@ -8,7 +8,7 @@
   "methodology": "Three disjoint research agents plus parent primary-source spot checks. Public documentation only; no authenticated tool calls, purchases, messages, submissions or payments.",
   "completeness": "Broad bounded catalog, not an exhaustive census. Local insurance, utilities, niche vertical software and private/partner-only integrations remain coverage gaps.",
   "counts": {
-    "records": 182,
+    "records": 192,
     "email_calendar_records": 24,
     "initial_sector_records": 135,
     "supplement_records": 14,
@@ -22,11 +22,12 @@
       "email-workspaces": 10,
       "email-local": 5,
       "email-scheduling": 6,
-      "email-community": 3
+      "email-community": 3,
+      "phone": 10
     },
     "supporting_records": 9,
     "by_group": {
-      "business_provider": 104,
+      "business_provider": 114,
       "community_implementation": 17,
       "watchlist": 8,
       "official_upstream": 5,
@@ -37,12 +38,12 @@
       "email_and_calendar": 24
     },
     "by_interface": {
-      "hosted_mcp": 61,
+      "hosted_mcp": 69,
       "local_mcp": 23,
       "self_hosted_mcp": 5,
       "agent_cli_or_skill": 3,
       "announced_or_unresolved": 11,
-      "ordinary_api": 50,
+      "ordinary_api": 52,
       "integration_only": 7,
       "unknown": 3,
       "closed_ai_or_managed_service": 4,
@@ -55,7 +56,8 @@
       "standard_protocol_local_bridge": 1,
       "limited_calendar_sharing": 1,
       "standard_protocol": 5
-    }
+    },
+    "phone_records": 10
   },
   "records": [
     {
@@ -2699,7 +2701,10 @@
       "sources": [
         "https://vendus.ai/mcp"
       ],
-      "research_leg": "other-b2b"
+      "research_leg": "other-b2b",
+      "estonian_language": "unknown",
+      "estonian_note": "The public connector page does not say which language the sales agent writes to leads.",
+      "estonian_source": "https://vendus.ai/mcp"
     },
     {
       "id": "bora-systems",
@@ -3258,7 +3263,10 @@
       "sources": [
         "https://api-docs.pactum.com/"
       ],
-      "research_leg": "other-b2b"
+      "research_leg": "other-b2b",
+      "estonian_language": "unknown",
+      "estonian_note": "Pactum's agents negotiate with suppliers. The public page does not say whether they write in Estonian.",
+      "estonian_source": "https://pactum.com/campaigns-agents"
     },
     {
       "id": "texta-toolkit",
@@ -3495,7 +3503,10 @@
       "sources": [
         "https://github.com/tommoscrm/tommos-mcp"
       ],
-      "research_leg": "other-b2b"
+      "research_leg": "other-b2b",
+      "estonian_language": "unknown",
+      "estonian_note": "Tommos agents answer inquiries and send proposals and follow-ups. The public page does not say whether they write in Estonian.",
+      "estonian_source": "https://github.com/tommoscrm/tommos-mcp"
     },
     {
       "id": "shoproller",
@@ -3761,7 +3772,10 @@
       "sources": [
         "https://github.com/TisteAI/ekilex_mcp"
       ],
-      "research_leg": "supplementary"
+      "research_leg": "supplementary",
+      "estonian_language": "yes",
+      "estonian_note": "Estonian dictionary and terminology lookup is what this tool does.",
+      "estonian_source": "https://github.com/TisteAI/ekilex_mcp"
     },
     {
       "id": "voro-community",
@@ -3787,7 +3801,10 @@
       "sources": [
         "https://github.com/Leo-Martin-Pala/voro-mcp"
       ],
-      "research_leg": "supplementary"
+      "research_leg": "supplementary",
+      "estonian_language": "partial",
+      "estonian_note": "The tool writes and checks Võro, a language of southern Estonia, and flags standard Estonian in that text.",
+      "estonian_source": "https://github.com/Leo-Martin-Pala/voro-mcp"
     },
     {
       "id": "selver-martparve",
@@ -4956,6 +4973,319 @@
         "https://github.com/codefuturist/email-mcp"
       ],
       "research_leg": "email-community"
+    },
+    {
+      "id": "retell-ai",
+      "name": "Retell AI",
+      "sector": "phone/voice",
+      "catalog_group": "business_provider",
+      "interface_class": "hosted_mcp",
+      "interface_detail": "official_hosted_mcp",
+      "operator": "See provider sources; legal operator not independently established",
+      "relationship": "first-party service interface",
+      "estonia_relevance": "A phone agent an Estonian business can sign in to from Claude or ChatGPT. Retell sells US and Canada numbers; it does not sell an Estonian number.",
+      "jobs": "Answer calls, place calls, and read back what was said",
+      "connection": "Official Claude directory connector and a ChatGPT app; you sign in. Separate key server https://mcp.retellai.com",
+      "access_and_price": "You sign in with Retell. Calls cost about 7 to 31 US cents a minute. A phone number is about $2 a month.",
+      "read_write": "See jobs and limitations; not tested by Launchpad.",
+      "limitations": "Placing a call spends money and rings a real phone. Retell asks you to confirm that one call first; the confirm lasts 2 minutes, and there is a cap of 20 calls an hour. It can ring numbers that are not yours.",
+      "evidence_status": "documented",
+      "runtime_tested": false,
+      "checked_on": "2026-11-01",
+      "parent_source_reopened": true,
+      "brokerage_permission": "UNKNOWN; direct owner connection does not establish gateway brokerage rights",
+      "notes": "",
+      "sources": [
+        "https://docs.retellai.com/get-started/claude",
+        "https://docs.retellai.com/get-started/chatgpt",
+        "https://docs.retellai.com/build/language-support",
+        "https://www.retellai.com/pricing"
+      ],
+      "estonian_language": "no",
+      "estonian_note": "Retell's language list does not include Estonian.",
+      "estonian_source": "https://docs.retellai.com/build/language-support",
+      "research_leg": "phone"
+    },
+    {
+      "id": "speko",
+      "name": "Speko",
+      "sector": "phone/voice",
+      "catalog_group": "business_provider",
+      "interface_class": "hosted_mcp",
+      "interface_detail": "official_hosted_mcp",
+      "operator": "See provider sources; legal operator not independently established",
+      "relationship": "first-party service interface",
+      "estonia_relevance": "A phone agent in the Claude directory. Estonian works only when the speech vendor you pick has it. An Estonian number is not documented.",
+      "jobs": "Place a call from your Speko account and get back what was said and the recording",
+      "connection": "Official Claude directory connector; you sign in",
+      "access_and_price": "You sign in with Speko. About 9 US cents a minute, or 5 percent on top of the speech vendor's rate. New accounts get $10 of credit.",
+      "read_write": "See jobs and limitations; not tested by Launchpad.",
+      "limitations": "Placing a call spends money and rings a real phone. Speko checks the business before calling, and one step places one call.",
+      "evidence_status": "documented",
+      "runtime_tested": false,
+      "checked_on": "2026-11-01",
+      "parent_source_reopened": true,
+      "brokerage_permission": "UNKNOWN; direct owner connection does not establish gateway brokerage rights",
+      "notes": "",
+      "sources": [
+        "https://claude.com/marketplace/connectors/speko",
+        "https://docs.speko.ai/quickstart/mcp",
+        "https://docs.speko.ai/concepts/byok",
+        "https://speko.ai/pricing"
+      ],
+      "estonian_language": "partial",
+      "estonian_note": "Speko routes speech to other vendors, including ElevenLabs. Estonian works only if that voice has it.",
+      "estonian_source": "https://docs.speko.ai/concepts/byok",
+      "research_leg": "phone"
+    },
+    {
+      "id": "bland-ai",
+      "name": "Bland",
+      "sector": "phone/voice",
+      "catalog_group": "business_provider",
+      "interface_class": "hosted_mcp",
+      "interface_detail": "official_hosted_mcp",
+      "operator": "See provider sources; legal operator not independently established",
+      "relationship": "first-party service interface",
+      "estonia_relevance": "A phone agent you can sign in to from Claude or ChatGPT. The phone-number plan on the pricing page is US and Canada only.",
+      "jobs": "Place a call, wait for it, stop it, and read the call log",
+      "connection": "https://api.bland.ai/v1/mcp",
+      "access_and_price": "You sign in, or you paste a full-access key. About 14 US cents a minute on the Start plan. The Agent Phone plan is $29.99 a month.",
+      "read_write": "See jobs and limitations; not tested by Launchpad.",
+      "limitations": "Placing a call spends money and rings a real phone. Bland does not ask you to confirm before it dials. Its phone-number plan covers the US and Canada only.",
+      "evidence_status": "documented",
+      "runtime_tested": false,
+      "checked_on": "2026-11-01",
+      "parent_source_reopened": true,
+      "brokerage_permission": "UNKNOWN; direct owner connection does not establish gateway brokerage rights",
+      "notes": "",
+      "sources": [
+        "https://docs.bland.ai/integrations/mcp/overview",
+        "https://docs.bland.ai/api-v1/post/calls",
+        "https://www.bland.ai/pricing"
+      ],
+      "estonian_language": "no",
+      "estonian_note": "Bland's language list does not include Estonian.",
+      "estonian_source": "https://docs.bland.ai/api-v1/post/calls",
+      "research_leg": "phone"
+    },
+    {
+      "id": "telnyx-ai-connector",
+      "name": "Telnyx AI Connector",
+      "sector": "phone/voice",
+      "catalog_group": "business_provider",
+      "interface_class": "hosted_mcp",
+      "interface_detail": "official_hosted_mcp",
+      "operator": "See provider sources; legal operator not independently established",
+      "relationship": "first-party service interface",
+      "estonia_relevance": "Can place calls and can sell an Estonian number. An Estonian number needs company papers and an Estonian address.",
+      "jobs": "Place a call that an assistant answers, hang up, and read a short summary",
+      "connection": "https://api.telnyx.com/v2/ai/mcp",
+      "access_and_price": "You sign in with Telnyx. About 5 US cents a minute, plus the speech model and the phone line. An Estonian number is from $2.50 a month.",
+      "read_write": "See jobs and limitations; not tested by Launchpad.",
+      "limitations": "Placing a call spends money and rings a real phone. An Estonian number needs company papers and an Estonian address, and Telnyx says it takes about 72 hours. You get a short summary, not the full recording.",
+      "evidence_status": "documented",
+      "runtime_tested": false,
+      "checked_on": "2026-11-01",
+      "parent_source_reopened": true,
+      "brokerage_permission": "UNKNOWN; direct owner connection does not establish gateway brokerage rights",
+      "notes": "",
+      "sources": [
+        "https://developers.telnyx.com/development/mcp/ai-connector",
+        "https://developers.telnyx.com/docs/voice/stt/models",
+        "https://support.telnyx.com/en/articles/3506159-estonia-number-requirements",
+        "https://telnyx.com/pricing/voice-ai-agents"
+      ],
+      "estonian_language": "partial",
+      "estonian_note": "Telnyx can recognize speech with AssemblyAI, which lists Estonian, or with Azure. Its own voices are not documented as Estonian.",
+      "estonian_source": "https://developers.telnyx.com/docs/voice/stt/models",
+      "research_leg": "phone"
+    },
+    {
+      "id": "vapi",
+      "name": "Vapi",
+      "sector": "phone/voice",
+      "catalog_group": "business_provider",
+      "interface_class": "hosted_mcp",
+      "interface_detail": "official_hosted_mcp",
+      "operator": "See provider sources; legal operator not independently established",
+      "relationship": "first-party service interface",
+      "estonia_relevance": "Places calls for a business. Free numbers are US only; an Estonian number has to be brought from another provider.",
+      "jobs": "Place a call now or at a set time, and read the call afterwards",
+      "connection": "https://mcp.vapi.ai/mcp",
+      "access_and_price": "You paste a key from your Vapi account. About 5 US cents a minute to host the call, plus the voice and the phone line.",
+      "read_write": "See jobs and limitations; not tested by Launchpad.",
+      "limitations": "Placing a call spends money and rings a real phone. Vapi does not ask you to confirm. Free numbers are US only; an Estonian number has to come from another provider.",
+      "evidence_status": "documented",
+      "runtime_tested": false,
+      "checked_on": "2026-11-01",
+      "parent_source_reopened": true,
+      "brokerage_permission": "UNKNOWN; direct owner connection does not establish gateway brokerage rights",
+      "notes": "",
+      "sources": [
+        "https://docs.vapi.ai/sdk/mcp-server",
+        "https://docs.vapi.ai/providers/voice/elevenlabs",
+        "https://docs.vapi.ai/phone-calling",
+        "https://vapi.ai/pricing"
+      ],
+      "estonian_language": "partial",
+      "estonian_note": "Estonian is listed for some ElevenLabs voices Vapi can use, not for every voice.",
+      "estonian_source": "https://docs.vapi.ai/providers/voice/elevenlabs",
+      "research_leg": "phone"
+    },
+    {
+      "id": "elevenlabs-agents",
+      "name": "ElevenLabs Agents",
+      "sector": "phone/voice",
+      "catalog_group": "business_provider",
+      "interface_class": "hosted_mcp",
+      "interface_detail": "official_hosted_mcp",
+      "operator": "See provider sources; legal operator not independently established",
+      "relationship": "first-party service interface",
+      "estonia_relevance": "Builds a voice agent that can speak Estonian. You bring your own phone number. This connection does not place the call.",
+      "jobs": "Build a voice agent and read what was said. This connection does not place the call.",
+      "connection": "https://api.elevenlabs.io/v1/mcp",
+      "access_and_price": "You sign in with ElevenLabs. The first 15 minutes are free, then about 8 US cents a minute.",
+      "read_write": "See jobs and limitations; not tested by Launchpad.",
+      "limitations": "Dialling is not part of this connection. It builds the voice agent and reads what was said. A real call, started another way, spends money and rings a real phone.",
+      "evidence_status": "documented",
+      "runtime_tested": false,
+      "checked_on": "2026-11-01",
+      "parent_source_reopened": true,
+      "brokerage_permission": "UNKNOWN; direct owner connection does not establish gateway brokerage rights",
+      "notes": "EU host also published: https://api.eu.residency.elevenlabs.io/v1/mcp. Claude directory connector uses sign-in.",
+      "sources": [
+        "https://elevenlabs.io/docs/eleven-agents/operate/hosted-mcp",
+        "https://elevenlabs.io/docs/help-center/product/eleven-agents/which-languages-can-i-use-with-eleven-agents",
+        "https://elevenlabs.io/docs/overview/models",
+        "https://elevenlabs.io/pricing/agents"
+      ],
+      "estonian_language": "yes",
+      "estonian_note": "Estonian voice documented; phone-line quality untested.",
+      "estonian_source": "https://elevenlabs.io/docs/overview/models",
+      "research_leg": "phone"
+    },
+    {
+      "id": "agentphone",
+      "name": "AgentPhone",
+      "sector": "phone/voice",
+      "catalog_group": "business_provider",
+      "interface_class": "hosted_mcp",
+      "interface_detail": "official_hosted_mcp",
+      "operator": "See provider sources; legal operator not independently established",
+      "relationship": "first-party service interface",
+      "estonia_relevance": "Places calls, but numbers are US and Canada only. Not a way to hold an Estonian number.",
+      "jobs": "Place a call, buy a number, and read the call",
+      "connection": "https://mcp.agentphone.ai/mcp",
+      "access_and_price": "You sign in, or you paste a key. A number is $3 for 30 days. Calls are about 13 to 22 US cents a minute.",
+      "read_write": "See jobs and limitations; not tested by Launchpad.",
+      "limitations": "Placing a call or buying a number spends money, and a call rings a real phone. Numbers are US and Canada only. Purchases need confirm:true. Calls have no documented confirmation.",
+      "evidence_status": "documented",
+      "runtime_tested": false,
+      "checked_on": "2026-11-01",
+      "parent_source_reopened": false,
+      "brokerage_permission": "UNKNOWN; direct owner connection does not establish gateway brokerage rights",
+      "notes": "",
+      "sources": [
+        "https://docs.agentphone.ai/mcp",
+        "https://agentphone.ai/pricing"
+      ],
+      "estonian_language": "unknown",
+      "estonian_note": "The public pages do not say whether the voice speaks Estonian.",
+      "estonian_source": "https://docs.agentphone.ai/mcp",
+      "research_leg": "phone"
+    },
+    {
+      "id": "synthflow",
+      "name": "Synthflow",
+      "sector": "phone/voice",
+      "catalog_group": "business_provider",
+      "interface_class": "hosted_mcp",
+      "interface_detail": "official_hosted_mcp",
+      "operator": "See provider sources; legal operator not independently established",
+      "relationship": "first-party service interface",
+      "estonia_relevance": "A voice agent whose documented call from this connection is a test call. An Estonian number is not established.",
+      "jobs": "Place a test call",
+      "connection": "https://mcp.synthflow.ai/mcp",
+      "access_and_price": "You sign in with Synthflow. The voice engine is about 9 US cents a minute. A number is about $1.50.",
+      "read_write": "See jobs and limitations; not tested by Launchpad.",
+      "limitations": "The call this connection documents is a test call. A test call can ring a real phone. A test call can still spend money. Do not use it to call customers.",
+      "evidence_status": "documented",
+      "runtime_tested": false,
+      "checked_on": "2026-11-01",
+      "parent_source_reopened": false,
+      "brokerage_permission": "UNKNOWN; direct owner connection does not establish gateway brokerage rights",
+      "notes": "",
+      "sources": [
+        "https://docs.synthflow.ai/mcp-server",
+        "https://docs.synthflow.ai/about-supported-languages",
+        "https://synthflow.ai/pricing/"
+      ],
+      "estonian_language": "no",
+      "estonian_note": "Synthflow's language list does not include Estonian.",
+      "estonian_source": "https://docs.synthflow.ai/about-supported-languages",
+      "research_leg": "phone"
+    },
+    {
+      "id": "twilio-voice",
+      "name": "Twilio Voice",
+      "sector": "phone/voice",
+      "catalog_group": "business_provider",
+      "interface_class": "ordinary_api",
+      "interface_detail": "official_api",
+      "operator": "See provider sources; legal operator not independently established",
+      "relationship": "first-party service interface",
+      "estonia_relevance": "Sells Estonian (+372) numbers: national, mobile and toll-free. The voice is whatever speech service you attach.",
+      "jobs": "Buy an Estonian phone number and carry the call. The voice comes from a speech service you attach.",
+      "connection": "Ordinary phone API. The Claude directory connector searches Twilio's docs and does not place calls.",
+      "access_and_price": "Company documents, including an extract from the commercial register. An Estonian call is about 7.3 US cents a minute out and about 1.2 US cents a minute in (October 2026).",
+      "read_write": "See jobs and limitations; not tested by Launchpad.",
+      "limitations": "Buying an Estonian number and placing a call spend money, and a call rings a real phone. You need company documents, including an extract from the commercial register. This is not a ready connection in your assistant.",
+      "evidence_status": "documented",
+      "runtime_tested": false,
+      "checked_on": "2026-11-01",
+      "parent_source_reopened": false,
+      "brokerage_permission": "UNKNOWN; direct owner connection does not establish gateway brokerage rights",
+      "notes": "",
+      "sources": [
+        "https://www.twilio.com/en-us/guidelines/ee/regulatory",
+        "https://www.twilio.com/docs/voice",
+        "https://www.twilio.com/en-us/voice/pricing/ee",
+        "https://claude.com/marketplace/connectors/twilio"
+      ],
+      "estonian_language": "unknown",
+      "estonian_note": "Twilio carries the call. Estonian depends on the speech service you attach, and these pages do not name one.",
+      "estonian_source": "https://www.twilio.com/docs/voice",
+      "research_leg": "phone"
+    },
+    {
+      "id": "azure-speech",
+      "name": "Azure Speech",
+      "sector": "speech",
+      "catalog_group": "business_provider",
+      "interface_class": "ordinary_api",
+      "interface_detail": "official_api",
+      "operator": "See provider sources; legal operator not independently established",
+      "relationship": "first-party service interface",
+      "estonia_relevance": "Microsoft's speech service documents Estonian speech-to-text and two Estonian voices. It does not place phone calls.",
+      "jobs": "Turn Estonian speech into text, and read text aloud in an Estonian voice",
+      "connection": "Azure Speech API. Not a connection that places calls.",
+      "access_and_price": "An Azure account. Price not checked.",
+      "read_write": "See jobs and limitations; not tested by Launchpad.",
+      "limitations": "Speech requests spend money. This does not place phone calls. How the Estonian voices sound on a phone line is untested.",
+      "evidence_status": "documented",
+      "runtime_tested": false,
+      "checked_on": "2026-11-01",
+      "parent_source_reopened": false,
+      "brokerage_permission": "UNKNOWN; direct owner connection does not establish gateway brokerage rights",
+      "notes": "",
+      "sources": [
+        "https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support"
+      ],
+      "estonian_language": "yes",
+      "estonian_note": "Estonian speech-to-text (et-EE) and voices et-EE-AnuNeural and et-EE-KertNeural.",
+      "estonian_source": "https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support",
+      "research_leg": "phone"
     }
   ],
   "updated_on": "2026-11-01"
