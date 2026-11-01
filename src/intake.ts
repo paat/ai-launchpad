@@ -6,10 +6,10 @@
 import { createHash } from "node:crypto";
 import {
   offerDownload,
-  type AssistantChoice, type AssistantId, type Business, type Tier, type Uses,
+  type AssistantId, type Business, type Tier, type Uses,
 } from "./assistant-choice.js";
 import {
-  candidateRows, customerFromServices, recommendAssistant, whyRows,
+  PLANS, candidateRows, customerFromServices, recommendAssistant, whyRows,
   type PlanRow, type Recommendation, type WhyRow,
 } from "./assistant-plans.js";
 import { loadCatalog, safeHttps, type ServiceRecord } from "./catalog.js";
@@ -165,15 +165,18 @@ export interface IntakePlanArgs {
   obligations?: IntakeObligation[];
   services?: ServiceRecord[];
   unmatched?: string[];
-  choice?: AssistantChoice;
   uses: Uses;
   tier?: Tier | null;
   business?: Business | null;
+  /** Assistant and plan id from the fact sheet. An unknown plan id for a known assistant stays unnamed. */
+  current?: { assistant: string; plan: string };
+  /** Rows to read. Defaults to the fact sheet. */
+  sheet?: readonly PlanRow[];
   lang: "et" | "en";
 }
 export interface IntakeStep { text: string; href?: string; }
 export interface IntakePlan {
-  assistant: AssistantId;
+  assistant: AssistantId | null;
   reason: string;
   reasons: Recommendation["reasons"];
   paidNote: boolean;
@@ -185,9 +188,15 @@ export interface IntakePlan {
   prompt: string;
 }
 
-function currentPlan(uses: Uses, tier: Tier | null, business: Business | null): { assistant: string; plan: string } | undefined {
-  if (uses === "claude" && tier === "free") return { assistant: "claude", plan: "free" };
-  if (uses === "chatgpt" && business === "yes") return { assistant: "chatgpt", plan: "business" };
+function currentPlan(args: IntakePlanArgs, sheet: readonly PlanRow[]): { assistant: string; plan: string } | undefined {
+  const stated = args.current;
+  if (stated?.assistant) {
+    if (!sheet.some((row) => row.assistant === stated.assistant)) return undefined;
+    return { assistant: stated.assistant, plan: stated.plan };
+  }
+  if (args.uses === "grok") return { assistant: "grok", plan: "unknown" };
+  if (args.uses === "claude" && args.tier === "free") return { assistant: "claude", plan: "free" };
+  if (args.uses === "chatgpt" && args.business === "yes") return { assistant: "chatgpt", plan: "business" };
   return undefined;
 }
 
@@ -198,7 +207,8 @@ function asAssistantId(row: PlanRow): AssistantId {
 }
 
 function intakeRecommendation(args: IntakePlanArgs): Recommendation {
-  return recommendAssistant(customerFromServices(args.services ?? [], currentPlan(args.uses, args.tier ?? null, args.business ?? null)));
+  const sheet = args.sheet ?? PLANS;
+  return recommendAssistant(customerFromServices(args.services ?? [], currentPlan(args, sheet)), sheet);
 }
 
 /** Prompt sentences use only the register name, the registry code and catalogue names. */
@@ -222,11 +232,24 @@ function intakePrompt(lang: "et" | "en", company: IntakeCompany | null | undefin
 export function buildIntakePlan(args: IntakePlanArgs): IntakePlan {
   const lang = args.lang === "en" ? "en" : "et";
   const services = args.services ?? [];
+  const sheet = args.sheet ?? PLANS;
   const rec = intakeRecommendation(args);
-  const assistant = asAssistantId(rec.recommended);
-  const candidates = candidateRows(rec);
   const reasons = rec.reasons;
   const reason = reasons.map((r) => lang === "en" ? r.text_en : r.text_et).join(" ");
+  if (!rec.recommended) {
+    return {
+      assistant: null,
+      reason,
+      reasons,
+      paidNote: false,
+      why: whyRows(sheet, lang),
+      candidates: [...sheet],
+      steps: [],
+      prompt: intakePrompt(lang, args.company, services),
+    };
+  }
+  const assistant = asAssistantId(rec.recommended);
+  const candidates = candidateRows(rec);
   const steps: IntakeStep[] = [];
   const download = offerDownload(args.uses, assistant);
   if (download) steps.push({ text: lang === "et" ? "Hangi see." : "Get it.", href: download });
@@ -272,7 +295,7 @@ export function planModelInput(args: IntakePlanArgs): string {
   let businessArea = args.company?.emtak_label?.trim() || "";
   const rec = intakeRecommendation(args);
   const fixed = {
-    assistant: asAssistantId(rec.recommended),
+    assistant: rec.recommended ? asAssistantId(rec.recommended) : null,
     tier: args.tier ?? null,
     paid_note: rec.paidNote,
     lang,

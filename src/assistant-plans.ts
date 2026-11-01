@@ -1,7 +1,9 @@
 /** Assistant plan facts as of 1 Nov 2026, and the rule that picks one.
  * Costs and reasons are read off these rows. Nothing is converted or filled in.
- * A plan we have not run is recommended only when it is the customer's current
- * plan, or when it is the same assistant as a plan we have already run. */
+ * Unknown stays null. A null connector count is not eligible, and a null phone
+ * or training flag is not claimed. A plan we have not run is recommended only
+ * when it is the customer's current plan, or when it is the same assistant as
+ * a plan we have already run. When no plan is allowed, recommended is null. */
 import type { ServiceRecord } from "./catalog.js";
 
 export const CHECKED = "2026-11-01" as const;
@@ -12,7 +14,12 @@ export interface PlanPrice {
   currency: "USD" | "EUR";
   tax: "excluded" | "unknown";
   per: "month" | "seat_month";
-  min_seats: number;
+  /** Null when the page does not publish a minimum. The cost then uses 1 seat. */
+  min_seats: number | null;
+  /** Set when the published figure is an annual commitment. */
+  billed?: "yearly";
+  /** A plan the customer must already hold. Shown with the price. */
+  requires_plan?: string;
 }
 export interface PlanRow {
   assistant: string;
@@ -44,7 +51,7 @@ export interface Customer {
 export interface Reason { text_et: string; text_en: string; sources: number[]; }
 export interface Recommendation {
   keep?: PlanRow;
-  recommended: PlanRow;
+  recommended: PlanRow | null;
   start?: PlanRow;
   stayAlternative?: PlanRow;
   paidNote: boolean;
@@ -114,9 +121,9 @@ export const SOURCES: SourceRef[] = [
 const byN = new Map(SOURCES.map((s) => [s.n, s]));
 const src = (...ns: number[]): SourceRef[] => ns.map((n) => byN.get(n)!);
 
-const usd = (amount: number, per: PlanPrice["per"] = "month", min_seats = 1): PlanPrice =>
+const usd = (amount: number, per: PlanPrice["per"] = "month", min_seats: number | null = 1): PlanPrice =>
   ({ amount, currency: "USD", tax: "excluded", per, min_seats });
-const eur = (amount: number, tax: PlanPrice["tax"], per: PlanPrice["per"] = "month", min_seats = 1): PlanPrice =>
+const eur = (amount: number, tax: PlanPrice["tax"], per: PlanPrice["per"] = "month", min_seats: number | null = 1): PlanPrice =>
   ({ amount, currency: "EUR", tax, per, min_seats });
 
 const CLAUDE_GOOGLE = ["Gmail", "Google Calendar", "Google Drive"];
@@ -133,14 +140,14 @@ export const PLANS: PlanRow[] = [
   { assistant: "claude", plan: "team", price: usd(25, "seat_month", 2), custom_connectors: "no_cap", write_tools: true, admin_needed: true, phone: true, builtin_google: CLAUDE_GOOGLE, builtin_microsoft: CLAUDE_MICROSOFT, trains_by_default: false, launchpad_tested: null, sources: src(1, 2, 3, 4, 6), checked },
   { assistant: "chatgpt", plan: "free", price: usd(0), custom_connectors: 0, write_tools: false, admin_needed: false, phone: false, builtin_google: [], builtin_microsoft: [], trains_by_default: true, launchpad_tested: null, sources: src(9, 10, 12, 27), checked },
   { assistant: "chatgpt", plan: "go", price: usd(8), custom_connectors: 0, write_tools: false, admin_needed: false, phone: false, builtin_google: [], builtin_microsoft: [], trains_by_default: true, launchpad_tested: null, sources: src(9, 10, 15, 27, 28), checked },
-  { assistant: "chatgpt", plan: "plus", price: usd(20), custom_connectors: 0, write_tools: false, admin_needed: false, phone: false, builtin_google: [], builtin_microsoft: [], trains_by_default: true, launchpad_tested: null, sources: src(9, 10, 12, 27, 28), checked },
+  { assistant: "chatgpt", plan: "plus", price: usd(20), custom_connectors: null, write_tools: false, admin_needed: false, phone: false, builtin_google: [], builtin_microsoft: [], trains_by_default: true, launchpad_tested: null, sources: src(9, 10, 12, 27, 28), checked },
   { assistant: "chatgpt", plan: "pro", price: null, custom_connectors: "no_cap", write_tools: false, admin_needed: false, phone: false, builtin_google: ["Google Drive"], builtin_microsoft: [], trains_by_default: true, launchpad_tested: null, sources: src(9, 10, 12, 27, 28), checked },
   { assistant: "chatgpt", plan: "business", price: usd(25, "seat_month", 2), custom_connectors: "no_cap", write_tools: true, admin_needed: true, phone: false, builtin_google: ["Google Workspace"], builtin_microsoft: ["Microsoft 365"], trains_by_default: false, launchpad_tested: null, sources: src(10, 11, 12, 16), checked },
   { assistant: "gemini", plan: "free", price: eur(0, "unknown"), custom_connectors: 0, write_tools: false, admin_needed: false, phone: false, builtin_google: [], builtin_microsoft: [], trains_by_default: null, launchpad_tested: null, sources: src(17, 18, 20), checked },
   { assistant: "gemini", plan: "ai_pro", price: eur(21.99, "unknown"), custom_connectors: 0, write_tools: false, admin_needed: false, phone: false, builtin_google: ["Gmail", "Docs", "Vids"], builtin_microsoft: [], trains_by_default: null, launchpad_tested: null, sources: src(17, 18, 20), checked },
-  { assistant: "google", plan: "workspace", price: eur(16.2, "unknown", "seat_month"), custom_connectors: 0, write_tools: null, admin_needed: false, phone: null, builtin_google: ["Gmail", "Docs", "Meet"], builtin_microsoft: [], trains_by_default: null, launchpad_tested: null, sources: src(18, 21), checked },
+  { assistant: "google", plan: "workspace", price: eur(16.2, "unknown", "seat_month"), custom_connectors: null, write_tools: null, admin_needed: false, phone: null, builtin_google: ["Gmail", "Docs", "Meet"], builtin_microsoft: [], trains_by_default: null, launchpad_tested: null, sources: src(18, 21), checked },
   { assistant: "copilot", plan: "free", price: eur(0, "unknown"), custom_connectors: 0, write_tools: false, admin_needed: false, phone: null, builtin_google: [], builtin_microsoft: [], trains_by_default: null, launchpad_tested: null, sources: src(23), checked },
-  { assistant: "copilot", plan: "m365_business", price: eur(18.2, "excluded", "seat_month"), custom_connectors: "no_cap", write_tools: true, admin_needed: true, phone: false, builtin_google: [], builtin_microsoft: ["Word", "Excel", "PowerPoint", "Outlook", "Teams"], trains_by_default: false, launchpad_tested: null, sources: src(22, 24), checked },
+  { assistant: "copilot", plan: "m365_business", price: { ...eur(18.2, "excluded", "seat_month"), billed: "yearly", requires_plan: "Microsoft 365" }, custom_connectors: "no_cap", write_tools: true, admin_needed: true, phone: null, builtin_google: [], builtin_microsoft: ["Word", "Excel", "PowerPoint", "Outlook", "Teams"], trains_by_default: null, launchpad_tested: null, sources: src(22, 24), checked },
   { assistant: "copilot", plan: "pro", price: null, custom_connectors: null, write_tools: null, admin_needed: false, phone: null, builtin_google: [], builtin_microsoft: [], trains_by_default: null, launchpad_tested: null, sources: src(23), checked },
   { assistant: "meta", plan: "free", price: eur(0, "unknown"), custom_connectors: 0, write_tools: false, admin_needed: false, phone: null, builtin_google: [], builtin_microsoft: [], trains_by_default: true, launchpad_tested: null, sources: src(25, 26), checked },
   { assistant: "grok", plan: "free", price: usd(0), custom_connectors: "no_cap", write_tools: null, admin_needed: false, phone: true, builtin_google: GROK_GOOGLE, builtin_microsoft: GROK_MICROSOFT, trains_by_default: true, launchpad_tested: null, sources: src(29, 31, 32, 35, 36, 37), checked },
@@ -148,7 +155,7 @@ export const PLANS: PlanRow[] = [
   { assistant: "grok", plan: "premium", price: usd(30), custom_connectors: "no_cap", write_tools: true, admin_needed: false, phone: true, builtin_google: GROK_GOOGLE, builtin_microsoft: GROK_MICROSOFT, trains_by_default: true, launchpad_tested: "2026-11-01", sources: src(29, 30, 31, 32, 35, 36, 37, 44), checked },
   { assistant: "grok", plan: "super", price: usd(100), custom_connectors: "no_cap", write_tools: true, admin_needed: false, phone: true, builtin_google: GROK_GOOGLE, builtin_microsoft: GROK_MICROSOFT, trains_by_default: true, launchpad_tested: null, sources: src(29, 30, 31, 32, 35, 36, 37, 44), checked },
   { assistant: "grok", plan: "ultra", price: usd(200), custom_connectors: "no_cap", write_tools: true, admin_needed: false, phone: true, builtin_google: GROK_GOOGLE, builtin_microsoft: GROK_MICROSOFT, trains_by_default: true, launchpad_tested: null, sources: src(29, 30, 31, 32, 35, 36, 37, 44), checked },
-  { assistant: "grok", plan: "teams", price: usd(30, "seat_month", 1), custom_connectors: "no_cap", write_tools: null, admin_needed: true, phone: true, builtin_google: GROK_GOOGLE, builtin_microsoft: GROK_MICROSOFT, trains_by_default: false, launchpad_tested: null, sources: src(29, 31, 32, 38, 40, 41), checked },
+  { assistant: "grok", plan: "teams", price: usd(30, "seat_month", null), custom_connectors: "no_cap", write_tools: null, admin_needed: true, phone: true, builtin_google: GROK_GOOGLE, builtin_microsoft: GROK_MICROSOFT, trains_by_default: false, launchpad_tested: null, sources: src(29, 31, 32, 38, 40, 41), checked },
 ];
 
 const TABLE_NAME: Record<string, string> = {
@@ -184,25 +191,18 @@ const samePlan = (row: PlanRow, current: Customer["current"]) =>
 
 const sourceNums = (row: PlanRow): number[] => [...new Set(row.sources.map((s) => s.n))].sort((a, b) => a - b);
 
-/** Company cost for one month. Null when the page published no price. */
+/** Company cost for one month. Null when the page published no price.
+ * An unknown minimum (null) is charged as one seat and is not claimed as a minimum. */
 export function monthlyCost(row: PlanRow, seats: number): number | null {
   if (!row.price) return null;
-  return row.price.amount * Math.max(seats, row.price.min_seats);
-}
-
-/** The cheaper row, or null when the prices cannot be compared. */
-export function cheaperPlan(a: PlanRow, b: PlanRow, seats: number): PlanRow | null {
-  if (!a.price || !b.price || a.price.currency !== b.price.currency) return null;
-  const ca = monthlyCost(a, seats);
-  const cb = monthlyCost(b, seats);
-  if (ca === null || cb === null) return null;
-  return ca <= cb ? a : b;
+  return row.price.amount * Math.max(seats, row.price.min_seats ?? 1);
 }
 
 export function rowFits(row: PlanRow, customer: Customer): boolean {
   return eligible(row) && slotsOk(row, customer.customConnectorsNeeded) && coversEmail(row, customer.emailSuite);
 }
 
+/** A published 0 cannot connect. Null is unknown, so the rule does not treat it as eligible. */
 function eligible(row: PlanRow): boolean {
   if (row.custom_connectors === 0 || row.custom_connectors === null) return false;
   return row.write_tools === true;
@@ -259,10 +259,10 @@ export function recommendAssistant(customer: Customer, sheet: readonly PlanRow[]
   const keep = current && rowFits(current, customer) ? current : undefined;
   const fitting = rows.filter((r) => rowFits(r, customer));
   const recommendable = rows.filter((r) => canRecommend(r, customer, rows));
-  const recommended = keep ?? cheapest(recommendable, customer.seats) ?? cheapest(fitting, customer.seats) ?? rows[0]!;
-  const start = costsMoney(recommended) ? rows.find(runsLaunchpadAlone) : undefined;
+  const recommended = keep ?? cheapest(recommendable, customer.seats) ?? null;
+  const start = recommended && costsMoney(recommended) ? rows.find(runsLaunchpadAlone) : undefined;
   let stayAlternative: PlanRow | undefined;
-  if (customer.current && recommended.assistant !== customer.current.assistant) {
+  if (customer.current && recommended && recommended.assistant !== customer.current.assistant) {
     const alt = cheapest(fitting.filter((r) => r.assistant === customer.current!.assistant), customer.seats);
     if (alt && keyOf(alt) !== keyOf(recommended)) stayAlternative = alt;
   }
@@ -271,7 +271,7 @@ export function recommendAssistant(customer: Customer, sheet: readonly PlanRow[]
     recommended,
     ...(start ? { start } : {}),
     ...(stayAlternative ? { stayAlternative } : {}),
-    paidNote: costsMoney(recommended) && !samePlan(recommended, customer.current),
+    paidNote: !!recommended && costsMoney(recommended) && !samePlan(recommended, customer.current),
     reasons: [],
   };
   result.reasons = buildReasons(customer, result, rows);
@@ -316,6 +316,17 @@ function sentenceName(row: PlanRow, lang: "et" | "en"): string {
   return planLabel(row);
 }
 
+function conditionSuffix(p: PlanPrice, lang: "et" | "en"): string {
+  const bits: string[] = [];
+  if (p.billed === "yearly") bits.push(lang === "et" ? "tasutakse kord aastas" : "billed yearly");
+  if (p.requires_plan) {
+    bits.push(lang === "et"
+      ? `vajab sobivat ${p.requires_plan} paketti`
+      : `requires an eligible ${p.requires_plan} plan`);
+  }
+  return bits.length ? `, ${bits.join(", ")}` : "";
+}
+
 function priceText(row: PlanRow, seats: number, lang: "et" | "en"): string | null {
   const p = row.price;
   if (!p) return null;
@@ -325,7 +336,7 @@ function priceText(row: PlanRow, seats: number, lang: "et" | "en"): string | nul
   const unit = p.per === "seat_month"
     ? (lang === "et" ? "kasutaja kohta kuus" : "per user a month")
     : (lang === "et" ? "kuus" : "a month");
-  const min = p.min_seats > 1
+  const min = p.min_seats != null && p.min_seats > 1
     ? (lang === "et" ? `, vähemalt ${p.min_seats} kasutajat` : `, at least ${p.min_seats} users`)
     : "";
   const tax = p.tax === "excluded"
@@ -339,12 +350,13 @@ function priceText(row: PlanRow, seats: number, lang: "et" | "en"): string | nul
     : "";
   const checkedOn = lang === "et" ? `Kontrollitud ${fmtDate(row.checked)}.` : `Checked ${fmtDate(row.checked)}.`;
   const verb = lang === "et" ? "maksab" : "costs";
-  return `${name} ${verb} ${amt} ${cur} ${unit}${min}, ${tax}. ${checkedOn}${extra}`;
+  return `${name} ${verb} ${amt} ${cur} ${unit}${min}${conditionSuffix(p, lang)}, ${tax}. ${checkedOn}${extra}`;
 }
 
 function factText(row: PlanRow, lang: "et" | "en"): string {
   const name = sentenceName(row, lang);
   const bits: string[] = [];
+  // Null phone is unknown, so the sentence claims neither a phone app nor web only.
   if (row.phone === true) bits.push(lang === "et" ? `${name} töötab ka telefonis.` : `${name} works on the phone too.`);
   if (row.phone === false) bits.push(lang === "et" ? `${name} töötab ainult veebis.` : `${name} works on the web only.`);
   if (row.admin_needed) bits.push(lang === "et" ? "Oma ühenduse lisab haldur." : "An admin has to add your own connection.");
@@ -357,7 +369,51 @@ function factText(row: PlanRow, lang: "et" | "en"): string {
   return bits.join(" ");
 }
 
+const BRAND: Record<string, string> = {
+  claude: "Claude", chatgpt: "ChatGPT", gemini: "Gemini", google: "Google",
+  copilot: "Copilot", meta: "Meta", grok: "Grok",
+};
+
+function ownConnectionPhrase(n: PlanRow["custom_connectors"], lang: "et" | "en"): string {
+  if (n === 1) return lang === "et" ? "üks oma ühendus" : "one own connection";
+  if (typeof n === "number") return lang === "et" ? `${n} oma ühendust` : `${n} own connections`;
+  if (n === "no_cap") return lang === "et" ? "piirangut pole avaldatud" : "no published limit";
+  return lang === "et" ? "teadmata" : "unknown";
+}
+
+/** Where a free start row is named. Claude Free keeps the sentence it already had. */
+function aloneOn(row: PlanRow): { et: string; en: string } {
+  if (row.assistant === "claude" && row.plan === "free") return { et: "Claude'i tasuta paketis", en: "Claude's free plan" };
+  const label = planLabel(row);
+  return { et: `${label} paketis`, en: label };
+}
+
+/** Untested plan allowed only because this assistant was already tried on another row. */
+function siblingTrial(recommended: PlanRow, customer: Customer, sheet: readonly PlanRow[]): Reason | null {
+  if (recommended.launchpad_tested || samePlan(recommended, customer.current)) return null;
+  const tested = sheet.find((r) => r.assistant === recommended.assistant && r.launchpad_tested);
+  if (!tested?.launchpad_tested) return null;
+  const date = fmtDate(tested.launchpad_tested);
+  const brand = BRAND[recommended.assistant] ?? recommended.assistant;
+  const label = planLabel(recommended);
+  const triedEt = tested.plan === "free" ? "tasuta paketiga" : `${planLabel(tested)} paketiga`;
+  const triedEn = tested.plan === "free" ? "the free plan" : planLabel(tested);
+  return {
+    text_et: `${label} on sama ${brand}, mida proovisime ${triedEt} (${date}).`,
+    text_en: `${label} is the same ${brand} we tried on ${triedEn} (${date}).`,
+    sources: sourceNums(tested),
+  };
+}
+
 function buildReasons(customer: Customer, rec: Recommendation, sheet: readonly PlanRow[]): Reason[] {
+  const recommended = rec.recommended;
+  if (!recommended) {
+    return [{
+      text_et: "Ühtegi sobivat paketti ei leitud — vaata tabelit",
+      text_en: "No plan fits — see the table",
+      sources: [],
+    }];
+  }
   const reasons: Reason[] = [];
   const free = sheet.find((r) => r.assistant === "claude" && r.plan === "free");
   if (!rec.keep && free && typeof free.custom_connectors === "number" && customer.customConnectorsNeeded > free.custom_connectors) {
@@ -378,7 +434,7 @@ function buildReasons(customer: Customer, rec: Recommendation, sheet: readonly P
   } else if (rec.keep) {
     const c = rec.keep.custom_connectors;
     const slots = c === "no_cap"
-      ? { et: "Oma ühenduste arvul ei ole piiri.", en: "There is no limit on own connections." }
+      ? { et: "Oma ühendustel piirangut pole avaldatud.", en: "There is no published limit on own connections." }
       : typeof c === "number"
         ? { et: `Oma ühendusi on ${c}.`, en: `It has ${c} own ${c === 1 ? "connection" : "connections"}.` }
         : { et: "Oma ühenduste arv on teadmata.", en: "The number of own connections is unknown." };
@@ -391,34 +447,39 @@ function buildReasons(customer: Customer, rec: Recommendation, sheet: readonly P
     });
   }
   if (customer.emailSuite === "google" || customer.emailSuite === "microsoft" || customer.emailSuite === "both") {
-    const g = rec.recommended.builtin_google;
-    const m = rec.recommended.builtin_microsoft;
+    const g = recommended.builtin_google;
+    const m = recommended.builtin_microsoft;
     const names = customer.emailSuite === "google" ? g : customer.emailSuite === "microsoft" ? m : [...g, ...m];
     if (names.length) {
-      const name = sentenceName(rec.recommended, "et");
-      const nameEn = sentenceName(rec.recommended, "en");
+      const name = sentenceName(recommended, "et");
+      const nameEn = sentenceName(recommended, "en");
       reasons.push({
         text_et: `${name} sisaldab: ${joinList(names, " ja ")}.`,
         text_en: `${nameEn} includes: ${joinList(names, " and ")}.`,
-        sources: sourceNums(rec.recommended),
+        sources: sourceNums(recommended),
       });
     }
   }
-  const price = priceText(rec.recommended, customer.seats, "et");
-  const priceEn = priceText(rec.recommended, customer.seats, "en");
-  if (price && priceEn) reasons.push({ text_et: price, text_en: priceEn, sources: sourceNums(rec.recommended) });
+  const price = priceText(recommended, customer.seats, "et");
+  const priceEn = priceText(recommended, customer.seats, "en");
+  if (price && priceEn) reasons.push({ text_et: price, text_en: priceEn, sources: sourceNums(recommended) });
   reasons.push({
-    text_et: factText(rec.recommended, "et"),
-    text_en: factText(rec.recommended, "en"),
-    sources: sourceNums(rec.recommended),
+    text_et: factText(recommended, "et"),
+    text_en: factText(recommended, "en"),
+    sources: sourceNums(recommended),
   });
-  if (rec.start && keyOf(rec.start) !== keyOf(rec.recommended)) {
-    const slots = rec.start.custom_connectors === 1 ? "üks oma ühendus" : `${String(rec.start.custom_connectors)} oma ühendust`;
-    const slotsEn = rec.start.custom_connectors === 1 ? "one own connection" : `${String(rec.start.custom_connectors)} own connections`;
+  const sibling = siblingTrial(recommended, customer, sheet);
+  if (sibling) reasons.push(sibling);
+  if (rec.start && keyOf(rec.start) !== keyOf(recommended)) {
+    const place = aloneOn(rec.start);
+    const slots = ownConnectionPhrase(rec.start.custom_connectors, "et");
+    const slotsEn = ownConnectionPhrase(rec.start.custom_connectors, "en");
+    const phone = rec.start.phone === true ? ", töötab ka telefonis" : "";
+    const phoneEn = rec.start.phone === true ? ", works on the phone too" : "";
     const tried = rec.start.launchpad_tested ? fmtDate(rec.start.launchpad_tested) : "";
     reasons.push({
-      text_et: `AI-hüppelaua üksi saad käivitada Claude'i tasuta paketis: ${slots}${rec.start.phone ? ", töötab ka telefonis" : ""}${tried ? `, proovitud ${tried}` : ""}.`,
-      text_en: `You can run AI Launchpad alone on Claude's free plan: ${slotsEn}${rec.start.phone ? ", works on the phone too" : ""}${tried ? `, tried ${tried}` : ""}.`,
+      text_et: `AI-hüppelaua üksi saad käivitada ${place.et}: ${slots}${phone}${tried ? `, proovitud ${tried}` : ""}.`,
+      text_en: `You can run AI Launchpad alone on ${place.en}: ${slotsEn}${phoneEn}${tried ? `, tried ${tried}` : ""}.`,
       sources: sourceNums(rec.start),
     });
   }
@@ -433,16 +494,19 @@ function buildReasons(customer: Customer, rec: Recommendation, sheet: readonly P
 export function whyRows(rows: readonly PlanRow[], lang: "et" | "en"): WhyRow[] {
   return rows.map((row) => {
     const p = row.price;
+    const minSeats = !p || p.min_seats == null
+      ? (p ? (lang === "et" ? ", minimaalne kasutajate arv on teadmata" : ", min seats unknown") : "")
+      : p.min_seats > 1 ? (lang === "et" ? `, vähemalt ${p.min_seats}` : `, at least ${p.min_seats}`) : "";
     const cost = !p ? (lang === "et" ? "hinda ei ole avaldatud" : "no published price")
       : `${formatAmount(p.amount, lang)} ${p.currency} ${p.per === "seat_month"
         ? (lang === "et" ? "kasutaja kohta kuus" : "per user a month")
-        : (lang === "et" ? "kuus" : "a month")}${p.min_seats > 1 ? (lang === "et" ? `, vähemalt ${p.min_seats}` : `, at least ${p.min_seats}`) : ""}`;
+        : (lang === "et" ? "kuus" : "a month")}${minSeats}${conditionSuffix(p, lang)}`;
     const taxNote = !p ? (lang === "et" ? "teadmata" : "unknown")
       : p.tax === "excluded"
         ? (lang === "et" ? "maksud ei ole hinna sees" : "tax is not included")
         : (lang === "et" ? "lehel ei ole öeldud, kas maks on hinna sees" : "the page does not say whether tax is included");
     const connections = row.custom_connectors === null ? (lang === "et" ? "teadmata" : "unknown")
-      : row.custom_connectors === "no_cap" ? (lang === "et" ? "piiranguta" : "no limit")
+      : row.custom_connectors === "no_cap" ? (lang === "et" ? "piirangut pole avaldatud" : "no published limit")
       : String(row.custom_connectors);
     const phone = row.phone === null ? (lang === "et" ? "teadmata" : "unknown") : row.phone ? (lang === "et" ? "jah" : "yes") : (lang === "et" ? "ei" : "no");
     const tested = row.launchpad_tested ? fmtDate(row.launchpad_tested) : (lang === "et" ? "ei" : "no");

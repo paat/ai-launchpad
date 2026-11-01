@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { PLAN_NOTE, chooseAssistant, needsPaidNote, offerDownload, type Business, type Tier, type Uses } from "../src/assistant-choice.js";
+import { PLANS } from "../src/assistant-plans.js";
 import { loadCatalog, safeHttps } from "../src/catalog.js";
 import {
   buildIntakePlan, fallbackExtract, intakeRateOk, liveIntake, matchCatalog, mockIntake, parseExtract, planModelInput,
@@ -111,7 +112,7 @@ describe("buildIntakePlan", () => {
       const plan = buildIntakePlan({
         company: withCompany ? company : undefined,
         obligations, services, unmatched: [HOSTILE],
-        choice: choice!, uses: path.uses, tier: path.tier, business: path.business, lang,
+        uses: path.uses, tier: path.tier, business: path.business, lang,
       });
       const label = `${lang} ${path.uses} ${path.tier ?? "-"} ${path.business ?? "-"} company=${withCompany}`;
       expect(plan.paidNote, label).toBe(path.paid);
@@ -157,8 +158,7 @@ describe("buildIntakePlan", () => {
   });
 
   test("a grok user is recommended a tested assistant that can hold the services", () => {
-    const choice = chooseAssistant({ uses: "grok", tier: "paid" })!;
-    const plan = buildIntakePlan({ choice, uses: "grok", tier: "paid", services, lang: "et" });
+    const plan = buildIntakePlan({ uses: "grok", tier: "paid", services, lang: "et" });
     expect(plan.paidNote).toBe(true);
     expect(plan.planNote).toBe(plan.reason);
     expect(plan.assistant).toBe("claude");
@@ -168,18 +168,61 @@ describe("buildIntakePlan", () => {
     ]);
   });
 
+  test("a stated fact-sheet plan is kept, and an unknown plan id still offers that assistant", () => {
+    const grok = buildIntakePlan({
+      uses: "grok", current: { assistant: "grok", plan: "free" }, lang: "en",
+    });
+    expect(grok.assistant).toBe("claude");
+    expect(grok.paidNote).toBe(false);
+    expect(grok.candidates.some((r) => r.assistant === "grok" && r.plan === "premium")).toBe(true);
+    expect(grok.candidates.some((r) => r.assistant === "grok" && r.plan === "free")).toBe(false);
+
+    const unknown = buildIntakePlan({
+      uses: "grok", current: { assistant: "grok", plan: "not-a-plan" }, lang: "en",
+    });
+    expect(unknown.assistant).toBe("claude");
+    expect(unknown.paidNote).toBe(false);
+    expect(unknown.candidates.some((r) => r.assistant === "grok" && r.plan === "premium")).toBe(true);
+    expect(unknown.candidates.some((r) => r.plan === "not-a-plan")).toBe(false);
+
+    const pro = buildIntakePlan({
+      uses: "claude", tier: "paid", current: { assistant: "claude", plan: "pro" },
+      services: matchCatalog(["Merit Aktiva"]).matched, lang: "en",
+    });
+    expect(pro.assistant).toBe("claude");
+    expect(pro.paidNote).toBe(false);
+    expect(pro.planNote).toBeUndefined();
+    expect(pro.candidates[0]).toMatchObject({ assistant: "claude", plan: "pro" });
+  });
+
+  test("when no plan fits, the intake line points at the table", () => {
+    const business = PLANS.find((r) => r.assistant === "chatgpt" && r.plan === "business");
+    const free = PLANS.find((r) => r.assistant === "chatgpt" && r.plan === "free");
+    if (!business || !free) throw new Error("sheet");
+    for (const sheet of [[business], [free]]) {
+      const plan = buildIntakePlan({ uses: "none", lang: "en", sheet });
+      expect(plan.assistant).toBeNull();
+      expect(plan.paidNote).toBe(false);
+      expect(plan.planNote).toBeUndefined();
+      expect(plan.reason).toBe("No plan fits — see the table");
+      expect(plan.why.map((row) => `${row.assistant}/${row.plan}`)).toEqual([`${sheet[0]!.assistant}/${sheet[0]!.plan}`]);
+      expect(plan.steps).toEqual([]);
+    }
+    const et = buildIntakePlan({ uses: "none", lang: "et", sheet: [free] });
+    expect(et.reason).toBe("Ühtegi sobivat paketti ei leitud — vaata tabelit");
+    expect(et.why).toHaveLength(1);
+  });
+
   test("the prompt drops the company sentence and the program sentence when either is missing", () => {
-    const choice = chooseAssistant({ uses: "none" })!;
-    const bare = buildIntakePlan({ choice, uses: "none", lang: "en" });
+    const bare = buildIntakePlan({ uses: "none", lang: "en" });
     expect(bare.prompt).toBe("Through AI Launchpad, see which deadlines I have coming up and what you need from me.");
-    const named = buildIntakePlan({ company: { name: "Synthetic Register OÜ", registry_code: CODE }, choice, uses: "none", services: [werkzeug], lang: "et" });
+    const named = buildIntakePlan({ company: { name: "Synthetic Register OÜ", registry_code: CODE }, uses: "none", services: [werkzeug], lang: "et" });
     expect(named.prompt).toBe(`Minu ettevõte on Synthetic Register OÜ, registrikood ${CODE}. Kasutan: Werkzeug. Vaata AI-hüppelaua kaudu, mis tähtajad mul tulemas on ja mida sa minult vajad.`);
   });
 });
 
 describe("plan model input", () => {
   test("keeps at most three dated obligations and stays inside the ledger input bound", () => {
-    const choice = chooseAssistant({ uses: "claude", tier: "free" })!;
     const args: IntakePlanArgs = {
       company: { name: "Synthetic Register OÜ", registry_code: CODE, legal_form: HOSTILE, emtak_label: "Disain" },
       obligations: [
@@ -191,7 +234,7 @@ describe("plan model input", () => {
       ],
       services: [werkzeug],
       unmatched: [HOSTILE, "a".repeat(80)],
-      choice, uses: "claude", tier: "free", lang: "et",
+      uses: "claude", tier: "free", lang: "et",
     };
     const raw = planModelInput(args);
     const body = JSON.parse(raw) as { company_name: string; business_area: string; obligations: { title: string; effective_due: string }[]; services: string[]; unmatched: string[]; paid_note: boolean; assistant: string };
@@ -244,9 +287,8 @@ describe("intake clients and limiter", () => {
       const parsed = parseExtract(a.output);
       expect(parsed?.products.some((p) => p.name === "Werkzeug" && p.kind === "accounting")).toBe(true);
     }
-    const choice = chooseAssistant({ uses: "claude", tier: "free" })!;
-    const paid = await client.summarize(planModelInput({ choice, uses: "claude", tier: "free", lang: "et" }));
-    const freeOfNote = await client.summarize(planModelInput({ choice: chooseAssistant({ uses: "grok" })!, uses: "grok", lang: "en" }));
+    const paid = await client.summarize(planModelInput({ uses: "claude", tier: "free", lang: "et" }));
+    const freeOfNote = await client.summarize(planModelInput({ uses: "grok", lang: "en" }));
     expect(paid).toMatchObject({ ok: true, mock: true });
     expect(freeOfNote).toMatchObject({ ok: true, mock: true });
     if (paid.ok) expect(paid.output).toMatch(/mock/);

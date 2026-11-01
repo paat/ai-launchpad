@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-  PLANS, cheaperPlan, customerFromServices, monthlyCost, recommendAssistant,
+  PLANS, customerFromServices, monthlyCost, recommendAssistant, whyRows,
   type Customer, type PlanRow,
 } from "../src/assistant-plans.js";
 import { matchCatalog } from "../src/intake.js";
@@ -47,13 +47,16 @@ describe("fact sheet", () => {
     expect(row("claude", "max").price?.amount).toBe(100);
     expect(row("claude", "team").price).toEqual({ amount: 25, currency: "USD", tax: "excluded", per: "seat_month", min_seats: 2 });
     expect(row("chatgpt", "go").price).toEqual({ amount: 8, currency: "USD", tax: "excluded", per: "month", min_seats: 1 });
-    expect(row("chatgpt", "plus")).toMatchObject({ custom_connectors: 0, write_tools: false, price: { amount: 20, currency: "USD" } });
+    expect(row("chatgpt", "plus")).toMatchObject({ custom_connectors: null, write_tools: false, price: { amount: 20, currency: "USD" } });
     expect(row("chatgpt", "pro").price).toBeNull();
     expect(row("chatgpt", "pro").write_tools).toBe(false);
     expect(row("chatgpt", "business").price).toEqual({ amount: 25, currency: "USD", tax: "excluded", per: "seat_month", min_seats: 2 });
     expect(row("gemini", "ai_pro").price).toEqual({ amount: 21.99, currency: "EUR", tax: "unknown", per: "month", min_seats: 1 });
     expect(row("google", "workspace").price).toEqual({ amount: 16.2, currency: "EUR", tax: "unknown", per: "seat_month", min_seats: 1 });
-    expect(row("copilot", "m365_business").price).toEqual({ amount: 18.2, currency: "EUR", tax: "excluded", per: "seat_month", min_seats: 1 });
+    expect(row("copilot", "m365_business").price).toEqual({
+      amount: 18.2, currency: "EUR", tax: "excluded", per: "seat_month", min_seats: 1,
+      billed: "yearly", requires_plan: "Microsoft 365",
+    });
     expect(row("copilot", "pro").price).toBeNull();
     expect(row("copilot", "pro").custom_connectors).toBeNull();
     expect(row("claude", "free").trains_by_default).toBeNull();
@@ -83,7 +86,7 @@ describe("fact sheet", () => {
     expect(row("grok", "super")).toMatchObject({ write_tools: true, phone: true, launchpad_tested: null });
     expect(row("grok", "ultra")).toMatchObject({ write_tools: true, phone: true, launchpad_tested: null });
     expect(row("grok", "teams")).toMatchObject({
-      price: { amount: 30, currency: "USD", tax: "excluded", per: "seat_month", min_seats: 1 },
+      price: { amount: 30, currency: "USD", tax: "excluded", per: "seat_month", min_seats: null },
       write_tools: null, admin_needed: true, trains_by_default: false, launchpad_tested: null,
     });
     expect(PLANS.some((plan) => plan.assistant === "grok" && /supergrok|heavy|basic|premium_plus/.test(plan.plan))).toBe(false);
@@ -209,8 +212,8 @@ describe("recommendAssistant", () => {
       price: { amount: 1, currency: "EUR", tax: "unknown", per: "month", min_seats: 1 },
     });
     expect(monthlyCost(eur, 1)! < monthlyCost(usd, 1)!).toBe(true);
-    expect(cheaperPlan(usd, eur, 1)).toBeNull();
     expect(recommendAssistant(base(), [usd, eur]).recommended).toBe(usd);
+    expect(recommendAssistant(base(), [eur, usd]).recommended).toBe(eur);
   });
 
   test("e-mail suite uses the built-in list, and other or unknown does not block", () => {
@@ -278,5 +281,92 @@ describe("recommendAssistant", () => {
     expect(gmail.customConnectorsNeeded).toBe(1);
     expect(gmail.emailSuite).toBe("google");
     expect(recommendAssistant(gmail).recommended).toBe(row("claude", "free"));
+  });
+
+  test("memo UNKNOWN fields stay null and are not stored as a conservative default", () => {
+    expect(row("chatgpt", "plus").custom_connectors).toBeNull();
+    expect(row("google", "workspace").custom_connectors).toBeNull();
+    expect(row("copilot", "m365_business").phone).toBeNull();
+    expect(row("copilot", "m365_business").trains_by_default).toBeNull();
+    expect(row("grok", "teams").price?.min_seats).toBeNull();
+    expect(monthlyCost(row("grok", "teams"), 1)).toBe(30);
+    expect(monthlyCost(row("grok", "teams"), 4)).toBe(120);
+    const teams = whyRows([row("grok", "teams")], "en")[0]!;
+    expect(teams.cost).toContain("min seats unknown");
+    expect(teams.cost).not.toMatch(/at least 1/);
+    expect(whyRows([row("grok", "teams")], "et")[0]!.cost).toContain("minimaalne kasutajate arv on teadmata");
+  });
+
+  test("Copilot Business price states yearly billing and the Microsoft 365 requirement", () => {
+    const rec = recommendAssistant(base({ current: { assistant: "copilot", plan: "free" } }));
+    expect(rec.stayAlternative).toBe(row("copilot", "m365_business"));
+    const stay = rec.reasons.find((r) => r.text_en.includes("Microsoft 365 Copilot Business"));
+    expect(stay?.text_en).toMatch(/billed yearly/);
+    expect(stay?.text_en).toMatch(/requires an eligible Microsoft 365 plan/);
+    expect(stay?.text_en).not.toMatch(/web only/);
+    expect(stay?.text_et).toMatch(/tasutakse kord aastas/);
+    expect(stay?.text_et).toMatch(/vajab sobivat Microsoft 365 paketti/);
+    expect(stay?.text_et).not.toMatch(/ainult veebis/);
+    const en = whyRows([row("copilot", "m365_business")], "en")[0]!;
+    const et = whyRows([row("copilot", "m365_business")], "et")[0]!;
+    expect(en.cost).toContain("billed yearly");
+    expect(en.cost).toContain("requires an eligible Microsoft 365 plan");
+    expect(en.phone).toBe("unknown");
+    expect(et.cost).toContain("tasutakse kord aastas");
+    expect(et.cost).toContain("vajab sobivat Microsoft 365 paketti");
+    expect(et.phone).toBe("teadmata");
+  });
+
+  test("no published connector cap is not rendered as no limit", () => {
+    const kept = recommendAssistant(base({ current: { assistant: "grok", plan: "premium" } }));
+    const en = kept.reasons.map((r) => r.text_en).join(" ");
+    const et = kept.reasons.map((r) => r.text_et).join(" ");
+    expect(en).toContain("no published limit");
+    expect(et).toContain("piirangut pole avaldatud");
+    expect(en.replaceAll("no published limit", "")).not.toContain("no limit");
+    expect(et.replaceAll("piirangut pole avaldatud", "")).not.toContain("piiranguta");
+    expect(whyRows([row("grok", "premium")], "en")[0]!.connections).toBe("no published limit");
+    expect(whyRows([row("claude", "pro")], "et")[0]!.connections).toBe("piirangut pole avaldatud");
+    for (const plan of PLANS) {
+      expect(whyRows([plan], "en")[0]!.connections).not.toBe("no limit");
+      expect(whyRows([plan], "et")[0]!.connections).not.toBe("piiranguta");
+    }
+  });
+
+  test("an untested plan allowed by a tested sibling says so", () => {
+    const rec = recommendAssistant(base({ customConnectorsNeeded: 2, connectionNames: ["Merit"] }));
+    const en = rec.reasons.map((r) => r.text_en).join(" ");
+    const et = rec.reasons.map((r) => r.text_et).join(" ");
+    expect(en).toMatch(/same assistant|same.*Claude|Free.*tested|tested.*Free/i);
+    expect(et).toContain("Claude Pro on sama Claude, mida proovisime tasuta paketiga (30.10.2026).");
+    expect(en).toContain("Claude Pro is the same Claude we tried on the free plan (30.10.2026).");
+    const sentence = rec.reasons.find((r) => r.text_et.includes("sama Claude"));
+    expect(sentence?.sources).toEqual(expect.arrayContaining([1, 2]));
+  });
+
+  test("the free-start reason names the start row and cites its sources", () => {
+    const start = clone(row("grok", "free"), { write_tools: true, custom_connectors: 1 });
+    const pro = clone(row("claude", "pro"), { launchpad_tested: "2026-10-30" });
+    const rec = recommendAssistant(base({ customConnectorsNeeded: 2 }), [pro, start]);
+    expect(rec.start).toMatchObject({ assistant: "grok", plan: "free" });
+    expect(rec.reasons.some((r) => r.text_en.includes("Claude's free plan"))).toBe(false);
+    const sentence = rec.reasons.find((r) => r.text_en.includes("Grok Free"));
+    expect(sentence?.text_en).toContain("You can run AI Launchpad alone on Grok Free");
+    expect(sentence?.text_et).toContain("Grok Free");
+    expect(sentence?.sources).toEqual([29, 31, 32, 35, 36, 37]);
+  });
+
+  test("a sheet with no allowed plan recommends nothing", () => {
+    const untested = recommendAssistant(base(), [row("chatgpt", "business")]);
+    expect(untested.recommended).toBeNull();
+    expect(untested.paidNote).toBe(false);
+    expect(untested.reasons.map((r) => r.text_en).join(" ")).toBe("No plan fits — see the table");
+    expect(untested.reasons.map((r) => r.text_et).join(" ")).toBe("Ühtegi sobivat paketti ei leitud — vaata tabelit");
+
+    const ineligible = recommendAssistant(base(), [row("chatgpt", "free")]);
+    expect(ineligible.recommended).toBeNull();
+    expect(ineligible.paidNote).toBe(false);
+    expect(ineligible.start).toBeUndefined();
+    expect(ineligible.reasons.map((r) => r.text_en).join(" ")).toBe("No plan fits — see the table");
   });
 });
