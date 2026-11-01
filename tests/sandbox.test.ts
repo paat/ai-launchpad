@@ -482,6 +482,38 @@ test("sandbox consent is refused without a Google allowlist and creates no grant
   expect(s.db.prepare("SELECT owner_id FROM oauth_pending").get()).toEqual({ owner_id: null });
 }, { production: false, googleAllowedSubjects: undefined }));
 
+test("logged-out /uhenda links to the sample workspace; a Google owner and a sandbox owner do not", async () => withServer(async (s) => {
+  s.cfg.baseUrl = "https://huppelaud.example";
+  s.cfg.allowedHosts = ["huppelaud.example"];
+  const et = await publicRequest(s, new Map(), "GET", "/uhenda");
+  expect(et.status).toBe(200);
+  expect(et.body).toContain('data-state="waiting"');
+  expect(et.body).toContain('class="tap-link" href="/proovi"');
+  expect(et.body).toContain("Proovi näidistööruumis");
+  expect(et.body).not.toContain("Try the sample workspace");
+  const en = await publicRequest(s, new Map(), "GET", "/uhenda?lang=en");
+  expect(en.status).toBe(200);
+  expect(en.body).toContain('class="tap-link" href="/proovi"');
+  expect(en.body).toContain("Try the sample workspace");
+  expect(en.body).not.toContain("Proovi näidistööruumis");
+  const jar = new Map<string, string>();
+  const form = await publicRequest(s, jar, "GET", "/proovi");
+  expect((await publicRequest(s, jar, "POST", "/proovi", { preauth: field(form.body, "preauth") })).status).toBe(302);
+  const sample = await publicRequest(s, jar, "GET", "/uhenda");
+  expect(sample.body).toContain('data-state="sample"');
+  expect(sample.body).not.toContain('href="/proovi"');
+  expect(sample.body).not.toContain("Proovi näidistööruumis");
+  expect(sample.body).not.toContain("Try the sample workspace");
+  const g = google(s);
+  const googleHtml = await publicRequest(s, g.browser.cookies, "GET", "/uhenda");
+  expect(googleHtml.body).toContain('data-state="waiting"');
+  expect(googleHtml.body).not.toContain('href="/proovi"');
+  expect(googleHtml.body).not.toContain("Proovi näidistööruumis");
+  const googleEn = await publicRequest(s, g.browser.cookies, "GET", "/uhenda?lang=en");
+  expect(googleEn.body).not.toContain('href="/proovi"');
+  expect(googleEn.body).not.toContain("Try the sample workspace");
+}));
+
 test("public HTTPS sandbox /uhenda is the sample state without an open-assistant link; a Google owner still sees it", async () => withServer(async (s) => {
   s.cfg.baseUrl = "https://huppelaud.example";
   s.cfg.allowedHosts = ["huppelaud.example"];
