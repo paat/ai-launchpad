@@ -171,7 +171,7 @@ test("/vali result screens name one assistant, the next step, and a download onl
 });
 
 test("unknown /vali query values fall back to step 1 and are not echoed", async () => {
-  for (const q of ["uses=zz-secret-token", "uses=%3Cscript%3E", "uses=chatgpt&business=zz-bad-biz", "uses=chatgpt&business=", "business=yes"]) {
+  for (const q of ["uses=zz-secret-token", "uses=%3Cscript%3E", "business=yes"]) {
     const html = await (await get(`/vali?${q}`)).text();
     expect(html).toContain("Kas sa juba kasutad AI-assistenti?");
     expect(html).not.toContain("zz-secret-token");
@@ -179,6 +179,10 @@ test("unknown /vali query values fall back to step 1 and are not echoed", async 
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("Kasuta Claude");
   }
+  const badBiz = await (await get("/vali?uses=chatgpt&business=zz-bad-biz")).text();
+  expect(badBiz).toContain("Kas sinu ettevõte maksab ChatGPT Businessi eest?");
+  expect(badBiz).not.toContain("zz-bad-biz");
+  expect(badBiz).not.toContain("Kasuta Claude");
   const extra = await (await get("/vali?uses=claude&business=zz-secret-token")).text();
   expect(extra).toContain("Kasuta Claude&#39;i");
   expect(extra).not.toContain("zz-secret-token");
@@ -186,6 +190,21 @@ test("unknown /vali query values fall back to step 1 and are not echoed", async 
   expect(authed.status).toBe(200);
   expect(authed.headers.get("set-cookie")).toBeNull();
   expect(await authed.text()).toContain("Kas sa juba kasutad AI-assistenti?");
+});
+
+test("an empty or invalid ChatGPT business answer re-asks that question and sets no cookie", async () => {
+  for (const path of ["/vali?uses=chatgpt&business=", "/vali?uses=chatgpt&business=foo"]) {
+    const res = await get(path);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("set-cookie")).toBeNull();
+    const html = await res.text();
+    expect(html).toContain("Kas sinu ettevõte maksab ChatGPT Businessi eest?");
+    expect(html).toContain('href="/vali?uses=chatgpt&amp;business=yes"');
+    // Shell class names contain "foot" (footer, ticket-foot). The rejected answer "foo" must not be echoed.
+    expect(html.replaceAll("foot", "")).not.toContain("foo");
+    expect(html).not.toContain("business=foo");
+    expect(html).not.toContain("Kas sa juba kasutad AI-assistenti?");
+  }
 });
 
 test("landing and /uhenda link everyone to /vali", async () => {
