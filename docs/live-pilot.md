@@ -65,8 +65,8 @@ synthetic data only. Not a Pro/Team/Enterprise claim.
   4 calls / $8 allocated. Sole ledger and max-5-attempts rules were
   unchanged at that time; since 2026-10-29 (issue #20) new attempts reserve
   per request under the then $10 ceiling, with a 1,000-attempt backstop.
-  That backstop is unchanged and, at the $100 ceiling, binds first for
-  realistic reservations (see [model-quality.md](model-quality.md)).
+  That 1,000 figure is historical. The backstop is now 10,000
+  (see [model-quality.md](model-quality.md)).
 
 ## Release evidence and recovery limits
 

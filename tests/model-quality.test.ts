@@ -166,18 +166,25 @@ describe("model quality harness (Baseten)", () => {
     a.close(); b.close();
   });
 
-  test("attempt backstop is 1000; it binds before the USD 100 ceiling for real reservations", { timeout: 30_000 }, async () => {
-    expect(ABSOLUTE_MAX_ATTEMPTS).toBe(1000);
+  test("attempt backstop is 10000 and still refuses at the limit", { timeout: 30_000 }, async () => {
+    expect(ABSOLUTE_MAX_ATTEMPTS).toBe(10_000);
     expect(ABSOLUTE_CAP_MICRO_USD).toBe(100_000_000);
+    const jobs = ["setup_guidance", "classify_friction", "classify_unmet_need", "intake_extract", "intake_plan"] as const;
+    const smallest = Math.min(...jobs.map((job) => reservationMicroUsd(job, "a")));
+    expect(smallest).toBe(reservationMicroUsd("intake_extract", "a"));
+    expect(smallest).toBe(8_896);
+    // 10,000 × the cheapest reservation is USD 88.96, still under the ceiling.
+    expect(ABSOLUTE_MAX_ATTEMPTS * smallest).toBe(88_960_000);
+    expect(ABSOLUTE_MAX_ATTEMPTS * smallest).toBeLessThan(ABSOLUTE_CAP_MICRO_USD);
+    for (const job of jobs) {
+      if (job === "intake_extract") continue;
+      expect(ABSOLUTE_MAX_ATTEMPTS * reservationMicroUsd(job, "a")).toBeGreaterThan(ABSOLUTE_CAP_MICRO_USD);
+    }
     const tiny = ModelQualityLedger.open(":memory:");
-    tiny.db.transaction(() => {
-      for (let i = 0; i < 1000; i++) { tiny.reserve(`t-${i}`, "setup_guidance", `h-${i}`, 1); tiny.finalize(`t-${i}`, { status: "completed" }); }
-    })();
-    expect(() => tiny.reserve("t-1000", "setup_guidance", "h", 1)).toThrow(/cap or attempt limit/);
+    const ins = tiny.db.prepare("INSERT INTO mq_attempts(request_id,payload_hash,job,status,allocated_micro_usd,created_at,updated_at) VALUES(?, 'h','intake_extract','completed',1,'t','t')");
+    tiny.db.transaction(() => { for (let i = 0; i < ABSOLUTE_MAX_ATTEMPTS; i++) ins.run(`t-${i}`); })();
+    expect(() => tiny.reserve("t-over", "intake_extract", "h-over", 1)).toThrow(/cap or attempt limit/);
     tiny.close();
-    // 1,000 × 40,836 = 40,836,000 micro-USD, under the USD 100 ceiling, so the backstop binds first.
-    expect(ABSOLUTE_MAX_ATTEMPTS * ALLOC).toBe(40_836_000);
-    expect(ABSOLUTE_MAX_ATTEMPTS * ALLOC).toBeLessThan(ABSOLUTE_CAP_MICRO_USD);
     const ledger = ModelQualityLedger.open(":memory:");
     expect(ledger.ceilingMicroUsd).toBe(100_000_000);
     ledger.reserve("fill", "setup_guidance", "h-fill", 100_000_000);

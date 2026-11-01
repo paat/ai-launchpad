@@ -69,10 +69,12 @@ export const ABSOLUTE_CAP_MICRO_USD = 100_000_000;
 // unchanged, and a lower requested cap is still refused.
 const LEGACY_CAP_MICRO_USD = 10_000_000;
 const LEGACY_CAP_RAISED_ON = "2026-11-01";
-// Backstop only. Realistic reservations are under about USD 0.05, so 1,000
-// attempts stay under the USD 100 ceiling and this backstop binds first.
-// Owner decision 1 Nov 2026 left the backstop unchanged.
-export const ABSOLUTE_MAX_ATTEMPTS = 1000;
+// Backstop only. 10,000 is the all-time attempt limit. The cheapest
+// reservation in this repo (intake_extract, one character) is 8,896
+// micro-USD, and 10,000 × that is 88,960,000 — still under the USD 100
+// ceiling — so this backstop can still bind first for that call.
+// Every other job's one-character reservation × 10,000 exceeds USD 100.
+export const ABSOLUTE_MAX_ATTEMPTS = 10_000;
 
 export type AttemptStatus =
   | "pending"

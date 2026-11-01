@@ -120,9 +120,11 @@ model. Rules:
   opened, recording `ceiling_raised_from=10000000` and
   `ceiling_raised_on=2026-11-01`. Any other existing ceiling still cannot
   be changed, and a ceiling cannot be lowered. A backstop of at most
-  1,000 distinct attempts (raised from 5 on 2026-10-29) also applies.
-  Realistic per-attempt reservations are under about $0.05, so that
-  backstop binds before $100. The operator may create a ledger with a
+  10,000 distinct attempts also applies (5 until 2026-10-29, then 1,000).
+  For every job except a one-character `intake_extract` (reservation
+  $0.008896; 10,000 × that is $88.96), 10,000 × a one-character reservation
+  exceeds $100, so the dollar ceiling binds first. The cheapest call can
+  still hit the attempt backstop first. The operator may create a ledger with a
   lower ceiling (including $0) but cannot raise it above $100 except for
   that one-time $10 → $100 raise.
 - No evasion: there is no daily reset, no deletion/reset flow, and no
@@ -206,9 +208,9 @@ cap was $10 with at most 5 distinct attempts on the same ledger. Aggregate
 owner-only pilot (see [live-pilot.md](live-pilot.md)): 4 real calls total
 including these two, $8 allocated of the then $10 cap, usage estimate $0.014840
 (not billing). Since 2026-10-29 new attempts reserve per request (above)
-and the attempt backstop is 1,000; those $8 allocations stay. On 1 Nov
-2026 the owner raised that ledger's ceiling from $10 to $100. No new live
-calls were made for this docs update.
+and the attempt backstop was then 1,000; those $8 allocations stay. On 1 Nov
+2026 the owner raised that ledger's ceiling from $10 to $100. The attempt
+backstop is now 10,000. No new live calls were made for this docs update.
 
 ## Public guidance cards (explicit opt-in product slice; piloted owner-only, not general availability)
 
@@ -294,8 +296,9 @@ second ledger, store or cap exists.
   `classification_failed` state, never a fabricated classification.
 - `max_tokens` 512; reservation per the formula above (about $0.013 to $0.027).
   On the production ledger (4 × $2 used) the ceiling is $100 since 1 Nov
-  2026, so the remaining headroom is $92. The 1,000-attempt backstop binds
-  before that dollar ceiling for these reservations.
+  2026, so the remaining headroom is $92. The attempt backstop is 10,000.
+  These classifications reserve about $0.013 to $0.027, so 10,000 of them
+  exceed $100 and the dollar ceiling binds first.
 - Limits: the tool accepts at most 20 needs per owner per day and 200 in
   total; at most 10 classifications per owner per day (the rest wait,
   visibly); one in flight globally (the ledger's pending rule) and a
