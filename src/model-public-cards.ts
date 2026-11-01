@@ -97,6 +97,10 @@ export const CHOOSER_TOPICS: readonly PublicTopic[] = [
     en: "Recommend Claude because this person already uses Claude.",
     et: "Soovita Claude'i, sest see inimene juba kasutab Claude'i.",
   }),
+  chooserTopic("choose-already_grok", { en: "Already using Grok", et: "Juba kasutab Groki" }, {
+    en: "Recommend Grok Bot because this person already uses Grok. Approvals were tested on Grok Bot, 1 Nov 2026.",
+    et: "Soovita Grok Boti, sest see inimene juba kasutab Groki. Kinnitused on Grok Botis proovitud 1.11.2026.",
+  }),
   chooserTopic("choose-chatgpt_business", { en: "ChatGPT Business", et: "ChatGPT Business" }, {
     en: "Recommend ChatGPT because this person's company pays for ChatGPT Business, so approvals work there.",
     et: "Soovita ChatGPT-d, sest selle inimese ettevõte maksab ChatGPT Businessi eest, nii et kinnitused seal töötavad.",

@@ -2,7 +2,7 @@ import type { Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createApp, type Config } from "../src/app.js";
 import { openDb } from "../src/db.js";
-import { esc, shell, loginBody, tanaBody, deadlinesList, approvalsListBody, activityBody, connectionBody, setupBody, landingBody, connectBody, assistantGuidePrompt, approvalCardBody, fmtEur, fmtDeadline, deadlineParts, fmtPeriod, fmtWhen, type TanaOpts } from "../src/views.js";
+import { esc, shell, loginBody, tanaBody, deadlinesList, approvalsListBody, activityBody, connectionBody, setupBody, landingBody, connectBody, assistantGuidePrompt, grokPasteSentence, approvalCardBody, fmtEur, fmtDeadline, deadlineParts, fmtPeriod, fmtWhen, type TanaOpts } from "../src/views.js";
 import { computeObligations } from "../src/obligations.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import type { ApprovalRow, StandingRule } from "../src/mcp.js";
@@ -691,6 +691,75 @@ describe("landing and connect", () => {
     expect(await link("claude", "en")).toBe("/uhenda/ava?a=claude&lang=en");
   });
 
+  test("connect: Grok Bot is a third choice with the paste sentence and no assistant deep link", async () => {
+    const host = "launchpad.example.com";
+    const sentence = grokPasteSentence("et", host);
+    const enSentence = grokPasteSentence("en", host);
+    expect(sentence).toBe("Tahan, et AI-hüppelaud aitaks mu ettevõtte paberitöödega. Ühenda see endaga: launchpad.example.com");
+    expect(enSentence).toBe("I want AI Launchpad to help with my company's paperwork. Connect it to you: launchpad.example.com");
+    const html = await connectBody({ lang: "et", baseUrl: `https://${host}`, assistant: "grok", state: { kind: "anon" }, owner: false });
+    const nav = html.match(/<nav class="choice"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    expect(nav.match(/<a /g)).toHaveLength(3);
+    expect(nav).toContain('<a href="/uhenda?a=chatgpt">ChatGPT</a>');
+    expect(nav).toContain('<a href="/uhenda?a=claude">Claude</a>');
+    expect(nav).toContain('<a href="/uhenda?a=grok" aria-current="true">Grok Bot</a>');
+    expect(nav.match(/aria-current="true"/g)).toHaveLength(1);
+    expect(html).toContain(sentence);
+    expect(html).toContain("Ava Grok Bot ja kleebi see üks lause.");
+    expect(html).toContain("Kinnitused on Grok Botis proovitud 1.11.2026.");
+    expect(html).toContain('id="copy-grok"');
+    expect(html).toContain(">Kopeeri lause</button>");
+    expect(html).toContain(`data-copy-text="${sentence}"`);
+    expect(html).toContain("Sinu ChatGPT, Claude või Grok Bot näeb sinu tähtaegu");
+    expect(html).toContain("<svg");
+    expect(html).toContain("Kood avab selle lehe");
+    const hero = html.slice(html.indexOf('class="card connect-hero"'), html.indexOf('id="connect-status"'));
+    expect(hero).toContain(sentence);
+    expect(hero).not.toContain("chatgpt.com");
+    expect(hero).not.toContain("claude.ai");
+    expect(hero).not.toContain("?q=");
+    expect(hero).not.toContain("/uhenda/ava");
+    expect(hero).not.toContain("/mcp");
+    expect(hero).not.toMatch(/\b(MCP|OAuth|connector|endpoint|pakett|plan|Cursor)\b/i);
+    const visible = html.replace(/<svg[\s\S]*?<\/svg>/g, "");
+    expect(visible).not.toContain("chatgpt.com");
+    expect(visible).not.toContain("claude.ai");
+    expect(visible).not.toContain("?q=");
+    expect(visible).not.toContain("/uhenda/ava");
+
+    const en = await connectBody({ lang: "en", baseUrl: `https://${host}`, assistant: "grok", state: { kind: "waiting" }, owner: true });
+    expect(en).toContain("Open the Grok Bot app and paste this one sentence.");
+    expect(en).toContain("Approvals tested on Grok Bot, 1 Nov 2026.");
+    expect(en).toContain(">Copy the sentence</button>");
+    expect(en).toContain(`data-copy-text="${esc(enSentence)}"`);
+    expect(en).toContain('<pre id="tekst">');
+    expect(en).toContain("Your ChatGPT, Claude or Grok Bot sees your deadlines");
+    expect(en).toContain('<a href="/uhenda?a=grok" aria-current="true">Grok Bot</a>');
+    expect(en).toContain("Waiting for Grok Bot to connect…");
+    expect(en).not.toContain("Show the text");
+    expect(en).not.toContain('class="step-title"');
+    expect(en.replace(/<svg[\s\S]*?<\/svg>/g, "")).not.toContain("chatgpt.com");
+    expect(en.replace(/<svg[\s\S]*?<\/svg>/g, "")).not.toContain("claude.ai");
+
+    const expanded = await connectBody({ lang: "et", baseUrl: `https://${host}`, assistant: "grok", state: { kind: "anon" }, owner: false, expanded: true });
+    expect(expanded).toContain(sentence);
+    expect(expanded).not.toContain('class="step-title"');
+    expect(expanded).not.toContain('id="ise"');
+
+    const local = await connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "grok", state: { kind: "anon" }, owner: false });
+    expect(local).toContain('<a href="/uhenda?a=grok" aria-current="true">Grok Bot</a>');
+    expect(local).not.toContain("Ühenda see endaga: 127.0.0.1");
+    expect(local).not.toContain("/uhenda/ava");
+
+    const gpt = await connectBody({ lang: "et", baseUrl: `https://${host}`, assistant: "chatgpt", state: { kind: "anon" }, owner: false });
+    const gptNav = gpt.match(/<nav class="choice"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    expect(gptNav.match(/<a /g)).toHaveLength(3);
+    expect(gptNav).toContain('<a href="/uhenda?a=chatgpt" aria-current="true">ChatGPT</a>');
+    expect(gptNav).toContain('<a href="/uhenda?a=claude">Claude</a>');
+    expect(gptNav).toContain('<a href="/uhenda?a=grok">Grok Bot</a>');
+    expect(gptNav.match(/aria-current="true"/g)).toHaveLength(1);
+  });
+
   test("connect: default hides the prompt and the steps behind naita=1 links; expanded keeps them open (tribunal T-004)", async () => {
     const endpoint = "https://launchpad.example.com/mcp";
     const closed = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
@@ -847,6 +916,29 @@ describe("/uhenda/ava", () => {
     const fixed = new URL(await location("/uhenda/ava?a=https://evil.example/phish"));
     expect(fixed.origin).toBe("https://claude.ai");
     expect(fixed.pathname).toBe("/new");
+  });
+
+  test("/uhenda/ava?a=grok does not redirect to Claude or ChatGPT", async () => {
+    for (const path of ["/uhenda/ava?a=grok", "/uhenda/ava?a=grok&lang=en"]) {
+      const r = await fetch(`${base}${path}`, { redirect: "manual" });
+      const loc = r.headers.get("location") ?? "";
+      expect(r.status).toBe(302);
+      expect(loc).not.toMatch(/claude\.ai|chatgpt\.com/);
+      const target = new URL(loc, base);
+      expect(target.origin).toBe(new URL(base).origin);
+      expect(target.pathname).toBe("/uhenda");
+      expect(target.searchParams.get("a")).toBe("grok");
+      expect(await r.text()).not.toMatch(/claude\.ai|chatgpt\.com/);
+    }
+    const en = await fetch(`${base}/uhenda/ava?a=grok&lang=en`, { redirect: "manual" });
+    expect(new URL(en.headers.get("location") ?? "", base).searchParams.get("lang")).toBe("en");
+    const et = await fetch(`${base}/uhenda/ava?a=grok`, { redirect: "manual" });
+    expect(new URL(et.headers.get("location") ?? "", base).searchParams.get("lang")).toBeNull();
+    const page = await (await fetch(`${base}/uhenda?a=grok`)).text();
+    expect(page).toContain('<a href="/uhenda?a=grok" aria-current="true">Grok Bot</a>');
+    expect(page).not.toContain('aria-current="true">Claude');
+    expect(page).not.toContain("chatgpt.com");
+    expect(page).not.toContain("claude.ai");
   });
 
   test("a local server hides the open link and the prompt; naita=1 shows the do-it-yourself steps", async () => {

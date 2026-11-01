@@ -900,7 +900,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const kept: Record<string, string> = { uses };
     const business = uses === "chatgpt" ? parseBusiness(req.query.business) : null;
     if (business) kept.business = business;
-    show(choice.assistant === "claude" ? "Kasuta Claude'i" : "Kasuta ChatGPT-d", choice.assistant === "claude" ? "Use Claude" : "Use ChatGPT", chooserBody({
+    const titles = { claude: ["Kasuta Claude'i", "Use Claude"], chatgpt: ["Kasuta ChatGPT-d", "Use ChatGPT"], grok: ["Kasuta Grok Boti", "Use Grok Bot"] } as const;
+    const [titleEt, titleEn] = titles[choice.assistant];
+    show(titleEt, titleEn, chooserBody({
       lang: l, step: "result", assistant: choice.assistant, reason: reason.text[l], source: reason.source[l],
       downloadHref: offerDownload(uses, choice.assistant), connectHref, muse,
     }), kept);
@@ -911,6 +913,11 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   app.get("/uhenda/ava", (req, res) => {
     const s = session(req);
     if (s && (db.prepare("SELECT kind FROM owners WHERE id=?").get(s.owner_id) as { kind: string } | undefined)?.kind === "sandbox") return res.redirect("/uhenda");
+    // Grok Bot has no verified link that opens it with a message filled in. Never fall through to Claude.
+    if (req.query.a === "grok") {
+      const l = langOf(res);
+      return res.redirect(`/uhenda?a=grok${l === "en" ? "&lang=en" : ""}`);
+    }
     const assistant = req.query.a === "chatgpt" ? "chatgpt" : "claude";
     const l = langOf(res);
     const endpoint = `${String(cfg.baseUrl ?? "").replace(/\/+$/, "")}/mcp`;
@@ -948,7 +955,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const sandboxOwner = kind === "sandbox";
     const st = s ? getState(db, s.owner_id) : null, assessment = st?.assessment ?? null;
     const feed = s && !sandboxOwner ? db.prepare("SELECT created_at FROM calendar_feeds WHERE owner_id=?").get(s.owner_id) as { created_at: string } | undefined : undefined;
-    const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : "claude", state, owner: !!s && !sandboxOwner, sandbox: sandboxOwner, expanded: req.query.naita === "1", ...(s ? { ...(sandboxOwner ? {} : { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null } }), standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, st!, await ownerDeadlines(assessment)) } : {}) });
+    const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : req.query.a === "grok" ? "grok" : "claude", state, owner: !!s && !sandboxOwner, sandbox: sandboxOwner, expanded: req.query.naita === "1", ...(s ? { ...(sandboxOwner ? {} : { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null } }), standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, st!, await ownerDeadlines(assessment)) } : {}) });
     res.type("html").send(shell({ title: tr(l)("Ühenda", "Connect"), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, sample: isSampleKind(kind), toggle: toggleHref(req, l), body,
       // Zero JS: while an owner waits for the first assistant contact, the page reloads itself.
       head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "", ...sandboxGuides(kind) }));

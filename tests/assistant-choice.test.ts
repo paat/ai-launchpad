@@ -36,7 +36,7 @@ test("chooseAssistant covers every rule and never guesses", () => {
     }
   }
   expect(CHOOSER_TOPICS.map((t) => t.id)).toEqual([
-    "choose-already_claude", "choose-chatgpt_business", "choose-chatgpt_no_approvals", "choose-other_untested", "choose-none",
+    "choose-already_claude", "choose-already_grok", "choose-chatgpt_business", "choose-chatgpt_no_approvals", "choose-other_untested", "choose-none",
   ]);
   for (const topic of CHOOSER_TOPICS) {
     expect(topic.job).toBe("setup_guidance");
@@ -168,6 +168,51 @@ test("/vali result screens name one assistant, the next step, and a download onl
   expect(enHave).not.toContain("claude.ai/download");
   const enUnsure = await (await get("/vali?uses=chatgpt&business=unsure&lang=en")).text();
   expect(enUnsure).toContain("Claude&#39;s free plan does approvals");
+});
+
+test("a Grok user is recommended Grok Bot; none and unsure stay on Claude", async () => {
+  expect(chooseAssistant({ uses: "grok" })).toEqual({ assistant: "grok", reason: "already_grok" });
+  expect(chooseAssistant({ uses: "none" })).toEqual({ assistant: "claude", reason: "none" });
+  expect(chooseAssistant({ uses: "chatgpt", business: "unsure" })).toEqual({ assistant: "claude", reason: "chatgpt_no_approvals" });
+  expect(chooseAssistant({ uses: "chatgpt", business: "no" })).toEqual({ assistant: "claude", reason: "chatgpt_no_approvals" });
+  expect(parseUses("grok")).toBe("grok");
+  expect(offerDownload("grok", "grok")).toBeNull();
+  const reason = REASONS.already_grok;
+  expect(reason.assistant).toBe("grok");
+  expect(reason.text.en).toBe("You already use Grok. Stay with it.");
+  expect(reason.text.et).toBe("Sa juba kasutad Groki. Jää selle juurde.");
+  expect(reason.source.en).toBe("Source: approvals were tested on Grok Bot, 1 Nov 2026.");
+  expect(reason.source.et).toBe("Allikas: Grok Botis on kinnitused proovitud 1.11.2026.");
+  expect(`${reason.text.en} ${reason.text.et} ${reason.source.en} ${reason.source.et}`).not.toMatch(/\b(plan|Free|Business|MCP|connector|API|OAuth|Cursor)\b/);
+  expect(CHOOSER_TOPICS.map((t) => t.id)).toContain("choose-already_grok");
+  const topic = CHOOSER_TOPICS.find((t) => t.id === "choose-already_grok");
+  expect(topic?.input.en).toContain("1 Nov 2026");
+  expect(topic?.input.et).toContain("1.11.2026");
+
+  const step1 = await (await get("/vali")).text();
+  expect(step1).toContain('href="/vali?uses=grok"');
+  expect(step1).toContain(">Grok</a>");
+  const et = await (await get("/vali?uses=grok")).text();
+  expect(et).toContain("<h1>Kasuta Grok Boti</h1>");
+  expect(et).toContain("Sa juba kasutad Groki. Jää selle juurde.");
+  expect(et).toContain("Allikas: Grok Botis on kinnitused proovitud 1.11.2026.");
+  expect(et).toContain('href="/uhenda?a=grok"');
+  expect(et).not.toContain("Hangi see");
+  expect(et).not.toContain("claude.ai");
+  expect(et).not.toContain("chatgpt.com");
+  expect(et).not.toContain("Cursor");
+  const en = await (await get("/vali?uses=grok&lang=en")).text();
+  expect(en).toContain("<h1>Use Grok Bot</h1>");
+  expect(en).toContain("You already use Grok. Stay with it.");
+  expect(en).toContain("Source: approvals were tested on Grok Bot, 1 Nov 2026.");
+  expect(en).toContain('href="/uhenda?a=grok&amp;lang=en"');
+  expect(en).not.toContain("Get it");
+  const none = await (await get("/vali?uses=none")).text();
+  expect(none).toContain("<h1>Kasuta Claude&#39;i</h1>");
+  expect(none).toContain("Alusta Claude&#39;iga");
+  const unsure = await (await get("/vali?uses=chatgpt&business=unsure")).text();
+  expect(unsure).toContain("<h1>Kasuta Claude&#39;i</h1>");
+  expect(unsure).toContain("kinnitused vajavad ChatGPT Businessi");
 });
 
 test("unknown /vali query values fall back to step 1 and are not echoed", async () => {
