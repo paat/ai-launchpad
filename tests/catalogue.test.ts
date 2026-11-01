@@ -156,10 +156,10 @@ describe("public catalogue", () => {
   });
 });
 
-test("/uhenda links to the catalogue once the assistant is connected", () => {
+test("/uhenda links to the catalogue once the assistant is connected", async () => {
   const body = (kind: "connected" | "waiting") => connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "claude", owner: true, state: kind === "connected" ? { kind, who: "Claude", at: "2026-10-30T10:00:00Z" } : { kind } });
-  expect(body("connected")).toContain('<a class="tap-link" href="/kataloog?g=raamatupidamine">Järgmine samm: ühenda oma raamatupidamine → Kataloog</a>');
-  expect(body("waiting")).not.toContain("/kataloog?g=");
+  expect(await body("connected")).toContain('<a class="tap-link" href="/kataloog?g=raamatupidamine">Järgmine samm: ühenda oma raamatupidamine → Kataloog</a>');
+  expect(await body("waiting")).not.toContain("/kataloog?g=");
 });
 
 describe("catalogue polish (#52)", () => {

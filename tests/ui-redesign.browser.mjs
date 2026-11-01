@@ -29,6 +29,20 @@ const assessment = assessmentSchema.parse({
   next_action: { title: "Check the urgent filing", rationale: "It may carry a deadline.", savings_basis: "unknown", uncertainty: "High.", needs_owner: true },
 });
 const { NOW, mariDeadlines, longApproval, pendingApproval, longLetterApproval, approvedApproval, demoAssessment, twoDeadlines, tanaHandover, week2, uhendaHandover, preparedProgress } = NAIDIS;
+const uhendaWaiting = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
+const uhendaHoBody = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: CSRF, rules: [] }, handover: uhendaHandover });
+const uhendaLocalBody = await connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "chatgpt", state: { kind: "anon" }, owner: false });
+const uhendaExpanded = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true, expanded: true });
+assert.match(uhendaWaiting, /<a class="tap-link" href="\/uhenda\?a=chatgpt&naita=1#tekst">Näita teksti<\/a>/);
+assert.match(uhendaWaiting, /<a class="tap-link" href="\/uhenda\?a=chatgpt&naita=1#ise">Tee ise, ilma juhendita<\/a>/);
+assert.equal(uhendaWaiting.includes("<pre"), false, "default /uhenda has no prompt <pre>");
+assert.equal(uhendaWaiting.includes('class="step-title"'), false, "default /uhenda has no steps list");
+assert.match(uhendaLocalBody, /<a class="tap-link" href="\/uhenda\?a=chatgpt&naita=1#ise">Tee ise, ilma juhendita<\/a>/);
+assert.equal(uhendaLocalBody.includes("<pre"), false);
+assert.equal(uhendaLocalBody.includes("#tekst"), false, "local /uhenda has no prompt link");
+assert.match(uhendaExpanded, /<pre id="tekst">/);
+assert.match(uhendaExpanded, /<section class="card" id="ise">[\s\S]*class="step-title"/);
+assert.match(uhendaHoBody, /<a class="tap-link" href="\/uhenda\?a=claude&naita=1#tekst">Näita teksti<\/a>/);
 const tana = (a, extra = {}) => tanaBody({ lang: "et", csrf: CSRF, sample: true, label: "Synthetic OÜ", assessment: a, coverage: computeCoverage(a), assessedAt: a ? "2026-10-28T10:00:00Z" : null, exclusions: [], approvals: [], progress: [], deadlines: null, needs: [], reportCount: 1, now: NOW, ...extra });
 const pageHtml = {
   "connection-https": () =>
@@ -59,11 +73,11 @@ const pageHtml = {
   "landing-en": () =>
     shell({ title: "Your AI assistant does the office work", active: "none", csrf: "", lang: "en", body: landingBody({ lang: "en", demo: true }) }),
   uhenda: () =>
-    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true }) }),
+    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: uhendaWaiting }),
   "uhenda-ho": () =>
-    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, sample: true, body: connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: CSRF, rules: [] }, handover: uhendaHandover }) }),
+    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, sample: true, body: uhendaHoBody }),
   "uhenda-local": () =>
-    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "chatgpt", state: { kind: "anon" }, owner: false }) }),
+    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: uhendaLocalBody }),
   "approval-receipt-long": () =>
     shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: longApproval, lang: "et", sample: true, now: NOW }) }),
   "approval-receipt-strip": () =>
@@ -414,6 +428,14 @@ try {
     await page.locator("#kaest-ara").scrollIntoViewIfNeeded();
     await page.locator("#kaest-ara").screenshot({ path: path.join(T2_SHOTS, `t5-uhendus-${vp.width}.png`) });
     geometry[`t5uhendus${vp.width}`] = ho;
+  }
+
+  // Public HTTPS /uhenda: a phone cannot scan its own screen, so the QR (.qr-card, display:none ≤719px) is hidden at 390 and visible at 1280.
+  for (const [width, height, visible] of [[390, 844, false], [1280, 800, true]]) {
+    await page.setViewportSize({ width, height });
+    await page.setContent(pageHtml.uhenda());
+    const shown = await page.locator(".qr-card").isVisible();
+    assert.equal(shown, visible, `public-HTTPS /uhenda @${width}: .qr ${visible ? "visible" : "not visible"}`);
   }
 
   // #63 wow: after „Saadetud” the receipt carries the „Käest ära” strip, so the approval and the progress show in one shot.

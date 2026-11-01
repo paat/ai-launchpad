@@ -29,21 +29,31 @@ test("public landing: what the product does, then Connect leads to /uhenda", asy
 test("/uhenda: Claude preselected (QA m11), ChatGPT one tap away, no phone hand-off without public HTTPS, no overflow, sign-in chip for visitors", async ({ page }) => {
   await page.goto("/uhenda");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Ühenda oma assistent");
-  // „Kõige lihtsam algus on Claude”, so the Claude tab is the one selected.
-  await expect(page.getByRole("link", { name: "Claude" })).toHaveAttribute("aria-current", "true");
-  await expect(page.getByRole("link", { name: "ChatGPT" })).not.toHaveAttribute("aria-current", "true");
-  await expect(page.getByText("Testitud Claude'i tasuta paketis (30.10.2026).", { exact: false })).toBeVisible();
-  // The local server has no public HTTPS address, so the phone hand-off would not work: it is not offered (QA D-14).
+  // „Lihtsaim algus: Claude”, so the Claude tab is the one selected.
+  await expect(page.getByRole("link", { name: "Claude", exact: true })).toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("link", { name: "ChatGPT", exact: true })).not.toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("link", { name: "Ava Claude — juhend on juba sees" })).toHaveCount(0);
+  // The local server has no public HTTPS address, so there is no open button, no prompt, no QR and no phone-URL card (QA D-14).
   await expect(page.getByRole("heading", { name: "Jätka telefonis" })).toHaveCount(0);
-  await expect(page.getByText("Avalik HTTPS-aadress pole selles serveris veel seadistatud", { exact: false })).toBeVisible();
+  await expect(page.locator(".qr-card")).toHaveCount(0);
+  await expect(page.getByText("Näita teksti")).toHaveCount(0);
+  await expect(page.locator(".connect-hero").getByText("Avalik HTTPS-aadress pole selles serveris veel seadistatud", { exact: false })).toBeVisible();
   await expect(page.locator("#connect-status")).toContainText("Logi sisse");
   expect(await page.locator('meta[http-equiv="refresh"]').count()).toBe(0);
   await noOverflow(page);
   await page.screenshot({ path: `${SHOTS}/uhenda-390.png`, fullPage: true });
+  // The old steps stay behind „Tee ise”; ?naita=1 keeps them open across a reload.
+  // The plan line is only in the public-HTTPS hero, so this local server does not show it.
+  await page.getByRole("link", { name: "Tee ise, ilma juhendita" }).click();
+  await expect(page).toHaveURL(/\/uhenda\?a=claude&naita=1#ise$/);
+  await expect(page.locator("#ise")).toBeVisible();
+  await expect(page.getByText("Testitud Claude'i tasuta paketis (30.10.2026).", { exact: false })).toHaveCount(0);
   await expect(page.getByText("Vajuta Connect, logi sisse ja kinnita. Kui Claude küsib tööriista luba, vajuta Allow.")).toBeVisible();
-  await page.getByRole("link", { name: "ChatGPT" }).click();
-  await expect(page.getByRole("link", { name: "ChatGPT" })).toHaveAttribute("aria-current", "true");
-  await expect(page.getByText("Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", { exact: false })).toBeVisible();
+  await page.getByRole("link", { name: "ChatGPT", exact: true }).click();
+  await expect(page.getByRole("link", { name: "ChatGPT", exact: true })).toHaveAttribute("aria-current", "true");
+  await page.getByRole("link", { name: "Tee ise, ilma juhendita" }).click();
+  await expect(page).toHaveURL(/\/uhenda\?a=chatgpt&naita=1#ise$/);
+  await expect(page.getByText("Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", { exact: false })).toHaveCount(0);
 });
 
 test("/uhenda for a sample owner: „Käest ära” before the setup steps, no amber local-setup notice (QA M2)", async ({ page }) => {
@@ -51,8 +61,8 @@ test("/uhenda for a sample owner: „Käest ära” before the setup steps, no a
   await page.getByRole("button", { name: /Mari Disain/ }).click();
   await page.goto("/uhenda");
   const y = async (sel: string) => (await page.locator(sel).boundingBox())!.y;
-  expect(await y("#kaest-ara")).toBeLessThan(await y("#steps-h"));
-  await expect(page.getByText("Avalik HTTPS-aadress pole selles serveris veel seadistatud", { exact: false })).toBeVisible();
+  expect(await y("#kaest-ara")).toBeLessThan(await y('a[href="/uhenda?a=claude&naita=1#ise"]'));
+  await expect(page.locator(".connect-hero").getByText("Avalik HTTPS-aadress pole selles serveris veel seadistatud", { exact: false })).toBeVisible();
   await expect(page.locator("#connect-status")).toContainText("Näidistööruumis ühenduse olekut ei jälgita.");
   // Neither local-setup notice needs the owner, so neither wears the attention amber (#FFF4D6 / #F0C36B).
   const amber = await page.evaluate(() => [...document.querySelectorAll("main *")].filter((el) => { const c = getComputedStyle(el); return [c.backgroundColor, c.borderTopColor].some((v) => v === "rgb(255, 244, 214)" || v === "rgb(240, 195, 107)") && /HTTPS|ühenduse olekut/.test(el.textContent ?? ""); }).length);
