@@ -109,9 +109,12 @@ export function computeHandover(o: { assessment: Assessment | null; assessedAt?:
     // Book entries need the owner's yes for every month, and each customer follow-up is approved one by one, so both stay at prep and never reach done under a rule (#96).
     const rung: Rung = done.length && kind !== "post_entries" && id !== "customer-follow-ups" && (rule || ceiling === "law") ? "done" : done.length ? "prep" : assessed?.executor ? "other" : "mine";
     const last = done.map((a) => a.consumed_at ?? "").sort().pop() || null, due = dueRow?.effective_due ?? null, current = fresh ? assessed?.current : undefined;
-    // First match wins: the owner's yes, a missed date, done this month, a near date, the assistant's look, someone else, a far date.
-    const status: Status = pending ? "waiting" : due && due < today ? "overdue" : last && tallinnDate(new Date(last)).startsWith(ym) ? "in_order"
-      : due && due <= soon ? "due_soon" : current ?? (assessed?.executor ? "in_order" : due ? "later" : "not_checked");
+    // First match wins: the owner's yes, a missed date, a newer look that found work, done this month (a monthly filing done this
+    // month answers this month's date; one follow-up never finishes the list), a near date, the assistant's look, a far date.
+    // Naming who does it (executor) is not a look at the work, so it never reads as in order.
+    const doneThisMonth = !!last && id !== "customer-follow-ups" && tallinnDate(new Date(last)).startsWith(ym);
+    const status: Status = pending ? "waiting" : due && due < today ? "overdue" : current === "open" && (!last || assessedAt! > last) ? "open" : doneThisMonth ? "in_order"
+      : due && due <= soon ? "due_soon" : current ?? (due ? "later" : "not_checked");
     return { id, title_et: titles[0], title_en: titles[1], kind, rung, ceiling, status, needs: NEEDS[id] ?? [], source, due, dueSource: dueRow?.source ?? null, ...(assessed ? { assessed } : {}),
       evidence: { done: done.length, auto: done.filter((a) => a.approved_by_rule).length, paid: done.filter((a) => outcomeOf(a) === "paid").length, last, pending, ...(rule ? { rule } : {}) } };
   };

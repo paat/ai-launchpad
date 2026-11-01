@@ -1072,12 +1072,15 @@ const HO_STATUS: Record<Status, { chip: string; et: string; en: string }> = {
 function hoHead(h: Handover, l: Lang): string {
   const t = tr(l), c = h.count;
   return c.waiting ? t(`${c.waiting} ootab sinu kinnitust`, `${c.waiting} waiting for your approval`) : c.overdue ? t(`${c.overdue} ${c.overdue === 1 ? "tähtaeg on" : "tähtaega on"} möödas`, `${c.overdue} overdue`)
-    : c.due_soon ? t(`${c.due_soon} ${c.due_soon === 1 ? "tähtaeg läheneb" : "tähtaega lähenevad"}`, `${c.due_soon} due soon`) : t("Täna ei vaja miski sind", "Nothing needs you today");
+    : c.due_soon ? t(`${c.due_soon} ${c.due_soon === 1 ? "tähtaeg" : "tähtaega"} läheneb`, `${c.due_soon} due soon`) : t("Täna ei vaja miski sind", "Nothing needs you today");
 }
 /** „2 korras · 1 kontrollimata · 1 hiljem”: the rest of the jobs, by status. */
 function hoRest(h: Handover, l: Lang): string {
   const t = tr(l), c = h.count;
-  return [c.open ? t(`${c.open} ${c.open === 1 ? "töö" : "tööd"} ootel`, `${c.open} with work waiting`) : "", c.in_order ? t(`${c.in_order} korras`, `${c.in_order} in order`) : "", c.not_checked ? t(`${c.not_checked} kontrollimata`, `${c.not_checked} not checked yet`) : "", c.later ? t(`${c.later} hiljem`, `${c.later} later`) : ""].filter(Boolean).join(" · ");
+  // Urgent statuses below the headline's one stay visible here.
+  return [c.waiting && c.overdue ? t(`${c.overdue} ${c.overdue === 1 ? "tähtaeg" : "tähtaega"} möödas`, `${c.overdue} overdue`) : "",
+    (c.waiting || c.overdue) && c.due_soon ? t(`${c.due_soon} ${c.due_soon === 1 ? "tähtaeg" : "tähtaega"} läheneb`, `${c.due_soon} due soon`) : "",
+    c.open ? t(`${c.open} ${c.open === 1 ? "töö" : "tööd"} ootel`, `${c.open} with work waiting`) : "", c.in_order ? t(`${c.in_order} korras`, `${c.in_order} in order`) : "", c.not_checked ? t(`${c.not_checked} kontrollimata`, `${c.not_checked} not checked yet`) : "", c.later ? t(`${c.later} hiljem`, `${c.later} later`) : ""].filter(Boolean).join(" · ");
 }
 const HO_CONN: Record<ConnectionKind | "register", [string, string]> = { accounting: ["Raamatupidamine", "Accounting"], email: ["E-post", "E-mail"], bank: ["Pank", "Bank"], calendar: ["Kalender", "Calendar"], drive: ["Veebiketas", "Online drive"], customers: ["Kliendid", "Customers"], browser: ["Brauser", "Browser"], register: ["Äriregister", "Business register"] };
 const HO_CONN_STATE: Record<ConnectionState | "public", [string, string, string]> = { linked: ["ühendatud", "linked", "accepted"], file: ["failina", "as a file", "drafted"], not_linked: ["ühendamata", "not linked", "drafted"], unknown: ["teadmata", "not reported", "drafted"], public: ["avalik", "public", "accepted"] };
@@ -1100,7 +1103,8 @@ function handoverRow(j: Job, h: Handover, l: Lang, now: Date, sample: boolean): 
   const verb = j.kind === "post_entries" ? t("kirjendatud", "posted") : j.ceiling === "law" ? t("esitatud", "filed") : t("saadetud", "sent");
   const lines: string[] = [];
   if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${C_DAY_MON_YEAR.et.format(civil(j.due))}`, `Was due ${C_DAY_MON_YEAR.en.format(civil(j.due))}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}${j.dueSource ? ` ${sourceLink(j.dueSource, l)}` : ""}`);
-  if (j.source === "assessment" && j.rung !== "other" && j.assessed) lines.push(`„${esc(j.assessed.reason)}”${j.assessed.current && h.assessedAt ? esc(t(` · vaadatud ${fmtWhen(h.assessedAt, l, now)}`, ` · checked ${fmtWhen(h.assessedAt, l, now)}`)) : ""} ${assessedChip}`);
+  // The assistant's reason shows on its own rows and on any job whose status its look set, so a green „Korras” always says who said so.
+  if ((j.source === "assessment" || j.assessed?.current) && j.rung !== "other" && j.assessed) lines.push(`„${esc(j.assessed.reason)}”${j.assessed.current && h.assessedAt ? esc(t(` · vaadatud ${fmtWhen(h.assessedAt, l, now)}`, ` · checked ${fmtWhen(h.assessedAt, l, now)}`)) : ""} ${assessedChip}`);
   if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.auto ? t(`, neist <span class="num">${e.auto}</span> ilma sinuta`, `, <span class="num">${e.auto}</span> without you`) : ""}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
   if (e.rule) lines.push(esc(t(`Püsiluba: ${standingRuleName(e.rule, l)} · aegub ${DAY.et.format(new Date(e.rule.expires_at))}`, `Standing approval: ${standingRuleName(e.rule, l)} · ends ${DAY.en.format(new Date(e.rule.expires_at))}`)));
   if (j.rung === "mine" && j.status !== "in_order" && HO_CAN[j.id]) lines.push(esc(t(...HO_CAN[j.id])));

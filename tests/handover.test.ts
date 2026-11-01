@@ -65,7 +65,7 @@ describe("„Käest ära” states", () => {
     expect(h.next.type === "standing" && h.next.recipients.map((r) => r.address).sort()).toEqual(CLIENTS.map((c) => c.address).sort());
     expect(h.fromAssessment).toBe(1);
     const page = html(h);
-    expect(page).toContain('<p class="ho-sum">1 ootab sinu kinnitust<small>1 kontrollimata · 1 hiljem</small></p>');
+    expect(page).toContain('<p class="ho-sum">1 ootab sinu kinnitust<small>1 tähtaeg läheneb · 1 kontrollimata · 1 hiljem</small></p>');
     expect(page).toContain("Teeb raamatupidaja");
     expect(page).toContain("1 kinnitus aegus kasutamata");
     expect(page).toContain('<input type="hidden" name="kind" value="send_message">');
@@ -118,6 +118,28 @@ describe("Kontoritöö: what the assistant saw and can reach", () => {
     expect(page).toContain("<span>Business register<small>Ärikratt</small></span>");
     expect(page).toContain("Needs: accounting (linked), e-mail (not reported)");
     expect(page).toContain("As your assistant reported");
+  });
+});
+
+describe("Kontoritöö: review-grok #127 fixes", () => {
+  test("naming the accountant is not a look: KMD by the accountant reads later, not in order", () => {
+    const h = computeHandover({ assessment: alpha, assessedAt: "2026-11-10T09:00:00Z", obligations: [annual], approvals: [], rules: [], now: NOW });
+    expect(h.jobs.find((j) => j.id === "vat-return-prep")?.status).not.toBe("in_order");
+  });
+  test("a newer look that found work beats a send earlier this month; one follow-up never finishes the list", () => {
+    const sent = appr({ kind: "send_invoice", outcome: "sent", at: "2026-11-05T09:00:00Z" });
+    const open = { ...alpha, responsibilities: alpha.responsibilities.map((r) => (r.id === "invoicing" ? { ...r, current_state: "open" as const } : r)) };
+    expect(statuses(computeHandover({ assessment: open, assessedAt: "2026-11-10T09:00:00Z", obligations, approvals: [sent], rules: [], now: NOW })).invoicing).toBe("open");
+    expect(statuses(computeHandover({ assessment: open, assessedAt: "2026-11-01T09:00:00Z", obligations, approvals: [sent], rules: [], now: NOW })).invoicing).toBe("in_order");
+    const follow = appr({ outcome: "sent", playbook: "customer-follow-ups", title: "Järgmine kõne", summary: "Follow up" });
+    expect(statuses(computeHandover({ assessment: null, obligations, approvals: [follow], rules: [], now: NOW }))["customer-follow-ups"]).not.toBe("in_order");
+  });
+  test("a playbook job whose status came from the assistant's look says so; urgent counts below the headline stay visible", () => {
+    const seen = { ...alpha, responsibilities: alpha.responsibilities.map((r) => (r.id === "payment-reminders" ? { ...r, current_state: "in_order" as const } : r)) };
+    const h = computeHandover({ assessment: seen, assessedAt: "2026-11-10T09:00:00Z", obligations, approvals: [], rules: [], now: NOW });
+    const row = handoverSection(h, "et", "c", NOW).match(/<li class="ho-job">[^]*?<\/li>/g)!.find((r) => r.includes("Maksemeeldetuletused"))!;
+    expect(row).toContain("Korras"); expect(row).toContain("vaadatud"); expect(row).toContain("Assistendi hinnang");
+    expect(handoverStrip(computeHandover({ assessment: null, obligations, approvals: [appr({ state: "pending" })], rules: [], now: NOW }), "et")).toContain("1 tähtaeg läheneb");
   });
 });
 
