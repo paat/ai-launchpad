@@ -39,16 +39,16 @@ Stage 1 pass/fail (fits a theme, reasonably uses Meta's models) → stage 2, sco
 - Meta Model API: $150 per participant; claim by 4 Nov 21:00 ET. API use before the credit appears is billed.
 - Baseten: $100 plus 2M TPM for up to 2,000 participants. Modal: $100 for Meta open weights for up to 1,000 participants. Fireworks: $25 for selected participants. Forms are in the event Discord resources.
 
-## Current compliance status (docs-only import, 27 Oct 2026)
+## Current compliance status (1 Nov 2026)
 
-This repository currently holds research and the product brief only — no product code yet.
+The 27 Oct 2026 version of this section was a docs-only import (research and the product brief, no product code).
 
 | Check | Status |
 |---|---|
-| New work only (product code during event) | Pass — no product code in this import; product code starts 27 Oct |
-| Genuine Meta model runtime use | Open — no runtime integration yet; must be built during the event |
-| Live product | Open — no live product yet |
-| 3-minute demo video of event-built work | Open — no video yet |
+| New work only (product code during the event) | Product code is in this repository (`src/`), written during the event from 27 Oct 2026 |
+| Genuine Meta model runtime use | `meta-models/muse-spark-open-1026` via Baseten in `src/model-quality.ts`, used for unmet-need classification (`src/unmet-needs.ts`) and public setup cards (`src/model-public-cards.ts`). See `docs/live-pilot.md` |
+| Live product | Live at https://huppelaud.arikratt.ee |
+| 3-minute demo video of event-built work | Open |
 | Rights to code, data, assets | Open — re-check at submission; Ärikratt data carries per-dataset licences and attribution |
 
 ## Prizes (Indie track)
