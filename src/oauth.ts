@@ -117,12 +117,7 @@ export class LaunchpadOAuth implements OAuthServerProvider {
     const sessionRow = this.session(res.req);
     // A browser-only sandbox must not fall back to an anonymous OAuth flow:
     // refuse before allocating a pending row or setting a connect cookie.
-    // Owner kind is its own check. ownerAllowed admits every owner when no
-    // Google allowlist is configured, which would otherwise let a sandbox through.
-    if (sessionRow) {
-      const kind = (this.db.prepare("SELECT kind FROM owners WHERE id=?").get(sessionRow.owner_id) as { kind: string } | undefined)?.kind;
-      if (kind === "sandbox" || !this.ownerAllowed(sessionRow.owner_id)) { res.status(403).send("Access is not available for this account."); return; }
-    }
+    if (sessionRow && !this.ownerAllowed(sessionRow.owner_id)) { res.status(403).send("Access is not available for this account."); return; }
     const raw = opaque(), s = sessionRow;
     const epoch = s ? (this.db.prepare("SELECT epoch FROM owners WHERE id=?").get(s.owner_id) as { epoch: number }).epoch : null;
     const previous = connectCookie(res.req);

@@ -171,12 +171,15 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     : cfg.production
       ? (() => { throw new Error("googleAllowedSubjects is required in production (owner-only pilot: exact opaque Google sub values, never emails); refusing to start without it."); })()
       : null;
-  // Central pilot policy: with a list configured, only a Google owner whose
-  // stored subject is exactly `google:<allowed sub>` is allowed. Demo and
-  // other non-Google owners get no bypass.
+  // Central pilot policy: a sandbox owner is refused in every mode, before the
+  // allowlist shortcut (no list otherwise admits every owner). With a list
+  // configured, only a Google owner whose stored subject is exactly
+  // `google:<allowed sub>` is allowed. Demo and other non-Google owners get
+  // no bypass. Browser sandbox sessions use webSessionAllowed, not this.
   function ownerAllowed(ownerId: string): boolean {
-    if (!allowedSubjects) return true;
     const o = db.prepare("SELECT kind,subject FROM owners WHERE id=?").get(ownerId) as { kind: string; subject: string } | undefined;
+    if (o?.kind === "sandbox") return false;
+    if (!allowedSubjects) return true;
     return !!o && o.kind === "google" && o.subject.startsWith("google:") && allowedSubjects.has(o.subject.slice("google:".length));
   }
   // Interactive sandboxes are browser-only. OAuth, MCP and public feeds keep
@@ -927,11 +930,11 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
         } else state = { kind: "waiting" };
       }
     }
-    // Sandbox reuses the demo sample state and omits token, setup and calendar actions (those 403).
+    // Sandbox reuses the demo sample state and omits the open-assistant hero, token, setup and calendar actions (those 403).
     const sandboxOwner = kind === "sandbox";
     const assessment = s ? getState(db, s.owner_id).assessment : null;
     const feed = s && !sandboxOwner ? db.prepare("SELECT created_at FROM calendar_feeds WHERE owner_id=?").get(s.owner_id) as { created_at: string } | undefined : undefined;
-    const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : "claude", state, owner: !!s && !sandboxOwner, expanded: req.query.naita === "1", ...(s ? { ...(sandboxOwner ? {} : { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null } }), standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, assessment, await ownerDeadlines(assessment)) } : {}) });
+    const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : "claude", state, owner: !!s && !sandboxOwner, sandbox: sandboxOwner, expanded: req.query.naita === "1", ...(s ? { ...(sandboxOwner ? {} : { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null } }), standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, assessment, await ownerDeadlines(assessment)) } : {}) });
     res.type("html").send(shell({ title: tr(l)("Ühenda", "Connect"), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, sample: isSampleKind(kind), toggle: toggleHref(req, l), body,
       // Zero JS: while an owner waits for the first assistant contact, the page reloads itself.
       head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "", ...sandboxGuides(kind) }));

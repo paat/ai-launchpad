@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import type { Server } from "node:http";
+import { request as httpRequest, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { createApp, sandboxAttemptLimiter, type Config } from "../src/app.js";
 import { openDb, sha256, type Db } from "../src/db.js";
@@ -35,6 +35,34 @@ class Browser {
     return { status: res.status, headers: res.headers, body: await res.text() };
   }
   async csrf(s: Started) { return field((await this.request(s, "GET", "/")).body, "csrf"); }
+}
+/** Loopback TCP with an explicit Host, so a public canonical base URL is the one the app checks. */
+function publicRequest(s: Started, jar: Map<string, string>, method: "GET" | "POST", path: string, fields?: Record<string, string>) {
+  const port = (s.server.address() as { port: number }).port;
+  const body = fields ? new URLSearchParams(fields).toString() : undefined;
+  return new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const req = httpRequest({
+      host: "127.0.0.1", port, method, path,
+      headers: {
+        host: new URL(s.cfg.baseUrl).host, connection: "close",
+        cookie: [...jar].map(([k, v]) => `${k}=${v}`).join("; "),
+        ...(body ? { "content-type": "application/x-www-form-urlencoded", "content-length": Buffer.byteLength(body), origin: s.cfg.baseUrl } : {}),
+      },
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("end", () => {
+        for (const c of res.headers["set-cookie"] ?? []) {
+          const [pair] = c.split(";"), i = pair.indexOf("=");
+          jar.set(pair.slice(0, i), pair.slice(i + 1));
+        }
+        resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") });
+      });
+    });
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
 }
 async function sandbox(s: Started, browser = new Browser()) {
   const form = await browser.request(s, "GET", "/proovi");
@@ -421,6 +449,68 @@ test("sandbox authorize is refused without a Google allowlist and creates no pen
   expect(count(s.db, "oauth_pending")).toBe(0);
   expect(count(s.db, "oauth_grants")).toBe(0);
 }, { production: false, googleAllowedSubjects: undefined }));
+
+test("sandbox consent is refused without a Google allowlist and creates no grant, code or credential", async () => withServer(async (s) => {
+  const { browser } = await sandbox(s);
+  const registration = await fetch(s.base + "/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: ["https://assistant.example/callback"], client_name: "Synthetic sandbox probe", token_endpoint_auth_method: "none" }) });
+  expect(registration.status).toBe(201);
+  const client = await registration.json() as { client_id: string; redirect_uris: string[] };
+  const params = new URLSearchParams({ response_type: "code", client_id: client.client_id, redirect_uri: client.redirect_uris[0], resource: s.cfg.baseUrl + "/mcp", code_challenge: "a".repeat(43), code_challenge_method: "S256", scope: "progress:read progress:report" });
+  const authorize = await browser.request(s, "GET", "/authorize?" + params);
+  expect(authorize.status).toBe(403);
+  expect(authorize.body).toContain("Access is not available for this account.");
+  expect(count(s.db, "oauth_pending")).toBe(0);
+
+  const anon = new Browser();
+  const started = await anon.request(s, "GET", "/authorize?" + params);
+  expect(started.status).toBe(302);
+  expect(started.headers.get("location")).toBe("/oauth/consent");
+  const connect = anon.cookies.get("lp_connect");
+  expect(connect).toBeTruthy();
+  browser.cookies.set("lp_connect", connect!);
+  const consent = await browser.request(s, "GET", "/oauth/consent");
+  expect(consent.status).toBe(400);
+  expect(consent.body).toContain("Ühendamine katkes");
+  expect(consent.body).not.toContain('name="decision"');
+  expect(s.db.prepare("SELECT owner_id FROM oauth_pending").get()).toEqual({ owner_id: null });
+  const posted = await browser.request(s, "POST", "/oauth/consent", { csrf: await browser.csrf(s), flow: (s.db.prepare("SELECT id FROM oauth_pending").get() as { id: string }).id, decision: "allow", updates: "1" });
+  expect(posted.status).toBe(400);
+  expect(posted.headers.get("location")).toBeNull();
+  expect(count(s.db, "oauth_grants")).toBe(0);
+  expect(count(s.db, "oauth_codes")).toBe(0);
+  expect(count(s.db, "oauth_credentials")).toBe(0);
+  expect(s.db.prepare("SELECT owner_id FROM oauth_pending").get()).toEqual({ owner_id: null });
+}, { production: false, googleAllowedSubjects: undefined }));
+
+test("public HTTPS sandbox /uhenda is the sample state without an open-assistant link; a Google owner still sees it", async () => withServer(async (s) => {
+  s.cfg.baseUrl = "https://huppelaud.example";
+  s.cfg.allowedHosts = ["huppelaud.example"];
+  const jar = new Map<string, string>();
+  const form = await publicRequest(s, jar, "GET", "/proovi");
+  expect(form.status).toBe(200);
+  const started = await publicRequest(s, jar, "POST", "/proovi", { preauth: field(form.body, "preauth") });
+  expect(started.status).toBe(302);
+  const html = await publicRequest(s, jar, "GET", "/uhenda");
+  expect(html.status).toBe(200);
+  expect(html.body).toContain('id="connect-status" data-state="sample"');
+  expect(html.body).toContain("Näidistööruumis ühenduse olekut ei jälgita.");
+  expect(html.body).not.toContain("/uhenda/ava");
+  expect(html.body).not.toContain('class="card connect-hero"');
+  const gpt = await publicRequest(s, jar, "GET", "/uhenda?a=chatgpt");
+  expect(gpt.body).not.toContain("/uhenda/ava");
+  const en = await publicRequest(s, jar, "GET", "/uhenda?lang=en");
+  expect(en.body).toContain('id="connect-status" data-state="sample"');
+  expect(en.body).toContain("Connection status is not tracked in a sample workspace.");
+  expect(en.body).not.toContain("/uhenda/ava");
+  const g = google(s);
+  const googleHtml = await publicRequest(s, g.browser.cookies, "GET", "/uhenda");
+  expect(googleHtml.status).toBe(200);
+  expect(googleHtml.body).toContain('href="/uhenda/ava?a=claude&lang=et"');
+  expect(googleHtml.body).toContain('class="card connect-hero"');
+  expect(googleHtml.body).toContain('id="connect-status" data-state="waiting"');
+  const googleGpt = await publicRequest(s, g.browser.cookies, "GET", "/uhenda?a=chatgpt");
+  expect(googleGpt.body).toContain('href="/uhenda/ava?a=chatgpt&lang=et"');
+}));
 
 test("no sandbox page links to a route that refuses sandboxes", async () => withServer(async (s) => {
   const { browser, owner } = await sandbox(s);

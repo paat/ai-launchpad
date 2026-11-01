@@ -1911,7 +1911,7 @@ export function assistantGuidePrompt(lang: Lang, assistant: "chatgpt" | "claude"
   return `Tere! Aita mul ühendada AI-hüppelaud oma ChatGPT-ga. Juhenda mind lihtsate sõnadega, üks samm korraga, ja oota, kuni ütlen „tehtud”.\n1. Ava seadetes ühendused (Apps) ja lisa uus ühendus.\n2. Nimi: AI-hüppelaud. Aadress: ${endpoint}.\n3. Logi sisse ja kinnita.\nKui ühendus töötab, kasuta AI-hüppelaua tööriista get_started.`;
 }
 
-export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; now?: Date; expanded?: boolean; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] }; handover?: Handover }): Promise<string> {
+export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; sandbox?: boolean; now?: Date; expanded?: boolean; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] }; handover?: Handover }): Promise<string> {
   const l = o.lang, t = tr(l), now = o.now ?? new Date();
   const base = String(o.baseUrl ?? "").replace(/\/+$/, ""), endpoint = `${base}/mcp`;
   const openPath = `/uhenda/ava?a=${o.assistant}&lang=${l}`;
@@ -1927,19 +1927,21 @@ export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "
   const address = remoteReady ? `<div class="endpoint"><code>${wbr(endpoint)}</code></div><p class="small muted">${t("Vali aadress ja kopeeri see.", "Select the address and copy it.")}</p>` : httpsNote;
   const prompt = assistantGuidePrompt(l, o.assistant, endpoint);
   const caption = t("Telefonis: suuna kaamera sellele koodile.", "On your phone: point the camera at this code.");
-  const qr = remoteReady ? `<figure class="qr-card"><div class="qr-box">${(await QRCode.toString(`${base}${openPath}`, { type: "svg", margin: 1 })).trim().replace("<svg", `<svg role="img" aria-label="${esc(caption)}"`)}</div><figcaption class="small muted">${esc(caption)}</figcaption></figure>` : "";
+  // A sandbox sample has nothing to open: /uhenda/ava only redirects back here, on a public HTTPS address too.
+  const openAssistant = remoteReady && !o.sandbox;
+  const qr = openAssistant ? `<figure class="qr-card"><div class="qr-box">${(await QRCode.toString(`${base}${openPath}`, { type: "svg", margin: 1 })).trim().replace("<svg", `<svg role="img" aria-label="${esc(caption)}"`)}</div><figcaption class="small muted">${esc(caption)}</figcaption></figure>` : "";
   const openLabel = t(`Ava ${name} — juhend on juba sees`, `Open ${name} — the guide is already in`);
   const openHint = t(`Vajuta saatmisnuppu ja tee, mida ${name} ütleb. Kui ${name} hoiatab, et tekst tuli lingist, on see tavaline: tekst on meilt.`, `Press the send button and do what ${name} says. If ${name} warns that the text came from a link, that is normal: the text is from us.`);
   // Without a public HTTPS address the open link would hand a localhost URL to a cloud assistant, so the hero is only the note.
   // naita=1 is a link, not <details>: the waiting page reloads every 5s and would close a disclosure.
   const reveal = `/uhenda?a=${o.assistant}&naita=1`;
-  const hero = remoteReady
+  const hero = openAssistant
     ? `<a class="btn" href="${openPath}">${esc(openLabel)}</a>
 <p class="small">${esc(openHint)}</p>
 <p class="small">${esc(plan)}</p>
 ${qr}
 ${o.expanded ? `<pre id="tekst">${esc(prompt)}</pre>` : `<p><a class="tap-link" href="${reveal}#tekst">${t("Näita teksti", "Show the text")}</a></p>`}`
-    : httpsNote;
+    : remoteReady ? "" : httpsNote;
   const s = o.state;
   const chip = s.kind === "connected"
     ? (() => { const d = new Date(s.at), time = TIME[l].format(d), sameDay = tallinnYmd(d) === tallinnYmd(now); const who = s.who ?? t("Sinu assistent", "Your assistant"); return `<div class="status-chip" id="connect-status" data-state="connected" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${esc(t(`Ühendatud · ${who} jõudis kohale ${sameDay ? "" : `${DAY.et.format(d)} `}kell ${time}`, `Connected · ${who} reached AI Launchpad ${sameDay ? "" : `on ${DAY.en.format(d)} `}at ${time}`))}</span></div>`; })()
@@ -1952,7 +1954,7 @@ ${sampleFirst ? handover : ""}
 <p class="small">${esc(t("Lihtsaim algus: Claude — töötab ka tasuta paketis.", "Easiest start: Claude — works on the free plan too."))}</p>
 <nav class="choice" aria-label="${t("Vali assistent", "Choose your assistant")}"><a href="/uhenda?a=chatgpt"${o.assistant === "chatgpt" ? ' aria-current="true"' : ""}>ChatGPT</a><a href="/uhenda?a=claude"${o.assistant === "claude" ? ' aria-current="true"' : ""}>Claude</a></nav>
 <p class="small"><a class="tap-link" href="/vali">${t(...CHOOSE_LINK)}</a></p>
-<section class="card connect-hero">${hero}</section>
+${hero ? `<section class="card connect-hero">${hero}</section>` : ""}
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p><p><a class="tap-link" href="/kataloog?g=raamatupidamine">${t("Järgmine samm: ühenda oma raamatupidamine → Kataloog", "Next step: connect your accounting → Catalogue")}</a></p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
 ${o.expanded ? `<section class="card" id="ise"><h2>${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</h2>
