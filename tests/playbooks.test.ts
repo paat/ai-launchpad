@@ -366,11 +366,15 @@ describe("agent-facing copy over MCP", () => {
     const call = async (name: string, args: Record<string, unknown>) => (await c.callTool({ name, arguments: args })) as { isError?: boolean; content: { text: string }[] };
     const books = async () => JSON.parse((await call("check_my_books", {})).content[0].text) as { statements_read: Record<string, unknown>[]; first_step: string };
     expect((await books()).statements_read).toEqual([]);
-    expect((await books()).first_step).toContain("never ask for it again. Each time you read a statement file, call record_statement_read.");
+    expect((await books()).first_step).toContain("never ask for those months again. Each time you read a statement file, call record_statement_read.");
     const ok = await call("record_statement_read", { bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 0 });
     expect(ok.isError).toBeFalsy();
     // Same account and period again replaces the balance instead of adding a row.
     await call("record_statement_read", { bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 125 });
+    // Grok r1: a second chat's spelling of the bank updates the same row; a blank bank is refused.
+    await call("record_statement_read", { bank: " swedbank ", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 125 });
+    expect((await call("record_statement_read", { bank: "  ", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 0 })).isError).toBe(true);
+    expect((await books()).first_step).toContain("counts as read for every month that lies wholly inside its period");
     const rows = (await books()).statements_read;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 125 });
@@ -379,7 +383,7 @@ describe("agent-facing copy over MCP", () => {
       expect(r.isError, JSON.stringify(bad)).toBe(true);
     }
     expect(db.prepare("SELECT COUNT(*) n FROM statements_read").get()).toEqual({ n: 1 });
-    expect(byId("books-catch-up").steps.join(" ")).toContain("not in check_my_books statements_read for the period");
+    expect(byId("books-catch-up").steps.join(" ")).toContain("has no check_my_books statements_read row whose period wholly covers the month");
   });
   test("record_statement_read needs progress:report; check_my_books shows statements only with progress:read", async () => {
     const db = openDb(":memory:");
