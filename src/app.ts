@@ -688,12 +688,18 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   });
 
   // Opens Claude or ChatGPT with the guide already typed in (not sent). The host is fixed.
+  // The phone app takes over the navigation and leaves this tab showing the 302 body.
   app.get("/uhenda/ava", (req, res) => {
     const assistant = req.query.a === "chatgpt" ? "chatgpt" : "claude";
+    const l = langOf(res);
     const endpoint = `${String(cfg.baseUrl ?? "").replace(/\/+$/, "")}/mcp`;
-    const prompt = assistantGuidePrompt(langOf(res), assistant, endpoint);
+    const prompt = assistantGuidePrompt(l, assistant, endpoint);
     const target = `${assistant === "chatgpt" ? "https://chatgpt.com/?q=" : "https://claude.ai/new?q="}${encodeURIComponent(prompt)}`;
-    res.redirect(302, target);
+    const name = assistant === "claude" ? "Claude" : "ChatGPT";
+    const t = tr(l);
+    const s = session(req);
+    const body = `<h1>${esc(t(`Avasin ${name}-i`, `Opened ${name}`))}</h1><p>${esc(t(`Kui ${name} ei avanenud,`, `If ${name} did not open,`))} <a class="btn" href="${esc(target)}">${esc(t("vajuta siia", "press here"))}</a>.</p><p><a class="tap-link" href="/uhenda">${esc(t("Tagasi: Ühendus", "Back: Connection"))}</a></p>`;
+    res.status(302).location(target).type("html").send(shell({ title: t(`Avasin ${name}-i`, `Opened ${name}`), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, toggle: toggleHref(req, l), body }));
   });
 
   // Connect (spec screen 2): public page; the status chip needs a signed-in owner.

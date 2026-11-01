@@ -1870,11 +1870,17 @@ ${calendarSetup(l)}
 <p><a class="tap-link" href="/uhenda">${t("Tagasi: Ühendus", "Back: Connection")}</a></p></section>`;
 }
 
+/** Claude web uses Customize; the phone app has no Customize menu (Settings → Connectors → +). */
+const CLAUDE_CONNECTOR_STEP: Record<Lang, string> = {
+  et: "Arvutis: Customize → Connectors → Add custom connector. Telefoni äpis: Settings → Connectors → + → Add custom connector.",
+  en: "On a computer: Customize → Connectors → Add custom connector. In the phone app: Settings → Connectors → + → Add custom connector.",
+};
+
 /** Words shared by the connect page and GET /uhenda/ava. The assistant only types them; the person sends. */
 export function assistantGuidePrompt(lang: Lang, assistant: "chatgpt" | "claude", endpoint: string): string {
-  if (assistant === "claude" && lang === "en") return `Hi! Help me connect AI Launchpad to my Claude. Guide me in plain words, one step at a time, and wait until I say "done".\n1. Open Customize → Connectors → Add custom connector. If your phone does not show this option, do this step on a computer at claude.ai.\n2. Name: AI Launchpad. Address: ${endpoint}. Press Continue, then Add. Change nothing else.\n3. Press Connect, sign in and confirm. If asked for tool permission, choose Always allow.\nOnce the connection works, use the AI Launchpad tool get_started.`;
+  if (assistant === "claude" && lang === "en") return `Hi! Help me connect AI Launchpad to my Claude. Guide me in plain words, one step at a time, and wait until I say "done".\n1. ${CLAUDE_CONNECTOR_STEP.en}\n2. Name: AI Launchpad. Address: ${endpoint}. Press Continue, then Add. Change nothing else.\n3. Press Connect, sign in and confirm. If asked for tool permission, choose Always allow.\nOnce the connection works, use the AI Launchpad tool get_started.`;
   if (assistant === "chatgpt" && lang === "en") return `Hi! Help me connect AI Launchpad to my ChatGPT. Guide me in plain words, one step at a time, and wait until I say "done".\n1. In settings open connectors (Apps) and add a new connector.\n2. Name: AI Launchpad. Address: ${endpoint}.\n3. Sign in and confirm.\nOnce the connection works, use the AI Launchpad tool get_started.`;
-  if (assistant === "claude") return `Tere! Aita mul ühendada AI-hüppelaud oma Claude'iga. Juhenda mind lihtsate sõnadega, üks samm korraga, ja oota, kuni ütlen „tehtud”.\n1. Ava Customize → Connectors → Add custom connector. Kui telefonis seda valikut pole, tee see samm arvutis claude.ai lehel.\n2. Nimi: AI-hüppelaud. Aadress: ${endpoint}. Vajuta Continue ja siis Add. Ära muuda midagi muud.\n3. Vajuta Connect, logi sisse ja kinnita. Kui küsitakse tööriista luba, vali Always allow.\nKui ühendus töötab, kasuta AI-hüppelaua tööriista get_started.`;
+  if (assistant === "claude") return `Tere! Aita mul ühendada AI-hüppelaud oma Claude'iga. Juhenda mind lihtsate sõnadega, üks samm korraga, ja oota, kuni ütlen „tehtud”.\n1. ${CLAUDE_CONNECTOR_STEP.et}\n2. Nimi: AI-hüppelaud. Aadress: ${endpoint}. Vajuta Continue ja siis Add. Ära muuda midagi muud.\n3. Vajuta Connect, logi sisse ja kinnita. Kui küsitakse tööriista luba, vali Always allow.\nKui ühendus töötab, kasuta AI-hüppelaua tööriista get_started.`;
   return `Tere! Aita mul ühendada AI-hüppelaud oma ChatGPT-ga. Juhenda mind lihtsate sõnadega, üks samm korraga, ja oota, kuni ütlen „tehtud”.\n1. Ava seadetes ühendused (Apps) ja lisa uus ühendus.\n2. Nimi: AI-hüppelaud. Aadress: ${endpoint}.\n3. Logi sisse ja kinnita.\nKui ühendus töötab, kasuta AI-hüppelaua tööriista get_started.`;
 }
 
@@ -1925,7 +1931,7 @@ ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_P
 ${o.expanded ? `<section class="card" id="ise"><h2>${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</h2>
 <ol class="steps-big">${o.assistant === "claude"
     // Claude steps follow the tested Free-plan run (docs/live-pilot.md, 30 Oct 2026).
-    ? `<li><h3 class="step-title">${t("Ava Claude'is Customize → Connectors → Add custom connector", "In Claude open Customize → Connectors → Add custom connector")}</h3></li>
+    ? `<li><h3 class="step-title">${t(CLAUDE_CONNECTOR_STEP.et, CLAUDE_CONNECTOR_STEP.en)}</h3></li>
 <li><h3 class="step-title">${t("Nimi: AI-hüppelaud, aadress:", "Name: AI Launchpad, address:")}</h3>${address}<p><strong>${t("→ Continue → Add. Ära muuda midagi muud.", "→ Continue → Add. Change nothing else.")}</strong></p></li>
 <li><h3 class="step-title">${t("Vajuta Connect, logi sisse ja kinnita. Kui Claude küsib tööriista luba, vajuta Allow.", "Press Connect, sign in and confirm. If Claude asks for tool permission, press Allow.")}</h3><p class="small muted">`
     : `<li><h3 class="step-title">${t("Kopeeri aadress", "Copy the address")}</h3>${address}</li>
