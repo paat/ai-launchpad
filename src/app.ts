@@ -300,17 +300,31 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   }
   function seedSandbox(ownerId: string) {
     seedDemoFixture(ownerId, "alpha", "Synthetic sandbox assessment loaded (assistant-reported example, not verified).");
+    // The näidis clock is 2026-11-03T12:00Z. Slide every fixture instant by the
+    // same delta so the week reads as "today": past sends stay past, and only
+    // expiries that were already in the future stay in the future.
+    const delta = Date.now() - NAIDIS.NOW.getTime();
+    const shift = (iso: string) => new Date(Date.parse(iso) + delta).toISOString();
+    const shiftOpt = (iso: string | null) => iso ? shift(iso) : null;
+    const shiftOutcome = (raw: string | null) => {
+      if (!raw) return null;
+      const outcome = JSON.parse(raw) as { observed_at?: string; history?: { observed_at?: string }[] };
+      if (outcome.observed_at) outcome.observed_at = shift(outcome.observed_at);
+      if (outcome.history) for (const step of outcome.history) if (step.observed_at) step.observed_at = shift(step.observed_at);
+      return JSON.stringify(outcome);
+    };
     const insertApproval = db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at,decided_at,consumed_at,outcome_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
     const insertReport = db.prepare("INSERT INTO reports(owner_id,report_id,kind,payload_hash,payload_json,receipt_json,created_at) VALUES(?,?,?,?,?,?,?)");
     db.transaction(() => {
+      // Public näidis marks the assessment at this instant; keep the same offset from NAIDIS.NOW.
+      db.prepare("UPDATE assessments SET created_at=? WHERE owner_id=?").run(shift("2026-10-28T10:00:00.000Z"), ownerId);
       for (const template of NAIDIS.week2) {
-        const id = newId("appr"), pending = template.state === "pending";
-        const createdAt = pending ? nowIso() : template.created_at;
-        const expiresAt = pending ? new Date(Date.now() + 24 * 3600_000).toISOString() : template.expires_at;
-        insertApproval.run(id, ownerId, template.kind, template.report_id, template.payload_json, template.digest, template.state, expiresAt, createdAt, template.decided_at, template.consumed_at, template.outcome_json);
-        if (template.state === "consumed" && template.outcome_json) {
+        const id = newId("appr");
+        const outcomeJson = shiftOutcome(template.outcome_json);
+        insertApproval.run(id, ownerId, template.kind, template.report_id, template.payload_json, template.digest, template.state, shift(template.expires_at), shift(template.created_at), shiftOpt(template.decided_at), shiftOpt(template.consumed_at), outcomeJson);
+        if (template.state === "consumed" && outcomeJson) {
           // One receipt per recorded outcome, the same columns record_action_outcome writes. A paid row's history is sent, then paid.
-          const outcome = JSON.parse(template.outcome_json) as { outcome: string; observed_at: string; history?: { outcome: string; observed_at: string }[] };
+          const outcome = JSON.parse(outcomeJson) as { outcome: string; observed_at: string; history?: { outcome: string; observed_at: string }[] };
           const steps = outcome.history?.length ? outcome.history : [{ outcome: outcome.outcome, observed_at: outcome.observed_at }];
           steps.forEach((step, i) => {
             const reportId = `seed:${id}:${i}`;
@@ -322,7 +336,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
           logActivity(db, ownerId, "assistant", "record_action_outcome", "ok", `Outcome ${outcome.outcome} for approval ${id} (simulated sample history; nothing was really sent).`);
         }
       }
-      const prepared = NAIDIS.preparedProgress[0], observedAt = nowIso();
+      const prepared = NAIDIS.preparedProgress[0], observedAt = shift(prepared.observed_at);
       db.prepare("INSERT INTO progress(id,owner_id,task_id,milestone,evidence_label,evidence_refs_json,observed_at,version,created_at) VALUES(?,?,?,?,?,?,?,?,?)").run(newId("prog"), ownerId, prepared.task_id, prepared.milestone, "assistant_reported", "[]", observedAt, 2, observedAt);
       db.prepare("UPDATE workspaces SET version=2 WHERE owner_id=?").run(ownerId);
       logActivity(db, ownerId, "assistant", "report_progress", "ok", `${prepared.task_id}: ${prepared.milestone} (assistant reported).`);
@@ -366,8 +380,10 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (!s || !safeEqual(given, s.csrf)) { const t = tr(langOf(res)); return res.status(403).type("html").send(publicPage(req, res, t("Turvakontroll ebaõnnestus", "Security check failed"), errorBody(langOf(res), t("Turvakontroll ebaõnnestus", "Security check failed"), t("CSRF-kontroll ebaõnnestus. Mine tagasi, ava leht uuesti ja proovi uuesti. Midagi ei muudetud.", "CSRF check failed. Go back and try again. Nothing was changed.")))); }
     next();
   };
+  // Playbooks, setup and connection 403 for a sandbox (or their forms do). Leave them out of the owner footer.
+  const sandboxGuides = (kind: string) => kind === "sandbox" ? { skipGuides: ["/playbooks", "/setup", "/connection"] as const } : {};
   const page = (req: Request, res: Response, title: string, active: ShellOpts["active"], body: string, extra: Partial<ShellOpts> = {}) => shell({
-    title, active, body, csrf: (req as Authed).csrf ?? "", lang: langOf(res), sample: isSampleKind((req as Authed).ownerKind), toggle: toggleHref(req, langOf(res)), ...extra,
+    title, active, body, csrf: (req as Authed).csrf ?? "", lang: langOf(res), sample: isSampleKind((req as Authed).ownerKind), toggle: toggleHref(req, langOf(res)), ...sandboxGuides((req as Authed).ownerKind), ...extra,
   });
   /** Public chrome (no nav, no logout) for visitors and error pages. */
   function publicPage(req: Request, res: Response, title: string, body: string, extra: Partial<ShellOpts> = {}) {
@@ -631,10 +647,11 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // Public research catalogue (ET first). Signed-in owners keep their nav; never cached (the shell carries their CSRF).
   app.get("/kataloog", (req, res) => {
     const s = session(req), l = langOf(res);
+    const kind = s ? (db.prepare("SELECT kind FROM owners WHERE id=?").get(s.owner_id) as { kind: string } | undefined)?.kind ?? "" : "";
     const q = String(req.query.q ?? "").trim().slice(0, 120);
     const g = CATALOGUE_GROUPS.find((x) => x.id === req.query.g)?.id ?? null;
     const matched = q ? new Set(searchServices(q, Infinity).map((r) => r.id)) : null;
-    res.type("html").send(shell({ title: tr(l)("Kataloog", "Catalogue"), active: "none", csrf: s?.csrf ?? "", lang: l, toggle: toggleHref(req, l), body: catalogueBody({ lang: l, q, g, records: loadCatalog(), matched }) }));
+    res.type("html").send(shell({ title: tr(l)("Kataloog", "Catalogue"), active: "none", csrf: s?.csrf ?? "", lang: l, toggle: toggleHref(req, l), ...sandboxGuides(kind), body: catalogueBody({ lang: l, q, g, records: loadCatalog(), matched }) }));
   });
   app.get("/services", (req, res) => {
     const p = new URLSearchParams();
@@ -729,7 +746,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
     const tokens = db.prepare("SELECT id,scopes,revoked,created_at,last_used_at FROM mcp_tokens WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, unknown>[];
     const candidates = db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, string>[];
-    res.type("html").send(page(req, res, tr(langOf(res))("Andmed ja õigused", "Connection & data"), "none", connectionBody({ lang: langOf(res), csrf: (req as Authed).csrf, baseUrl: cfg.baseUrl, reportingEnabled: owner.reporting_enabled === 1, tokens, candidates, milestones: getAssistantMilestones(db, oid(req)), grants: db.prepare("SELECT g.id,g.scopes,g.revoked,g.expires,g.redirect,c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? ORDER BY g.rowid DESC").all(oid(req)) as Record<string, string>[] })));
+    res.type("html").send(page(req, res, tr(langOf(res))("Andmed ja õigused", "Connection & data"), "none", connectionBody({ lang: langOf(res), csrf: (req as Authed).csrf, baseUrl: cfg.baseUrl, reportingEnabled: owner.reporting_enabled === 1, tokens, candidates, milestones: getAssistantMilestones(db, oid(req)), grants: db.prepare("SELECT g.id,g.scopes,g.revoked,g.expires,g.redirect,c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? ORDER BY g.rowid DESC").all(oid(req)) as Record<string, string>[], sandbox: (req as Authed).ownerKind === "sandbox" })));
   });
   app.post("/tokens", requireOwner, refuseSandbox, csrfOk, (req, res) => {
     const owner = db.prepare("SELECT epoch FROM owners WHERE id=?").get(oid(req)) as { epoch: number };
@@ -786,7 +803,10 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (!safeEqual(String(bodyOf(req).digest ?? ""), a.digest)) return ownerError(req, res, 409, t("Kaart on vananenud", "This card is out of date"), t("Midagi muutus pärast seda, kui kaardi avasid. Midagi ei kinnitatud. Ava kinnitus uuesti.", "Something changed after you opened the card. Nothing was approved. Open the approval again."));
     if (decision === "approve" && approvalAddressMissing(a)) return ownerError(req, res, 409, t("Aadress puudub", "Address missing"), t("Aadress puudub — seda kinnitust ei saa kasutada. Midagi ei kinnitatud. Keeldu ja palu assistendil küsida uus kinnitus koos saaja aadressiga.", "Address missing — this approval cannot be used. Nothing was approved. Decline it and ask your assistant for a new approval with the recipient's address."));
     const state = decision === "approve" ? "approved" : "declined";
-    db.prepare("UPDATE approvals SET state=?,decided_at=? WHERE id=? AND owner_id=? AND state='pending'").run(state, nowIso(), a.id, oid(req));
+    const decided = db.prepare("UPDATE approvals SET state=?,decided_at=? WHERE id=? AND owner_id=? AND state='pending'").run(state, nowIso(), a.id, oid(req));
+    // A repeat submit (double-click, or a race that already decided the row) must not
+    // simulate again: the same sandbox report id would conflict and 500. Redirect like a first success.
+    if (decided.changes !== 1) return res.redirect(`/approvals/${encodeURIComponent(a.id)}`);
     logActivity(db, oid(req), "owner", "approval_decided", state, `Owner ${state} ${a.kind ?? "action"} (digest ${a.digest.slice(0, 12)}). Launchpad sent, paid and filed nothing.`);
     if (decision === "approve" && (req as Authed).ownerKind === "sandbox") {
       const summary = t(`Näidis: assistent saatis — päriselt ei saadetud (kinnitus ${a.id}).`, `Sample: the assistant sent it — nothing was really sent (approval ${a.id}).`);
@@ -887,7 +907,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : "claude", state, owner: !!s && !sandboxOwner, expanded: req.query.naita === "1", ...(s ? { ...(sandboxOwner ? {} : { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null } }), standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, assessment, await ownerDeadlines(assessment)) } : {}) });
     res.type("html").send(shell({ title: tr(l)("Ühenda", "Connect"), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, sample: isSampleKind(kind), toggle: toggleHref(req, l), body,
       // Zero JS: while an owner waits for the first assistant contact, the page reloads itself.
-      head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "", ...(sandboxOwner ? { skipGuides: ["/setup"] } : {}) }));
+      head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "", ...sandboxGuides(kind) }));
   } catch (e) { next(e); } });
 
   app.get("/export", requireOwner, (req, res) => {

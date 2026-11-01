@@ -373,6 +373,147 @@ test("seeded sandbox reports match sent and paid outcomes, and one live approval
   expect((await browser.request(s, "GET", "/")).body).toContain("Assistendi teated: 5,");
 }));
 
+test("seeded sandbox timestamps shift onto today: the pending reminder is created that day and nothing is later than now except future expiries", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-12-10T10:00:00.000Z") });
+  try {
+    await withServer(async (s) => {
+      const now = Date.parse("2026-12-10T10:00:00.000Z");
+      const shift = (iso: string) => new Date(Date.parse(iso) + now - NAIDIS.NOW.getTime()).toISOString();
+      const { owner, pending } = await sandbox(s);
+      expect(pending.created_at.slice(0, 10)).toBe("2026-12-10");
+      expect(pending.created_at).toBe(shift(NAIDIS.pendingApproval.created_at));
+      expect(Date.parse(pending.expires_at)).toBeGreaterThan(now);
+      const assessed = s.db.prepare("SELECT created_at FROM assessments WHERE owner_id=?").get(owner.id) as { created_at: string };
+      const progress = s.db.prepare("SELECT observed_at,created_at FROM progress WHERE owner_id=?").get(owner.id) as { observed_at: string; created_at: string };
+      expect(assessed.created_at).toBe(shift("2026-10-28T10:00:00.000Z"));
+      expect(progress.observed_at).toBe(shift(NAIDIS.preparedProgress[0].observed_at));
+      expect(progress.created_at).toBe(progress.observed_at);
+      const iso = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g;
+      const stamps: { at: string; expiry: boolean }[] = [];
+      const walk = (value: unknown, expiry: boolean) => {
+        if (typeof value === "string") {
+          if ((value.startsWith("{") || value.startsWith("[")) && value.includes("T")) {
+            try { walk(JSON.parse(value), expiry); return; } catch { /* plain text */ }
+          }
+          for (const at of value.match(iso) ?? []) stamps.push({ at, expiry });
+          return;
+        }
+        if (!value || typeof value !== "object") return;
+        for (const [key, child] of Object.entries(value as Record<string, unknown>)) walk(child, expiry || key === "expires_at");
+      };
+      for (const table of ["approvals", "reports", "assessments", "progress"]) {
+        for (const row of s.db.prepare(`SELECT * FROM ${table} WHERE owner_id=?`).all(owner.id) as Record<string, unknown>[]) walk(row, false);
+      }
+      expect(stamps.some((stamp) => stamp.expiry && Date.parse(stamp.at) > now)).toBe(true);
+      for (const stamp of stamps) if (!stamp.expiry || Date.parse(stamp.at) <= now) expect(Date.parse(stamp.at), stamp.at).toBeLessThanOrEqual(now);
+    });
+  } finally { vi.useRealTimers(); }
+});
+
+test("sandbox authorize is refused without a Google allowlist and creates no pending row", async () => withServer(async (s) => {
+  const { browser } = await sandbox(s);
+  const registration = await fetch(s.base + "/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: ["https://assistant.example/callback"], client_name: "Synthetic sandbox probe", token_endpoint_auth_method: "none" }) });
+  expect(registration.status).toBe(201);
+  const client = await registration.json() as { client_id: string; redirect_uris: string[] };
+  const authorize = await browser.request(s, "GET", "/authorize?" + new URLSearchParams({ response_type: "code", client_id: client.client_id, redirect_uri: client.redirect_uris[0], resource: s.cfg.baseUrl + "/mcp", code_challenge: "a".repeat(43), code_challenge_method: "S256", scope: "progress:read progress:report" }));
+  expect(authorize.status).toBe(403);
+  expect(authorize.body).toContain("Access is not available for this account.");
+  expect(count(s.db, "oauth_pending")).toBe(0);
+  expect(count(s.db, "oauth_grants")).toBe(0);
+}, { production: false, googleAllowedSubjects: undefined }));
+
+test("no sandbox page links to a route that refuses sandboxes", async () => withServer(async (s) => {
+  const { browser, owner } = await sandbox(s);
+  const now = new Date().toISOString();
+  s.db.prepare("INSERT INTO candidates(id,owner_id,norm_key,name,connection,jobs,created_at) VALUES('candidate',?,'key','Synthetic','https://example.invalid','job',?)").run(owner.id, now);
+  const ids = s.db.prepare("SELECT id FROM approvals WHERE owner_id=?").all(owner.id) as { id: string }[];
+  const queue = ["/", "/activity", "/uhenda", "/approvals", "/connection", "/kataloog", "/demand", ...ids.map((row) => `/approvals/${encodeURIComponent(row.id)}`)];
+  const seen = new Set<string>();
+  const posts = new Set<string>();
+  // These routes 403 a sandbox. A link or form to one is the failure, named here,
+  // before the crawl follows it. Language toggles are the same page, not new routes.
+  const refuseGet = new Set(["/playbooks", "/setup"]);
+  const refusePost = new Set(["/setup", "/tokens", "/reporting", "/candidates/delete", "/calendar/feed", "/unmet-needs/decide"]);
+  const normalize = (href: string) => {
+    const u = new URL(href, "http://launchpad.invalid");
+    u.searchParams.delete("lang");
+    const q = u.searchParams.toString();
+    return u.pathname + (q ? `?${q}` : "");
+  };
+  const hrefs = (html: string) => [...html.matchAll(/<a\b[^>]*\bhref="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&").split("#")[0]).filter((href) => href.startsWith("/") && !href.startsWith("//"));
+  while (queue.length) {
+    const path = queue.shift()!;
+    if (seen.has(path)) continue;
+    seen.add(path);
+    const res = await browser.request(s, "GET", path);
+    expect(res.status, path).not.toBe(403);
+    if (res.status !== 200 || !res.body.startsWith("<!doctype")) continue;
+    for (const href of hrefs(res.body)) {
+      expect(refuseGet.has(href.split("?")[0]), `${path} links to ${href}`).toBe(false);
+      const next = normalize(href);
+      if (!seen.has(next)) queue.push(next);
+    }
+    for (const m of res.body.matchAll(/<form\b([^>]*)>/g)) {
+      const tag = m[1];
+      const action = /action="([^"]*)"/.exec(tag)?.[1]?.replace(/&amp;/g, "&").split("#")[0];
+      if (!action?.startsWith("/")) continue;
+      const method = (/method="([^"]*)"/i.exec(tag)?.[1] ?? "get").toLowerCase();
+      if (method === "post") {
+        expect(refusePost.has(action.split("?")[0]), `${path} posts to ${action}`).toBe(false);
+        posts.add(action.split("?")[0]);
+      } else {
+        const next = normalize(action);
+        if (!seen.has(next)) queue.push(next);
+      }
+    }
+    expect(queue.length).toBeLessThan(80);
+  }
+  const csrf = await browser.csrf(s);
+  for (const action of posts) {
+    if (action === "/auth/logout" || action === "/delete") continue;
+    const res = await browser.request(s, "POST", action, { csrf });
+    expect(res.status, action).not.toBe(403);
+  }
+  expect(posts.has("/tokens")).toBe(false);
+  expect(posts.has("/reporting")).toBe(false);
+  expect(posts.has("/candidates/delete")).toBe(false);
+  expect([...seen].some((path) => path === "/playbooks" || path.startsWith("/playbooks?") || path === "/setup" || path.startsWith("/setup?"))).toBe(false);
+}));
+
+test("approving a sandbox reminder twice does not 500 and stores one simulated report", async () => withServer(async (s) => {
+  const { browser, owner, pending } = await sandbox(s);
+  const csrf = await browser.csrf(s);
+  const decide = () => browser.request(s, "POST", `/approvals/${pending.id}/decide`, { csrf, digest: pending.digest, decision: "approve" });
+  const first = await decide();
+  expect(first.status).toBe(302);
+  expect(first.headers.get("location")).toBe(`/approvals/${pending.id}`);
+  const again = await decide();
+  expect(again.status).not.toBe(500);
+  expect(again.status).toBe(409);
+  // The read can still say pending after another request already decided the row.
+  // The update then changes nothing, so the repeat must redirect and not simulate again.
+  const prepare = s.db.prepare.bind(s.db);
+  s.db.prepare = ((sql: string) => {
+    const stmt = prepare(sql);
+    if (sql === "SELECT * FROM approvals WHERE id=? AND owner_id=?") {
+      const get = stmt.get.bind(stmt);
+      stmt.get = ((...args: unknown[]) => {
+        const row = get(...args) as { state?: string } | undefined;
+        return row && row.state !== "pending" ? { ...row, state: "pending" } : row;
+      }) as typeof stmt.get;
+    }
+    return stmt;
+  }) as typeof s.db.prepare;
+  try {
+    const lost = await decide();
+    expect(lost.status).not.toBe(500);
+    expect(lost.status).toBe(302);
+    expect(lost.headers.get("location")).toBe(`/approvals/${pending.id}`);
+  } finally { s.db.prepare = prepare as typeof s.db.prepare; }
+  expect(s.db.prepare("SELECT report_id FROM reports WHERE owner_id=? AND report_id LIKE 'sandbox:%'").all(owner.id)).toEqual([{ report_id: `sandbox:${pending.id}` }]);
+  expect(count(s.db, "reports", owner.id)).toBe(5);
+}));
+
 test("POST /proovi deletes every expired sandbox row and leaves a live sandbox", async () => withServer(async (s) => {
   const now = Date.now(), old = "sandbox-expired-post", live = "sandbox-live-post";
   s.db.prepare("INSERT INTO owners(id,subject,kind,created_at) VALUES(?,?,'sandbox',?),(?,?,'sandbox',?)").run(old, `sandbox:${old}`, new Date(now - 25 * 3600_000).toISOString(), live, `sandbox:${live}`, new Date(now).toISOString());
