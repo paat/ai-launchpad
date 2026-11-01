@@ -4,7 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { openDb } from "../src/db.js";
 import { arikratt } from "../src/arikratt.js";
-import { APPROVAL_KINDS, PLAYBOOKS, searchServices } from "../src/catalog.js";
+import { APPROVAL_KINDS, OWNER_VOICE, PLAYBOOKS, searchServices } from "../src/catalog.js";
 import { buildMcpServer, companyObligations, type Ctx } from "../src/mcp.js";
 import { computeObligations, type CompanyFacts, type Fact } from "../src/obligations.js";
 import { DEMO_FIXTURES } from "../src/fixtures.js";
@@ -35,7 +35,7 @@ describe("executable job playbooks (#26)", () => {
     for (const p of PLAYBOOKS) expect(JSON.stringify(p), p.id).not.toMatch(/does not compute|fabricate/i);
     // EMTA moved its tax pages; the old /taxes-and-payment hub returns 404 (QA m10). Checked 200 on 2026-10-31.
     expect(byId("deadlines-check").source).toBe("https://www.emta.ee/en/business-client/taxes-and-payment/payment-arrears/payment-taxes");
-    expect(byId("deadlines-check").steps[0]).toBe("Call get_obligations. Rules compute every date; quote them with each row's source link and never compute a deadline yourself.");
+    expect(byId("deadlines-check").steps[0]).toBe("Call get_obligations. Rules compute every date; never compute a deadline yourself. Say each date in one line with its condition as the row states it and its source as a short link; never read out law paragraphs.");
     const vat = byId("vat-return-prep").steps.join(" ");
     expect(vat).toContain("accounting software's own VAT report");
     expect(vat).toContain("Never calculate a tax amount yourself");
@@ -311,6 +311,18 @@ describe("agent-facing copy over MCP", () => {
     expect(i).toContain("may not know technical words such as MCP, connector or API");
     expect(i).toContain("short sentences, everyday words, one question per message, and no technical codes or file formats unless the owner uses them first.");
     expect(i).not.toMatch(/CAMT|ISO|XML/);
+    // Phone tests 31 Oct–1 Nov: replies read like audit logs (checked lists, IBANs, law paragraphs, 31-receipt lists).
+    expect(i).toContain(OWNER_VOICE);
+    const books = byId("books-catch-up").steps.join(" ");
+    expect(books).toContain("Show at most five vendors at a time and say how many more there are; name the next five when the owner asks or once those are in.");
+    expect(books).not.toMatch(/Anthropic|OpenAI|Gmail/);
+    expect(books).toContain("Call each account by its bank's name, not its number; if the bank is unknown or two accounts are at one bank, add the last four digits.");
+    expect(books).not.toMatch(/grouped by vendor/);
+    // Grok r1: absence in the books never answers a TSD question, and approvals are never shortened.
+    expect(OWNER_VOICE).toContain("seeing no payment is never an answer, and a bank total is never the owner's turnover");
+    expect(OWNER_VOICE).not.toMatch(/VAT limit|Right\?/);
+    expect(OWNER_VOICE).toContain("This never shortens what must be shown: the exact content before any approval");
+    expect(OWNER_VOICE).not.toMatch(/salary/);
     expect(i).toContain("Before asking the owner for any fact or document, check both public data (get_obligations public_facts) and the owner's own connected files, such as Google Drive; ask only if neither has it. Always ask the facts_needed questions from get_obligations, and never let a file stand in for the owner's answer to them, except that a TSD payout the connected books or bank show answers yes.");
     expect(i).toContain("call connect_my_services and follow the connect-service playbook it returns before answering from your own connector directory; it says which lookups are allowed.");
     expect(i).toContain("customers");
@@ -330,6 +342,7 @@ describe("agent-facing copy over MCP", () => {
     const r = JSON.parse(((await c.callTool({ name: "connect_my_services", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { playbook: { id: string; steps: string[] }; first_step: string };
     expect(r.playbook).toEqual(PLAYBOOKS.find((p) => p.id === "connect-service"));
     expect(r.first_step).toContain("one plain question per message");
+    expect(r.first_step).toContain(OWNER_VOICE);
   });
 
   test("check_my_books: owner phrasing finds it, read-only, returns the books-catch-up playbook for any scope", async () => {
@@ -341,6 +354,7 @@ describe("agent-facing copy over MCP", () => {
     expect(r.playbook).toEqual(PLAYBOOKS.find((p) => p.id === "books-catch-up"));
     expect(r.first_step).toContain("any account that appears in a transfer between the company's own accounts");
     expect(r.first_step).toContain("even if the accounting software's month-end check shows nothing unconfirmed");
+    expect(r.first_step).toContain(OWNER_VOICE);
   });
 
   test("remember_business_facts: owner phrasing finds it, read-only, returns the remember-facts playbook for any scope", async () => {
@@ -452,6 +466,7 @@ describe("agent-facing copy over MCP", () => {
     const r = body(await (await connect(["progress:read"])).callTool({ name: "get_started", arguments: {} }));
     expect(Object.keys(r)[0]).toBe("first_step");
     expect(r.first_step.startsWith("Start with the owner's deadlines (get_obligations), then offer the matching playbook.")).toBe(true);
+    expect(r.first_step).toContain(OWNER_VOICE);
     expect(r.playbooks).toEqual(JSON.parse(JSON.stringify(PLAYBOOKS)));
     expect(r.tools).toContain("remember_business_facts");
     expect(r.note).toContain("the exact text of each approval request until the owner deletes their progress");
