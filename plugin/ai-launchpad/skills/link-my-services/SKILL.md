@@ -1,6 +1,6 @@
 ---
 name: link-my-services
-description: Link the owner's e-mail, bank or accounting software to Claude. Use when a small-business owner wants to connect, link or set up their e-mail (Gmail, Outlook, Proton Mail), bank (LHV, Swedbank, SEB) or accounting software (e-arveldaja, Merit, Erply), or asks Claude to send invoices from their mailbox or read their bank or books.
+description: Link the owner's e-mail, bank, accounting software or customers (their customer list, such as Pipedrive or HubSpot) to Claude. Use when a small-business owner wants to connect, link or set up their e-mail (Gmail, Outlook, Proton Mail), bank (LHV, Swedbank, SEB), accounting software (e-arveldaja, Merit, Erply) or customer list (Pipedrive, HubSpot), or asks Claude to send invoices from their mailbox or read their bank, books or customers.
 ---
 
 The owner may not know what MCP, a connector or an API is. Speak plainly: short sentences, everyday words, one question per message, and name buttons exactly as the screen shows them.

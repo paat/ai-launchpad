@@ -54,6 +54,24 @@ describe("safeHttps strict standalone-URL gate", () => {
     ]) expect(safeHttps(u)).toBe(new URL(u).href);
   });
 
+  test("hubspot is one pinned row; scoro stays one row", () => {
+    const hub = searchServices("hubspot", 25);
+    expect(hub.map((r) => r.id)).toEqual(["hubspot"]);
+    expect(hub[0].connection_url === null || safeHttps(hub[0].connection_url) === hub[0].connection_url).toBe(true);
+    expect(searchServices("scoro", 25).map((r) => r.id)).toEqual(["scoro"]);
+    expect(byId("hubspot")).toMatchObject({
+      sector: "CRM",
+      interface_class: "hosted_mcp",
+      connection: "Official Claude directory connector; remote MCP https://mcp.hubspot.com",
+      access_and_price: "OAuth 2.1; free CRM for new accounts: up to 1,000 contacts and 2 users (HubSpot FAQ, updated 2026-06-20)",
+      limitations: "Writes (manage_crm_objects) show a proposed change and ask for confirmation; deletes not offered; exact-action approval by Launchpad not established",
+      checked_on: "2026-11-01",
+      runtime_tested: false,
+    });
+    expect(byId("trivis").jobs).toContain("contacts, deals, interactions");
+    expect(byId("trivis").access_and_price).toContain("write");
+  });
+
   test("all actual catalog source URLs stay linkable", () => {
     let checked = 0;
     for (const rec of loadCatalog()) {

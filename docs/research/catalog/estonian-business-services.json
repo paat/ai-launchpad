@@ -8,14 +8,14 @@
   "methodology": "Three disjoint research agents plus parent primary-source spot checks. Public documentation only; no authenticated tool calls, purchases, messages, submissions or payments.",
   "completeness": "Broad bounded catalog, not an exhaustive census. Local insurance, utilities, niche vertical software and private/partner-only integrations remain coverage gaps.",
   "counts": {
-    "records": 181,
+    "records": 182,
     "email_calendar_records": 24,
     "initial_sector_records": 134,
     "supplement_records": 14,
     "by_research_leg": {
       "accounting": 38,
       "banking-data": 50,
-      "other-b2b": 46,
+      "other-b2b": 47,
       "supplementary": 9,
       "couriers": 7,
       "browsers": 7,
@@ -26,7 +26,7 @@
     },
     "supporting_records": 9,
     "by_group": {
-      "business_provider": 103,
+      "business_provider": 104,
       "community_implementation": 17,
       "watchlist": 8,
       "official_upstream": 5,
@@ -37,7 +37,7 @@
       "email_and_calendar": 24
     },
     "by_interface": {
-      "hosted_mcp": 60,
+      "hosted_mcp": 61,
       "local_mcp": 23,
       "self_hosted_mcp": 5,
       "agent_cli_or_skill": 3,
@@ -95,7 +95,7 @@
       "operator": "Trivis OÜ",
       "relationship": "first-party",
       "estonia_relevance": "Estonian product or integration targeting Estonian businesses",
-      "jobs": "Accounting, payroll, CRM, assets, invoices, VAT reports, rental workflows",
+      "jobs": "Accounting, payroll, CRM (contacts, deals, interactions), assets, invoices, VAT reports, rental workflows",
       "connection": "https://ai-api.trivis.ee/mcp",
       "access_and_price": "OAuth or API key; mcp:read/write/write:unsafe plus organization roles; price not checked",
       "read_write": "read/write",
@@ -2429,6 +2429,34 @@
         "https://www.pipedrive.com/en/features/mcp-server",
         "https://support.pipedrive.com/en/article/mcp",
         "https://support.pipedrive.com/en/article/mcp-claude"
+      ],
+      "research_leg": "other-b2b"
+    },
+    {
+      "id": "hubspot",
+      "name": "HubSpot",
+      "sector": "CRM",
+      "catalog_group": "business_provider",
+      "interface_class": "hosted_mcp",
+      "interface_detail": "official_hosted_mcp",
+      "operator": "See provider sources; legal operator not independently established",
+      "relationship": "first-party service interface",
+      "estonia_relevance": "CRM for Estonian businesses; prioritize existing HubSpot users.",
+      "jobs": "Search and update contacts, companies and deals",
+      "connection": "Official Claude directory connector; remote MCP https://mcp.hubspot.com",
+      "access_and_price": "OAuth 2.1; free CRM for new accounts: up to 1,000 contacts and 2 users (HubSpot FAQ, updated 2026-06-20)",
+      "read_write": "See jobs and limitations; tool-level effect not tested",
+      "limitations": "Writes (manage_crm_objects) show a proposed change and ask for confirmation; deletes not offered; exact-action approval by Launchpad not established",
+      "evidence_status": "documented",
+      "runtime_tested": false,
+      "checked_on": "2026-11-01",
+      "parent_source_reopened": true,
+      "brokerage_permission": "UNKNOWN; direct owner connection does not establish gateway brokerage rights",
+      "notes": "Prefer native connection or existing provider; gateway rebundling rights and OAuth-client support remain unknown.",
+      "sources": [
+        "https://developers.hubspot.com/docs/build-with-ai/remote-mcp-server",
+        "https://developers.hubspot.com/docs/apps/developer-platform/build-apps/integrate-with-the-remote-hubspot-mcp-server",
+        "https://knowledge.hubspot.com/getting-started/frequently-asked-questions"
       ],
       "research_leg": "other-b2b"
     },
@@ -4930,5 +4958,5 @@
       "research_leg": "email-community"
     }
   ],
-  "updated_on": "2026-10-28"
+  "updated_on": "2026-11-01"
 }
