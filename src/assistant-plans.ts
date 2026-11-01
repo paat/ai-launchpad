@@ -92,6 +92,23 @@ export const SOURCES: SourceRef[] = [
   { n: 26, url: "https://about.fb.com/news/2025/03/europe-meet-your-newest-assistant-meta-ai/" },
   { n: 27, url: "https://help.openai.com/en/articles/11487775-connected-apps-in-chatgpt" },
   { n: 28, url: "https://openai.com/index/introducing-chatgpt-go/" },
+  { n: 29, url: "https://x.ai/pricing" },
+  { n: 30, url: "https://docs.x.ai/x-subscription/pricing" },
+  { n: 31, url: "https://docs.x.ai/grok/connectors" },
+  { n: 32, url: "https://x.ai/news/grok-connectors" },
+  { n: 33, url: "https://x.ai/news/x-subscription" },
+  { n: 34, url: "https://x.ai/legal/privacy-policy" },
+  { n: 35, url: "https://x.ai/legal/faq" },
+  { n: 36, url: "https://x.ai/legal/europe-privacy-policy-addendum" },
+  { n: 37, url: "https://x.ai/legal/europe-privacy-policy-addendum" },
+  { n: 38, url: "https://x.ai/legal/faq-enterprise" },
+  { n: 39, url: "https://help.x.com/en/using-x/x-premium" },
+  { n: 40, url: "https://x.ai/grok/business" },
+  { n: 41, url: "https://docs.x.ai/grok/connector-management" },
+  { n: 42, url: "https://play.google.com/store/apps/details?id=ai.x.grok&hl=et&gl=EE" },
+  { n: 43, url: "https://x.ai/news/grok-build-mode" },
+  { n: 44, url: "https://docs.x.ai/grok-bot/security" },
+  { n: 45, url: "https://x.ai/grok" },
 ];
 
 const byN = new Map(SOURCES.map((s) => [s.n, s]));
@@ -104,9 +121,11 @@ const eur = (amount: number, tax: PlanPrice["tax"], per: PlanPrice["per"] = "mon
 
 const CLAUDE_GOOGLE = ["Gmail", "Google Calendar", "Google Drive"];
 const CLAUDE_MICROSOFT = ["Outlook", "SharePoint", "OneDrive", "Teams"];
+const GROK_GOOGLE = ["Gmail", "Calendar", "Drive"];
+const GROK_MICROSOFT = ["Outlook", "OneDrive", "Teams", "SharePoint"];
 const checked = CHECKED;
 
-/** One row per plan in the 1 Nov 2026 memo. Unknown stays null. */
+/** Rows for the 1 Nov 2026 fact sheet. Unknown stays null. Legacy SuperGrok, Heavy, and X plans stay in the memo only. */
 export const PLANS: PlanRow[] = [
   { assistant: "claude", plan: "free", price: usd(0), custom_connectors: 1, write_tools: true, admin_needed: false, phone: true, builtin_google: CLAUDE_GOOGLE, builtin_microsoft: CLAUDE_MICROSOFT, trains_by_default: null, launchpad_tested: "2026-10-30", sources: src(1, 2, 3, 4, 5), checked },
   { assistant: "claude", plan: "pro", price: usd(20), custom_connectors: "no_cap", write_tools: true, admin_needed: false, phone: true, builtin_google: CLAUDE_GOOGLE, builtin_microsoft: CLAUDE_MICROSOFT, trains_by_default: null, launchpad_tested: null, sources: src(1, 2, 3, 4, 5), checked },
@@ -124,6 +143,12 @@ export const PLANS: PlanRow[] = [
   { assistant: "copilot", plan: "m365_business", price: eur(18.2, "excluded", "seat_month"), custom_connectors: "no_cap", write_tools: true, admin_needed: true, phone: false, builtin_google: [], builtin_microsoft: ["Word", "Excel", "PowerPoint", "Outlook", "Teams"], trains_by_default: false, launchpad_tested: null, sources: src(22, 24), checked },
   { assistant: "copilot", plan: "pro", price: null, custom_connectors: null, write_tools: null, admin_needed: false, phone: null, builtin_google: [], builtin_microsoft: [], trains_by_default: null, launchpad_tested: null, sources: src(23), checked },
   { assistant: "meta", plan: "free", price: eur(0, "unknown"), custom_connectors: 0, write_tools: false, admin_needed: false, phone: null, builtin_google: [], builtin_microsoft: [], trains_by_default: true, launchpad_tested: null, sources: src(25, 26), checked },
+  { assistant: "grok", plan: "free", price: usd(0), custom_connectors: "no_cap", write_tools: null, admin_needed: false, phone: true, builtin_google: GROK_GOOGLE, builtin_microsoft: GROK_MICROSOFT, trains_by_default: true, launchpad_tested: null, sources: src(29, 31, 32, 35, 36, 37), checked },
+  { assistant: "grok", plan: "plus", price: usd(8), custom_connectors: "no_cap", write_tools: null, admin_needed: false, phone: true, builtin_google: GROK_GOOGLE, builtin_microsoft: GROK_MICROSOFT, trains_by_default: true, launchpad_tested: null, sources: src(29, 30, 31, 32, 35, 36, 37), checked },
+  { assistant: "grok", plan: "premium", price: usd(30), custom_connectors: "no_cap", write_tools: true, admin_needed: false, phone: true, builtin_google: GROK_GOOGLE, builtin_microsoft: GROK_MICROSOFT, trains_by_default: true, launchpad_tested: "2026-11-01", sources: src(29, 30, 31, 32, 35, 36, 37, 44), checked },
+  { assistant: "grok", plan: "super", price: usd(100), custom_connectors: "no_cap", write_tools: true, admin_needed: false, phone: true, builtin_google: GROK_GOOGLE, builtin_microsoft: GROK_MICROSOFT, trains_by_default: true, launchpad_tested: null, sources: src(29, 30, 31, 32, 35, 36, 37, 44), checked },
+  { assistant: "grok", plan: "ultra", price: usd(200), custom_connectors: "no_cap", write_tools: true, admin_needed: false, phone: true, builtin_google: GROK_GOOGLE, builtin_microsoft: GROK_MICROSOFT, trains_by_default: true, launchpad_tested: null, sources: src(29, 30, 31, 32, 35, 36, 37, 44), checked },
+  { assistant: "grok", plan: "teams", price: usd(30, "seat_month", 1), custom_connectors: "no_cap", write_tools: null, admin_needed: true, phone: true, builtin_google: GROK_GOOGLE, builtin_microsoft: GROK_MICROSOFT, trains_by_default: false, launchpad_tested: null, sources: src(29, 31, 32, 38, 40, 41), checked },
 ];
 
 const TABLE_NAME: Record<string, string> = {
@@ -143,6 +168,12 @@ const TABLE_NAME: Record<string, string> = {
   "copilot/m365_business": "Microsoft 365 Copilot Business",
   "copilot/pro": "Copilot Pro",
   "meta/free": "Meta AI",
+  "grok/free": "Grok Free",
+  "grok/plus": "Grok Plus",
+  "grok/premium": "Grok Premium",
+  "grok/super": "Grok Super",
+  "grok/ultra": "Grok Ultra",
+  "grok/teams": "Grok Teams",
 };
 
 const keyOf = (row: { assistant: string; plan: string }) => `${row.assistant}/${row.plan}`;

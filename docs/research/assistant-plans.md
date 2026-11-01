@@ -73,3 +73,58 @@ Source 2 was fetched again on 1 Nov 2026: Claude's free plan allows one custom c
 ## What changed versus the in-repo facts
 
 Claude Free’s one-custom-connector limit is now written in Anthropic’s help center, and write tools (create, modify, delete) are allowed there with per-tool approval, which matches the 30–31 Oct 2026 tests. ChatGPT write tools on a custom MCP still need Business or Enterprise/Edu, web only, and an admin or owner must create and publish them; Pro may add read/fetch custom MCP, so the “write tools need Business” rule still holds and should not be widened to Plus or Pro. Claude Max on the current price card is the USD 100 5× plan; the USD 200 tier is named Ultra, and Team standard is USD 25 per seat per month before tax.
+
+## Grok (xAI)
+
+As of 1 Nov 2026, new self-serve Grok is **The X Subscription** (Free, Plus, Premium, Super, Ultra). SuperGrok is grandfathered, not on the current price card. Custom MCP is documented for Grok users, with no published count. Estonia EUR prices for those Grok tiers were not on the vendor price page. Source numbers continue from the list above (29–45; the research memo numbered these 1–17). The orchestrator re-verified sources 30 and 31 on 1 Nov 2026.
+
+| Plan | price_month | custom_mcp_connectors | mcp_write_tools | connectors_on_phone | connectors_on_web | builtin_google | builtin_microsoft | trains_on_data_default | estonian_ui | available_in_estonia |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Free | $0; tax extra [29] | yes; count UNKNOWN, so no cap [31] | exposed tools; chat approval UI UNKNOWN [31] | yes [32] | yes [31] | Gmail, Calendar, Drive [31][32] | Outlook, OneDrive, Teams, SharePoint [31][32] | on until objection [36][37]; opt-out [35] | UNKNOWN | Android install in EE [42] |
+| Plus | $8/mo or $80/yr USD, ex-VAT [29][30] | yes; count UNKNOWN [31] | same [31] | yes [32] | yes [31] | same [31][32] | same [31][32] | same [36][37] | UNKNOWN | same [42]; EUR UNKNOWN |
+| Premium (X Subscription) | $30/mo or $300/yr USD, ex-VAT [29][30]. Includes Grok Bot [30]. AI Launchpad run on Grok Bot 2026-11-01 (write tool, “Allow once”) | yes; count UNKNOWN [31] | Grok Bot asks before a write; chat approval still UNKNOWN [31][44] | yes [32] | yes [31] | same [31][32] | same [31][32] | same [36][37] | UNKNOWN | same |
+| Super | $100/mo or $1000/yr USD, ex-VAT [29][30]. Includes Grok Bot [30]. Not run | yes; count UNKNOWN [31] | same as Premium; not run [30][44] | yes [32] | yes [31] | same [31][32] | same [31][32] | same [36][37] | UNKNOWN | same |
+| Ultra | $200/mo or $2000/yr USD, ex-VAT [29][30]. Includes Grok Bot [30]. Not run | yes; count UNKNOWN [31] | same as Premium; not run [30][44] | yes [32] | yes [31] | same [31][32] | same [31][32] | same [36][37] | UNKNOWN | same |
+| SuperGrok (legacy) | UNKNOWN; not on the new card; kept if already subscribed [30][33] | yes if still a Grok user [31] | same [31] | yes [32] | yes [31] | same [31][32] | same [31][32] | same [36][37] | UNKNOWN | UNKNOWN |
+| SuperGrok Heavy | UNKNOWN; named Jul 2026, absent from the Nov price card [30][43] | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN |
+| X Basic | €3/mo or €32/yr web, Estonia [39] | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN (X privacy, not Grok policy) [34] | UNKNOWN | yes, priced for Estonia [39] |
+| X Premium | €8/mo or €84/yr web, Estonia [39] | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN [34] | UNKNOWN | yes [39] |
+| X Premium+ | €38/mo or €377/yr web, Estonia [39] | UNKNOWN (includes SuperGrok; custom MCP not named) [39][31] | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN [34] | UNKNOWN | yes [39] |
+| Teams / Grok Business | Teams from $30/seat (Premium $30, Super $100, Ultra $200); Business page $30/user; all ex-tax [29][30][40]. Minimum seats UNKNOWN | yes; an admin must add it first; count UNKNOWN [31][41] | same, after an admin adds the server; not run [41] | yes [32] | yes [31] | same, after admin provision [31] | same [31] | no training [38][40] | UNKNOWN | UNKNOWN for EE checkout |
+| Enterprise | Custom / “Let’s talk” [29][40] | yes; admin provisions [41] | same [41] | yes [32] | yes [31] | same [31] | same [31] | no training [38][40] | UNKNOWN | UNKNOWN |
+
+Grok Bot (separate from chat connectors) is on Premium, Super, and Ultra, not Plus [30]. X help says Premium+ includes SuperGrok and Grok Bot; X Premium only “increased usage limits on Grok” [39]. Google OAuth content is excluded from training even when general training is on [34].
+
+Legacy SuperGrok, SuperGrok Heavy, X Basic, X Premium, and X Premium+ are in this table only. Their list price or connector facts are unknown, so they are not plan rows. Enterprise is custom pricing and is not a plan row either.
+
+### Sources
+
+29. https://x.ai/pricing — B — 2026-11-01 — “Prices shown do not include applicable taxes or fees (e.g. VAT).” Also lists Free $0, Plus $8, Premium $30, Super $100, Ultra $200, Teams $30+/user, Enterprise Custom.
+30. https://docs.x.ai/x-subscription/pricing — B — 2026-11-01, re-verified — “List prices do not include sales tax. Where required, tax may be added at checkout.” “Grok Bot is included on Premium, Super, and Ultra.” Plus does not include it. Existing SuperGrok continues.
+31. https://docs.x.ai/grok/connectors — B — 2026-11-01, re-verified — “Connectors are available to all Grok users.” Custom MCP: grok.com/connectors → New Connector → Custom. No cap stated. No approval process described. Last updated 10 Oct 2026. Gmail, Calendar, Drive, Outlook, OneDrive, Teams, SharePoint listed.
+32. https://x.ai/news/grok-connectors — B — 2026-05-06 — “Connectors are now live on Grok Web, iOS, and Android.” Same note: “Bring Your Own MCP” and Google “read and write”; Outlook “draft and send emails.”
+33. https://x.ai/news/x-subscription — B — 2026-10-12 — “You can keep your current plan, price, and features or move to The X Subscription.” Premium described as former SuperGrok + Cursor Pro + X Premium+ “previously $90/month combined.”
+34. https://x.ai/legal/privacy-policy — A — 2026-11-01 — “your use of X … including use of Grok on the X platform, is governed by the X Privacy Policy.” Google OAuth: “shall not use any Google Apps content for … training purposes.”
+35. https://x.ai/legal/faq — B — 2025-05-12 — “Settings, Data Controls, and select or deselect ‘Improve the model.’” Private Chat “will not be included in model training.”
+36. https://x.ai/legal/europe-privacy-policy-addendum — A — 2026-11-01 — “To train and improve our models” processes “User Content” for “legitimate interests.”
+37. https://x.ai/legal/europe-privacy-policy-addendum — A — 2026-11-01 — “you can object to our use of your information to train our models in your settings.”
+38. https://x.ai/legal/faq-enterprise — A — 2026-11-01 — “we do not use your business data, including inputs (prompts) or outputs (answers), for training our models.”
+39. https://help.x.com/en/using-x/x-premium — B — 2026-11-01 — Estonia row: 3.00 / 32.00 / 8.00 / 84.00 / 38.00 / 377.00 EUR (Basic, Premium, Premium+ monthly then annual, web). Premium+: “SuperGrok access, Grok Bot.” Premium: “increased usage limits on Grok.”
+40. https://x.ai/grok/business — B — 2026-11-01 — “$ 30 / month per user”; “Bring your own MCP server”; “No training.” Enterprise: “Let’s talk.”
+41. https://docs.x.ai/grok/connector-management — B — 2026-10-10 — “a team admin must add a connector” before members use it, including “a custom MCP server.”
+42. https://play.google.com/store/apps/details?id=ai.x.grok&hl=et&gl=EE — C — 2026-11-01 — Install button, “Värskendatud: 29. okt 2026,” “Käibemaks sisaldub kõigis hindades,” “Eesti (eesti).”
+43. https://x.ai/news/grok-build-mode — B — 2026-07-28 — “Build Mode is available today in Early Beta for SuperGrok Heavy subscribers.” No price.
+44. https://docs.x.ai/grok-bot/security — B — 2026-10-28 — “Allow once lets the Bot continue with that action.” Bot, not the chat connector doc.
+45. https://x.ai/grok — B — 2026-11-01 — “30+ languages.” Estonian is not named.
+
+### UNKNOWN, and the default to use
+
+- **MCP count.** No cap published [31]. Default: do not enforce one; require a public URL.
+- **Write approval in Grok chat.** Docs say discovered MCP tools are usable and built-ins can write [31][32]. They do not say chat asks before each write. Grok Bot does (“Allow once”) [44], which is a different surface. Premium’s `write_tools` is true because Grok Bot was run on 1 Nov 2026 (Android app 1.18.0, write tool, “Allow once”). Super and Ultra include Grok Bot [30] and use that same fact, and were not run. Free and Plus do not include Grok Bot [30], so chat write approval stays unstated. Teams is admin-provisioned and was not run. Default: do not copy the Bot rule onto chat for a plan that was not run and does not include the Bot.
+- **Custom MCP on the phone vs web add flow.** Launch note puts connectors on Web, iOS, and Android and announces Bring Your Own MCP in the same post [32]. The only add steps are grok.com [31]. Default: the phone can use a connector added on the account.
+- **Estonia EUR for Grok tiers.** x.ai/pricing is USD and “do not include applicable taxes or fees (e.g. VAT)” [29]. Play’s Estonia page says VAT is included in store prices but showed no Grok SKU amounts [42]. Default: quote USD ex-VAT and read EUR at Estonian checkout.
+- **X Premium tax.** Estonia web amounts are published [39]; the help page did not say whether VAT is inside them. Default: treat them as the web list and confirm tax at X checkout.
+- **Estonian UI.** Marketing says “30+ languages” and does not name Estonian [45]. The Play page in Estonian is the store listing [42]. Default: do not claim an Estonian app UI.
+- **SuperGrok and Heavy list price.** New buyers are on The X Subscription; old SuperGrok price and features continue [30][33]. Heavy is not priced there [43]. Default: do not invent $30 or $300. These rows stay out of the plan sheet.
+- **Whether Teams $30 and “Grok Business” $30 are the same SKU.** Both are published [29][40]. Default: minimum seats 1 until a page states a minimum; match the seat in billing before assuming the admin connector console. `write_tools` stays unstated.
+- **Training toggle’s initial position.** EEA basis for training User Content is legitimate interest, with an objection in settings [36][37]. FAQ: Settings → Data Controls → “Improve the model” [35]. Default: training is on until that control is turned off. Private Chat is excluded [35]. Grok on X uses X’s policy, not this one [34]. Teams and Enterprise: no training [38][40].

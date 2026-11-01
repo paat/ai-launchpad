@@ -26,7 +26,7 @@ const clone = (plan: PlanRow, patch: Partial<PlanRow>): PlanRow => ({
 
 describe("fact sheet", () => {
   test("every plan has a source and the check date, and unknown prices stay null", () => {
-    expect(PLANS).toHaveLength(16);
+    expect(PLANS).toHaveLength(22);
     const keys = new Set<string>();
     for (const plan of PLANS) {
       const key = `${plan.assistant}/${plan.plan}`;
@@ -59,7 +59,34 @@ describe("fact sheet", () => {
     expect(row("claude", "free").trains_by_default).toBeNull();
     expect(row("google", "workspace").write_tools).toBeNull();
     expect(row("google", "workspace").phone).toBeNull();
-    for (const plan of PLANS) if (plan.plan !== "free" || plan.assistant !== "claude") expect(plan.launchpad_tested, plan.plan).toBeNull();
+    for (const plan of PLANS) {
+      if (plan.assistant === "claude" && plan.plan === "free") continue;
+      if (plan.assistant === "grok" && plan.plan === "premium") {
+        expect(plan.launchpad_tested).toBe("2026-11-01");
+        continue;
+      }
+      expect(plan.launchpad_tested, `${plan.assistant}/${plan.plan}`).toBeNull();
+    }
+    const grokBuiltins = { builtin_google: ["Gmail", "Calendar", "Drive"], builtin_microsoft: ["Outlook", "OneDrive", "Teams", "SharePoint"] };
+    for (const plan of ["free", "plus", "premium", "super", "ultra", "teams"]) {
+      const grok = row("grok", plan);
+      expect(grok.sources.length, plan).toBeGreaterThanOrEqual(1);
+      expect(grok.checked, plan).toBe("2026-11-01");
+      expect(grok.custom_connectors, plan).toBe("no_cap");
+      expect(grok, plan).toMatchObject(grokBuiltins);
+    }
+    expect(row("grok", "free")).toMatchObject({ price: { amount: 0, currency: "USD", tax: "excluded", per: "month", min_seats: 1 }, write_tools: null, phone: true });
+    expect(row("grok", "plus")).toMatchObject({ price: { amount: 8, currency: "USD", tax: "excluded", per: "month", min_seats: 1 }, write_tools: null });
+    expect(row("grok", "premium")).toMatchObject({ price: { amount: 30, currency: "USD", tax: "excluded", per: "month", min_seats: 1 }, write_tools: true, phone: true, admin_needed: false });
+    expect(row("grok", "super").price).toEqual({ amount: 100, currency: "USD", tax: "excluded", per: "month", min_seats: 1 });
+    expect(row("grok", "ultra").price).toEqual({ amount: 200, currency: "USD", tax: "excluded", per: "month", min_seats: 1 });
+    expect(row("grok", "super")).toMatchObject({ write_tools: true, phone: true, launchpad_tested: null });
+    expect(row("grok", "ultra")).toMatchObject({ write_tools: true, phone: true, launchpad_tested: null });
+    expect(row("grok", "teams")).toMatchObject({
+      price: { amount: 30, currency: "USD", tax: "excluded", per: "seat_month", min_seats: 1 },
+      write_tools: null, admin_needed: true, trains_by_default: false, launchpad_tested: null,
+    });
+    expect(PLANS.some((plan) => plan.assistant === "grok" && /supergrok|heavy|basic|premium_plus/.test(plan.plan))).toBe(false);
   });
 });
 
@@ -214,6 +241,32 @@ describe("recommendAssistant", () => {
         expect(`${reason.text_et} ${reason.text_en}`).not.toMatch(/AI-hüppelaud maksab|Launchpad costs|Launchpad price/i);
       }
     }
+  });
+
+  test("current Grok Free or Plus with no extra service recommends Claude Free and Grok Premium to stay", () => {
+    for (const plan of ["free", "plus"]) {
+      const rec = recommendAssistant(base({ current: { assistant: "grok", plan } }));
+      expect(rec.recommended, plan).toBe(row("claude", "free"));
+      expect(rec.stayAlternative, plan).toBe(row("grok", "premium"));
+      expect(rec.keep, plan).toBeUndefined();
+    }
+  });
+
+  test("current Grok Premium is kept", () => {
+    const rec = recommendAssistant(base({ current: { assistant: "grok", plan: "premium" } }));
+    expect(rec.keep).toBe(row("grok", "premium"));
+    expect(rec.recommended).toBe(row("grok", "premium"));
+    expect(rec.stayAlternative).toBeUndefined();
+    expect(rec.paidNote).toBe(false);
+  });
+
+  test("none and Merit still recommends Claude Pro, cheaper than Grok Premium in the same currency", () => {
+    const rec = recommendAssistant(base({ customConnectorsNeeded: 2, connectionNames: ["Merit"] }));
+    expect(rec.recommended).toBe(row("claude", "pro"));
+    expect(row("claude", "pro").price?.currency).toBe("USD");
+    expect(row("grok", "premium").price?.currency).toBe("USD");
+    expect(monthlyCost(row("claude", "pro"), 1)).toBe(20);
+    expect(monthlyCost(row("grok", "premium"), 1)).toBe(30);
   });
 
   test("Merit from the catalogue needs a second own connection and Gmail does not", () => {
