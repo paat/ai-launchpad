@@ -1,10 +1,11 @@
 import { LaunchpadOAuth, CONSENT_PATH, connectCookie, touchLastUsed } from "./oauth.js";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { isIP } from "node:net";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
 import { arikratt } from "./arikratt.js";
-import { approvalAddressMissing, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, liveStandingRules, logActivity, normAddress, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, TOOL_ARG_KEYS, type ApprovalRow, type StandingRule } from "./mcp.js";
+import { approvalAddressMissing, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, liveStandingRules, logActivity, normAddress, recordActionOutcome, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, TOOL_ARG_KEYS, type ApprovalRow, type StandingRule } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { computeHandover, handoverObligations, isDone, largestAmount, offerCapCents, standingBasis } from "./handover.js";
 import type { Assessment } from "./core.js";
@@ -16,7 +17,7 @@ import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
 import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, chooserBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
-import { naidisApproval, naidisBody } from "./naidis.js";
+import { NAIDIS, naidisApproval, naidisBody } from "./naidis.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; }
 // Owner-only pilot allowlist: exact opaque Google `sub` values, never emails.
@@ -62,6 +63,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
 }
 type Authed = Request & { ownerId: string; csrf: string; ownerKind: string };
 const oid = (req: Request) => (req as Authed).ownerId;
+const isSampleKind = (kind: string) => kind === "demo" || kind === "sandbox";
 const bodyOf = (req: Request) => (req.body ?? {}) as Record<string, string>;
 function cookieVal(req: Request, name: string): string | null {
   const m = new RegExp(`(?:^|;\\s*)${name}=([^;]+)`).exec(req.headers.cookie ?? "");
@@ -81,6 +83,60 @@ function toggleHref(req: Request, l: Lang): string {
   return u.pathname + u.search;
 }
 const isLoopback = (req: Request) => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? "");
+
+// Sandbox attempts are keyed by client prefix, not the raw address. An IPv6
+// client can rotate inside one /64; those share five starts per ten minutes.
+// IPv4-mapped IPv6 (`::ffff:a.b.c.d`, any spelling) is that IPv4.
+function sandboxRateKey(ip: string): string {
+  const raw = ip.trim().toLowerCase();
+  if (isIP(raw) === 4) return raw;
+  if (isIP(raw) !== 6) return raw || "?";
+  const hextets = ipv6Hextets(raw);
+  if (!hextets) return raw;
+  if (hextets.slice(0, 5).every((h) => h === "0000") && hextets[5] === "ffff") {
+    const hi = Number.parseInt(hextets[6], 16), lo = Number.parseInt(hextets[7], 16);
+    return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  }
+  return hextets.slice(0, 4).join(":");
+}
+// Five starts per ten minutes, at most 1000 live client keys. At the bound,
+// drop keys whose window has passed; if the map is still full, refuse the
+// new key. Never clear: a wipe would hand a fresh allowance to keys already at the cap.
+const SANDBOX_RATE_WINDOW_MS = 600_000, SANDBOX_RATE_MAX = 5, SANDBOX_RATE_KEYS = 1000;
+export function sandboxAttemptLimiter() {
+  const attempts = new Map<string, number[]>();
+  return (key: string, now = Date.now()): boolean => {
+    const recent = (attempts.get(key) ?? []).filter((t) => now - t < SANDBOX_RATE_WINDOW_MS);
+    if (recent.length >= SANDBOX_RATE_MAX) { attempts.set(key, recent); return false; }
+    if (!attempts.has(key) && attempts.size >= SANDBOX_RATE_KEYS) {
+      for (const [k, stamps] of attempts) if (!stamps.some((t) => now - t < SANDBOX_RATE_WINDOW_MS)) attempts.delete(k);
+      if (attempts.size >= SANDBOX_RATE_KEYS) return false;
+    }
+    recent.push(now);
+    attempts.set(key, recent);
+    return true;
+  };
+}
+function ipv6Hextets(ip: string): string[] | null {
+  let s = ip;
+  const zone = s.indexOf("%");
+  if (zone >= 0) s = s.slice(0, zone);
+  const colon = s.lastIndexOf(":");
+  const dotted = s.slice(colon + 1);
+  if (dotted.includes(".")) {
+    const nums = dotted.split(".").map((p) => /^\d{1,3}$/.test(p) ? Number(p) : NaN);
+    if (nums.length !== 4 || nums.some((n) => !Number.isInteger(n) || n > 255)) return null;
+    s = `${s.slice(0, colon + 1)}${((nums[0] << 8) | nums[1]).toString(16)}:${((nums[2] << 8) | nums[3]).toString(16)}`;
+  }
+  const halves = s.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  if ((halves.length === 1 && head.length !== 8) || (halves.length === 2 && head.length + tail.length >= 8)) return null;
+  const full = [...head, ...Array(8 - head.length - tail.length).fill("0"), ...tail];
+  if (full.length !== 8 || full.some((h) => !/^[0-9a-f]{1,4}$/.test(h))) return null;
+  return full.map((h) => h.padStart(4, "0"));
+}
 
 // Calendar feed limit (per process, in memory): 60 fetches per token per
 // hour, so a leaked feed URL cannot be used as a lookup proxy.
@@ -115,14 +171,39 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     : cfg.production
       ? (() => { throw new Error("googleAllowedSubjects is required in production (owner-only pilot: exact opaque Google sub values, never emails); refusing to start without it."); })()
       : null;
-  // Central pilot policy: with a list configured, only a Google owner whose
-  // stored subject is exactly `google:<allowed sub>` is allowed. Demo and
-  // other non-Google owners get no bypass.
+  // Central pilot policy: a sandbox owner is refused in every mode, before the
+  // allowlist shortcut (no list otherwise admits every owner). With a list
+  // configured, only a Google owner whose stored subject is exactly
+  // `google:<allowed sub>` is allowed. Demo and other non-Google owners get
+  // no bypass. Browser sandbox sessions use webSessionAllowed, not this.
   function ownerAllowed(ownerId: string): boolean {
-    if (!allowedSubjects) return true;
     const o = db.prepare("SELECT kind,subject FROM owners WHERE id=?").get(ownerId) as { kind: string; subject: string } | undefined;
+    if (o?.kind === "sandbox") return false;
+    if (!allowedSubjects) return true;
     return !!o && o.kind === "google" && o.subject.startsWith("google:") && allowedSubjects.has(o.subject.slice("google:".length));
   }
+  // Interactive sandboxes are browser-only. OAuth, MCP and public feeds keep
+  // using ownerAllowed above; only the browser-session lookup uses this predicate.
+  function webSessionAllowed(ownerId: string): boolean {
+    if (ownerAllowed(ownerId)) return true;
+    const o = db.prepare("SELECT kind,subject FROM owners WHERE id=?").get(ownerId) as { kind: string; subject: string } | undefined;
+    return !!o && o.kind === "sandbox" && o.subject.startsWith("sandbox:");
+  }
+  const SANDBOX_TTL_MS = 24 * 3600_000, SANDBOX_LIMIT = 1000, SANDBOX_SESSION_MS = 2 * 3600_000;
+  const sandboxOwnerTables = ["workspaces", "sessions", "mcp_tokens", "assessments", "reports", "progress", "candidates", "activity", "approvals", "unmet_needs", "calendar_feeds", "standing_approvals"];
+  function cleanupSandboxes(now = Date.now()) {
+    const expired = db.prepare("SELECT id FROM owners WHERE kind='sandbox' AND created_at<=?").all(new Date(now - SANDBOX_TTL_MS).toISOString()) as { id: string }[];
+    if (!expired.length) return;
+    db.transaction(() => {
+      for (const { id } of expired) {
+        db.prepare("DELETE FROM oauth_pending WHERE owner_id=?").run(id);
+        db.prepare("DELETE FROM oauth_grants WHERE owner_id=?").run(id); // cascades codes and credentials
+        for (const table of sandboxOwnerTables) db.prepare(`DELETE FROM ${table} WHERE owner_id=?`).run(id);
+        db.prepare("DELETE FROM owners WHERE id=? AND kind='sandbox'").run(id);
+      }
+    })();
+  }
+  cleanupSandboxes(); // once at server start; POST /proovi runs it again
   // Public cards: explicit opt-in only. An invalid enabled configuration
   // fails closed at startup (env and direct Config alike); it never falls
   // back to test/disabled. Disabled/test modes construct nothing here.
@@ -209,7 +290,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     }
     return o.id;
   }
-  function seedDemoFixture(ownerId: string, key: string) {
+  function seedDemoFixture(ownerId: string, key: string, summary = "Synthetic demo fixture assessment loaded after explicit demo login (assistant-reported example, not verified).") {
     const fixture = DEMO_FIXTURES[key];
     if (!fixture) return;
     const existing = db.prepare("SELECT count(*) n FROM assessments WHERE owner_id=?").get(ownerId) as { n: number };
@@ -220,18 +301,64 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       db.prepare("INSERT INTO assessments(id,owner_id,version,payload_json,payload_hash,created_at) VALUES(?,?,?,?,?,?)").run(newId("asmt"), ownerId, v, JSON.stringify(fixture), sha256(JSON.stringify(fixture)), nowIso());
       db.prepare("UPDATE workspaces SET version=? WHERE owner_id=?").run(v, ownerId);
     })();
-    logActivity(db, ownerId, "launchpad", "demo_fixture_seeded", "ok", "Synthetic demo fixture assessment loaded after explicit demo login (assistant-reported example, not verified).");
+    logActivity(db, ownerId, "launchpad", "demo_fixture_seeded", "ok", summary);
+  }
+  function seedSandbox(ownerId: string) {
+    seedDemoFixture(ownerId, "alpha", "Synthetic sandbox assessment loaded (assistant-reported example, not verified).");
+    // The näidis clock is 2026-11-03T12:00Z. Slide every fixture instant by the
+    // same delta so the week reads as "today": past sends stay past, and only
+    // expiries that were already in the future stay in the future.
+    const delta = Date.now() - NAIDIS.NOW.getTime();
+    const shift = (iso: string) => new Date(Date.parse(iso) + delta).toISOString();
+    const shiftOpt = (iso: string | null) => iso ? shift(iso) : null;
+    const shiftOutcome = (raw: string | null) => {
+      if (!raw) return null;
+      const outcome = JSON.parse(raw) as { observed_at?: string; history?: { observed_at?: string }[] };
+      if (outcome.observed_at) outcome.observed_at = shift(outcome.observed_at);
+      if (outcome.history) for (const step of outcome.history) if (step.observed_at) step.observed_at = shift(step.observed_at);
+      return JSON.stringify(outcome);
+    };
+    const insertApproval = db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at,decided_at,consumed_at,outcome_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
+    const insertReport = db.prepare("INSERT INTO reports(owner_id,report_id,kind,payload_hash,payload_json,receipt_json,created_at) VALUES(?,?,?,?,?,?,?)");
+    db.transaction(() => {
+      // Public näidis marks the assessment at this instant; keep the same offset from NAIDIS.NOW.
+      db.prepare("UPDATE assessments SET created_at=? WHERE owner_id=?").run(shift("2026-10-28T10:00:00.000Z"), ownerId);
+      for (const template of NAIDIS.week2) {
+        const id = newId("appr");
+        const outcomeJson = shiftOutcome(template.outcome_json);
+        insertApproval.run(id, ownerId, template.kind, template.report_id, template.payload_json, template.digest, template.state, shift(template.expires_at), shift(template.created_at), shiftOpt(template.decided_at), shiftOpt(template.consumed_at), outcomeJson);
+        if (template.state === "consumed" && outcomeJson) {
+          // One receipt per recorded outcome, the same columns record_action_outcome writes. A paid row's history is sent, then paid.
+          const outcome = JSON.parse(outcomeJson) as { outcome: string; observed_at: string; history?: { outcome: string; observed_at: string }[] };
+          const steps = outcome.history?.length ? outcome.history : [{ outcome: outcome.outcome, observed_at: outcome.observed_at }];
+          steps.forEach((step, i) => {
+            const reportId = `seed:${id}:${i}`;
+            const payload = { report_id: reportId, approval_id: id, digest: template.digest, outcome: step.outcome, observed_at: step.observed_at };
+            const payloadJson = JSON.stringify(payload);
+            const receipt = { receipt_id: newId("rcpt"), kind: "action_outcome_saved", approval_id: id, state: "consumed", outcome: step.outcome, observed_at: step.observed_at, evidence_refs: [] as string[], evidence_label: "assistant_reported" as const, saved_at: step.observed_at, meaning: "Launchpad recorded what your assistant reported. It did not send, pay or file anything and did not verify this outcome." };
+            insertReport.run(ownerId, reportId, "outcome", sha256(payloadJson), payloadJson, JSON.stringify(receipt), step.observed_at);
+          });
+          logActivity(db, ownerId, "assistant", "record_action_outcome", "ok", `Outcome ${outcome.outcome} for approval ${id} (simulated sample history; nothing was really sent).`);
+        }
+      }
+      const prepared = NAIDIS.preparedProgress[0], observedAt = shift(prepared.observed_at);
+      db.prepare("INSERT INTO progress(id,owner_id,task_id,milestone,evidence_label,evidence_refs_json,observed_at,version,created_at) VALUES(?,?,?,?,?,?,?,?,?)").run(newId("prog"), ownerId, prepared.task_id, prepared.milestone, "assistant_reported", "[]", observedAt, 2, observedAt);
+      db.prepare("UPDATE workspaces SET version=2 WHERE owner_id=?").run(ownerId);
+      logActivity(db, ownerId, "assistant", "report_progress", "ok", `${prepared.task_id}: ${prepared.milestone} (assistant reported).`);
+    })();
   }
   function session(req: Request) {
     const raw = cookieVal(req, "lp_session");
     if (!raw) return null;
     const row = db.prepare("SELECT owner_id,csrf,expires_at FROM sessions WHERE id_hash=?").get(sha256(raw)) as { owner_id: string; csrf: string; expires_at: string } | undefined;
-    // ownerAllowed is checked on every lookup, so removing a subject and
+    // Admission is checked on every lookup, so removing a subject and
     // restarting immediately denies existing browser/consent sessions.
-    if (!row || Date.parse(row.expires_at) < Date.now() || !ownerAllowed(row.owner_id)) return null;
+    if (!row || Date.parse(row.expires_at) < Date.now() || !webSessionAllowed(row.owner_id)) return null;
     return row;
   }
-  function startSession(req: Request, res: Response, ownerId: string) {
+  function startSession(req: Request, res: Response, ownerId: string, maxAgeMs = 8 * 3600_000) {
+    // Two hours for every sandbox path, including POST /delete. Callers cannot extend it.
+    if ((db.prepare("SELECT kind FROM owners WHERE id=?").get(ownerId) as { kind: string } | undefined)?.kind === "sandbox") maxAgeMs = SANDBOX_SESSION_MS;
     // Rotate: any session the browser already held is invalidated at sign-in.
     const old = cookieVal(req, "lp_session");
     if (old) db.prepare("DELETE FROM sessions WHERE id_hash=?").run(sha256(old));
@@ -240,8 +367,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     for (const extra of mine.slice(0, Math.max(0, mine.length - 4))) db.prepare("DELETE FROM sessions WHERE id_hash=?").run(extra.id_hash);
     const raw = randomBytes(32).toString("base64url");
     const csrf = randomBytes(24).toString("base64url");
-    db.prepare("INSERT INTO sessions(id_hash,owner_id,csrf,expires_at) VALUES(?,?,?,?)").run(sha256(raw), ownerId, csrf, new Date(Date.now() + 8 * 3600_000).toISOString());
-    res.setHeader("set-cookie", `lp_session=${encodeURIComponent(raw)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${cfg.production ? "; Secure" : ""}`);
+    db.prepare("INSERT INTO sessions(id_hash,owner_id,csrf,expires_at) VALUES(?,?,?,?)").run(sha256(raw), ownerId, csrf, new Date(Date.now() + maxAgeMs).toISOString());
+    res.setHeader("set-cookie", `lp_session=${encodeURIComponent(raw)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(maxAgeMs / 1000)}${cfg.production ? "; Secure" : ""}`);
   }
   const requireOwner = (req: Request, res: Response, next: NextFunction) => {
     const s = session(req);
@@ -258,8 +385,10 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (!s || !safeEqual(given, s.csrf)) { const t = tr(langOf(res)); return res.status(403).type("html").send(publicPage(req, res, t("Turvakontroll ebaõnnestus", "Security check failed"), errorBody(langOf(res), t("Turvakontroll ebaõnnestus", "Security check failed"), t("CSRF-kontroll ebaõnnestus. Mine tagasi, ava leht uuesti ja proovi uuesti. Midagi ei muudetud.", "CSRF check failed. Go back and try again. Nothing was changed.")))); }
     next();
   };
+  // Playbooks, setup and connection 403 for a sandbox (or their forms do). Leave them out of the owner footer.
+  const sandboxGuides = (kind: string) => kind === "sandbox" ? { skipGuides: ["/playbooks", "/setup", "/connection"] as const } : {};
   const page = (req: Request, res: Response, title: string, active: ShellOpts["active"], body: string, extra: Partial<ShellOpts> = {}) => shell({
-    title, active, body, csrf: (req as Authed).csrf ?? "", lang: langOf(res), sample: (req as Authed).ownerKind === "demo", toggle: toggleHref(req, langOf(res)), ...extra,
+    title, active, body, csrf: (req as Authed).csrf ?? "", lang: langOf(res), sample: isSampleKind((req as Authed).ownerKind), toggle: toggleHref(req, langOf(res)), ...sandboxGuides((req as Authed).ownerKind), ...extra,
   });
   /** Public chrome (no nav, no logout) for visitors and error pages. */
   function publicPage(req: Request, res: Response, title: string, body: string, extra: Partial<ShellOpts> = {}) {
@@ -267,6 +396,13 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   }
   /** Owner-facing error inside the shell with a way back (never plain text on the demo path). */
   const ownerError = (req: Request, res: Response, status: number, title: string, message: string) => res.status(status).type("html").send(page(req, res, title, "none", errorBody(langOf(res), title, message)));
+  const refuseSandbox = (req: Request, res: Response, next: NextFunction) => {
+    if ((req as Authed).ownerKind !== "sandbox") return next();
+    const t = tr(langOf(res));
+    const title = t("Näidistööruumis pole saadaval", "Not available in a sample workspace");
+    const message = t("See toiming on väljalülitatud ajutises näidistööruumis. Midagi ei muudetud.", "This action is disabled in a temporary sample workspace. Nothing was changed.");
+    return res.status(403).type("html").send(publicPage(req, res, title, errorBody(langOf(res), title, message), { sample: true }));
+  };
   /** Every standing approval of the owner (live, ended and expired), to name the rule behind an approval. */
   const ownerRules = (ownerId: string) => db.prepare("SELECT * FROM standing_approvals WHERE owner_id=? ORDER BY created_at DESC").all(ownerId) as StandingRule[];
   // Deadlines: only for a known registry code (assessment ref or synthetic demo company).
@@ -302,6 +438,10 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (demoAttempts.size > 1000) demoAttempts.clear();
     return true;
   }
+  const allowSandboxAttempt = sandboxAttemptLimiter();
+  function sandboxRateOk(req: Request): boolean {
+    return allowSandboxAttempt(sandboxRateKey(req.ip || req.socket.remoteAddress || "?"));
+  }
 
   app.get("/health", (_req, res) => res.json({ ok: true, demo: cfg.demo, model_mode: publicCards ? "public_cards" : cfg.modelMode === "disabled" ? "disabled" : "test", live_inference: publicCards ? "enabled" : "disabled", catalog_size: loadCatalog().length, release_sha: releaseSha }));
   app.get("/login", (req, res) => {
@@ -325,6 +465,35 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     startSession(req, res, ownerId);
     logActivity(db, ownerId, "owner", "demo_login", "ok", "Synthetic demo login.");
     res.redirect(oauth.resume(req));
+  });
+
+  // Public, per-browser synthetic sandbox. Stateless double-submit: the cookie
+  // and the hidden field carry the same random value, compared here and then
+  // cleared. It does not use the shared login preauth map. Never the local-only demo-owner login.
+  const prooviCookie = (value: string, maxAge: number) => `lp_proovi=${value ? encodeURIComponent(value) : ""}; HttpOnly; SameSite=Lax; Path=/proovi; Max-Age=${maxAge}${cfg.production ? "; Secure" : ""}`;
+  const prooviError = (req: Request, res: Response, status: number, title: string, message: string) => {
+    const l = langOf(res);
+    return res.status(status).type("html").send(publicPage(req, res, title, errorBody(l, title, message, { href: `/proovi${l === "en" ? "?lang=en" : ""}`, label: tr(l)("Tagasi", "Back") })));
+  };
+  app.get("/proovi", (req, res) => {
+    const token = randomBytes(24).toString("base64url"), l = langOf(res), t = tr(l);
+    res.append("set-cookie", prooviCookie(token, 600));
+    res.type("html").send(publicPage(req, res, t("Proovi ise", "Try it yourself"), `<section class="card hero"><h1>${t("Proovi ise", "Try it yourself")}</h1><p>${esc(t("Saad oma ajutise näidistööruumi väljamõeldud ettevõttega. Saad kinnitusi anda ja keelduda; päriselt ei saadeta midagi. Tööruum kustub 24 tunni pärast.", "You get your own temporary sample workspace with a made-up company. You can approve and decline; nothing is really sent. The workspace is deleted after 24 hours."))}</p><form method="post" action="/proovi"><input type="hidden" name="preauth" value="${esc(token)}"><button type="submit">${t("Alusta", "Start")}</button></form></section>`));
+  });
+  app.post("/proovi", (req, res) => {
+    cleanupSandboxes();
+    const l = langOf(res), t = tr(l);
+    if (!sandboxRateOk(req)) return prooviError(req, res, 429, t("Proovi veidi hiljem", "Try again shortly"), t("Liiga palju katseid. Oota kümme minutit ja proovi uuesti.", "Too many attempts. Wait ten minutes and try again."));
+    const given = String(bodyOf(req).preauth ?? ""), cookie = cookieVal(req, "lp_proovi") ?? "";
+    if (!given || !safeEqual(given, cookie)) return prooviError(req, res, 403, t("Alusta uuesti", "Start again"), t("Ava proovimise leht selles brauseris uuesti. Tööruumi ei loodud.", "Open the try-it page in this browser again. No workspace was created."));
+    const active = (db.prepare("SELECT count(*) n FROM owners WHERE kind='sandbox'").get() as { n: number }).n;
+    if (active >= SANDBOX_LIMIT) { res.append("set-cookie", prooviCookie("", 0)); return prooviError(req, res, 503, t("Proovi veidi hiljem", "Try again later"), t("Näidistööruume on praegu liiga palju, proovi hiljem.", "There are too many sample workspaces right now. Please try later.")); }
+    const ownerId = ensureOwner(`sandbox:${randomBytes(24).toString("base64url")}`, null, "sandbox", "Mari Disain OÜ (näidis)");
+    seedSandbox(ownerId);
+    startSession(req, res, ownerId, SANDBOX_SESSION_MS);
+    res.append("set-cookie", prooviCookie("", 0));
+    logActivity(db, ownerId, "owner", "sandbox_started", "ok", "Temporary synthetic sandbox started; nothing is really sent.");
+    res.redirect("/");
   });
   app.post("/auth/logout", requireOwner, csrfOk, (req, res) => {
     const raw = cookieVal(req, "lp_session");
@@ -418,7 +587,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const reportCount = (db.prepare("SELECT count(*) n FROM reports WHERE owner_id=?").get(oid(req)) as { n: number }).n;
     const l = langOf(res);
     res.type("html").send(page(req, res, tr(l)("Täna", "Today"), "tana", tanaBody({
-      lang: l, csrf: (req as Authed).csrf, sample: (req as Authed).ownerKind === "demo", label: st.ws.label,
+      lang: l, csrf: (req as Authed).csrf, sample: isSampleKind((req as Authed).ownerKind), label: st.ws.label,
       assessment: st.assessment, coverage: st.coverage, assessedAt: st.assessed_at, exclusions: st.exclusions,
       approvals, progress: st.progress as unknown as { task_id: string; milestone: string; observed_at: string }[],
       // A checksum-invalid ref is the only lookup that computes nothing: say so instead of dropping the section.
@@ -426,7 +595,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       needs: ownerNeeds(db, oid(req)), reportCount, rules: ownerRules(oid(req)), handover: ownerHandover(oid(req), st.assessment, deadlines),
     })));
   } catch (e) { next(e); } });
-  app.post("/unmet-needs/decide", requireOwner, csrfOk, (req, res) => {
+  app.post("/unmet-needs/decide", requireOwner, refuseSandbox, csrfOk, (req, res) => {
     const body = bodyOf(req);
     const extra = Object.keys(body).filter((k) => !["csrf", "need_id", "decision"].includes(k));
     const decision = body.decision === "publish" || body.decision === "keep_private" ? body.decision : null;
@@ -472,10 +641,10 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const rows = db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=? ORDER BY id DESC LIMIT 100").all(oid(req)) as Record<string, string>[];
     const receipts = db.prepare("SELECT kind,report_id,payload_json,receipt_json,created_at FROM reports WHERE owner_id=? ORDER BY created_at DESC LIMIT 20").all(oid(req)) as Record<string, string>[];
     const st = getState(db, oid(req));
-    res.type("html").send(page(req, res, tr(langOf(res))("Tehtud", "Done"), "tehtud", activityBody({ rows, receipts, exclusions: st.exclusions, assessment: st.assessment, sample: (req as Authed).ownerKind === "demo", lang: langOf(res), approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(oid(req)) as ApprovalRow[], rules: ownerRules(oid(req)) })));
+    res.type("html").send(page(req, res, tr(langOf(res))("Tehtud", "Done"), "tehtud", activityBody({ rows, receipts, exclusions: st.exclusions, assessment: st.assessment, sample: isSampleKind((req as Authed).ownerKind), lang: langOf(res), approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(oid(req)) as ApprovalRow[], rules: ownerRules(oid(req)) })));
   });
 
-  app.get("/playbooks", requireOwner, (req, res) => {
+  app.get("/playbooks", requireOwner, refuseSandbox, (req, res) => {
     // Saved friction cards only: this GET never starts inference.
     const friction = publicCards ? publicCards.readFrictionCards().map((c) => ({ ...c, label: findTopic(FRICTION_TOPICS, c.topicId)!.label[c.locale] })) : undefined;
     res.type("html").send(page(req, res, tr(langOf(res))("Mängukavad", "Playbooks"), "none", playbooksBody(langOf(res), PLAYBOOKS, friction)));
@@ -483,10 +652,11 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // Public research catalogue (ET first). Signed-in owners keep their nav; never cached (the shell carries their CSRF).
   app.get("/kataloog", (req, res) => {
     const s = session(req), l = langOf(res);
+    const kind = s ? (db.prepare("SELECT kind FROM owners WHERE id=?").get(s.owner_id) as { kind: string } | undefined)?.kind ?? "" : "";
     const q = String(req.query.q ?? "").trim().slice(0, 120);
     const g = CATALOGUE_GROUPS.find((x) => x.id === req.query.g)?.id ?? null;
     const matched = q ? new Set(searchServices(q, Infinity).map((r) => r.id)) : null;
-    res.type("html").send(shell({ title: tr(l)("Kataloog", "Catalogue"), active: "none", csrf: s?.csrf ?? "", lang: l, toggle: toggleHref(req, l), body: catalogueBody({ lang: l, q, g, records: loadCatalog(), matched }) }));
+    res.type("html").send(shell({ title: tr(l)("Kataloog", "Catalogue"), active: "none", csrf: s?.csrf ?? "", lang: l, toggle: toggleHref(req, l), ...sandboxGuides(kind), body: catalogueBody({ lang: l, q, g, records: loadCatalog(), matched }) }));
   });
   app.get("/services", (req, res) => {
     const p = new URLSearchParams();
@@ -495,8 +665,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   });
 
   const setupPublicCards = (card: PublicCardView | null) => ({ topics: SETUP_TOPICS.map((t) => ({ id: t.id, label: t.label.en })), card });
-  app.get("/setup", requireOwner, (req, res) => res.type("html").send(page(req, res, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result: null, ...(publicCards ? { publicCards: setupPublicCards(null) } : {}) }), { bodyLang: "en" })));
-  app.post("/setup", requireOwner, csrfOk, async (req, res) => {
+  app.get("/setup", requireOwner, refuseSandbox, (req, res) => res.type("html").send(page(req, res, "Setup helper", "none", setupBody({ csrf: (req as Authed).csrf, result: null, ...(publicCards ? { publicCards: setupPublicCards(null) } : {}) }), { bodyLang: "en" })));
+  app.post("/setup", requireOwner, refuseSandbox, csrfOk, async (req, res) => {
     if (publicCards) {
       // Explicit fixed-topic generation only: current allowlisted Google
       // (never demo) owner + CSRF (above) before any reservation. The
@@ -563,7 +733,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     }
     res.set("pragma", "no-cache").type("text/calendar; charset=utf-8").send(body);
   } catch (e) { next(e); } });
-  app.post("/calendar/feed", requireOwner, csrfOk, (req, res) => {
+  app.post("/calendar/feed", requireOwner, refuseSandbox, csrfOk, (req, res) => {
     const raw = randomBytes(32).toString("base64url");
     db.prepare("INSERT INTO calendar_feeds(owner_id,token_hash,created_at) VALUES(?,?,?) ON CONFLICT(owner_id) DO UPDATE SET token_hash=excluded.token_hash,created_at=excluded.created_at").run(oid(req), sha256(raw), nowIso());
     logActivity(db, oid(req), "owner", "calendar_feed_created", "ok", "Calendar feed created (one per owner; a new one replaces the old address).");
@@ -581,9 +751,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const owner = db.prepare("SELECT reporting_enabled FROM owners WHERE id=?").get(oid(req)) as { reporting_enabled: number };
     const tokens = db.prepare("SELECT id,scopes,revoked,created_at,last_used_at FROM mcp_tokens WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, unknown>[];
     const candidates = db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=? ORDER BY created_at DESC").all(oid(req)) as Record<string, string>[];
-    res.type("html").send(page(req, res, tr(langOf(res))("Andmed ja õigused", "Connection & data"), "none", connectionBody({ lang: langOf(res), csrf: (req as Authed).csrf, baseUrl: cfg.baseUrl, reportingEnabled: owner.reporting_enabled === 1, tokens, candidates, milestones: getAssistantMilestones(db, oid(req)), grants: db.prepare("SELECT g.id,g.scopes,g.revoked,g.expires,g.redirect,c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? ORDER BY g.rowid DESC").all(oid(req)) as Record<string, string>[] })));
+    res.type("html").send(page(req, res, tr(langOf(res))("Andmed ja õigused", "Connection & data"), "none", connectionBody({ lang: langOf(res), csrf: (req as Authed).csrf, baseUrl: cfg.baseUrl, reportingEnabled: owner.reporting_enabled === 1, tokens, candidates, milestones: getAssistantMilestones(db, oid(req)), grants: db.prepare("SELECT g.id,g.scopes,g.revoked,g.expires,g.redirect,c.metadata FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? ORDER BY g.rowid DESC").all(oid(req)) as Record<string, string>[], sandbox: (req as Authed).ownerKind === "sandbox" })));
   });
-  app.post("/tokens", requireOwner, csrfOk, (req, res) => {
+  app.post("/tokens", requireOwner, refuseSandbox, csrfOk, (req, res) => {
     const owner = db.prepare("SELECT epoch FROM owners WHERE id=?").get(oid(req)) as { epoch: number };
     const active = db.prepare("SELECT id FROM mcp_tokens WHERE owner_id=? AND revoked=0 ORDER BY created_at ASC, rowid ASC").all(oid(req)) as { id: string }[];
     for (const extra of active.slice(0, Math.max(0, active.length - 9))) db.prepare("UPDATE mcp_tokens SET revoked=1 WHERE id=?").run(extra.id);
@@ -598,11 +768,11 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     logActivity(db, oid(req), "owner", "token_revoke", "ok", "Assistant token revoked.");
     res.redirect("/connection");
   });
-  app.post("/reporting", requireOwner, csrfOk, (req, res) => {
+  app.post("/reporting", requireOwner, refuseSandbox, csrfOk, (req, res) => {
     db.prepare("UPDATE owners SET reporting_enabled=? WHERE id=?").run(bodyOf(req).enabled === "1" ? 1 : 0, oid(req));
     res.redirect("/connection");
   });
-  app.post("/candidates/delete", requireOwner, csrfOk, (req, res) => {
+  app.post("/candidates/delete", requireOwner, refuseSandbox, csrfOk, (req, res) => {
     db.prepare("DELETE FROM candidates WHERE id=? AND owner_id=?").run(String(bodyOf(req).candidate_id ?? ""), oid(req));
     logActivity(db, oid(req), "owner", "candidate_delete", "ok", "Own service nomination deleted.");
     res.redirect("/connection");
@@ -613,7 +783,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   app.get("/approvals", requireOwner, (req, res) => {
     expireApprovals(db, oid(req));
     const rows = db.prepare("SELECT * FROM approvals WHERE owner_id=? ORDER BY state='pending' DESC, created_at DESC LIMIT 200").all(oid(req)) as ApprovalRow[];
-    res.type("html").send(page(req, res, tr(langOf(res))("Kinnitused", "Approvals"), "none", approvalsListBody(rows, langOf(res), (req as Authed).ownerKind === "demo")));
+    res.type("html").send(page(req, res, tr(langOf(res))("Kinnitused", "Approvals"), "none", approvalsListBody(rows, langOf(res), isSampleKind((req as Authed).ownerKind))));
   });
   app.get("/approvals/:id", requireOwner, async (req, res, next) => { try {
     const t = tr(langOf(res));
@@ -622,7 +792,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     // Once the assistant has recorded a done outcome, the receipt shows the owner's „Käest ära” strip (#63).
     const assessment = isDone(a) ? getState(db, oid(req)).assessment : null;
     const handover = isDone(a) ? ownerHandover(oid(req), assessment, await ownerDeadlines(assessment)) : undefined;
-    res.type("html").send(page(req, res, t("Kinnitus", "Approval"), "none", approvalCardBody({ csrf: (req as Authed).csrf, a, lang: langOf(res), sample: (req as Authed).ownerKind === "demo", rules: ownerRules(oid(req)), handover,
+    res.type("html").send(page(req, res, t("Kinnitus", "Approval"), "none", approvalCardBody({ csrf: (req as Authed).csrf, a, lang: langOf(res), sample: isSampleKind((req as Authed).ownerKind), rules: ownerRules(oid(req)), handover,
       // The same default cap as the Ühendus offer, from this send and the owner's past approvals of its job (QA m4).
       capCents: offerCapCents(largestAmount([a, ...standingBasis(db.prepare("SELECT * FROM approvals WHERE owner_id=? AND kind=?").all(oid(req), a.kind ?? "") as ApprovalRow[], a.kind ?? "")])) })));
   } catch (e) { next(e); } });
@@ -638,8 +808,16 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (!safeEqual(String(bodyOf(req).digest ?? ""), a.digest)) return ownerError(req, res, 409, t("Kaart on vananenud", "This card is out of date"), t("Midagi muutus pärast seda, kui kaardi avasid. Midagi ei kinnitatud. Ava kinnitus uuesti.", "Something changed after you opened the card. Nothing was approved. Open the approval again."));
     if (decision === "approve" && approvalAddressMissing(a)) return ownerError(req, res, 409, t("Aadress puudub", "Address missing"), t("Aadress puudub — seda kinnitust ei saa kasutada. Midagi ei kinnitatud. Keeldu ja palu assistendil küsida uus kinnitus koos saaja aadressiga.", "Address missing — this approval cannot be used. Nothing was approved. Decline it and ask your assistant for a new approval with the recipient's address."));
     const state = decision === "approve" ? "approved" : "declined";
-    db.prepare("UPDATE approvals SET state=?,decided_at=? WHERE id=? AND owner_id=? AND state='pending'").run(state, nowIso(), a.id, oid(req));
+    const decided = db.prepare("UPDATE approvals SET state=?,decided_at=? WHERE id=? AND owner_id=? AND state='pending'").run(state, nowIso(), a.id, oid(req));
+    // A repeat submit (double-click, or a race that already decided the row) must not
+    // simulate again: the same sandbox report id would conflict and 500. Redirect like a first success.
+    if (decided.changes !== 1) return res.redirect(`/approvals/${encodeURIComponent(a.id)}`);
     logActivity(db, oid(req), "owner", "approval_decided", state, `Owner ${state} ${a.kind ?? "action"} (digest ${a.digest.slice(0, 12)}). Launchpad sent, paid and filed nothing.`);
+    if (decision === "approve" && (req as Authed).ownerKind === "sandbox") {
+      const summary = t(`Näidis: assistent saatis — päriselt ei saadetud (kinnitus ${a.id}).`, `Sample: the assistant sent it — nothing was really sent (approval ${a.id}).`);
+      const result = recordActionOutcome(db, oid(req), { report_id: `sandbox:${a.id}`, approval_id: a.id, digest: a.digest, outcome: "sent", observed_at: nowIso() }, summary);
+      if ("error" in result) return ownerError(req, res, 500, t("Näidistulemust ei salvestatud", "Sample outcome was not saved"), t("Kinnitus salvestati, kuid näidistulemust ei salvestatud. Päriselt ei saadetud midagi.", "Your approval was saved, but the sample outcome was not. Nothing was really sent."));
+    }
     res.redirect(`/approvals/${encodeURIComponent(a.id)}`);
   });
 
@@ -717,6 +895,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // Opens Claude or ChatGPT with the guide already typed in (not sent). The host is fixed.
   // The phone app takes over the navigation and leaves this tab showing the 302 body.
   app.get("/uhenda/ava", (req, res) => {
+    const s = session(req);
+    if (s && (db.prepare("SELECT kind FROM owners WHERE id=?").get(s.owner_id) as { kind: string } | undefined)?.kind === "sandbox") return res.redirect("/uhenda");
     const assistant = req.query.a === "chatgpt" ? "chatgpt" : "claude";
     const l = langOf(res);
     const endpoint = `${String(cfg.baseUrl ?? "").replace(/\/+$/, "")}/mcp`;
@@ -726,7 +906,6 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     // Estonian object case is not a suffix: Claude'i (apostrophe, same as Claude'iga); ChatGPT takes none.
     const openedEt: Record<typeof assistant, string> = { claude: "Claude'i", chatgpt: "ChatGPT" };
     const t = tr(l);
-    const s = session(req);
     const opened = t(`Avasin ${openedEt[assistant]}`, `Opened ${name}`);
     const body = `<h1>${esc(opened)}</h1><p>${esc(t(`Kui ${name} ei avanenud,`, `If ${name} did not open,`))} <a class="btn" href="${esc(target)}">${esc(t("vajuta siia", "press here"))}</a>.</p><p><a class="tap-link" href="/uhenda">${esc(t("Tagasi: Ühendus", "Back: Connection"))}</a></p>`;
     res.status(302).location(target).type("html").send(shell({ title: opened, active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, toggle: toggleHref(req, l), body }));
@@ -738,7 +917,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const kind = s ? (db.prepare("SELECT kind FROM owners WHERE id=?").get(s.owner_id) as { kind: string } | undefined)?.kind ?? "" : "";
     let state: ConnectState = { kind: "anon" };
     if (s) {
-      if (kind === "demo") state = { kind: "sample" };
+      if (isSampleKind(kind)) state = { kind: "sample" };
       else {
         // Each credential's own last use: an OAuth grant names its client; a manual token stays unnamed.
         const g = db.prepare("SELECT c.metadata, g.last_used_at at FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? AND g.revoked=0 AND g.expires>? AND g.last_used_at IS NOT NULL ORDER BY g.last_used_at DESC LIMIT 1").get(s.owner_id, Date.now()) as { metadata: string; at: string } | undefined;
@@ -751,12 +930,14 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
         } else state = { kind: "waiting" };
       }
     }
+    // Sandbox reuses the demo sample state and omits the open-assistant hero, token, setup and calendar actions (those 403).
+    const sandboxOwner = kind === "sandbox";
     const assessment = s ? getState(db, s.owner_id).assessment : null;
-    const feed = s ? db.prepare("SELECT created_at FROM calendar_feeds WHERE owner_id=?").get(s.owner_id) as { created_at: string } | undefined : undefined;
-    const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : "claude", state, owner: !!s, expanded: req.query.naita === "1", ...(s ? { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null }, standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, assessment, await ownerDeadlines(assessment)) } : {}) });
-    res.type("html").send(shell({ title: tr(l)("Ühenda", "Connect"), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, sample: kind === "demo", toggle: toggleHref(req, l), body,
+    const feed = s && !sandboxOwner ? db.prepare("SELECT created_at FROM calendar_feeds WHERE owner_id=?").get(s.owner_id) as { created_at: string } | undefined : undefined;
+    const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : "claude", state, owner: !!s && !sandboxOwner, sandbox: sandboxOwner, expanded: req.query.naita === "1", ...(s ? { ...(sandboxOwner ? {} : { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null } }), standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, assessment, await ownerDeadlines(assessment)) } : {}) });
+    res.type("html").send(shell({ title: tr(l)("Ühenda", "Connect"), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, sample: isSampleKind(kind), toggle: toggleHref(req, l), body,
       // Zero JS: while an owner waits for the first assistant contact, the page reloads itself.
-      head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "" }));
+      head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "", ...sandboxGuides(kind) }));
   } catch (e) { next(e); } });
 
   app.get("/export", requireOwner, (req, res) => {

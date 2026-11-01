@@ -88,7 +88,7 @@ export function naidisBody(step: NaidisStep, lang: Lang, approval = pendingAppro
   return `<section class="naidis-frame" aria-label="${esc(t("Näidise juhend", "Sample guide"))}">
 <p class="naidis-banner">${esc(t("Näidis: väljamõeldud ettevõte Mari Disain OÜ. Siin ei saa midagi kinnitada ega saata. Päris tööruumis teeb seda sinu assistent ja kinnitad sina.", "Sample: the made-up company Mari Disain OÜ. Nothing can be approved or sent here. In a real workspace your assistant does this and you approve."))}</p>
 <nav class="naidis-steps" aria-label="${esc(t("Näidise sammud", "Sample steps"))}">${steps.map(([key, href, label]) => `<a href="${href}${lang === "en" ? "?lang=en" : ""}"${key === step ? ' aria-current="page"' : ""}>${esc(label)}</a>`).join("")}</nav>
-<p class="naidis-note">${esc(note)}</p></section>
+<p class="naidis-note">${esc(note)}</p><p class="naidis-cta"><a class="btn secondary" href="/proovi${lang === "en" ? "?lang=en" : ""}">${esc(t("Proovi ise", "Try it yourself"))}</a></p></section>
 <fieldset disabled class="naidis-ro">${sampleLinks(body, lang)}</fieldset>
 ${step === "tehtud" ? `<p class="naidis-cta"><a class="btn" href="/uhenda${lang === "en" ? "?lang=en" : ""}">${esc(t("Ühenda oma assistent", "Connect your assistant"))}</a></p>` : ""}`;
 }

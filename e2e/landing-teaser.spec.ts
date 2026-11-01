@@ -173,6 +173,8 @@ test("pause toggle: keyboard-focusable, 44 px, stops the animation without scrip
   await page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma assistent" }).focus();
   await page.keyboard.press("Tab"); // the public sample link follows the primary action
   await expect(page.locator(".landing-hero").getByRole("link", { name: "Vaata näidist" })).toBeFocused();
+  await page.keyboard.press("Tab"); // „Proovi ise” sits next to the sample
+  await expect(page.locator(".landing-hero").getByRole("link", { name: "Proovi ise" })).toBeFocused();
   await page.keyboard.press("Tab"); // the public /vali chooser link is the next tab stop
   await expect(page.locator(".landing-hero").getByRole("link", { name: "Pole veel AI-assistenti? Aita mul valida" })).toBeFocused();
   await page.keyboard.press("Tab"); // next stop is the pause toggle

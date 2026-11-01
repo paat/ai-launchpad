@@ -755,6 +755,8 @@ export interface ShellOpts {
   bodyLang?: Lang;
   /** No owner nav or footer (mid-OAuth consent): nothing invites leaving the flow. */
   bare?: boolean;
+  /** Owner-footer guide hrefs to leave out. */
+  skipGuides?: readonly string[];
 }
 export function shell(o: ShellOpts): string {
   const l = o.lang ?? "et", t = tr(l), other: Lang = l === "et" ? "en" : "et", owner = o.csrf !== "";
@@ -763,9 +765,10 @@ export function shell(o: ShellOpts): string {
   // The bare consent page keeps the brand as text: nothing invites leaving the flow.
   const brand = `<span class="mark" aria-hidden="true"></span>${t("AI-hüppelaud", "AI Launchpad")}`;
   const main = o.bodyLang && o.bodyLang !== l ? `<div lang="${o.bodyLang}">${o.body}</div>` : o.body;
+  const ownerGuides = ([["/approvals", t("Kinnitused", "Approvals")], ["/connection", t("Andmed ja õigused", "Data and permissions")], ["/demand", t("Avatud soovid", "Open demand")], ["/playbooks", t("Mängukavad", "Playbooks")], ["/kataloog", t("Kataloog", "Catalogue")], ["/setup", t("Abi alustamiseks", "Setup helper")]] as const).filter(([href]) => !o.skipGuides?.includes(href)).map(([href, label]) => `<a href="${href}">${label}</a>`).join("");
   const footer = o.bare ? ""
     : owner
-    ? `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/approvals">${t("Kinnitused", "Approvals")}</a><a href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/playbooks">${t("Mängukavad", "Playbooks")}</a><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/setup">${t("Abi alustamiseks", "Setup helper")}</a></nav>
+    ? `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}">${ownerGuides}</nav>
 <form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(o.csrf)}"><button type="submit">${t("Logi välja", "Log out")}</button></form></footer>`
     : `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/login">${t("Logi sisse", "Sign in")}</a></nav></footer>`;
   return `<!doctype html><html lang="${l}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${o.head ?? ""}<title>${esc(o.title)} · ${t("AI-hüppelaud", "AI Launchpad")}</title><style>${CSS}</style></head><body><div class="wrap">
@@ -876,7 +879,7 @@ function milestoneBlock(l: Lang, milestones?: AssistantMilestones): string {
   return `<section class="card" aria-label="${label}">${head}${last}${saved}${note}${meaning}</section>`;
 }
 
-export function connectionBody(opts: { lang: Lang; csrf: string; baseUrl: string; reportingEnabled: boolean; tokens: Record<string, unknown>[]; grants: Record<string, string>[]; candidates: Record<string, string>[]; milestones?: AssistantMilestones }): string {
+export function connectionBody(opts: { lang: Lang; csrf: string; baseUrl: string; reportingEnabled: boolean; tokens: Record<string, unknown>[]; grants: Record<string, string>[]; candidates: Record<string, string>[]; milestones?: AssistantMilestones; sandbox?: boolean }): string {
   const l = opts.lang, t = tr(l), en = l === "en" ? "" : ' lang="en"', csrf = esc(opts.csrf);
   const example = JSON.stringify({ report_id: "oct-assessment", expected_version: 3, assessment: { assessed_domains: ["money", "customers"], responsibilities: [{ id: "invoicing", domain: "money", label: "Sales invoicing", applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: "…", access: "…", success_criterion: "…", next_checkpoint: "…", reason: "short reason", evidence_refs: ["provider-object:123"] }], gaps: [], conclusion: "short conclusion", next_action: { title: "…", rationale: "…", uncertainty: "…", needs_owner: true } } }, null, 1);
   const endpoint = `${String(opts.baseUrl ?? "").replace(/\/+$/, "")}/mcp`;
@@ -896,7 +899,7 @@ ${copyBlock("endpoint", t("Kopeeri MCP-aadress", "Copy MCP address"), endpoint, 
   }).join("");
   const tokenRows = opts.tokens.map((tk) => {
     const revoked = isFlagged(tk.revoked);
-    return `<div class="row"><code>${esc(tk.id)}</code><br><span class="small muted">${t("Õigused", "Scopes")}: ${esc(tk.scopes)} · ${revoked ? t("tühistatud", "revoked") : t("aktiivne", "active")} · ${t("loodud", "created")} ${esc(tk.created_at)}${tk.last_used_at ? ` · ${t("viimati kasutatud", "last used")} ${esc(tk.last_used_at)}` : ""}</span>${revoked ? "" : `<form method="post" action="/tokens/revoke"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="token_id" value="${esc(tk.id)}"><button type="submit" class="secondary">${t("Tühista see võti", "Revoke this token")}</button></form>`}</div>`;
+    return `<div class="row"><code>${esc(tk.id)}</code><br><span class="small muted">${t("Õigused", "Scopes")}: ${esc(tk.scopes)} · ${revoked ? t("tühistatud", "revoked") : t("aktiivne", "active")} · ${t("loodud", "created")} ${esc(tk.created_at)}${tk.last_used_at ? ` · ${t("viimati kasutatud", "last used")} ${esc(tk.last_used_at)}` : ""}</span>${revoked || opts.sandbox ? "" : `<form method="post" action="/tokens/revoke"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="token_id" value="${esc(tk.id)}"><button type="submit" class="secondary">${t("Tühista see võti", "Revoke this token")}</button></form>`}</div>`;
   }).join("");
   return `<h1>${t("Andmed ja õigused", "Connection &amp; data")}</h1>
 <section class="card" aria-label="${t("Ühenda oma assistent", "Connect your assistant")}"><h2>${t("Ühenda oma assistent", "Connect your assistant")}</h2>
@@ -924,13 +927,13 @@ ${milestoneBlock(l, opts.milestones)}
 <p class="small muted">${t("Kinnitatud ligipääs on ainult luba; see ei tõenda, et assistent mõne töö tegi.", "An approved grant is permission only; it is not evidence of a completed assistant task.")}</p>
 ${grantRows || `<p>${t("Assistendi ligipääsu pole veel kinnitatud.", "No assistant access approved yet.")}</p>`}
 <details><summary>${t("Edasijõudnutele: käsitsi võtmed", "Advanced: manual tokens")}</summary><p class="small muted">${t("Ainult arenduseks: klientidele, mis saadavad oma autoriseerimispäise. Võtit näidatakse üks kord väljastamisel ja mitte kunagi sellel lehel.", "Development only — for clients that send a custom authorization header. Tokens are shown once at issue time and never on this page.")}</p>
-<form method="post" action="/tokens"><input type="hidden" name="csrf" value="${csrf}"><button type="submit">${t("Väljasta assistendi võti (lugemine + aruanded)", "Issue assistant token (read + report)")}</button></form>
+${opts.sandbox ? "" : `<form method="post" action="/tokens"><input type="hidden" name="csrf" value="${csrf}"><button type="submit">${t("Väljasta assistendi võti (lugemine + aruanded)", "Issue assistant token (read + report)")}</button></form>`}
 ${tokenRows || `<p class="muted">${t("Võtmeid veel pole.", "No tokens yet.")}</p>`}</details>
 </section>
 <section class="card"><h2>${t("Töö käigu jagamise luba", "Progress sharing permission")}</h2>
 <p>${t("Praegu", "Currently")}: <strong>${opts.reportingEnabled ? t("sees", "on") : t("väljas (vaikimisi)", "off (the default)")}</strong>.</p>
 <p class="small">${t("Lugemisõigus ja salvestatud aruanded on eraldi: lugemine näitab sinu salvestatud töö käiku, jagamine laseb assistendil siia lühikesi teateid ja oma hinnangu <em>salvestada</em>.", "Read access and saved reports are separate: reading shows your saved progress; sharing lets your assistant <em>save</em> concise updates and its assessment here.")}</p>
-<form method="post" action="/reporting"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="enabled" value="${opts.reportingEnabled ? "0" : "1"}"><button type="submit">${opts.reportingEnabled ? t("Lõpeta töö käigu jagamine", "Stop progress sharing") : t("Luba töö käigu jagamine", "Allow progress sharing")}</button></form>
+${opts.sandbox ? "" : `<form method="post" action="/reporting"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="enabled" value="${opts.reportingEnabled ? "0" : "1"}"><button type="submit">${opts.reportingEnabled ? t("Lõpeta töö käigu jagamine", "Stop progress sharing") : t("Luba töö käigu jagamine", "Allow progress sharing")}</button></form>`}
 <details><summary>${t("Kuidas jagamine töötab", "How sharing works")}</summary>
 <p class="small muted">${t("Üks luba katab mõlemat, mida assistent siia salvestada tohib: lühikesed teated tööde kohta ja tema hinnangu sinu ettevõttele (liigitused, lühikesed põhjendused, lüngad, üks järgmine samm). AI-hüppelaud ei saa sinu vestlusi; see salvestab ainult selle, mida assistent saadab, sealhulgas kinnitustaotluste täpse teksti. See luba ei kinnita kunagi ühtegi äritoimingut.", "One grant covers both things your assistant may save here: concise task updates and its business assessment (classifications, short reasons, gaps, one next action). Launchpad does not receive your conversations; it stores only what your assistant sends it, including the exact text of approval requests. This permission never approves business actions.")}</p>
 <p class="small muted">${t("Jagamise väljalülitamine keelab assistendil siia aruandeid salvestada; see ei võta ära lugemisõigust, mille oled juba andnud.", "Turning sharing off blocks your assistant from saving reports here; it does not remove read access you already approved to your saved progress.")}</p>
@@ -940,7 +943,7 @@ ${tokenRows || `<p class="muted">${t("Võtmeid veel pole.", "No tokens yet.")}</
 <details><summary>${t("Vaata, mida üks aruanne täpselt sisaldab", "See exactly what one report contains")}</summary><pre${en}>${esc(example)}</pre></details></section>
 <section class="card"><h2>${t("Sinu teenusesoovitused", "Your service nominations")}</h2>
 <p class="muted">${t("Teenused, mida sinu assistent soovitas. Need on nähtavad ainult sinu tööruumis ja ootavad inimese ülevaatust; neid ei avaldata kunagi automaatselt.", "Services your assistant nominated. They are private to your workspace and wait for human moderation — never auto-published.")}</p>
-${opts.candidates.map((c) => `<div class="row"><strong>${esc(c.name)}</strong> <span class="pill"${en}>${esc(c.status)}</span><br><span class="small muted">${esc(c.connection)} · ${esc(c.jobs)} · ${esc(c.created_at)}</span><form method="post" action="/candidates/delete"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="candidate_id" value="${esc(c.id)}"><button type="submit" class="secondary">${t("Kustuta see soovitus", "Delete this nomination")}</button></form></div>`).join("") || `<p class="muted">${t("Veel pole.", "None yet.")}</p>`}
+${opts.candidates.map((c) => `<div class="row"><strong>${esc(c.name)}</strong> <span class="pill"${en}>${esc(c.status)}</span><br><span class="small muted">${esc(c.connection)} · ${esc(c.jobs)} · ${esc(c.created_at)}</span>${opts.sandbox ? "" : `<form method="post" action="/candidates/delete"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="candidate_id" value="${esc(c.id)}"><button type="submit" class="secondary">${t("Kustuta see soovitus", "Delete this nomination")}</button></form>`}</div>`).join("") || `<p class="muted">${t("Veel pole.", "None yet.")}</p>`}
 </section>
 <section class="card"><h2>${t("Sinu minimaalsed andmed", "Your minimal data")}</h2>
 <p>${t("AI-hüppelaud salvestab sinu hinnangud, tööde aruanded, tegevused, teenusesoovitused ja võtmed. Samuti salvestab see iga kinnitustaotluse täpse teksti, mille assistent sulle kinnitamiseks saadab (igaüks kuni 4000 märki, koos saaja aadressi, summade ja arvudega), ning isikustamata teksti nendest päringutest, mida assistent teha ei saanud, ning iga assistendi loetud pangaväljavõtte kohta panga, konto neli viimast numbrit, perioodi ja lõppsaldo, kuni kustutad oma töö käigu. Sinu vestlusi see kunagi ei saa. Kustutamine tühistab ka võtmed ja logib välja teised seansid, nii et vanad ootel aruanded ei saa andmeid taastada. See ei kustuta ühegi teenusepakkuja kirjeid.", "Launchpad stores your assessments, task reports, activity, service nominations and tokens. It also stores the exact text of every approval request your assistant asks you to approve (up to 4,000 characters each, with the recipient's address, amounts and figures) and the de-identified text of requests your assistant could not do, and for each bank statement your assistant read, the bank, the account's last four digits, the period and the closing balance, until you delete your progress. It never receives your conversations. Deleting also revokes tokens and signs out other sessions, so old queued reports cannot recreate it. It does not delete any provider's records.")}</p>
@@ -1703,7 +1706,7 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
 <section class="landing-hero" aria-labelledby="hero-h"><div>
 <h1 id="hero-h">${t("Tegele sellega, milles oled hea.", "Focus on what you're good at.")} <span>${t("Kontoritöö teeb sinu AI-assistent.", "Your AI assistant does the office work.")}</span></h1>
 <p class="lede">${esc(t("Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud juhib tööd: ütleb, milliseid ühendusi vaja, küsib sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude'iga.", "Your assistant does the office work through your accounting, bank and e-mail connectors. AI Launchpad runs the work: it tells you which connectors you need, asks for your approval, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude."))}</p>
-<div class="landing-actions"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a><a class="tap-link" href="/naidis">${t("Vaata näidist", "See a sample")}</a></div>
+<div class="landing-actions"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a><a class="tap-link" href="/naidis">${t("Vaata näidist", "See a sample")}</a><a class="tap-link" href="/proovi">${t("Proovi ise", "Try it yourself")}</a></div>
 <p class="small"><a class="tap-link" href="/vali">${t(...CHOOSE_LINK)}</a></p></div>
 <figure class="teaser" id="landing-phone">
 <input type="checkbox" id="teaser-pause" class="vh-input">
@@ -1908,7 +1911,7 @@ export function assistantGuidePrompt(lang: Lang, assistant: "chatgpt" | "claude"
   return `Tere! Aita mul ühendada AI-hüppelaud oma ChatGPT-ga. Juhenda mind lihtsate sõnadega, üks samm korraga, ja oota, kuni ütlen „tehtud”.\n1. Ava seadetes ühendused (Apps) ja lisa uus ühendus.\n2. Nimi: AI-hüppelaud. Aadress: ${endpoint}.\n3. Logi sisse ja kinnita.\nKui ühendus töötab, kasuta AI-hüppelaua tööriista get_started.`;
 }
 
-export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; now?: Date; expanded?: boolean; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] }; handover?: Handover }): Promise<string> {
+export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude"; state: ConnectState; owner: boolean; sandbox?: boolean; now?: Date; expanded?: boolean; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] }; handover?: Handover }): Promise<string> {
   const l = o.lang, t = tr(l), now = o.now ?? new Date();
   const base = String(o.baseUrl ?? "").replace(/\/+$/, ""), endpoint = `${base}/mcp`;
   const openPath = `/uhenda/ava?a=${o.assistant}&lang=${l}`;
@@ -1924,19 +1927,21 @@ export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "
   const address = remoteReady ? `<div class="endpoint"><code>${wbr(endpoint)}</code></div><p class="small muted">${t("Vali aadress ja kopeeri see.", "Select the address and copy it.")}</p>` : httpsNote;
   const prompt = assistantGuidePrompt(l, o.assistant, endpoint);
   const caption = t("Telefonis: suuna kaamera sellele koodile.", "On your phone: point the camera at this code.");
-  const qr = remoteReady ? `<figure class="qr-card"><div class="qr-box">${(await QRCode.toString(`${base}${openPath}`, { type: "svg", margin: 1 })).trim().replace("<svg", `<svg role="img" aria-label="${esc(caption)}"`)}</div><figcaption class="small muted">${esc(caption)}</figcaption></figure>` : "";
+  // A sandbox sample has nothing to open: /uhenda/ava only redirects back here, on a public HTTPS address too.
+  const openAssistant = remoteReady && !o.sandbox;
+  const qr = openAssistant ? `<figure class="qr-card"><div class="qr-box">${(await QRCode.toString(`${base}${openPath}`, { type: "svg", margin: 1 })).trim().replace("<svg", `<svg role="img" aria-label="${esc(caption)}"`)}</div><figcaption class="small muted">${esc(caption)}</figcaption></figure>` : "";
   const openLabel = t(`Ava ${name} — juhend on juba sees`, `Open ${name} — the guide is already in`);
   const openHint = t(`Vajuta saatmisnuppu ja tee, mida ${name} ütleb. Kui ${name} hoiatab, et tekst tuli lingist, on see tavaline: tekst on meilt.`, `Press the send button and do what ${name} says. If ${name} warns that the text came from a link, that is normal: the text is from us.`);
   // Without a public HTTPS address the open link would hand a localhost URL to a cloud assistant, so the hero is only the note.
   // naita=1 is a link, not <details>: the waiting page reloads every 5s and would close a disclosure.
   const reveal = `/uhenda?a=${o.assistant}&naita=1`;
-  const hero = remoteReady
+  const hero = openAssistant
     ? `<a class="btn" href="${openPath}">${esc(openLabel)}</a>
 <p class="small">${esc(openHint)}</p>
 <p class="small">${esc(plan)}</p>
 ${qr}
 ${o.expanded ? `<pre id="tekst">${esc(prompt)}</pre>` : `<p><a class="tap-link" href="${reveal}#tekst">${t("Näita teksti", "Show the text")}</a></p>`}`
-    : httpsNote;
+    : remoteReady ? "" : httpsNote;
   const s = o.state;
   const chip = s.kind === "connected"
     ? (() => { const d = new Date(s.at), time = TIME[l].format(d), sameDay = tallinnYmd(d) === tallinnYmd(now); const who = s.who ?? t("Sinu assistent", "Your assistant"); return `<div class="status-chip" id="connect-status" data-state="connected" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${esc(t(`Ühendatud · ${who} jõudis kohale ${sameDay ? "" : `${DAY.et.format(d)} `}kell ${time}`, `Connected · ${who} reached AI Launchpad ${sameDay ? "" : `on ${DAY.en.format(d)} `}at ${time}`))}</span></div>`; })()
@@ -1949,7 +1954,7 @@ ${sampleFirst ? handover : ""}
 <p class="small">${esc(t("Lihtsaim algus: Claude — töötab ka tasuta paketis.", "Easiest start: Claude — works on the free plan too."))}</p>
 <nav class="choice" aria-label="${t("Vali assistent", "Choose your assistant")}"><a href="/uhenda?a=chatgpt"${o.assistant === "chatgpt" ? ' aria-current="true"' : ""}>ChatGPT</a><a href="/uhenda?a=claude"${o.assistant === "claude" ? ' aria-current="true"' : ""}>Claude</a></nav>
 <p class="small"><a class="tap-link" href="/vali">${t(...CHOOSE_LINK)}</a></p>
-<section class="card connect-hero">${hero}</section>
+${hero ? `<section class="card connect-hero">${hero}</section>` : ""}
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p><p><a class="tap-link" href="/kataloog?g=raamatupidamine">${t("Järgmine samm: ühenda oma raamatupidamine → Kataloog", "Next step: connect your accounting → Catalogue")}</a></p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
 ${o.expanded ? `<section class="card" id="ise"><h2>${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</h2>
