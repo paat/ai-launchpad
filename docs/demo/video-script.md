@@ -102,7 +102,7 @@ Status as of 2026-10-30 (merged on `main` at 0262c01, not necessarily deployed).
 
 - [ ] Public repo link: `https://github.com/paat/ai-launchpad`; no secrets, `.env` or private data (`HANDOFF.md` stays untracked).
 - [ ] Video uploaded to a host that works without login (state which); length ≤ 3:00.
-- [ ] Live product URL `https://huppelaud.arikratt.ee` plus judge access instructions: on submission day state which applies: **(a)** owner-only pilot (Google allowlist; judges cannot sign in) or **(b)** the public sandbox (#21 part B) if built and deployed (not built as of 2026-10-30). Put the true one in the form and in `judge-guide.md`.
+- [ ] Live product URL `https://launchpad.arikratt.ee` (redirects to `https://huppelaud.arikratt.ee` in English; check it resolves before submitting) plus judge access instructions: on submission day state which applies: **(a)** owner-only pilot (Google allowlist; judges cannot sign in) or **(b)** the public sandbox (#21 part B) if built and deployed (not built as of 2026-10-30). Put the true one in the form and in `judge-guide.md`.
 - [ ] Contributors listed (names as the owner wishes; solo Indie track entry).
 - [ ] Deadline: **Thu 5 Nov 2026 04:00 Tallinn / Wed 4 Nov 2026 21:00 ET**. Aim to submit by Tue 3 Nov.
 - [ ] Statement in the submission: "All product code was written during the event (27 Oct – 4 Nov 2026) in this repository. The Ärikratt MCP is an external dependency used through its public interface. The video shows only event-built work with synthetic data."

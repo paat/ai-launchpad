@@ -34,3 +34,12 @@ huppelaud.arikratt.ee {
 	}
 	encode zstd gzip
 }
+
+# English-language alias for visitors (judges): redirect only. The app
+# accepts exactly one origin (LAUNCHPAD_BASE_URL), so sign-in, OAuth and the
+# MCP address stay on huppelaud.arikratt.ee. 302, not 301: browsers cache a
+# 301, which would block making this host canonical later. Only the path is
+# carried over; a query string is dropped (the alias is for typing the root).
+launchpad.arikratt.ee {
+	redir https://huppelaud.arikratt.ee{path}?lang=en 302
+}
