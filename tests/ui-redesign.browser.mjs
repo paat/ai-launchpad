@@ -480,13 +480,15 @@ try {
     await page.setViewportSize({ width, height: 800 });
     for (const lang of ["et", "en"]) {
       await page.setContent(lang === "et" ? pageHtml.landing() : pageHtml["landing-en"]());
-      const clipped = await page.evaluate(() => [...document.querySelectorAll("[data-job-conversation]")].flatMap((c) => {
-        c.hidden = false;
-        c.getAnimations({ subtree: true }).forEach((a) => { a.pause(); a.currentTime = 14000; });
-        const chat = c.querySelector(".chat"), st = getComputedStyle(chat);
-        const need = [...chat.children].reduce((s, e) => s + e.getBoundingClientRect().height, 0) + parseFloat(st.paddingTop) + parseFloat(st.paddingBottom);
-        return need > chat.clientHeight + 1 ? [`${c.dataset.jobConversation} ${Math.round(need)}>${chat.clientHeight}`] : [];
-      }));
+      const clipped = await page.evaluate(() => {
+        const all = [...document.querySelectorAll("[data-job-conversation]")];
+        return all.flatMap((c) => {
+          all.forEach((o) => { o.hidden = o !== c; });
+          c.getAnimations({ subtree: true }).forEach((a) => { a.pause(); a.currentTime = 14000; }); // hidden cases have none until shown
+          const chat = c.querySelector(".chat");
+          return chat.scrollHeight > chat.clientHeight ? [`${c.dataset.jobConversation} ${chat.scrollHeight}>${chat.clientHeight}`] : [];
+        });
+      });
       assert.deepEqual(clipped, [], `t4 landing@${width}/${lang}: every case fits the phone`);
     }
   }
