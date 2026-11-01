@@ -121,6 +121,9 @@ describe("rules engine (memo § 3, pure)", () => {
     expect(late.facts_needed.map((n) => n.fact)).not.toContain("payouts_last_month");
     const lateNo = computeObligations({ payouts_last_month: { value: false, provenance: "assistant_supplied" } }, { today: at("2026-10-25"), months: 2 });
     expect(lateNo.facts_needed.map((n) => n.fact)).not.toContain("other_tsd_triggers_last_month");
+    // The second question names every remaining trigger and keeps the catch-all: a "no" to both removes the row (memo §2.3 triggers 4–7).
+    const second = computeObligations({ payouts_last_month: { value: false, provenance: "assistant_supplied" } }, { today: at("2026-11-03"), months: 1 }).facts_needed.find((n) => n.fact === "other_tsd_triggers_last_month");
+    for (const t of ["töölepinguga töötaja (ka palgata)", "muu TSD kohustus", "erisoodustus", "kingitus", "annetus", "vastuvõtukulu", "ettevõtlusega mitteseotud kulu", "muu väljamakse osanikule", "sissemakse omakapitali"]) expect(second?.question_et).toContain(t);
     // 3 Nov, months 1: October's TSD (due 10 Nov) is inside the window, so ask about October.
     const early = computeObligations({}, { today: at("2026-11-03"), months: 1 });
     expect(early.facts_needed).toContainEqual({ fact: "payouts_last_month", question_et: "Kas maksid oktoobris palka, juhatuse liikme tasu, dividende või tasu eraisikule?", question_en: "Did the company pay salary, a board member fee, dividends or a fee to a private person in October?", period_label_et: "oktoober 2026 väljamaksed" });
@@ -130,7 +133,7 @@ describe("rules engine (memo § 3, pure)", () => {
     const other = { other_tsd_triggers_last_month: { value: true, provenance: "assistant_supplied" as const } };
     const rows = ofRule(other, "2026-11-03", "tsd-monthly-return", 2);
     expect(rows.map((o) => [o.period_label_et, o.applies])).toEqual([["oktoober 2026 väljamaksed", "yes"], ["november 2026 väljamaksed", "if"]]);
-    expect(rows[0]).toMatchObject({ reason_et: "Kehtib, sest assistendi sõnul oli oktoobris töötaja, erisoodustus, kingitus, annetus või muu deklareeritav kulu.", reason_en: "Applies because your assistant reports an employee, a fringe benefit, a gift, a donation or another declarable cost in October.", applies_because: [{ fact: "other_tsd_triggers_last_month", value: true, provenance: "assistant_supplied" }] });
+    expect(rows[0]).toMatchObject({ reason_et: "Kehtib, sest assistendi sõnul oli oktoobris töötaja, erisoodustus, kingitus, annetus või muu TSD kohustus.", reason_en: "Applies because your assistant reports an employee, a fringe benefit, a gift, a donation or another TSD obligation in October.", applies_because: [{ fact: "other_tsd_triggers_last_month", value: true, provenance: "assistant_supplied" }] });
     expect(rows[0].condition_et).toBeUndefined();
     // The row cannot go away any more, so the payouts question is not asked.
     expect(computeObligations(other, { today: at("2026-11-03"), months: 2 }).facts_needed.map((n) => n.fact)).not.toContain("payouts_last_month");
