@@ -755,6 +755,8 @@ export interface ShellOpts {
   bodyLang?: Lang;
   /** No owner nav or footer (mid-OAuth consent): nothing invites leaving the flow. */
   bare?: boolean;
+  /** Owner-footer guide hrefs to leave out. */
+  skipGuides?: readonly string[];
 }
 export function shell(o: ShellOpts): string {
   const l = o.lang ?? "et", t = tr(l), other: Lang = l === "et" ? "en" : "et", owner = o.csrf !== "";
@@ -763,9 +765,10 @@ export function shell(o: ShellOpts): string {
   // The bare consent page keeps the brand as text: nothing invites leaving the flow.
   const brand = `<span class="mark" aria-hidden="true"></span>${t("AI-hüppelaud", "AI Launchpad")}`;
   const main = o.bodyLang && o.bodyLang !== l ? `<div lang="${o.bodyLang}">${o.body}</div>` : o.body;
+  const ownerGuides = ([["/approvals", t("Kinnitused", "Approvals")], ["/connection", t("Andmed ja õigused", "Data and permissions")], ["/demand", t("Avatud soovid", "Open demand")], ["/playbooks", t("Mängukavad", "Playbooks")], ["/kataloog", t("Kataloog", "Catalogue")], ["/setup", t("Abi alustamiseks", "Setup helper")]] as const).filter(([href]) => !o.skipGuides?.includes(href)).map(([href, label]) => `<a href="${href}">${label}</a>`).join("");
   const footer = o.bare ? ""
     : owner
-    ? `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/approvals">${t("Kinnitused", "Approvals")}</a><a href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/playbooks">${t("Mängukavad", "Playbooks")}</a><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/setup">${t("Abi alustamiseks", "Setup helper")}</a></nav>
+    ? `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}">${ownerGuides}</nav>
 <form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(o.csrf)}"><button type="submit">${t("Logi välja", "Log out")}</button></form></footer>`
     : `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/login">${t("Logi sisse", "Sign in")}</a></nav></footer>`;
   return `<!doctype html><html lang="${l}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${o.head ?? ""}<title>${esc(o.title)} · ${t("AI-hüppelaud", "AI Launchpad")}</title><style>${CSS}</style></head><body><div class="wrap">

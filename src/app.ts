@@ -98,6 +98,24 @@ function sandboxRateKey(ip: string): string {
   }
   return hextets.slice(0, 4).join(":");
 }
+// Five starts per ten minutes, at most 1000 live client keys. At the bound,
+// drop keys whose window has passed; if the map is still full, refuse the
+// new key. Never clear: a wipe would hand a fresh allowance to keys already at the cap.
+const SANDBOX_RATE_WINDOW_MS = 600_000, SANDBOX_RATE_MAX = 5, SANDBOX_RATE_KEYS = 1000;
+export function sandboxAttemptLimiter() {
+  const attempts = new Map<string, number[]>();
+  return (key: string, now = Date.now()): boolean => {
+    const recent = (attempts.get(key) ?? []).filter((t) => now - t < SANDBOX_RATE_WINDOW_MS);
+    if (recent.length >= SANDBOX_RATE_MAX) { attempts.set(key, recent); return false; }
+    if (!attempts.has(key) && attempts.size >= SANDBOX_RATE_KEYS) {
+      for (const [k, stamps] of attempts) if (!stamps.some((t) => now - t < SANDBOX_RATE_WINDOW_MS)) attempts.delete(k);
+      if (attempts.size >= SANDBOX_RATE_KEYS) return false;
+    }
+    recent.push(now);
+    attempts.set(key, recent);
+    return true;
+  };
+}
 function ipv6Hextets(ip: string): string[] | null {
   let s = ip;
   const zone = s.indexOf("%");
@@ -283,13 +301,26 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   function seedSandbox(ownerId: string) {
     seedDemoFixture(ownerId, "alpha", "Synthetic sandbox assessment loaded (assistant-reported example, not verified).");
     const insertApproval = db.prepare("INSERT INTO approvals(id,owner_id,kind,report_id,payload_json,digest,state,expires_at,created_at,decided_at,consumed_at,outcome_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
+    const insertReport = db.prepare("INSERT INTO reports(owner_id,report_id,kind,payload_hash,payload_json,receipt_json,created_at) VALUES(?,?,?,?,?,?,?)");
     db.transaction(() => {
       for (const template of NAIDIS.week2) {
         const id = newId("appr"), pending = template.state === "pending";
         const createdAt = pending ? nowIso() : template.created_at;
         const expiresAt = pending ? new Date(Date.now() + 24 * 3600_000).toISOString() : template.expires_at;
         insertApproval.run(id, ownerId, template.kind, template.report_id, template.payload_json, template.digest, template.state, expiresAt, createdAt, template.decided_at, template.consumed_at, template.outcome_json);
-        if (template.state === "consumed") logActivity(db, ownerId, "assistant", "record_action_outcome", "ok", `Outcome ${JSON.parse(template.outcome_json!).outcome} for approval ${id} (simulated sample history; nothing was really sent).`);
+        if (template.state === "consumed" && template.outcome_json) {
+          // One receipt per recorded outcome, the same columns record_action_outcome writes. A paid row's history is sent, then paid.
+          const outcome = JSON.parse(template.outcome_json) as { outcome: string; observed_at: string; history?: { outcome: string; observed_at: string }[] };
+          const steps = outcome.history?.length ? outcome.history : [{ outcome: outcome.outcome, observed_at: outcome.observed_at }];
+          steps.forEach((step, i) => {
+            const reportId = `seed:${id}:${i}`;
+            const payload = { report_id: reportId, approval_id: id, digest: template.digest, outcome: step.outcome, observed_at: step.observed_at };
+            const payloadJson = JSON.stringify(payload);
+            const receipt = { receipt_id: newId("rcpt"), kind: "action_outcome_saved", approval_id: id, state: "consumed", outcome: step.outcome, observed_at: step.observed_at, evidence_refs: [] as string[], evidence_label: "assistant_reported" as const, saved_at: step.observed_at, meaning: "Launchpad recorded what your assistant reported. It did not send, pay or file anything and did not verify this outcome." };
+            insertReport.run(ownerId, reportId, "outcome", sha256(payloadJson), payloadJson, JSON.stringify(receipt), step.observed_at);
+          });
+          logActivity(db, ownerId, "assistant", "record_action_outcome", "ok", `Outcome ${outcome.outcome} for approval ${id} (simulated sample history; nothing was really sent).`);
+        }
       }
       const prepared = NAIDIS.preparedProgress[0], observedAt = nowIso();
       db.prepare("INSERT INTO progress(id,owner_id,task_id,milestone,evidence_label,evidence_refs_json,observed_at,version,created_at) VALUES(?,?,?,?,?,?,?,?,?)").run(newId("prog"), ownerId, prepared.task_id, prepared.milestone, "assistant_reported", "[]", observedAt, 2, observedAt);
@@ -347,7 +378,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   const refuseSandbox = (req: Request, res: Response, next: NextFunction) => {
     if ((req as Authed).ownerKind !== "sandbox") return next();
     const t = tr(langOf(res));
-    return ownerError(req, res, 403, t("Näidistööruumis pole saadaval", "Not available in a sample workspace"), t("See toiming on väljalülitatud ajutises näidistööruumis. Midagi ei muudetud.", "This action is disabled in a temporary sample workspace. Nothing was changed."));
+    const title = t("Näidistööruumis pole saadaval", "Not available in a sample workspace");
+    const message = t("See toiming on väljalülitatud ajutises näidistööruumis. Midagi ei muudetud.", "This action is disabled in a temporary sample workspace. Nothing was changed.");
+    return res.status(403).type("html").send(publicPage(req, res, title, errorBody(langOf(res), title, message), { sample: true }));
   };
   /** Every standing approval of the owner (live, ended and expired), to name the rule behind an approval. */
   const ownerRules = (ownerId: string) => db.prepare("SELECT * FROM standing_approvals WHERE owner_id=? ORDER BY created_at DESC").all(ownerId) as StandingRule[];
@@ -384,16 +417,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (demoAttempts.size > 1000) demoAttempts.clear();
     return true;
   }
-  const sandboxAttempts = new Map<string, number[]>();
+  const allowSandboxAttempt = sandboxAttemptLimiter();
   function sandboxRateOk(req: Request): boolean {
-    const ip = sandboxRateKey(req.ip || req.socket.remoteAddress || "?");
-    const now = Date.now();
-    const recent = (sandboxAttempts.get(ip) ?? []).filter((t) => now - t < 600_000);
-    if (recent.length >= 5) { sandboxAttempts.set(ip, recent); return false; }
-    recent.push(now);
-    sandboxAttempts.set(ip, recent);
-    if (sandboxAttempts.size > 1000) sandboxAttempts.clear();
-    return true;
+    return allowSandboxAttempt(sandboxRateKey(req.ip || req.socket.remoteAddress || "?"));
   }
 
   app.get("/health", (_req, res) => res.json({ ok: true, demo: cfg.demo, model_mode: publicCards ? "public_cards" : cfg.modelMode === "disabled" ? "disabled" : "test", live_inference: publicCards ? "enabled" : "disabled", catalog_size: loadCatalog().length, release_sha: releaseSha }));
@@ -420,29 +446,31 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     res.redirect(oauth.resume(req));
   });
 
-  // Public, per-browser synthetic sandbox. It reuses the bounded one-time
-  // pre-auth token above, but never the local-only demo-owner login.
+  // Public, per-browser synthetic sandbox. Stateless double-submit: the cookie
+  // and the hidden field carry the same random value, compared here and then
+  // cleared. It does not use the shared login preauth map. Never the local-only demo-owner login.
+  const prooviCookie = (value: string, maxAge: number) => `lp_proovi=${value ? encodeURIComponent(value) : ""}; HttpOnly; SameSite=Lax; Path=/proovi; Max-Age=${maxAge}${cfg.production ? "; Secure" : ""}`;
   const prooviError = (req: Request, res: Response, status: number, title: string, message: string) => {
     const l = langOf(res);
     return res.status(status).type("html").send(publicPage(req, res, title, errorBody(l, title, message, { href: `/proovi${l === "en" ? "?lang=en" : ""}`, label: tr(l)("Tagasi", "Back") })));
   };
   app.get("/proovi", (req, res) => {
-    const token = issuePreauth(res), l = langOf(res), t = tr(l);
+    const token = randomBytes(24).toString("base64url"), l = langOf(res), t = tr(l);
+    res.append("set-cookie", prooviCookie(token, 600));
     res.type("html").send(publicPage(req, res, t("Proovi ise", "Try it yourself"), `<section class="card hero"><h1>${t("Proovi ise", "Try it yourself")}</h1><p>${esc(t("Saad oma ajutise näidistööruumi väljamõeldud ettevõttega. Saad kinnitusi anda ja keelduda; päriselt ei saadeta midagi. Tööruum kustub 24 tunni pärast.", "You get your own temporary sample workspace with a made-up company. You can approve and decline; nothing is really sent. The workspace is deleted after 24 hours."))}</p><form method="post" action="/proovi"><input type="hidden" name="preauth" value="${esc(token)}"><button type="submit">${t("Alusta", "Start")}</button></form></section>`));
   });
   app.post("/proovi", (req, res) => {
     cleanupSandboxes();
     const l = langOf(res), t = tr(l);
     if (!sandboxRateOk(req)) return prooviError(req, res, 429, t("Proovi veidi hiljem", "Try again shortly"), t("Liiga palju katseid. Oota kümme minutit ja proovi uuesti.", "Too many attempts. Wait ten minutes and try again."));
-    const given = String(bodyOf(req).preauth ?? ""), cookie = cookieVal(req, "lp_preauth") ?? "", stored = preauth.get(sha256(given));
-    if (!given || !safeEqual(given, cookie) || !stored || stored < Date.now()) return prooviError(req, res, 403, t("Alusta uuesti", "Start again"), t("Ava proovimise leht selles brauseris uuesti. Tööruumi ei loodud.", "Open the try-it page in this browser again. No workspace was created."));
-    preauth.delete(sha256(given));
+    const given = String(bodyOf(req).preauth ?? ""), cookie = cookieVal(req, "lp_proovi") ?? "";
+    if (!given || !safeEqual(given, cookie)) return prooviError(req, res, 403, t("Alusta uuesti", "Start again"), t("Ava proovimise leht selles brauseris uuesti. Tööruumi ei loodud.", "Open the try-it page in this browser again. No workspace was created."));
     const active = (db.prepare("SELECT count(*) n FROM owners WHERE kind='sandbox'").get() as { n: number }).n;
-    if (active >= SANDBOX_LIMIT) return prooviError(req, res, 503, t("Proovi veidi hiljem", "Try again later"), t("Näidistööruume on praegu liiga palju, proovi hiljem.", "There are too many sample workspaces right now. Please try later."));
+    if (active >= SANDBOX_LIMIT) { res.append("set-cookie", prooviCookie("", 0)); return prooviError(req, res, 503, t("Proovi veidi hiljem", "Try again later"), t("Näidistööruume on praegu liiga palju, proovi hiljem.", "There are too many sample workspaces right now. Please try later.")); }
     const ownerId = ensureOwner(`sandbox:${randomBytes(24).toString("base64url")}`, null, "sandbox", "Mari Disain OÜ (näidis)");
     seedSandbox(ownerId);
     startSession(req, res, ownerId, SANDBOX_SESSION_MS);
-    res.append("set-cookie", "lp_preauth=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+    res.append("set-cookie", prooviCookie("", 0));
     logActivity(db, ownerId, "owner", "sandbox_started", "ok", "Temporary synthetic sandbox started; nothing is really sent.");
     res.redirect("/");
   });
@@ -817,6 +845,8 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // Opens Claude or ChatGPT with the guide already typed in (not sent). The host is fixed.
   // The phone app takes over the navigation and leaves this tab showing the 302 body.
   app.get("/uhenda/ava", (req, res) => {
+    const s = session(req);
+    if (s && (db.prepare("SELECT kind FROM owners WHERE id=?").get(s.owner_id) as { kind: string } | undefined)?.kind === "sandbox") return res.redirect("/uhenda");
     const assistant = req.query.a === "chatgpt" ? "chatgpt" : "claude";
     const l = langOf(res);
     const endpoint = `${String(cfg.baseUrl ?? "").replace(/\/+$/, "")}/mcp`;
@@ -826,7 +856,6 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     // Estonian object case is not a suffix: Claude'i (apostrophe, same as Claude'iga); ChatGPT takes none.
     const openedEt: Record<typeof assistant, string> = { claude: "Claude'i", chatgpt: "ChatGPT" };
     const t = tr(l);
-    const s = session(req);
     const opened = t(`Avasin ${openedEt[assistant]}`, `Opened ${name}`);
     const body = `<h1>${esc(opened)}</h1><p>${esc(t(`Kui ${name} ei avanenud,`, `If ${name} did not open,`))} <a class="btn" href="${esc(target)}">${esc(t("vajuta siia", "press here"))}</a>.</p><p><a class="tap-link" href="/uhenda">${esc(t("Tagasi: Ühendus", "Back: Connection"))}</a></p>`;
     res.status(302).location(target).type("html").send(shell({ title: opened, active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, toggle: toggleHref(req, l), body }));
@@ -851,12 +880,14 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
         } else state = { kind: "waiting" };
       }
     }
+    // Sandbox reuses the demo sample state and omits token, setup and calendar actions (those 403).
+    const sandboxOwner = kind === "sandbox";
     const assessment = s ? getState(db, s.owner_id).assessment : null;
-    const feed = s ? db.prepare("SELECT created_at FROM calendar_feeds WHERE owner_id=?").get(s.owner_id) as { created_at: string } | undefined : undefined;
-    const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : "claude", state, owner: !!s, expanded: req.query.naita === "1", ...(s ? { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null }, standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, assessment, await ownerDeadlines(assessment)) } : {}) });
+    const feed = s && !sandboxOwner ? db.prepare("SELECT created_at FROM calendar_feeds WHERE owner_id=?").get(s.owner_id) as { created_at: string } | undefined : undefined;
+    const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : "claude", state, owner: !!s && !sandboxOwner, expanded: req.query.naita === "1", ...(s ? { ...(sandboxOwner ? {} : { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null } }), standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, assessment, await ownerDeadlines(assessment)) } : {}) });
     res.type("html").send(shell({ title: tr(l)("Ühenda", "Connect"), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, sample: isSampleKind(kind), toggle: toggleHref(req, l), body,
       // Zero JS: while an owner waits for the first assistant contact, the page reloads itself.
-      head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "" }));
+      head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "", ...(sandboxOwner ? { skipGuides: ["/setup"] } : {}) }));
   } catch (e) { next(e); } });
 
   app.get("/export", requireOwner, (req, res) => {

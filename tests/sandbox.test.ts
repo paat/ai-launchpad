@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
 import type { Server } from "node:http";
 import { randomBytes } from "node:crypto";
-import { createApp, type Config } from "../src/app.js";
+import { createApp, sandboxAttemptLimiter, type Config } from "../src/app.js";
 import { openDb, sha256, type Db } from "../src/db.js";
 import { NAIDIS } from "../src/naidis.js";
 import type { ApprovalRow } from "../src/mcp.js";
@@ -103,7 +103,7 @@ test("public Try it links create an isolated seeded sandbox; approve simulates s
   expect(after.state).toBe("consumed");
   expect(JSON.parse(after.outcome_json!)).toMatchObject({ outcome: "sent", observed_at: expect.any(String) });
   expect(Date.parse(JSON.parse(after.outcome_json!).observed_at)).toBeLessThanOrEqual(Date.now());
-  expect(count(s.db, "reports", owner.id)).toBe(1);
+  expect(count(s.db, "reports", owner.id)).toBe(5);
   const simulated = s.db.prepare("SELECT summary FROM activity WHERE owner_id=? AND action='record_action_outcome' ORDER BY id DESC LIMIT 1").get(owner.id) as { summary: string };
   expect(simulated.summary).toContain("Näidis: assistent saatis — päriselt ei saadetud");
   const receipt = await browser.request(s, "GET", `/approvals/${pending.id}`);
@@ -275,6 +275,103 @@ test("24-hour startup expiry removes every owner-scoped row and leaves a live sa
   expect(db.prepare("SELECT count(*) n FROM owners WHERE id=?").get(live)).toEqual({ n: 1 });
   db.close();
 });
+
+test("the sandbox rate map keeps capped keys and refuses a new key until expired windows are pruned", () => {
+  const allow = sandboxAttemptLimiter(), now = 1_700_000_000_000;
+  for (let i = 0; i < 1000; i++) {
+    for (let n = 0; n < 5; n++) expect(allow(`k-${i}`, now)).toBe(true);
+    expect(allow(`k-${i}`, now)).toBe(false);
+  }
+  expect(allow("new-key", now)).toBe(false);
+  expect(allow("k-0", now)).toBe(false);
+  expect(allow("new-key", now + 600_000 - 1)).toBe(false);
+  expect(allow("k-0", now + 600_000 - 1)).toBe(false);
+  expect(allow("new-key", now + 600_000)).toBe(true);
+});
+
+test("GET /proovi double-submit survives a burst and rejects a missing or mismatched token", async () => withServer(async (s) => {
+  const first = new Browser(), form = await first.request(s, "GET", "/proovi");
+  const set = form.headers.getSetCookie().find((c) => c.startsWith("lp_proovi=")) ?? "";
+  expect(set).toContain("HttpOnly");
+  expect(set).toContain("SameSite=Lax");
+  expect(set).toContain("Path=/proovi");
+  expect(set).toContain("Secure");
+  expect(form.headers.getSetCookie().some((c) => c.startsWith("lp_preauth="))).toBe(false);
+  const token = field(form.body, "preauth");
+  for (let i = 0; i < 600; i += 40) await Promise.all(Array.from({ length: Math.min(40, 600 - i) }, () => new Browser().request(s, "GET", "/proovi")));
+  const started = await first.request(s, "POST", "/proovi", { preauth: token });
+  expect(started.status).toBe(302);
+  expect(count(s.db, "owners")).toBe(1);
+  const replay = await first.request(s, "POST", "/proovi", { preauth: token });
+  expect(replay.status).toBe(403);
+  expect(replay.body).toContain("<!doctype html>");
+  expect(replay.body).toContain("Ava proovimise leht selles brauseris uuesti. Tööruumi ei loodud.");
+  expect(count(s.db, "owners")).toBe(1);
+  const missing = await new Browser().request(s, "POST", "/proovi", { preauth: token });
+  expect(missing.status).toBe(403);
+  expect(missing.body).toContain("<!doctype html>");
+  expect(missing.body).toContain("Ava proovimise leht selles brauseris uuesti. Tööruumi ei loodud.");
+  const holder = new Browser(), held = await holder.request(s, "GET", "/proovi");
+  const mismatched = await holder.request(s, "POST", "/proovi", { preauth: `${field(held.body, "preauth")}x` });
+  expect(mismatched.status).toBe(403);
+  expect(mismatched.body).toContain("<!doctype html>");
+  expect(mismatched.body).toContain("Tööruumi ei loodud.");
+  expect(count(s.db, "owners")).toBe(1);
+}));
+
+test("sandbox /uhenda shows the sample state without token, setup or calendar actions", async () => withServer(async (s) => {
+  const { browser } = await sandbox(s);
+  const html = (await browser.request(s, "GET", "/uhenda")).body;
+  expect(html).toContain('data-state="sample"');
+  expect(html).toContain("Näidistööruumis ühenduse olekut ei jälgita.");
+  expect(html).toContain("päriselt midagi ei saadeta");
+  expect(html).not.toMatch(/href="\/tokens|action="\/tokens|href="\/setup|action="\/setup|href="\/calendar\/feed|action="\/calendar\/feed/);
+  const ava = await browser.request(s, "GET", "/uhenda/ava?a=chatgpt");
+  expect(ava.status).toBe(302);
+  expect(ava.headers.get("location")).toBe("/uhenda");
+  for (const path of ["/playbooks", "/setup"]) {
+    const denied = await browser.request(s, "GET", path);
+    expect(denied.status).toBe(403);
+    expect(denied.headers.get("content-type")).toContain("text/html");
+    expect(denied.body.startsWith("<!doctype html>")).toBe(true);
+    expect(denied.body).toContain("Näidistööruumis pole saadaval");
+    expect(denied.body).toContain("See toiming on väljalülitatud ajutises näidistööruumis. Midagi ei muudetud.");
+  }
+  const token = await browser.request(s, "POST", "/tokens", { csrf: await browser.csrf(s) });
+  expect(token.status).toBe(403);
+  expect(token.body.startsWith("<!doctype html>")).toBe(true);
+  expect(token.body).toContain("Näidistööruumis pole saadaval");
+  // ?lang= sticks in the lang cookie, so the English checks come after the Estonian ones.
+  const en = await browser.request(s, "GET", "/uhenda?lang=en");
+  expect(en.body).toContain("Connection status is not tracked in a sample workspace.");
+  expect(en.body).not.toMatch(/href="\/tokens|action="\/tokens|href="\/setup|action="\/setup|href="\/calendar\/feed|action="\/calendar\/feed/);
+  const deniedEn = await browser.request(s, "GET", "/playbooks?lang=en");
+  expect(deniedEn.status).toBe(403);
+  expect(deniedEn.body).toContain("Not available in a sample workspace");
+  expect(deniedEn.body).toContain("This action is disabled in a temporary sample workspace. Nothing was changed.");
+}));
+
+test("seeded sandbox reports match sent and paid outcomes, and one live approval adds one", async () => withServer(async (s) => {
+  const { browser, owner, pending } = await sandbox(s);
+  const rows = () => s.db.prepare("SELECT kind,payload_json,receipt_json,payload_hash FROM reports WHERE owner_id=? ORDER BY created_at,report_id").all(owner.id) as { kind: string; payload_json: string; receipt_json: string; payload_hash: string }[];
+  const outcomes = () => rows().map((r) => JSON.parse(r.payload_json).outcome as string).sort();
+  expect(rows()).toHaveLength(4);
+  expect(outcomes()).toEqual(["paid", "sent", "sent", "sent"]);
+  for (const row of rows()) {
+    expect(row.kind).toBe("outcome");
+    expect(row.payload_hash).toBe(sha256(row.payload_json));
+    const payload = JSON.parse(row.payload_json) as { approval_id: string; outcome: string; observed_at: string };
+    const receipt = JSON.parse(row.receipt_json) as { kind: string; approval_id: string; state: string; outcome: string; observed_at: string; evidence_refs: string[]; evidence_label: string; meaning: string };
+    expect(receipt).toMatchObject({ kind: "action_outcome_saved", approval_id: payload.approval_id, state: "consumed", outcome: payload.outcome, observed_at: payload.observed_at, evidence_refs: [], evidence_label: "assistant_reported" });
+    expect(receipt.meaning).toBe("Launchpad recorded what your assistant reported. It did not send, pay or file anything and did not verify this outcome.");
+  }
+  expect((await browser.request(s, "GET", "/")).body).toContain("Assistendi teated: 4,");
+  const approved = await browser.request(s, "POST", `/approvals/${pending.id}/decide`, { csrf: await browser.csrf(s), digest: pending.digest, decision: "approve" });
+  expect(approved.status).toBe(302);
+  expect(rows()).toHaveLength(5);
+  expect(outcomes()).toEqual(["paid", "sent", "sent", "sent", "sent"]);
+  expect((await browser.request(s, "GET", "/")).body).toContain("Assistendi teated: 5,");
+}));
 
 test("POST /proovi deletes every expired sandbox row and leaves a live sandbox", async () => withServer(async (s) => {
   const now = Date.now(), old = "sandbox-expired-post", live = "sandbox-live-post";
