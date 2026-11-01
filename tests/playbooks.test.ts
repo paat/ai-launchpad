@@ -280,7 +280,7 @@ describe("agent-facing copy over MCP", () => {
     expect(i).toContain("may not know technical words such as MCP, connector or API");
     expect(i).toContain("short sentences, everyday words, one question per message, and no technical codes or file formats unless the owner uses them first.");
     expect(i).not.toMatch(/CAMT|ISO|XML/);
-    expect(i).toContain("Before asking the owner for any fact or document, check both public data (get_obligations public_facts) and the owner's own connected files, such as Google Drive; ask only if neither has it. Always ask the facts_needed questions from get_obligations, and never let a file stand in for the owner's answer to them.");
+    expect(i).toContain("Before asking the owner for any fact or document, check both public data (get_obligations public_facts) and the owner's own connected files, such as Google Drive; ask only if neither has it. Always ask the facts_needed questions from get_obligations, and never let a file stand in for the owner's answer to them, except that a TSD payout the connected books or bank show answers yes.");
     expect(i).toContain("call connect_my_services and follow the connect-service playbook it returns before answering from your own connector directory; it says which lookups are allowed.");
     expect(i).toContain("customers");
     expect(i).toContain("Pipedrive");

@@ -85,7 +85,7 @@ describe("rules engine (memo § 3, pure)", () => {
 
   test("unknown facts give applies: if with a condition; nothing is dropped and nothing is invented", () => {
     const mari = ofRule(SYNTHETIC_COMPANIES[MARI].facts, "2026-11-01", "tsd-monthly-return");
-    expect(mari[0]).toMatchObject({ applies: "if", condition_et: "Kehtib, kui maksid oktoobris palka, juhatuse liikme tasu või dividende või kui sul on töölepinguga töötaja." });
+    expect(mari[0]).toMatchObject({ applies: "if", condition_et: "Kehtib, kui tegid oktoobris väljamakseid või kulusid, mis tuleb TSD-s deklareerida, või kui sul on töölepinguga töötaja." });
     expect(mari[0].applies_because.map((b) => b.fact)).not.toContain("payouts_last_month");
     const none = computeObligations({}, { today: at("2026-11-02"), months: 1 });
     expect(none.obligations.map((o) => [o.rule_id, o.applies])).toEqual([["annual-report-overdue", "if"], ["tsd-monthly-return", "if"], ["vat-return-kmd", "if"]]);
@@ -121,16 +121,19 @@ describe("rules engine (memo § 3, pure)", () => {
     expect(late.facts_needed.map((n) => n.fact)).not.toContain("payouts_last_month");
     const lateNo = computeObligations({ payouts_last_month: { value: false, provenance: "assistant_supplied" } }, { today: at("2026-10-25"), months: 2 });
     expect(lateNo.facts_needed.map((n) => n.fact)).not.toContain("other_tsd_triggers_last_month");
+    // The second question names every remaining trigger and keeps the catch-all: a "no" to both removes the row (memo §2.3 triggers 4–7).
+    const second = computeObligations({ payouts_last_month: { value: false, provenance: "assistant_supplied" } }, { today: at("2026-11-03"), months: 1 }).facts_needed.find((n) => n.fact === "other_tsd_triggers_last_month");
+    for (const t of ["töölepinguga töötaja (ka palgata)", "muu TSD kohustus", "erisoodustus", "kingitus", "annetus", "vastuvõtukulu", "ettevõtlusega mitteseotud kulu", "muu väljamakse osanikule", "sissemakse omakapitali"]) expect(second?.question_et).toContain(t);
     // 3 Nov, months 1: October's TSD (due 10 Nov) is inside the window, so ask about October.
     const early = computeObligations({}, { today: at("2026-11-03"), months: 1 });
-    expect(early.facts_needed).toContainEqual({ fact: "payouts_last_month", question_et: "Kas maksid oktoobris palka, juhatuse liikme tasu või dividende?", question_en: "Did the company pay salary, a board member fee or dividends in October?", period_label_et: "oktoober 2026 väljamaksed" });
+    expect(early.facts_needed).toContainEqual({ fact: "payouts_last_month", question_et: "Kas maksid oktoobris palka, juhatuse liikme tasu, dividende või tasu eraisikule?", question_en: "Did the company pay salary, a board member fee, dividends or a fee to a private person in October?", period_label_et: "oktoober 2026 väljamaksed" });
   });
 
   test("TSD: the assistant's other_tsd_triggers_last_month true makes last month's row definite (#30 item 1)", () => {
     const other = { other_tsd_triggers_last_month: { value: true, provenance: "assistant_supplied" as const } };
     const rows = ofRule(other, "2026-11-03", "tsd-monthly-return", 2);
     expect(rows.map((o) => [o.period_label_et, o.applies])).toEqual([["oktoober 2026 väljamaksed", "yes"], ["november 2026 väljamaksed", "if"]]);
-    expect(rows[0]).toMatchObject({ reason_et: "Kehtib, sest assistendi sõnul oli oktoobris töötaja või muu TSD kohustus.", reason_en: "Applies because your assistant reports an employee or another TSD obligation in October.", applies_because: [{ fact: "other_tsd_triggers_last_month", value: true, provenance: "assistant_supplied" }] });
+    expect(rows[0]).toMatchObject({ reason_et: "Kehtib, sest assistendi sõnul oli oktoobris töötaja, erisoodustus, kingitus, annetus või muu TSD kohustus.", reason_en: "Applies because your assistant reports an employee, a fringe benefit, a gift, a donation or another TSD obligation in October.", applies_because: [{ fact: "other_tsd_triggers_last_month", value: true, provenance: "assistant_supplied" }] });
     expect(rows[0].condition_et).toBeUndefined();
     // The row cannot go away any more, so the payouts question is not asked.
     expect(computeObligations(other, { today: at("2026-11-03"), months: 2 }).facts_needed.map((n) => n.fact)).not.toContain("payouts_last_month");
@@ -358,6 +361,18 @@ describe("Ärikratt adapter", () => {
     expect(failed.result.facts_needed[0]).toMatchObject({ fact: "registry_code" });
     expect(failed.result.assistant_instruction).toContain("Ask the owner for the 8-digit registry code.");
   });
+  test("TSD questions tell the assistant to check the books first; only the owner answers no", async () => {
+    const ar = arikratt(openDb(":memory:"), { apiKey: "test-key", url: fakeUrl }), today = at("2026-11-03");
+    const ask = await companyObligations(ar, { registryCode: "19990001", months: 1, today });
+    if (!ask.ok) throw new Error(ask.error);
+    expect(ask.result.facts_needed.map((n) => n.fact)).toContain("payouts_last_month");
+    expect(ask.result.assistant_instruction).toContain("Before a TSD question (payouts_last_month, other_tsd_triggers_last_month), look in the owner's connected books and bank for that month's payments it names. If you find one, do not ask: call get_obligations again with that fact true. Only the owner can answer no, because the books may be incomplete.");
+    // A payout found in the books makes October's TSD definite and the hint goes away.
+    const found = await companyObligations(ar, { registryCode: "19990001", assistant: { payouts_last_month: true }, months: 1, today });
+    if (!found.ok) throw new Error(found.error);
+    expect(found.result.obligations.find((o) => o.rule_id === "tsd-monthly-return")).toMatchObject({ applies: "yes", period_label_en: "October 2026 payouts" });
+    expect(found.result.assistant_instruction).not.toContain("Before a TSD question");
+  });
   test("a registry code the register does not know computes no deadlines, like an invalid code (#30 item 3)", async () => {
     const r = await companyObligations(arikratt(openDb(":memory:"), { apiKey: "test-key", url: fakeUrl }), { registryCode: "10000018", months: 1 });
     expect(r).toEqual({ ok: false, unavailable: "not_found", error: "The public register has no company with this code. Ask the owner to check the code. No deadlines were computed." });
@@ -465,7 +480,7 @@ describe("get_obligations tool and status card", () => {
     expect(r.facts_needed.map((n: { fact: string }) => n.fact)).not.toContain("vat_registered");
     const kmd = r.obligations.find((o: { rule_id: string }) => o.rule_id === "vat-return-kmd");
     expect(kmd).toMatchObject({ applies: "yes", applies_because: [{ fact: "vat_registered", value: true, provenance: "assistant_supplied" }] });
-    expect(r.assistant_instruction).toBe("Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed; a fact in public_facts that is not in facts_needed is already known, so never ask for it. Name its provenance honestly: public_register is the business register, synthetic is sample data and never the register. Ask the facts_needed questions first: an answer can remove a row. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.");
+    expect(r.assistant_instruction).toBe("Cite the source link for every row. Do not add, remove or change deadlines; they are computed by rules. Ask the owner only for facts in facts_needed; a fact in public_facts that is not in facts_needed is already known, so never ask for it. Name its provenance honestly: public_register is the business register, synthetic is sample data and never the register. Ask the facts_needed questions first: an answer can remove a row. Before a TSD question (payouts_last_month, other_tsd_triggers_last_month), look in the owner's connected books and bank for that month's payments it names. If you find one, do not ask: call get_obligations again with that fact true. Only the owner can answer no, because the books may be incomplete. Then, for each row with a playbook_id, offer in one line to prepare it, and follow that playbook's steps from get_started. Never compute tax amounts or deadlines yourself. If next_deadline.applies is 'if', present it as conditional and quote its condition.");
     expect(r.disclaimer).toContain("calculated by rules, not AI");
     expect(r.computed_by).toBe("rules");
   });

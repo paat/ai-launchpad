@@ -1565,7 +1565,7 @@ function questions(r: DeadlinesView, l: Lang): { q: string; then: string }[] {
     // The TSD row for the same payout period; it goes away only when payouts and other triggers are both "no".
     const tsd = f.period_label_et ? r.obligations.find((o) => o.rule_id === "tsd-monthly-return" && o.period_label_et === f.period_label_et && o.effective_due) : undefined;
     const d = tsd?.effective_due ? civil(tsd.effective_due) : null;
-    return { q: t(f.question_et, f.question_en), then: d ? t(`Kui ei maksnud ega olnud töötajat, kaob ${d.getUTCDate()}. ${ET_OF[d.getUTCMonth()]} TSD rida.`, `If you made no payouts and had no employee, the ${C_DAY_MON.en.format(d)} TSD row goes away.`) : "" };
+    return { q: t(f.question_et, f.question_en), then: d ? t(`Kui midagi deklareerida polnud, kaob ${d.getUTCDate()}. ${ET_OF[d.getUTCMonth()]} TSD rida.`, `If nothing needed declaring, the ${C_DAY_MON.en.format(d)} TSD row goes away.`) : "" };
   });
 }
 
