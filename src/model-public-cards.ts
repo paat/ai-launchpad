@@ -77,7 +77,45 @@ export const FRICTION_TOPICS: readonly PublicTopic[] = [
   },
 ];
 
-export const ALL_PUBLIC_TOPICS: readonly PublicTopic[] = [...SETUP_TOPICS, ...FRICTION_TOPICS];
+/** One saved explanation per chooser reason. The rule already decided; the card only says it in plain words.
+ * Inputs are fixed server text: no owner, company or browser data. Ids stay `choose-<reason>`. */
+const CHOOSER_FACT_EN = "Claude: custom connector and approvals tested on the Free plan, 30 Oct 2026 (docs/live-pilot.md). ChatGPT: approvals need ChatGPT Business.";
+const CHOOSER_FACT_ET = "Claude: kohandatud ühendus ja kinnitused on proovitud tasuta paketis 30.10.2026 (docs/live-pilot.md). ChatGPT: kinnitused vajavad ChatGPT Businessi.";
+const CHOOSER_ASK_EN = "Write exactly 3 short plain sentences explaining what this assistant is, why it fits, and the first step. Do not use the words MCP, connector, API or OAuth. No owner data is included; use only this text.";
+const CHOOSER_ASK_ET = "Kirjuta täpselt 3 lühikest lihtsat lauset: mis see assistent on, miks see sobib ja mis on esimene samm. Ära kasuta sõnu MCP, connector, API ega OAuth. Omaniku andmeid siin ei ole; kasuta ainult seda teksti.";
+function chooserTopic(id: string, label: Record<PublicLocale, string>, decision: Record<PublicLocale, string>): PublicTopic {
+  return {
+    id, job: "setup_guidance", label,
+    input: {
+      en: `The rule already decided. ${decision.en} Facts: ${CHOOSER_FACT_EN} ${CHOOSER_ASK_EN}`,
+      et: `Reegel on juba otsustanud. ${decision.et} Faktid: ${CHOOSER_FACT_ET} ${CHOOSER_ASK_ET}`,
+    },
+  };
+}
+export const CHOOSER_TOPICS: readonly PublicTopic[] = [
+  chooserTopic("choose-already_claude", { en: "Already using Claude", et: "Juba kasutab Claude'i" }, {
+    en: "Recommend Claude because this person already uses Claude.",
+    et: "Soovita Claude'i, sest see inimene juba kasutab Claude'i.",
+  }),
+  chooserTopic("choose-chatgpt_business", { en: "ChatGPT Business", et: "ChatGPT Business" }, {
+    en: "Recommend ChatGPT because this person's company pays for ChatGPT Business, so approvals work there.",
+    et: "Soovita ChatGPT-d, sest selle inimese ettevõte maksab ChatGPT Businessi eest, nii et kinnitused seal töötavad.",
+  }),
+  chooserTopic("choose-chatgpt_no_approvals", { en: "ChatGPT without Business", et: "ChatGPT ilma Businessita" }, {
+    en: "Recommend Claude. This person uses ChatGPT, but the company does not pay for ChatGPT Business or they are not sure. ChatGPT without Business can read deadlines, but approvals need ChatGPT Business. Claude's free plan does approvals. They can keep ChatGPT for other things.",
+    et: "Soovita Claude'i. See inimene kasutab ChatGPT-d, aga ettevõte ei maksa ChatGPT Businessi eest või ta pole kindel. ChatGPT ilma Business paketita näeb tähtaegu, aga kinnitused vajavad ChatGPT Businessi. Claude'i tasuta pakett teeb kinnitused ära. ChatGPT võib teiste asjade jaoks alles jääda.",
+  }),
+  chooserTopic("choose-other_untested", { en: "Another assistant", et: "Mõni teine assistent" }, {
+    en: "Recommend Claude. This person uses another assistant. Other assistants are not tested with AI Launchpad.",
+    et: "Soovita Claude'i. See inimene kasutab teist assistenti. Teisi assistente ei ole AI-hüppelauaga proovitud.",
+  }),
+  chooserTopic("choose-none", { en: "No assistant yet", et: "Assistenti veel pole" }, {
+    en: "Recommend Claude. This person has no AI assistant yet. Claude is the easiest start and works on the free plan too.",
+    et: "Soovita Claude'i. Sellel inimesel pole veel AI-assistenti. Claude on lihtsaim algus ja töötab ka tasuta paketis.",
+  }),
+];
+
+export const ALL_PUBLIC_TOPICS: readonly PublicTopic[] = [...SETUP_TOPICS, ...FRICTION_TOPICS, ...CHOOSER_TOPICS];
 
 export function findTopic(topics: readonly PublicTopic[], id: unknown): PublicTopic | null {
   if (typeof id !== "string") return null;

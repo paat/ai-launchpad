@@ -1595,6 +1595,27 @@ export function jobCardAfterScroll(active: number, track: { left: number; right:
 
 const JOB_CAROUSEL_SCRIPT = `<script>(function(){var jobCardAfterScroll=${jobCardAfterScroll};var track=document.getElementById("job-track");if(!track)return;var prev=document.querySelector("[data-job-prev]"),next=document.querySelector("[data-job-next]"),status=document.querySelector("[data-job-status]");if(!prev||!next||!status)return;var cards=[].slice.call(track.querySelectorAll("[data-job-card]")),conversations=[].slice.call(document.querySelectorAll("[data-job-conversation]"));if(!cards.length)return;var controls=[prev,next,status],active=cards[0];for(var i=0;i<controls.length;i++)controls[i].hidden=false;function activate(card,scroll){if(!card)return;active=card;var id=card.getAttribute("data-job-card"),n=cards.indexOf(card);for(var i=0;i<cards.length;i++){var on=cards[i]===card;cards[i].classList.toggle("job-card--active",on);cards[i].querySelector("[data-job-activate]").setAttribute("aria-pressed",on?"true":"false");}var shown=null,revealed=false;for(var j=0;j<conversations.length;j++){var show=conversations[j].getAttribute("data-job-conversation")===id;if(show){revealed=conversations[j].hidden;shown=conversations[j];}conversations[j].hidden=!show;}var pause=document.getElementById("teaser-pause");if(pause&&pause.checked&&revealed&&shown){var finalMs=14000;var seek=function(){var anims=shown.getAnimations({subtree:true});for(var a=0;a<anims.length;a++)anims[a].currentTime=finalMs;return anims;};Promise.all(seek().map(function(anim){return anim.ready;})).then(function(){if(pause.checked)seek();});}status.textContent=(n+1)+" / "+cards.length;if(scroll)card.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"nearest",inline:"start"});}function nearest(){if(!ownerScroll)return;ownerScroll=false;var box=track.getBoundingClientRect(),rects=cards.map(function(card){var r=card.getBoundingClientRect();return {left:r.left,right:r.right};});activate(cards[jobCardAfterScroll(cards.indexOf(active),{left:box.left,right:box.right},rects)],false);}function go(d){activate(cards[Math.max(0,Math.min(cards.length-1,cards.indexOf(active)+d))],true);}prev.addEventListener("click",function(){go(-1);});next.addEventListener("click",function(){go(1);});for(var k=0;k<cards.length;k++)(function(card){card.querySelector("[data-job-activate]").addEventListener("click",function(){activate(card,true);});})(cards[k]);var ownerScroll=false;function scrolling(){ownerScroll=true;}track.addEventListener("pointerdown",scrolling);track.addEventListener("touchstart",scrolling,{passive:true});track.addEventListener("wheel",scrolling,{passive:true});track.addEventListener("keydown",scrolling);var timer;if("onscrollend" in track)track.addEventListener("scrollend",nearest);else track.addEventListener("scroll",function(){clearTimeout(timer);timer=setTimeout(nearest,120);},{passive:true});activate(active,false);})();</script>`;
 
+const CHOOSE_LINK: [string, string] = ["Pole veel AI-assistenti? Aita mul valida", "No AI assistant yet? Help me choose"];
+
+/** Public /vali: one question per screen, then one recommendation. Zero JS. English links carry ?lang=en because this page sets no cookie. */
+export function chooserBody(o: { lang: Lang; step: "uses" } | { lang: Lang; step: "business" } | { lang: Lang; step: "result"; assistant: "claude" | "chatgpt"; reason: string; source: string; downloadHref: string | null; connectHref: string; muse: string | null }): string {
+  const l = o.lang, t = tr(l);
+  const href = (params: Record<string, string> = {}) => { const q = new URLSearchParams(params); if (l === "en") q.set("lang", "en"); const s = q.toString(); return `/vali${s ? `?${s}` : ""}`; };
+  const option = (params: Record<string, string>, label: string) => `<a class="btn secondary" href="${esc(href(params))}">${esc(label)}</a>`;
+  if (o.step === "uses") return `<h1>${esc(t("Kas sa juba kasutad AI-assistenti?", "Do you already use an AI assistant?"))}</h1>
+<nav aria-label="${esc(t("Vastus", "Answer"))}">${option({ uses: "chatgpt" }, "ChatGPT")}${option({ uses: "claude" }, "Claude")}${option({ uses: "other" }, t("Mõni teine (Gemini, Copilot, Meta AI …)", "Another one (Gemini, Copilot, Meta AI …)"))}${option({ uses: "none" }, t("Ei", "No"))}</nav>`;
+  if (o.step === "business") return `<h1>${esc(t("Kas sinu ettevõte maksab ChatGPT Businessi eest?", "Does your company pay for ChatGPT Business?"))}</h1>
+<nav aria-label="${esc(t("Vastus", "Answer"))}">${option({ uses: "chatgpt", business: "yes" }, t("Jah", "Yes"))}${option({ uses: "chatgpt", business: "no" }, t("Ei", "No"))}${option({ uses: "chatgpt", business: "unsure" }, t("Pole kindel", "Not sure"))}</nav>`;
+  const name = o.assistant === "claude" ? t("Kasuta Claude'i", "Use Claude") : t("Kasuta ChatGPT-d", "Use ChatGPT");
+  return `<h1>${esc(name)}</h1>
+<p>${esc(o.reason)}</p>
+<p class="small muted">${esc(o.source)}</p>
+${o.downloadHref ? `<p><a class="tap-link" href="${esc(o.downloadHref)}" rel="noopener noreferrer">${t("Hangi see", "Get it")}</a></p>` : ""}
+<p><a class="btn" href="${esc(o.connectHref)}">${t("Ühenda see AI-hüppelauaga", "Connect it to AI Launchpad")}</a></p>
+${o.muse ? `<p class="small muted">${esc(t("Selgitab Muse Spark (Meta) · salvestatud vastus", "Explained by Muse Spark (Meta) · saved answer"))}</p><p>${esc(o.muse)}</p>` : ""}
+<p><a class="tap-link" href="${esc(href())}">${t("Alusta uuesti", "Start over")}</a></p>`;
+}
+
 export function landingBody(o: { lang: Lang; demo: boolean; rand?: () => number }): string {
   const l = o.lang, t = tr(l);
   const amounts: Record<string, string> = { total: fmtEur(72000, l), cap: fmtEur(50000, l), unpaid: fmtEur(31000, l), purchases: fmtEur(118420, l) };
@@ -1682,7 +1703,8 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
 <section class="landing-hero" aria-labelledby="hero-h"><div>
 <h1 id="hero-h">${t("Tegele sellega, milles oled hea.", "Focus on what you're good at.")} <span>${t("Kontoritöö teeb sinu AI-assistent.", "Your AI assistant does the office work.")}</span></h1>
 <p class="lede">${esc(t("Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud juhib tööd: ütleb, milliseid ühendusi vaja, küsib sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude'iga.", "Your assistant does the office work through your accounting, bank and e-mail connectors. AI Launchpad runs the work: it tells you which connectors you need, asks for your approval, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude."))}</p>
-<div class="landing-actions"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a><a class="tap-link" href="/naidis">${t("Vaata näidist", "See a sample")}</a></div></div>
+<div class="landing-actions"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a><a class="tap-link" href="/naidis">${t("Vaata näidist", "See a sample")}</a></div>
+<p class="small"><a class="tap-link" href="/vali">${t(...CHOOSE_LINK)}</a></p></div>
 <figure class="teaser" id="landing-phone">
 <input type="checkbox" id="teaser-pause" class="vh-input">
 ${jobs.map(conversation).join("\n")}
@@ -1926,7 +1948,7 @@ ${o.expanded ? `<pre id="tekst">${esc(prompt)}</pre>` : `<p><a class="tap-link" 
 ${sampleFirst ? handover : ""}
 <p class="small">${esc(t("Lihtsaim algus: Claude — töötab ka tasuta paketis.", "Easiest start: Claude — works on the free plan too."))}</p>
 <nav class="choice" aria-label="${t("Vali assistent", "Choose your assistant")}"><a href="/uhenda?a=chatgpt"${o.assistant === "chatgpt" ? ' aria-current="true"' : ""}>ChatGPT</a><a href="/uhenda?a=claude"${o.assistant === "claude" ? ' aria-current="true"' : ""}>Claude</a></nav>
-${o.owner ? `<p class="small"><a class="tap-link" href="/setup">${t("Pole veel assistenti? Aitame valida", "No assistant yet? We'll help you choose")}</a></p>` : ""}
+<p class="small"><a class="tap-link" href="/vali">${t(...CHOOSE_LINK)}</a></p>
 <section class="card connect-hero">${hero}</section>
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p><p><a class="tap-link" href="/kataloog?g=raamatupidamine">${t("Järgmine samm: ühenda oma raamatupidamine → Kataloog", "Next step: connect your accounting → Catalogue")}</a></p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
