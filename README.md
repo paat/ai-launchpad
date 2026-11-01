@@ -77,23 +77,27 @@ Starting jobs (from the research's top-10 lists): deadlines this month · counte
 
 The adopted discovery design is a draft: an AI Catalog index plus MCP Server Cards describing the gateway and curated connectors. Those discovery artifacts are unpublished — no live catalogue or card yet. This does not deny the live owner-only MCP pilot endpoint — see [docs/live-pilot.md](docs/live-pilot.md). Details and evidence status are in [docs/research/H-mcp-discovery-and-publication.md](docs/research/H-mcp-discovery-and-publication.md).
 
-## Where Meta's models fit (harness tested; product roles planned)
+## Where Meta's models fit
 
-| Where | Planned model use | Why it's genuine |
-|---|---|---|
-| Setup helper for owners with no assistant yet | Muse Spark (vision), Muse Voice Transcribe | They have no assistant to help them get one |
-| Background jobs: friction classification, redaction and specs; playbook updates when laws change; mapping activities to sector duties | Planned provider-hosted open weights (Muse Spark Open / Muse Glimmer), optionally via Baseten | Keeps the model behind a small interface so the provider can change; no lock-in |
-| Turning accepted requests into new adapters | Muse Code | Development tooling |
+Shipped, behind `src/model-quality.ts` (`meta-models/muse-spark-open-1026` via Baseten):
 
-Not: a chatbot competing with the owner's assistant. The historical bounded quality harness ran two genuine synthetic setup calls on 2026-10-28 (generic acceptable English/Estonian, not a benchmark — see [docs/model-quality.md](docs/model-quality.md)); the owner-only pilot aggregate is now 4 real calls total — see [docs/live-pilot.md](docs/live-pilot.md) for the pinned runtime and receipts. Planned product roles beyond that bounded pilot are otherwise untested. No EU self-hosting or data-residency posture exists yet; that will be decided and documented when the integration is built.
+| Where | What the code does |
+|---|---|
+| Unmet-need classification | Background job in `src/unmet-needs.ts` after the `report_unmet_need` tool. Live output is labelled „AI liigitus · Meta Muse Spark Open”; mock output is labelled „Näidis”. `/demand` lists only rows an owner published. |
+| Public setup cards | An operator generates them with `src/model-public-cards-cli.ts` (job `setup_guidance`). `/vali` shows „Selgitab Muse Spark (Meta) · salvestatud vastus” only when a completed card is saved. `/setup` shows „General guidance · Meta/Baseten” the same way. Opening the page does not call the model. |
+| Saved friction cards | The same operator path, job `classify_friction`. `/playbooks` shows a saved card when one exists („Salvestatud juhis”) and does not call the model on GET. |
+
+Not in this repo: Muse Voice Transcribe, a vision setup helper (screenshot to a tap target), Muse Spark vision, Muse Glimmer, and Muse Code turning requests into adapters. Setup input is fixed text. There is no chatbot competing with the owner's assistant.
+
+The historical bounded quality harness ran two genuine synthetic setup calls on 2026-10-28 (generic acceptable English/Estonian, not a benchmark — see [docs/model-quality.md](docs/model-quality.md)); the owner-only pilot aggregate is now 4 real calls total — see [docs/live-pilot.md](docs/live-pilot.md) for the pinned runtime and receipts. No EU self-hosting or data-residency posture exists yet.
 
 Meta's own consumer agent app (Muse) is available only in the US and Canada as of 26 Oct 2026 and documents no custom MCP setting; see [docs/research/G-muse-app-for-estonian-smes.md](docs/research/G-muse-app-for-estonian-smes.md). AI Launchpad stays MCP-first and can add a plain API if Muse arrives in the EU.
 
 ## Hackathon scope and target demo
 
 - **Scope:** the free micro-entrepreneur service only. [Enterprise measurement](docs/design/future-enterprise-measurement.md) is future design; billing and enterprise features are excluded.
-- **Target, not current completion:** Path A and Path B for the first persona; `get_started`, obligations calendar and 3–4 playbooks; approval cards; the friction loop made visible; the setup helper.
-- **Target demo story (not yet achieved):** an owner who has never used AI goes from a Google search to a working business assistant on their phone in about five minutes, the assistant does a real job with an approval card, and a request it can't serve appears as open demand.
+- **Shipped:** `get_started` and the playbooks in `src/catalog.ts` (`src/mcp.ts`); the obligations calendar from `get_obligations` and `src/obligations.ts` (signed-in `/`, public walkthrough `/naidis`); approval cards via `request_approval` / `get_approval` / `record_action_outcome` and `/approvals`; the friction loop via `report_unmet_need`, the owner's publish decision on Täna, and the public list `/demand`; the per-visitor sample workspace `/proovi` (approve and decline, nothing really sent); the temporary text setup helper `/setup` for a signed-in owner (a sample session is refused).
+- **Not shipped:** the five-minute "Google search to phone" Path B story. Muse Voice Transcribe and a vision setup helper have no call site.
 - **Out:** payments, unattended filing or signing, payroll submission, a marketplace UI beyond the demand list, FIE/e-resident/employer variants.
 
 ## Accepted product requirements
@@ -116,4 +120,4 @@ Test with 3–5 real owners of the first persona during the build week (with con
 
 ## Relationship to Ärikratt
 
-This is a separate project. The planned integration calls the public [Ärikratt MCP](https://arikratt.ee/mcp) (Estonian public-register data) as an external dependency, like any other API.
+This is a separate project. When `ARIKRATT_API_KEY` is set, `src/arikratt.ts` calls the public [Ärikratt MCP](https://arikratt.ee/mcp) (`get_company`, `search_companies`) for company facts. Without that key the lookup returns `not_configured` and does not call the network. Ärikratt stays an external dependency.
