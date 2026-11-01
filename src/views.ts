@@ -1956,6 +1956,7 @@ ${sampleFirst ? handover : ""}
 <p class="small"><a class="tap-link" href="/vali">${t(...CHOOSE_LINK)}</a></p>
 ${hero ? `<section class="card connect-hero">${hero}</section>` : ""}
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
+${s.kind === "anon" ? `<p><a class="tap-link" href="/proovi">${esc(t("Proovi näidistööruumis", "Try the sample workspace"))}</a></p>` : ""}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p><p><a class="tap-link" href="/kataloog?g=raamatupidamine">${t("Järgmine samm: ühenda oma raamatupidamine → Kataloog", "Next step: connect your accounting → Catalogue")}</a></p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
 ${o.expanded ? `<section class="card" id="ise"><h2>${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</h2>
 <ol class="steps-big">${o.assistant === "claude"

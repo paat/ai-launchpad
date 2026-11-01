@@ -222,6 +222,8 @@ describe("deployment scripts", () => {
     const caddy = readFileSync(join(ROOT, "deploy/caddy/huppelaud.arikratt.ee.caddy"), "utf8");
     expect(caddy).toContain("header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}");
     expect(caddy).toContain("import /etc/caddy/launchpad.caddy");
+    // The English alias only redirects: the app accepts a single origin.
+    expect(caddy).toContain("launchpad.arikratt.ee {\n\tredir https://huppelaud.arikratt.ee{path}?lang=en 302\n}");
     // No arbitrary-command backup/offhost hooks anywhere in deploy scripts
     for (const p of [HOST, BACKUP, FORCED]) {
       const src = readFileSync(p, "utf8");
