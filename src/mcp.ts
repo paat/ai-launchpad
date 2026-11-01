@@ -330,7 +330,9 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
   /** Tools that need progress:report and sharing on: a read-only connection gets the same reconnect guidance everywhere. */
   const sharingGate = (nothing: string) => !need("progress:report") ? readOnly(nothing) : !ctx.reportingEnabled ? `Progress sharing is stopped by the owner (it is off by default). ${nothing}` : null;
 
-  const started = gettingStarted(ctx.anotherAssistant === true);
+  // The switch hint reveals another assistant connection. A progress:report-only
+  // get_started is public, so the hint is added only with progress:read.
+  const started = gettingStarted(ctx.anotherAssistant === true && need("progress:read"));
   server.registerTool("get_started", { description: started.description, inputSchema: {}, annotations: { readOnlyHint: true } }, async () => {
     logActivity(db, ctx.ownerId, "assistant", "get_started", "ok", "Assistant fetched getting-started guidance.");
     const first_step = started.first_step;

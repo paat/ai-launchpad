@@ -43,15 +43,15 @@ class Browser {
 const field = (html: string, name: string) => new RegExp(`name="${name}" value="([^"]+)"`).exec(html)![1];
 const post = (path: string, fields: Record<string, string>) => fetch(base + path, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://assistant.example" }, body: new URLSearchParams(fields), redirect: "manual" });
 
-async function grant(clientName: string, actor = "alpha", browser?: Browser) {
+async function grant(clientName: string, actor = "alpha", browser?: Browser, scope = "progress:read") {
   const client = await (await fetch(base + "/register", { method: "POST", headers: { "content-type": "application/json", origin: "https://assistant.example" }, body: JSON.stringify({ redirect_uris: ["http://127.0.0.1:45678/callback"], client_name: clientName, token_endpoint_auth_method: "none" }) })).json();
   const verifier = randomBytes(32).toString("base64url"), b = browser ?? new Browser();
-  const params = { response_type: "code", client_id: client.client_id, redirect_uri: client.redirect_uris[0], resource: base + "/mcp", code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256", state: "switch-state", scope: "progress:read" };
+  const params = { response_type: "code", client_id: client.client_id, redirect_uri: client.redirect_uris[0], resource: base + "/mcp", code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256", state: "switch-state", scope };
   const start = await b.request("/authorize?" + new URLSearchParams(params));
   expect(start.headers.get("location")).toBe("/oauth/consent");
   await b.login(actor);
   const html = await (await b.request("/oauth/consent")).text();
-  const approved = await b.request("/oauth/consent", { csrf: field(html, "csrf"), flow: field(html, "flow"), decision: "allow" });
+  const approved = await b.request("/oauth/consent", { csrf: field(html, "csrf"), flow: field(html, "flow"), decision: "allow", ...(scope.split(" ").includes("progress:report") ? { updates: "1" } : {}) });
   const code = new URL(approved.headers.get("location")!).searchParams.get("code");
   expect(code).toBeTruthy();
   const tokens = await (await post("/token", { grant_type: "authorization_code", client_id: client.client_id, code: code!, code_verifier: verifier, redirect_uri: client.redirect_uris[0], resource: base + "/mcp" })).json();
@@ -118,6 +118,19 @@ test("two grants with the same client_name do not count as another assistant", a
   const again = await grant("Quartz assistant", "alpha", browser);
   const r = await started(again.tokens.access_token);
   expectSwitch(r.body.first_step, r.description, false);
+});
+
+test("a report-only OAuth connection for an owner who has another assistant gets no switch hint", async () => {
+  const browser = new Browser();
+  const read = await grant("Quartz assistant", "alpha", browser);
+  const report = await grant("Pebble assistant", "alpha", browser, "progress:report");
+  expect(report.tokens.scope).toBe("progress:report");
+  const reportStarted = await started(report.tokens.access_token);
+  expectSwitch(reportStarted.body.first_step, reportStarted.description, false);
+  expect(reportStarted.body).not.toHaveProperty("workspace");
+  expect(reportStarted.body).not.toHaveProperty("reporting_enabled");
+  const readStarted = await started(read.tokens.access_token);
+  expectSwitch(readStarted.body.first_step, readStarted.description, true);
 });
 
 test("a manual token never gets the switch sentence, even when other assistants are connected", async () => {
