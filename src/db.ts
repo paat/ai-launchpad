@@ -40,7 +40,9 @@ export function openDb(path: string) {
   `);
   // Backward-safe: approval card columns are added to an existing table in place.
   const approvalCols = new Set((db.prepare("PRAGMA table_info(approvals)").all() as { name: string }[]).map((c) => c.name));
-  for (const col of ["kind", "report_id", "decided_at", "outcome_json", "approved_by_rule", "playbook_id", "owner_confirmation"]) if (!approvalCols.has(col)) db.exec(`ALTER TABLE approvals ADD COLUMN ${col} TEXT`);
+  for (const col of ["kind", "report_id", "decided_at", "outcome_json", "approved_by_rule", "playbook_id", "owner_confirmation", "check_state", "check_json", "check_by", "check_at"]) if (!approvalCols.has(col)) db.exec(`ALTER TABLE approvals ADD COLUMN ${col} TEXT`);
+  // A process restart cannot resume an inference; never leave a stale pass or spinner.
+  db.exec(`UPDATE approvals SET check_state='unavailable',check_json='{"reason":"interrupted"}' WHERE check_state='running'`);
   // #35: a legacy send approval stored without a recipient address can never be
   // used, so an actionable one (pending or approved) is expired once at startup.
   // Consumed rows record what was already sent and are left as they are.

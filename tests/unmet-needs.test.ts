@@ -505,14 +505,16 @@ test("failure states are honest and terminal; ledger refusals map to visible sta
   out = await run(ledgerFile(1, "provider_contract_breach"), () => chat(classification()));
   expect(out.row).toMatchObject(failed("suppressed_after_breach"));
   expect(out.calls).toBe(0);
-  // Another unresolved ledger attempt: not started, visibly waiting, no new ledger row.
+  // Startup finalizes another interrupted attempt, allowing a new classification.
   const pendingPath = ledgerFile(1, "pending");
   out = await run(pendingPath, () => chat(classification()));
-  expect(out.row).toMatchObject({ state: "received", reason: "attempt_in_flight", classify_started_at: null });
-  expect(out.calls).toBe(0);
-  expect(out.html).toContain("pole see veel alanud");
+  expect(out.row).toMatchObject({ state: "classified" });
+  expect(out.calls).toBe(1);
   const l = openExistingPublicLedger(pendingPath);
-  try { expect(l.db.prepare("SELECT count(*) n FROM mq_attempts").get()).toEqual({ n: 1 }); } finally { l.close(); }
+  try {
+    expect(l.db.prepare("SELECT count(*) n FROM mq_attempts").get()).toEqual({ n: 2 });
+    expect(l.get("quality-seed-1")).toMatchObject({ status: "uncertain", error_code: "interrupted", allocated_micro_usd: 2_000_000 });
+  } finally { l.close(); }
   // This need's own ledger row left pending by a crash: interrupted, never re-sent.
   const own = ledgerFile(0);
   const { bodies, fetchFn } = fakeModel(() => chat(classification()));
@@ -524,7 +526,7 @@ test("failure states are honest and terminal; ledger refusals map to visible sta
   const s = await start(liveCfg(own, fetchFn), db);
   try {
     await s.queue.idle();
-    expect(needRow(db, "need_crash")).toMatchObject(failed("interrupted"));
+    expect(needRow(db, "need_crash")).toMatchObject(failed("provider_uncertain"));
     expect(bodies).toHaveLength(0);
   } finally { await s.close(); }
 });

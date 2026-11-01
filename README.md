@@ -83,6 +83,7 @@ Shipped, behind `src/model-quality.ts` (`meta-models/muse-spark-open-1026` via B
 
 | Where | What the code does |
 |---|---|
+| Approval check | Every new approval gets a check of the exact stored action via `src/approval-check.ts` (job `check_approval`), visible in MCP receipts and approval cards. Muse reads for inconsistencies and summarizes in Estonian and English; its advice never changes approval state. Real owners use the same bounded ledger in live mode; sample workspaces and test mode use a labelled deterministic sample. Unavailable checks show a reason, never a pass. |
 | Unmet-need classification | Background job in `src/unmet-needs.ts` after the `report_unmet_need` tool. Live output is labelled „AI liigitus · Meta Muse Spark Open”; mock output is labelled „Näidis”. `/demand` lists only rows an owner published. |
 | Public setup cards | An operator generates them with `src/model-public-cards-cli.ts` (job `setup_guidance`). `/vali` shows „Selgitab Muse Spark (Meta) · salvestatud vastus” only when a completed card is saved. `/setup` shows „General guidance · Meta/Baseten” the same way. Opening the page does not call the model. |
 | Saved friction cards | The same operator path, job `classify_friction`. `/playbooks` shows a saved card when one exists („Salvestatud juhis”) and does not call the model on GET. |
