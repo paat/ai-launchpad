@@ -143,16 +143,18 @@ describe("executable job playbooks (#26)", () => {
     // The free-plan sentence is shared with Customers; "Add custom connector" is no longer accounting-only.
     expect(branch.filter((x) => x.includes("Add custom connector")).every((x) => x.startsWith("Accounting:") || x.startsWith("Customers:"))).toBe(true);
     expect(acc.some((x) => x.includes("Add custom connector"))).toBe(true);
-    const readOnly = acc.findIndex((x) => x.includes("before any key is created, choose reading only"));
+    const tradeOff = acc.findIndex((x) => x.includes("the key should let the assistant read the books"));
     const create = acc.findIndex((x) => x.includes("guide the owner to create the key"));
-    expect(readOnly).toBeGreaterThanOrEqual(0);
-    expect(readOnly).toBeLessThan(create);
-    expect(acc[readOnly]).toContain("If the product or the connector offers no read-only key, say plainly that it cannot be linked safely yet, because the key could also change the books, and stop here: skip all remaining steps.");
+    expect(tradeOff).toBeGreaterThanOrEqual(0);
+    expect(tradeOff).toBeLessThan(create);
+    expect(acc[tradeOff]).toContain("This key lets me create and change invoices and entries in your books. I still ask you before anything is sent or posted, and I can never pay.");
+    expect(acc[tradeOff]).toContain("Never tick or request payment functions.");
     expect(acc.at(-1)).toMatch(/Once the connector is added, go to the last step\.$/);
     expect(acc.join(" ")).toContain("own Smart-ID or ID-card (never automate the login)");
-    expect(acc[0]).toMatch(/^Accounting: if an accounting connector for this company already answers a read-only question, skip the remaining Accounting steps and go to the last step\./);
-    expect(acc.join(" ")).toContain("ticks only reading functions (if the permit cannot be limited to reading, stop here: skip all remaining steps)");
-    expect(acc.join(" ")).toContain("Merit Aktiva or Erply Books: continue only if the connector's own published setup guide documents a read-only key, and create only that; otherwise stop here: skip all remaining steps. Other software: say plainly that it cannot be linked yet and stop here: skip all remaining steps.");
+    expect(acc[0]).toMatch(/^Accounting: if an accounting connector for this company already answers a question about its books, skip the remaining Accounting steps and go to the last step\./);
+    expect(acc.join(" ")).toContain("ticks reading plus sales invoices and journal entries (not payments)");
+    expect(acc.join(" ")).toContain("Merit Aktiva or Erply Books: follow the connector's own published setup guide for a key with those rights; if the guide documents none, say plainly it cannot be linked yet and stop. Other software: say plainly that it cannot be linked yet and stop here: skip all remaining steps.");
+    expect(acc.join(" ")).not.toMatch(/offers no read-only key|cannot be limited to reading/);
     expect(acc.join(" ")).toContain("never offer community or local servers from the catalogue");
     expect(acc.join(" ")).toContain("in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.");
     expect(acc.join(" ")).toContain("removing AI Launchpad stops deadlines and approvals, suggest upgrading the plan, and stop here without the last step; never suggest removing AI Launchpad.");
@@ -163,6 +165,7 @@ describe("executable job playbooks (#26)", () => {
     expect(verify).toContain("For customers, ask the connector for the number of contacts or deals; never list or read customer records to count them; if the connector offers no count, report only that one read-only call succeeded, and show or repeat nothing from it.");
     expect(verify).not.toContain("with no names");
     expect(p.verify_with).toContain("the owner sees the same number of contacts or deals in their own customer tool");
+    expect(p.done_when).toBe("The service the owner asked to link passes its check (one read call), or the owner knows plainly why it cannot be linked yet.");
     const freePlan = "Claude's free plan allows one custom connector and AI Launchpad already uses it: if Add custom connector is greyed out, say so plainly, explain that removing AI Launchpad stops deadlines and approvals, suggest upgrading the plan, and stop here without the last step; never suggest removing AI Launchpad.";
     const nav = "in Claude, Customize → Connectors → Add custom connector (Claude phone app: Settings → Connectors → + → Add custom connector); in ChatGPT, Plugins → add a custom MCP server.";
     expect(customers.length).toBeGreaterThan(1);
@@ -174,7 +177,8 @@ describe("executable job playbooks (#26)", () => {
       expect(cust, id).toContain(`quote only the entry with id ${id}`);
     }
     expect(cust).not.toContain('search_services with "CRM"');
-    expect(cust).toContain("if its key or sign-in cannot be limited to reading, say plainly that it cannot be linked safely yet, because the key could also change the books, and stop here: skip all remaining steps.");
+    expect(cust).not.toContain("cannot be limited to reading");
+    expect(cust).toContain("Trivis uses the same connection as the books (https://ai-api.trivis.ee/mcp), so it can also change the books. Add Trivis as a custom connector.");
     expect(acc.join(" ")).toContain(freePlan);
     expect(acc.join(" ")).toContain(nav);
     const scoro = customers.find((x) => x.includes('search_services with "scoro"'))!;
@@ -526,6 +530,17 @@ describe("agent-facing copy over MCP", () => {
     expect(steps).toContain("amount_cents: REQUIRED");
     expect(steps).toContain("Has this buyer asked you for an e-invoice?");
     expect(steps).toContain("Launchpad sends nothing");
+    expect(steps).toContain("Create the invoice in the owner's accounting software through its connector (draft in the software: numbering, VAT and total come from the software).");
+    expect(steps).toContain("If the connector answers but cannot create an invoice (a read-only key), say once that invoicing needs a key that can create invoices and offer to follow the connect-service playbook to re-link it; stop. No accounting connector: follow the connect-service playbook first.");
+    expect(steps).toContain("Never compute VAT or a total yourself.");
+    expect(steps).not.toContain("draft the invoice lines and total");
+    expect(steps.replace("Never compute VAT or a total yourself.", "")).not.toMatch(/compute (a total|VAT)|calculate (a total|VAT)/i);
+    expect(steps).toContain("1 250,00 € → 125000");
+    expect(steps).toContain("document.title: the invoice number as issued;");
+    expect(steps).toContain("the total written in document.content must be the same amount as amount_cents");
+    expect(SEND_INVOICE_ACT).toContain("whose number equals the approved document.title and whose total equals amount_cents");
+    expect(SEND_INVOICE_ACT).toContain("If the invoice, total, address or channel differs, do not send: request a new approval");
+    expect(SEND_INVOICE_ACT).toContain("Launchpad sends nothing");
     for (const step of p.steps) {
       expect(step).not.toMatch(/\b(paying|filing|signing)\b/i);
     }
