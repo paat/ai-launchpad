@@ -7,8 +7,8 @@ import { parseBusiness, parseTier, parseUses, type Business, type Tier, type Use
 import type { Arikratt, CompanyCard } from "./arikratt.js";
 import { loadCatalog, type ServiceRecord } from "./catalog.js";
 import {
-  buildIntakePlan, fallbackExtract, intakeRateOk, matchCatalog, parseExtract, planModelInput,
-  type IntakeClient, type IntakeCompany, type IntakeObligation, type IntakePlan,
+  buildIntakePlan, intakeRateOk, parseExtract, planModelInput, productsInText, routeProducts,
+  type IntakeClient, type IntakeCompany, type IntakeObligation, type IntakePlan, type ProductHit,
 } from "./intake.js";
 import { computeObligations, validRegistryCode, type CompanyFacts, type Obligation } from "./obligations.js";
 import { alustaBody, esc, tr, type Lang } from "./views.js";
@@ -108,6 +108,8 @@ const EN_MONTH = ["January", "February", "March", "April", "May", "June", "July"
 const clip = (v: string, n: number) => v.slice(0, n);
 const field = (body: Record<string, string>, key: string) => (typeof body[key] === "string" ? body[key] : "");
 
+interface NamedProduct { product: string; id: string; via: string; }
+
 interface Flow {
   asked: string;
   code: string;
@@ -116,6 +118,7 @@ interface Flow {
   got: "" | "model" | "fallback" | "skip";
   shown: string;
   svc: string[];
+  products: NamedProduct[];
   unmatched: string[];
   assistant: string;
   plan: string;
@@ -131,7 +134,7 @@ interface Flow {
 }
 
 function blank(): Flow {
-  return { asked: "", code: "", co: false, qtext: "", got: "", shown: "", svc: [], unmatched: [], assistant: "", plan: "", pu: false, uses: null, tier: null, business: null, csum: "" };
+  return { asked: "", code: "", co: false, qtext: "", got: "", shown: "", svc: [], products: [], unmatched: [], assistant: "", plan: "", pu: false, uses: null, tier: null, business: null, csum: "" };
 }
 
 function catalogById(catalog: ServiceRecord[]): Map<string, ServiceRecord> {
@@ -146,6 +149,26 @@ function readSvc(raw: string, ids: Map<string, ServiceRecord>): string[] {
     if (out.length === 8) break;
   }
   return out;
+}
+
+function readProducts(raw: string, ids: Map<string, ServiceRecord>): NamedProduct[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw) as unknown;
+    if (!Array.isArray(v)) return [];
+    const out: NamedProduct[] = [];
+    for (const item of v) {
+      if (!item || typeof item !== "object") continue;
+      const row = item as Record<string, unknown>;
+      const product = typeof row.p === "string" ? row.p.trim().slice(0, 60) : "";
+      const id = typeof row.id === "string" ? row.id.trim() : "";
+      const via = typeof row.v === "string" ? row.v.trim().slice(0, 40) : "";
+      if (!product) continue;
+      out.push({ product, id: id && ids.has(id) ? id : "", via: id && ids.has(id) ? via : "" });
+      if (out.length === 8) break;
+    }
+    return out;
+  } catch { return []; }
 }
 
 function readUnmatched(raw: string): string[] {
@@ -186,6 +209,7 @@ function knownPlan(assistant: string, plan: string): boolean {
 }
 
 function plansFor(assistant: string): PlanRow[] {
+  if (assistant === "gemini") return PLANS.filter((row) => row.assistant === "gemini" || row.assistant === "google");
   return PLANS.filter((row) => row.assistant === assistant);
 }
 
@@ -208,10 +232,12 @@ function cites(ns: number[]): string {
   }).join(" ");
 }
 
-const PAID_NOTE = {
-  et: "Parim tulemus vajab tasulist AI paketti. See piir on assistendi oma.",
-  en: "The best result needs a paid AI plan. That limit belongs to the assistant.",
-};
+function paidNote(assistant: string, lang: Lang): string {
+  const brand = BRAND[assistant] ?? assistant;
+  if (lang === "en") return `The best result needs a paid AI plan. The connection limit is ${brand}'s plan, not AI Launchpad.`;
+  const gen = brand === "Claude" ? "Claude'i" : brand === "ChatGPT" ? "ChatGPT" : brand === "Grok" ? "Groki" : brand;
+  return `Parim tulemus vajab tasulist AI paketti. Ühenduste piirang on ${gen} paketi oma, mitte AI-hüppelaua.`;
+}
 const MUSE_DOWN = {
   et: "Muse ei ole praegu saadaval — plaan on koostatud meie reeglitest.",
   en: "Muse is not available right now — the plan comes from our rules.",
@@ -229,6 +255,7 @@ function hiddenOf(flow: Flow): Record<string, string> {
     got: flow.got,
     shown: flow.shown,
     svc: flow.svc.join(","),
+    products: flow.products.length ? JSON.stringify(flow.products.map((p) => ({ p: p.product, id: p.id, v: p.via }))) : "",
     unmatched: flow.unmatched.length ? JSON.stringify(flow.unmatched) : "",
     uses: flow.uses ?? "",
     tier: flow.tier ?? "",
@@ -244,6 +271,7 @@ function assistantLabel(flow: Flow, lang: Lang): string {
   const t = tr(lang);
   if (flow.uses === "none" && !flow.assistant) return t("Mul pole veel", "I don't have one yet");
   if (flow.uses === "other" && !flow.assistant) return t("Muu", "Other");
+  if (flow.assistant === "google" || flow.assistant === "gemini") return "Gemini";
   return BRAND[flow.assistant] ?? flow.assistant;
 }
 
@@ -309,11 +337,31 @@ ${obs ? `<h2>${esc(t("Järgmised kohustused", "Next obligations"))}</h2><ul clas
 <p class="small muted">${esc(company.attribution)}</p>`;
 }
 
-function understood(services: ServiceRecord[], viaModel: boolean, lang: Lang): string {
+function understood(products: NamedProduct[], viaModel: boolean, lang: Lang): string {
   const t = tr(lang);
-  const names = services.map((s) => s.name).filter(Boolean).join(", ");
+  const names = products.map((p) => p.via ? `${p.product} → via ${p.via}` : p.product).filter(Boolean).join(", ");
   if (viaModel) return names ? t(`Sain aru: ${names}.`, `I understood: ${names}.`) : t("Sain aru: programme nime järgi ei tundnud.", "I understood: I could not name a program.");
   return names ? t(`Leitud nime järgi (mitte Muse): ${names}.`, `Matched by name (not Muse): ${names}.`) : t("Leitud nime järgi (mitte Muse).", "Matched by name (not Muse).");
+}
+
+function reasonBits(plan: IntakePlan, lang: Lang): { text: string; sources: number[] }[] {
+  const bits: { text: string; sources: number[] }[] = [];
+  for (const reason of plan.reasons) {
+    const text = lang === "en" ? reason.text_en : reason.text_et;
+    for (const sentence of text.split(/(?<=[.!?])\s+/)) {
+      const trimmed = sentence.trim();
+      if (trimmed) bits.push({ text: trimmed, sources: reason.sources });
+    }
+  }
+  return bits;
+}
+
+function reasonBucket(sentence: string): "connections" | "cost" | "tested" | "other" {
+  const s = sentence.toLowerCase();
+  if (/ühendus|connection/.test(s) && /vaja|need|piirang|limit|praegune|current/.test(s)) return "connections";
+  if (/maksab|costs|dollar|euro/.test(s)) return "cost";
+  if (/proovinud|tried|testitud|tested/.test(s)) return "tested";
+  return "other";
 }
 
 /** The rules plan, then at most one phrasing from the model. Model text is escaped and never enters the prompt. */
@@ -323,17 +371,26 @@ export function planScreenHtml(plan: IntakePlan, muse: { text: string; mock: boo
   const noFit = !rec.recommended;
   const headline = noFit
     ? t("Ühtegi sobivat paketti ei leitud — vaata tabelit", "No plan fits — see the table")
-    : planLabel(rec.recommended!);
-  const reasons = plan.reasons.map((r) => {
-    const text = lang === "en" ? r.text_en : r.text_et;
-    if (text === headline) return "";
-    const links = cites(r.sources);
-    return `<p>${esc(text)}${links ? ` ${links}` : ""}</p>`;
-  }).join("");
+    : t(`Soovitame: ${planLabel(rec.recommended!)}`, `We recommend: ${planLabel(rec.recommended!)}`);
+  const bits = reasonBits(plan, lang).filter((bit) => bit.text !== headline && bit.text !== t("Ühtegi sobivat paketti ei leitud — vaata tabelit", "No plan fits — see the table"));
+  const deciding: typeof bits = [];
+  const used = new Set<number>();
+  for (const bucket of ["connections", "cost", "tested"] as const) {
+    const at = bits.findIndex((bit, i) => !used.has(i) && reasonBucket(bit.text) === bucket);
+    if (at >= 0) { deciding.push(bits[at]!); used.add(at); }
+  }
+  const rest = bits.filter((_, i) => !used.has(i));
+  const sourceLine = (rows: { sources: number[] }[]) => {
+    const nums: number[] = [];
+    for (const row of rows) for (const n of row.sources) if (!nums.includes(n)) nums.push(n);
+    return nums.length ? `<p class="small">${esc(t("Allikad", "Sources"))}: ${cites(nums)}</p>` : "";
+  };
+  const lead = deciding.length ? `<p>${esc(deciding.map((bit) => bit.text).join(" "))}</p>${sourceLine(deciding)}` : "";
+  const more = rest.length ? `<p>${esc(rest.map((bit) => bit.text).join(" "))}</p>${sourceLine(rest)}` : "";
   const start = rec.start ? (() => {
     const row = plan.why.find((w) => w.assistant === rec.start!.assistant && w.plan === rec.start!.plan);
-    const bits = row ? ` ${row.planLabel}. ${row.cost}. ${row.taxNote}.` : ` ${planLabel(rec.start)}.`;
-    return `<p>${esc(t("Võid alustada tasuta:", "You can start for free:"))}${esc(bits)}</p>`;
+    const facts = row ? ` ${row.planLabel}. ${row.cost}. ${row.taxNote}.` : ` ${planLabel(rec.start)}.`;
+    return `<p>${esc(t("Võid alustada tasuta:", "You can start for free:"))}${esc(facts)}</p>`;
   })() : "";
   const stay = rec.stayAlternative ? (() => {
     const row = rec.stayAlternative;
@@ -351,7 +408,7 @@ export function planScreenHtml(plan: IntakePlan, muse: { text: string; mock: boo
     return `<tr>${cells.map((c, i) => `<td data-label="${esc(cols[i]!)}">${i === 5 ? src : esc(c)}</td>`).join("")}</tr>`;
   }).join("");
   const table = `<table class="why"><caption>${esc(t("Miks?", "Why?"))}</caption><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
-  const paid = plan.paidNote ? `<p class="note">${esc(PAID_NOTE[lang])}</p>` : "";
+  const paid = plan.paidNote && rec.recommended ? `<p class="note">${esc(paidNote(rec.recommended.assistant, lang))}</p>` : "";
   const steps = plan.steps.length ? `<ol class="steps">${plan.steps.map((s) => `<li>${s.href ? `<a href="${esc(s.href)}"${s.href.startsWith("http") ? ' rel="noopener noreferrer"' : ""}>${esc(s.text)}</a>` : esc(s.text)}</li>`).join("")}</ol>` : "";
   const prompt = `<label for="alusta-prompt">${esc(t("Tekst, mille kleebid assistenti", "Text to paste into your assistant"))}</label>
 <textarea id="alusta-prompt" readonly rows="4">${esc(plan.prompt)}</textarea>
@@ -360,12 +417,14 @@ export function planScreenHtml(plan: IntakePlan, muse: { text: string; mock: boo
   const live = muse
     ? `<div class="bubble bubble--ai"><p class="small muted">${esc(muse.mock ? MUSE_MOCK[lang] : MUSE_LIVE[lang])}</p><p>${esc(muse.text)}</p></div>`
     : `<p class="small muted">${esc(MUSE_DOWN[lang])}</p>`;
+  const why = `<details class="why-more"><summary>${esc(t("Miks just see?", "Why this one?"))}</summary>${more}${stay}${table}</details>`;
   const again = `<p><a class="tap-link" href="${lang === "en" ? "/alusta?lang=en" : "/alusta"}">${esc(t("Alusta uuesti", "Start again"))}</a></p>`;
-  return `<h1>${esc(headline)}</h1>${reasons}${start}${stay}${table}${paid}${steps}${prompt}${live}${again}`;
+  return `<h1>${esc(headline)}</h1>${live}${lead}${start}${paid}${steps}${prompt}${why}${again}`;
 }
 
-function buttons(items: { value: string; label: string; name: string }[], go: string): string {
-  return items.map((item) => `<button type="submit" name="${esc(item.name)}" value="${esc(item.value)}">${esc(item.label)}</button>`).join("") + (go ? `<input type="hidden" name="go" value="${esc(go)}">` : "");
+function buttons(items: { value: string; label: string; name: string }[], go: string, secondary = false): string {
+  const cls = secondary ? ` class="secondary"` : "";
+  return items.map((item) => `<button type="submit"${cls} name="${esc(item.name)}" value="${esc(item.value)}">${esc(item.label)}</button>`).join("") + (go ? `<input type="hidden" name="go" value="${esc(go)}">` : "");
 }
 
 export interface AlustaOutcome {
@@ -381,14 +440,15 @@ function actionOf(lang: Lang): string {
   return lang === "en" ? "/alusta?lang=en" : "/alusta";
 }
 
-function page(lang: Lang, preauth: string, titles: [string, string], flow: Flow, question: string, main: string, showForm: boolean, after = ""): AlustaOutcome {
+function page(lang: Lang, preauth: string, titles: [string, string], flow: Flow, question: string, main: string, showForm: boolean, after = "", extras?: { lead?: { side: "me" | "ai"; text: string }[]; between?: string }): AlustaOutcome {
   return {
     status: 200,
     titleEt: titles[0],
     titleEn: titles[1],
     body: alustaBody({
       lang, action: actionOf(lang), preauth, hidden: hiddenOf(flow),
-      bubbles: bubblesOf(flow, lang), question, main, showForm, after,
+      bubbles: [...(extras?.lead ?? []), ...bubblesOf(flow, lang)], question, main, showForm, after,
+      between: extras?.between,
     }),
   };
 }
@@ -449,8 +509,12 @@ function companyPage(lang: Lang, flow: Flow, preauth: string): AlustaOutcome {
   const qEt = "Mis on sinu ettevõtte nimi või registrikood?";
   const qEn = "What is your company's name or registry code?";
   const q = t(qEt, qEn);
+  const intro = t(
+    "Kolm lühikest küsimust. Leiame su ettevõtte avalikust registrist ja soovitame, millise AI-assistendi ja ühendustega alustada. Midagi ei salvestata.",
+    "Three short questions. We look your company up in the public register and suggest which AI assistant and connections to start with. Nothing is saved.",
+  );
   const main = `<input id="alusta-q" name="q" maxlength="200" autocomplete="off" aria-labelledby="alusta-h"><button type="submit" name="go" value="company">${esc(t("Otsi", "Search"))}</button>`;
-  return page(lang, preauth, [qEt, qEn], flow, q, main, true);
+  return page(lang, preauth, [qEt, qEn], flow, q, main, true, "", { lead: [{ side: "ai", text: intro }] });
 }
 
 interface Read { state: Flow; badUses: boolean; badTier: boolean; badBusiness: boolean; badAssistant: boolean; badPlan: boolean; }
@@ -466,6 +530,7 @@ function readFlow(body: Record<string, string>, ids: Map<string, ServiceRecord>)
   flow.got = got === "model" || got === "fallback" || got === "skip" ? got : "";
   flow.shown = clip(field(body, "shown"), 800);
   flow.svc = readSvc(field(body, "svc"), ids);
+  flow.products = readProducts(field(body, "products"), ids);
   flow.unmatched = readUnmatched(field(body, "unmatched"));
   flow.csum = clip(field(body, "csum"), 1500);
   const usesRaw = field(body, "uses");
@@ -526,7 +591,7 @@ async function applyGo(flow: Flow, go: string, opts: { ipKey: string; now: numbe
   if (go === "nocompany") { flow.co = true; flow.code = ""; flow.pendingFound = undefined; flow.pendingMatches = undefined; flow.gap = undefined; return; }
   if (go === "found" && flow.code) { flow.co = true; flow.pendingFound = undefined; return; }
   if (!flow.co && go !== "skip" && go !== "programs" && go !== "fix" && go !== "assistant" && go !== "plan") return;
-  if (go === "fix") { flow.got = ""; flow.shown = ""; flow.svc = []; flow.unmatched = []; return; }
+  if (go === "fix") { flow.got = ""; flow.shown = ""; flow.svc = []; flow.products = []; flow.unmatched = []; return; }
   if (go === "skip") { flow.co = true; flow.got = "skip"; flow.qtext = ""; flow.shown = ""; return; }
   if (go === "programs") {
     flow.co = true;
@@ -550,6 +615,7 @@ async function applyGo(flow: Flow, go: string, opts: { ipKey: string; now: numbe
   }
   if (go === "plan" && flow.assistant) {
     const plan = field(body, "chooseplan").trim();
+    if (flow.assistant === "gemini" && plan === "workspace") flow.assistant = "google";
     if (plan === "unsure" || plan === "") { flow.plan = ""; flow.pu = true; applyDerived(flow); return; }
     if (!knownPlan(flow.assistant, plan)) return;
     flow.plan = plan;
@@ -558,30 +624,41 @@ async function applyGo(flow: Flow, go: string, opts: { ipKey: string; now: numbe
   }
 }
 
+function namedFrom(hits: ProductHit[]): NamedProduct[] {
+  return hits.slice(0, 8).map((hit) => ({ product: hit.product, id: hit.record?.id ?? "", via: hit.via ?? "" }));
+}
+
 async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeClient | null; ipKey: string; now: number; cookie: string | null }, lang: Lang): Promise<void> {
   const conv = parseAlusta(opts.cookie ?? null);
   let viaModel = false;
-  let services: ServiceRecord[] = [];
+  let hits: ProductHit[] = [];
   if (opts.intake && conv && !extracted.has(conv.id) && reserveIntakeModel({ id: conv.id, ip: opts.ipKey, startedAt: conv.startedAt, now: opts.now, honeypot: false })) {
     extracted.add(conv.id);
     const result = await opts.intake.extract(text);
     if (result.ok) {
       const parsed = parseExtract(result.output);
       if (parsed) {
-        const matched = matchCatalog(parsed.products.map((p) => p.name));
-        services = matched.matched;
-        flow.unmatched = matched.unmatched.map((n) => n.slice(0, 60)).slice(0, 8);
+        const routed = routeProducts(parsed.products.map((p) => p.name), parsed.products.map((p) => p.kind));
+        hits = routed.hits;
+        flow.unmatched = routed.unmatched.map((n) => n.slice(0, 60)).slice(0, 8);
         viaModel = true;
       }
     }
   }
   if (!viaModel) {
-    services = fallbackExtract(text);
+    hits = productsInText(text);
     flow.unmatched = [];
   }
-  flow.svc = services.map((s) => s.id).slice(0, 8);
+  flow.products = namedFrom(hits);
+  const ids: string[] = [];
+  for (const hit of hits) {
+    const id = hit.record?.id;
+    if (id && !ids.includes(id)) ids.push(id);
+    if (ids.length === 8) break;
+  }
+  flow.svc = ids;
   flow.got = viaModel ? "model" : "fallback";
-  flow.shown = understood(services, viaModel, lang);
+  flow.shown = understood(flow.products, viaModel, lang);
 }
 
 async function screen(flow: Flow, lang: Lang, opts: { ipKey: string; now: number; intake: IntakeClient | null; register: Pick<Arikratt, "lookup" | "search">; cookie: string | null; preauth: string }, honeypot: boolean): Promise<AlustaOutcome> {
@@ -623,12 +700,12 @@ async function screen(flow: Flow, lang: Lang, opts: { ipKey: string; now: number
   if (!flow.assistant && flow.uses !== "none" && flow.uses !== "other") {
     const qEt = "Millist AI-assistenti sa kasutad?", qEn = "Which AI assistant do you use?";
     const items = [
-      ...ASSISTANTS.map((id) => ({ name: "choose", value: id, label: BRAND[id] ?? id })),
+      ...ASSISTANTS.filter((id) => id !== "google").map((id) => ({ name: "choose", value: id, label: BRAND[id] ?? id })),
       { name: "choose", value: "other", label: t("Muu", "Other") },
       { name: "choose", value: "none", label: t("Mul pole veel", "I don't have one yet") },
     ];
-    const fix = flow.shown ? extraForm(lang, pre, { ...flow, got: "", shown: "", svc: [], unmatched: [] }, `<button type="submit" class="secondary" name="go" value="fix">${esc(t("Paranda", "Fix"))}</button>`) : "";
-    return page(lang, pre, [qEt, qEn], flow, t(qEt, qEn), buttons(items, "assistant"), true, fix);
+    const fix = flow.shown ? `<div class="fix-form">${extraForm(lang, pre, { ...flow, got: "", shown: "", svc: [], products: [], unmatched: [] }, `<button type="submit" class="text" name="go" value="fix">${esc(t("Paranda", "Fix"))}</button>`)}</div>` : "";
+    return page(lang, pre, [qEt, qEn], flow, t(qEt, qEn), buttons(items, "assistant", true), true, fix);
   }
   if (needsPlan && !flow.pu) {
     const qEt = "Milline pakett sul on?", qEn = "Which plan do you have?";
@@ -636,7 +713,7 @@ async function screen(flow: Flow, lang: Lang, opts: { ipKey: string; now: number
       ...plansFor(flow.assistant).map((row) => ({ name: "chooseplan", value: row.plan, label: planLabel(row) })),
       { name: "chooseplan", value: "unsure", label: t("Ei tea", "I don't know") },
     ];
-    return page(lang, pre, [qEt, qEn], flow, t(qEt, qEn), buttons(items, "plan"), true);
+    return page(lang, pre, [qEt, qEn], flow, t(qEt, qEn), buttons(items, "plan", true), true);
   }
   return renderPlan(flow, lang, opts, honeypot);
 }
@@ -656,9 +733,11 @@ async function renderPlan(flow: Flow, lang: Lang, opts: { ipKey: string; now: nu
     }
   }
   const uses = flow.uses ?? "none";
+  const productNames = flow.products.map((p) => p.product).filter((name) => name.length > 0);
   const args = {
     company, obligations, services, unmatched: flow.unmatched, uses,
     tier: flow.tier, business: flow.business,
+    ...(productNames.length ? { productNames } : {}),
     ...(flow.assistant ? { current: { assistant: flow.assistant, plan: flow.plan } } : {}),
     lang,
   };

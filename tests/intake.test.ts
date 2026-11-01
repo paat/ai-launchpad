@@ -2,8 +2,9 @@ import { describe, expect, test } from "vitest";
 import { PLAN_NOTE, chooseAssistant, needsPaidNote, offerDownload, type Business, type Tier, type Uses } from "../src/assistant-choice.js";
 import { PLANS } from "../src/assistant-plans.js";
 import { loadCatalog, safeHttps } from "../src/catalog.js";
+import { planScreenHtml } from "../src/alusta.js";
 import {
-  buildIntakePlan, fallbackExtract, intakeRateOk, liveIntake, matchCatalog, mockIntake, parseExtract, planModelInput,
+  buildIntakePlan, fallbackExtract, intakeRateOk, liveIntake, matchCatalog, mockIntake, parseExtract, planModelInput, routeProducts,
   type IntakePlanArgs,
 } from "../src/intake.js";
 import { BASETEN_MODEL, MAX_INPUT_BYTES, MAX_INPUT_CHARS, ModelQualityLedger, type FetchFn } from "../src/model-quality.js";
@@ -30,16 +31,37 @@ const chat = (content: string) => new Response(JSON.stringify({
 describe("catalogue match", () => {
   test("matchCatalog picks one record per name and returns the rest unmatched", () => {
     const { matched, unmatched } = matchCatalog(["Merit Aktiva", "SWEDBANK", "Gmail", "no-such-program-zz", ""]);
-    expect(matched.map((r) => r.id)).toEqual(["merit-aktiva-api", "swedbank", "google-gmail-mcp"]);
+    expect(matched.map((r) => r.id)).toEqual(["werkzeug", "google-gmail-mcp"]);
     expect(unmatched).toEqual(["no-such-program-zz", ""]);
     expect(matchCatalog(["LHV"]).matched.map((r) => r.id)).toEqual(["lhv-ai"]);
     expect(matchCatalog(["Pipedrive"]).matched.map((r) => r.id)).toEqual(["pipedrive"]);
     expect(matchCatalog(["Werkzeug"]).matched[0]).toBe(werkzeug);
   });
 
+  test("each named product keeps one playbook route", () => {
+    const both = routeProducts(["Merit Aktiva and Gmail"]);
+    expect(both.unmatched).toEqual([]);
+    expect(both.hits.map((h) => ({ product: h.product, id: h.record?.id ?? null, via: h.via ?? "", builtin: h.builtin ?? "" }))).toEqual([
+      { product: "Merit Aktiva", id: "werkzeug", via: "Werkzeug", builtin: "" },
+      { product: "Gmail", id: "google-gmail-mcp", via: "", builtin: "google" },
+    ]);
+    expect(matchCatalog(["Merit Aktiva", "Gmail"]).matched.map((r) => r.id)).toEqual(["werkzeug", "google-gmail-mcp"]);
+    const books = routeProducts(["e-arveldaja"]);
+    expect(books.hits.map((h) => ({ product: h.product, id: h.record?.id ?? null, via: h.via ?? "" }))).toEqual([
+      { product: "e-arveldaja", id: "werkzeug", via: "Werkzeug" },
+    ]);
+    expect(matchCatalog(["e-arveldaja"]).matched.map((r) => r.id)).toEqual(["werkzeug"]);
+    const bank = routeProducts(["Swedbank"]);
+    expect(bank.unmatched).toEqual([]);
+    expect(bank.hits.map((h) => h.record)).toEqual([null]);
+    expect(matchCatalog(["Swedbank"])).toEqual({ matched: [], unmatched: [] });
+    expect(fallbackExtract("Merit Aktiva and Gmail").map((r) => r.id)).toEqual(["werkzeug", "google-gmail-mcp"]);
+    expect(fallbackExtract("Kasutan e-arveldajat.").map((r) => r.id)).toEqual(["werkzeug"]);
+  });
+
   test("fallbackExtract finds catalogue names in free text and ignores the rest", () => {
     const hits = fallbackExtract("Kasutan Swedbanki ja Gmaili.");
-    expect(hits.map((r) => r.id)).toEqual(expect.arrayContaining(["swedbank", "google-gmail-mcp"]));
+    expect(hits.map((r) => r.id)).toEqual(["google-gmail-mcp"]);
     expect(fallbackExtract("Ainult Werkzeug.").map((r) => r.id)).toEqual(["werkzeug"]);
     expect(fallbackExtract("bank mail mcp").map((r) => r.id)).not.toContain("swedbank");
     expect(fallbackExtract("mitte midagi siin").map((r) => r.id)).not.toContain("werkzeug");
@@ -144,12 +166,13 @@ describe("buildIntakePlan", () => {
       if (path.paid) expect(plan.planNote, label).toBe(plan.reason);
       else expect(plan.planNote, label).toBeUndefined();
       const download = offerDownload(path.uses, choice!.assistant);
-      if (download) expect(plan.steps[0], label).toEqual({ text: lang === "et" ? "Hangi see." : "Get it.", href: download });
+      const brand = choice!.assistant === "chatgpt" ? "ChatGPT" : choice!.assistant === "grok" ? "Grok" : "Claude";
+      if (download) expect(plan.steps[0], label).toEqual({ text: lang === "et" ? `Laadi alla ${brand}` : `Download ${brand}`, href: download });
       else expect(plan.steps.some((s) => s.href === "https://claude.ai/download" || s.href === "https://chatgpt.com/download"), label).toBe(false);
       const connectHref = lang === "en" ? `/uhenda?a=${choice!.assistant}&lang=en` : `/uhenda?a=${choice!.assistant}`;
       expect(plan.steps.some((s) => s.href === connectHref), label).toBe(true);
       const serviceHrefs = plan.steps.map((s) => s.href).filter((h) => h?.startsWith("https://") && !h.includes("claude.ai") && !h.includes("chatgpt.com"));
-      expect(serviceHrefs, label).toEqual([safeHttps(werkzeug.connection), safeHttps(swedbank.connection)]);
+      expect(serviceHrefs, label).toEqual([safeHttps(werkzeug.connection)]);
       expect(serviceHrefs, label).not.toContain(safeHttps(lhv.connection));
       expect(plan.steps.some((s) => s.text.includes("Pipedrive")), label).toBe(false);
       expect(plan.steps.at(-1)?.text, label).toBe(lang === "et" ? "Kleebi see juhis oma assistenti." : "Paste this prompt into your assistant.");
@@ -164,8 +187,54 @@ describe("buildIntakePlan", () => {
     expect(plan.assistant).toBe("claude");
     expect(plan.candidates.some((r) => r.assistant === "claude" && r.plan === "pro")).toBe(true);
     expect(plan.steps.map((s) => s.href).filter(Boolean)).toEqual([
-      "https://claude.ai/download", "/uhenda?a=claude", safeHttps(werkzeug.connection), safeHttps(swedbank.connection),
+      "https://claude.ai/download", "/uhenda?a=claude", safeHttps(werkzeug.connection),
     ]);
+  });
+
+  test("Merit Aktiva and Gmail is one hosted step plus built-in mail, named as the owner said", () => {
+    const services = matchCatalog(["Merit Aktiva", "Gmail"]).matched;
+    const et = buildIntakePlan({ uses: "none", lang: "et", services, productNames: ["Merit Aktiva", "Gmail"] });
+    expect(et.prompt).toContain("Kasutan: Merit Aktiva, Gmail.");
+    expect(et.prompt).not.toMatch(/merit-aktiva|google-gmail|usefulapi|roosa|Elnora|MCP/);
+    expect(et.steps.filter((s) => /^Ühenda\s/.test(s.text)).map((s) => s.text)).toEqual(["Ühenda AI-hüppelaud.", "Ühenda Werkzeug."]);
+    expect(et.steps.find((s) => s.text.includes("Gmail"))).toEqual({ text: "Lülita Claude'is sisse Gmail (see on sisse ehitatud)" });
+    expect(et.steps[0]).toEqual({ text: "Laadi alla Claude", href: "https://claude.ai/download" });
+    const en = buildIntakePlan({ uses: "none", lang: "en", services, productNames: ["Merit Aktiva", "Gmail"] });
+    expect(en.prompt).toContain("I use: Merit Aktiva, Gmail.");
+    expect(en.steps.find((s) => s.text.includes("Gmail"))).toEqual({ text: "Turn on Gmail in Claude (built in)" });
+    const books = buildIntakePlan({ uses: "none", lang: "et", services: matchCatalog(["e-arveldaja"]).matched, productNames: ["e-arveldaja"] });
+    expect(books.steps.filter((s) => /^Ühenda\s/.test(s.text)).map((s) => s.text)).toEqual(["Ühenda AI-hüppelaud.", "Ühenda Werkzeug."]);
+    expect(books.prompt).toContain("e-arveldaja");
+    const bank = buildIntakePlan({ uses: "none", lang: "en", services: matchCatalog(["Swedbank"]).matched, productNames: ["Swedbank"] });
+    expect(bank.steps.some((s) => /swedbank/i.test(`${s.text} ${s.href ?? ""}`))).toBe(false);
+    expect(bank.prompt).toContain("I use: Swedbank.");
+  });
+
+  test("the plan screen leads with the recommendation and one sources line per block", () => {
+    const services = matchCatalog(["Merit Aktiva", "Gmail"]).matched;
+    const plan = buildIntakePlan({ uses: "none", lang: "en", services, productNames: ["Merit Aktiva", "Gmail"] });
+    const html = planScreenHtml(plan, { text: "Bottom line.", mock: true }, "en");
+    const detailsAt = html.indexOf("<details");
+    expect(detailsAt).toBeGreaterThan(0);
+    const head = html.slice(0, detailsAt);
+    const markers = ["<h1>We recommend: Claude Pro</h1>", "Bottom line.", "You can start for free:", "not AI Launchpad.", "<ol class=\"steps\">", "id=\"alusta-prompt\"", "<details class=\"why-more\"><summary>Why this one?</summary>"];
+    let at = -1;
+    for (const bit of markers) {
+      const i = html.indexOf(bit);
+      expect(i, bit).toBeGreaterThan(at);
+      at = i;
+    }
+    expect(head.match(/Sources:/g)).toHaveLength(1);
+    const lead = head.match(/<\/div><p>([^<]+)<\/p>/);
+    expect(lead?.[1].split(/(?<=[.!?])\s+/).filter(Boolean).length).toBeLessThanOrEqual(3);
+    expect(head).not.toContain("includes:");
+    expect(html.slice(detailsAt)).toContain("includes:");
+    expect(html.slice(detailsAt)).toContain("<caption>Why?</caption>");
+    const et = planScreenHtml(buildIntakePlan({ uses: "none", lang: "et", services, productNames: ["Merit Aktiva", "Gmail"] }), null, "et");
+    const etDetails = et.indexOf("<details");
+    expect(et.startsWith("<h1>Soovitame: Claude Pro</h1>")).toBe(true);
+    expect(et.slice(0, etDetails).match(/Allikad:/g)).toHaveLength(1);
+    expect(et.slice(etDetails)).toContain("<summary>Miks just see?</summary>");
   });
 
   test("a stated fact-sheet plan is kept, and an unknown plan id still offers that assistant", () => {

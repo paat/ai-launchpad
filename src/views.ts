@@ -536,16 +536,26 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .landing-choice .small{margin:0}
 .landing-hero .landing-choice .btn{width:100%}
 @media (min-width:880px){.landing-choices{flex-direction:row;align-items:flex-start;gap:var(--s-4)}.landing-hero .landing-choice .btn{width:100%;padding:12px 18px}}
-.intake{position:relative;min-width:0;overflow-wrap:anywhere}
+.intake{position:relative;display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
+.intake-log{order:1}
+.fix-form{order:2}
+.intake-main{order:3;min-width:0}
 .hp{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .landing-choice .btn{width:100%}
 .intake-log{display:flex;flex-direction:column;gap:var(--s-2);margin:0 0 var(--s-4)}
 .bubble--me{align-self:flex-end;border-bottom-right-radius:6px;background:var(--c-primary);color:#fff}
 .bubble--ai{align-self:flex-start;border:1px solid var(--c-border);border-bottom-left-radius:6px;background:#fff}
-.why{width:100%;table-layout:fixed;border-collapse:collapse;font-size:var(--fs-sm);overflow-wrap:anywhere}
-.why th,.why td{padding:6px 4px;border-bottom:1px solid var(--c-divider);vertical-align:top;text-align:left;overflow-wrap:anywhere}
-.why caption{font-weight:750;text-align:left;margin:0 0 var(--s-2)}
-@media (max-width:700px){.why,.why tbody,.why tr,.why td{display:block;width:100%}.why thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.why td::before{content:attr(data-label);display:block;font-weight:700;color:var(--c-muted)}}
+table.why{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+table.why th,table.why td{padding:6px 4px;border-bottom:1px solid var(--c-divider);vertical-align:top;text-align:left;overflow-wrap:break-word;word-break:normal}
+table.why caption{display:block;width:100%;font-weight:750;text-align:left;margin:0 0 var(--s-2);overflow-wrap:normal;word-break:normal}
+.why-more>summary{overflow-wrap:normal;word-break:normal;white-space:nowrap}
+@media (max-width:700px){
+  table.why,table.why tbody{display:block;width:100%;max-width:100%}
+  table.why thead{display:none}
+  table.why tr{display:block;width:auto;max-width:100%;margin:0 0 10px;padding:10px 12px;border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface)}
+  table.why td{display:block;width:auto;max-width:100%;border:0;padding:2px 0;overflow-wrap:break-word;word-break:normal}
+  table.why td::before{content:attr(data-label);display:block;font-weight:700;color:var(--c-muted);overflow-wrap:normal;word-break:normal}
+}
 #alusta-prompt{white-space:pre-wrap}
 .teaser{position:relative;width:100%;max-width:360px;margin:0 auto}
 .teaser::before{content:"";position:absolute;inset:8% 0 4%;z-index:-1;border-radius:50%;background:radial-gradient(closest-side,#c9dcbf,transparent);opacity:.9}
@@ -1660,7 +1670,7 @@ export function alustaBody(o: {
   lang: Lang; action: string; preauth: string;
   hidden: Record<string, string>;
   bubbles: { side: "me" | "ai"; text: string }[];
-  question: string; main: string; showForm: boolean; after?: string;
+  question: string; main: string; showForm: boolean; after?: string; between?: string;
 }): string {
   const t = tr(o.lang);
   const log = o.bubbles.length ? `<div class="intake-log">${o.bubbles.map((b) => `<p class="bubble bubble--${b.side === "me" ? "me" : "ai"}">${esc(b.text)}</p>`).join("")}</div>` : "";
@@ -1668,7 +1678,7 @@ export function alustaBody(o: {
   const hp = `<div class="hp"><label>${esc(t("Veebileht", "Website"))}<input name="website" tabindex="-1" autocomplete="off" value=""></label></div>`;
   const hidden = Object.entries({ preauth: o.preauth, ...o.hidden }).map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`).join("");
   const form = o.showForm ? `<form method="post" action="${esc(o.action)}" autocomplete="off">${hp}${hidden}${o.main}</form>` : o.main;
-  return `<div class="intake">${log}${h1}${form}${o.after ?? ""}</div>`;
+  return `<div class="intake">${log}<div class="intake-main">${o.between ?? ""}${h1}${form}</div>${o.after ?? ""}</div>`;
 }
 
 export function landingBody(o: { lang: Lang; demo: boolean; rand?: () => number }): string {

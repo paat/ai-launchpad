@@ -80,53 +80,224 @@ function catalogIndex() {
   return indexed;
 }
 
-/** One best catalogue record per name. Containment is case-insensitive on the name, a shortened alias, or the id. */
-export function matchCatalog(names: string[]): { matched: ServiceRecord[]; unmatched: string[] } {
-  const matched: ServiceRecord[] = [];
-  const unmatched: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of names) {
-    const q = norm(typeof raw === "string" ? raw : "");
-    if (q.length < 3) { unmatched.push(String(raw)); continue; }
-    let best: { rec: ServiceRecord; score: number } | null = null;
-    for (const { rec, aliases } of catalogIndex()) {
-      let score = 0;
-      for (const alias of aliases) {
-        if (alias === q) { score = 3; break; }
-        if (score < 2 && occurs(alias, q) >= 0) score = 2;
-        else if (score < 1 && occurs(q, alias) >= 0) score = 1;
-      }
-      if (score === 0) continue;
-      const better = !best || score > best.score
-        || (score === best.score && (rec.name.length < best.rec.name.length || (rec.name.length === best.rec.name.length && rec.id < best.rec.id)));
-      if (better) best = { rec, score };
-    }
-    if (!best) unmatched.push(raw);
-    else if (!seen.has(best.rec.id)) { seen.add(best.rec.id); matched.push(best.rec); }
-  }
-  return { matched, unmatched };
+/** One owner product, routed the way the connect-service playbook routes it. */
+export interface ProductHit {
+  product: string;
+  kind: ProductKind;
+  record: ServiceRecord | null;
+  via?: string;
+  builtin?: "google" | "microsoft";
 }
 
-/** Deterministic catalogue hits in the owner's text. No model. At most 8, earliest first. */
-export function fallbackExtract(text: string): ServiceRecord[] {
-  const hay = norm(text);
-  const hits: { rec: ServiceRecord; pos: number; len: number }[] = [];
+interface Phrase {
+  needles: string[];
+  kind: ProductKind;
+  label: string;
+  id?: string;
+  via?: string;
+  builtin?: "google" | "microsoft";
+}
+
+/** Named routes copied from the connect-service playbook. Accounting for Merit Aktiva,
+ * e-arveldaja and Erply Books is the hosted Werkzeug row. Gmail and Microsoft 365 are
+ * the assistant's built-in connector. Other banks, Proton and unnamed tools in those
+ * branches are not offered as catalogue steps. */
+const PHRASES: Phrase[] = [
+  { needles: ["merit aktiva", "merit activa"], kind: "accounting", label: "Merit Aktiva", id: "werkzeug", via: "Werkzeug" },
+  { needles: ["merit palk"], kind: "other", label: "Merit Palk" },
+  { needles: ["merit"], kind: "accounting", label: "Merit Aktiva", id: "werkzeug", via: "Werkzeug" },
+  { needles: ["e arveldaja", "earveldaja", "e financials", "arveldaja"], kind: "accounting", label: "e-arveldaja", id: "werkzeug", via: "Werkzeug" },
+  { needles: ["erply books", "erply"], kind: "accounting", label: "Erply Books", id: "werkzeug", via: "Werkzeug" },
+  { needles: ["werkzeug"], kind: "accounting", label: "Werkzeug", id: "werkzeug" },
+  { needles: ["proton mail", "protonmail", "proton"], kind: "email", label: "Proton Mail" },
+  { needles: ["microsoft 365"], kind: "email", label: "Microsoft 365", id: "microsoft-workiq-mcp", builtin: "microsoft" },
+  { needles: ["outlook"], kind: "email", label: "Outlook", id: "microsoft-workiq-mcp", builtin: "microsoft" },
+  { needles: ["gmail"], kind: "email", label: "Gmail", id: "google-gmail-mcp", builtin: "google" },
+  { needles: ["swedbank"], kind: "bank", label: "Swedbank" },
+  { needles: ["luminor"], kind: "bank", label: "Luminor" },
+  { needles: ["coop pank", "coop"], kind: "bank", label: "Coop Pank" },
+  { needles: ["seb"], kind: "bank", label: "SEB" },
+  { needles: ["lhv"], kind: "bank", label: "LHV", id: "lhv-ai" },
+  { needles: ["pipedrive"], kind: "customers", label: "Pipedrive", id: "pipedrive" },
+  { needles: ["hubspot"], kind: "customers", label: "HubSpot", id: "hubspot" },
+  { needles: ["scoro"], kind: "customers", label: "Scoro", id: "scoro" },
+  { needles: ["trivis"], kind: "customers", label: "Trivis", id: "trivis" },
+];
+
+let idMap: Map<string, ServiceRecord> | null = null;
+function recordById(id: string): ServiceRecord | null {
+  if (!idMap) idMap = new Map(loadCatalog().map((rec) => [rec.id, rec]));
+  return idMap.get(id) ?? null;
+}
+
+function ownerLabel(raw: string, canonical: string, mentions: number): string {
+  const t = raw.trim().replace(/\s+/g, " ");
+  if (mentions !== 1 || t.length > 60 || t.length < 1) return canonical;
+  if (/\b(mcp|api|github|cli|plugin)\b/i.test(t)) return canonical;
+  if (/\b(and|ja)\b/i.test(t)) return canonical;
+  return t;
+}
+
+function phraseHit(phrase: Phrase, product: string): ProductHit {
+  const record = phrase.id ? recordById(phrase.id) : null;
+  const via = phrase.via && norm(phrase.via) !== norm(product) ? phrase.via : undefined;
+  return {
+    product, kind: phrase.kind, record,
+    ...(via ? { via } : {}),
+    ...(phrase.builtin ? { builtin: phrase.builtin } : {}),
+  };
+}
+
+function cleanHostedName(rec: ServiceRecord): string {
+  let n = rec.name;
+  const by = n.search(/ by /i);
+  if (by > 0) n = n.slice(0, by);
+  n = n.replace(/\s+MCP.*$/i, "").replace(/\s+API.*$/i, "").trim();
+  return n || rec.name;
+}
+
+interface Span { pos: number; end: number; phrase: Phrase; }
+
+/** Playbook phrases first, then at most one hosted MCP row for a product the playbook does not name. */
+function mentionsIn(hay: string): Span[] {
+  const found: { pos: number; end: number; len: number; phrase: Phrase }[] = [];
+  for (const phrase of PHRASES) {
+    let best: { pos: number; len: number } | null = null;
+    for (const needle of phrase.needles) {
+      const pos = occurs(hay, needle);
+      if (pos < 0) continue;
+      if (!best || needle.length > best.len || (needle.length === best.len && pos < best.pos)) best = { pos, len: needle.length };
+    }
+    if (best) found.push({ pos: best.pos, end: best.pos + best.len, len: best.len, phrase });
+  }
+  found.sort((a, b) => a.pos - b.pos || b.len - a.len);
+  const taken: { pos: number; end: number }[] = [];
+  const out: Span[] = [];
+  const overlaps = (pos: number, end: number) => taken.some((t) => !(end <= t.pos || pos >= t.end));
+  for (const f of found) {
+    if (overlaps(f.pos, f.end)) continue;
+    taken.push({ pos: f.pos, end: f.end });
+    out.push(f);
+  }
+  const hosted: { pos: number; end: number; len: number; rec: ServiceRecord }[] = [];
   for (const { rec, aliases } of catalogIndex()) {
+    if (rec.interface_class !== "hosted_mcp") continue;
     let best: { pos: number; len: number } | null = null;
     for (const alias of aliases) {
       const pos = occurs(hay, alias);
       if (pos < 0) continue;
-      if (!best || pos < best.pos || (pos === best.pos && alias.length > best.len)) best = { pos, len: alias.length };
+      if (!best || alias.length > best.len || (alias.length === best.len && pos < best.pos)) best = { pos, len: alias.length };
     }
-    if (best) hits.push({ rec, ...best });
+    if (!best) continue;
+    const end = best.pos + best.len;
+    if (overlaps(best.pos, end)) continue;
+    hosted.push({ pos: best.pos, end, len: best.len, rec });
   }
-  hits.sort((a, b) => a.pos - b.pos || b.len - a.len || a.rec.name.length - b.rec.name.length || a.rec.id.localeCompare(b.rec.id));
+  hosted.sort((a, b) => a.pos - b.pos || b.len - a.len || a.rec.name.length - b.rec.name.length || a.rec.id.localeCompare(b.rec.id));
+  for (const h of hosted) {
+    if (overlaps(h.pos, h.end)) continue;
+    taken.push({ pos: h.pos, end: h.end });
+    out.push({
+      pos: h.pos, end: h.end,
+      phrase: { needles: [], kind: kindOf(h.rec), label: cleanHostedName(h.rec), id: h.rec.id },
+    });
+  }
+  out.sort((a, b) => a.pos - b.pos);
+  return out;
+}
+
+/** Each named product yields at most one catalogue row, chosen by the connect-service playbook. */
+export function routeProducts(names: string[], kinds?: ProductKind[]): { hits: ProductHit[]; unmatched: string[] } {
+  const hits: ProductHit[] = [];
+  const unmatched: string[] = [];
+  const seen = new Set<string>();
+  names.forEach((raw, i) => {
+    const name = typeof raw === "string" ? raw : "";
+    const q = norm(name);
+    if (q.length < 3) { unmatched.push(String(raw)); return; }
+    const found = mentionsIn(q);
+    if (found.length) {
+      for (const span of found) {
+        const product = ownerLabel(name, span.phrase.label, found.length);
+        const key = `${norm(product)}|${span.phrase.id ?? ""}|${span.phrase.builtin ?? ""}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        hits.push(phraseHit(span.phrase, product));
+      }
+      return;
+    }
+    const kind = kinds?.[i];
+    if (kind === "accounting" || kind === "bank" || kind === "email" || kind === "customers") {
+      const product = name.trim().slice(0, 60);
+      const key = `${norm(product)}||`;
+      if (!seen.has(key)) { seen.add(key); hits.push({ product, kind, record: null }); }
+      return;
+    }
+    const best = bestHosted(q);
+    if (!best) { unmatched.push(raw); return; }
+    const product = ownerLabel(name, cleanHostedName(best), 1);
+    const key = `${norm(product)}|${best.id}|`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    hits.push({ product, kind: kindOf(best), record: best });
+  });
+  return { hits, unmatched };
+}
+
+/** One best hosted MCP row. Developer rows (API, local, self-hosted, CLI) are never chosen. */
+function bestHosted(q: string): ServiceRecord | null {
+  let best: { rec: ServiceRecord; score: number } | null = null;
+  for (const { rec, aliases } of catalogIndex()) {
+    if (rec.interface_class !== "hosted_mcp") continue;
+    let score = 0;
+    for (const alias of aliases) {
+      if (alias === q) { score = 3; break; }
+      if (score < 2 && occurs(alias, q) >= 0) score = 2;
+      else if (score < 1 && occurs(q, alias) >= 0) score = 1;
+    }
+    if (score === 0) continue;
+    const better = !best || score > best.score
+      || (score === best.score && (rec.name.length < best.rec.name.length || (rec.name.length === best.rec.name.length && rec.id < best.rec.id)));
+    if (better) best = { rec, score };
+  }
+  return best?.rec ?? null;
+}
+
+/** One best catalogue record per name. A playbook route wins; otherwise one hosted MCP row. */
+export function matchCatalog(names: string[]): { matched: ServiceRecord[]; unmatched: string[] } {
+  const { hits, unmatched } = routeProducts(names);
+  const matched: ServiceRecord[] = [];
+  const seen = new Set<string>();
+  for (const hit of hits) {
+    if (!hit.record || seen.has(hit.record.id)) continue;
+    seen.add(hit.record.id);
+    matched.push(hit.record);
+  }
+  return { matched, unmatched };
+}
+
+/** Products named in free text, earliest first. No model. */
+export function productsInText(text: string): ProductHit[] {
+  const hits: ProductHit[] = [];
+  const seen = new Set<string>();
+  for (const span of mentionsIn(norm(text))) {
+    const key = `${norm(span.phrase.label)}|${span.phrase.id ?? ""}|${span.phrase.builtin ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    hits.push(phraseHit(span.phrase, span.phrase.label));
+    if (hits.length === 8) break;
+  }
+  return hits;
+}
+
+/** Deterministic catalogue hits in the owner's text. No model. At most one row per product, at most 8. */
+export function fallbackExtract(text: string): ServiceRecord[] {
   const out: ServiceRecord[] = [];
   const seen = new Set<string>();
-  for (const h of hits) {
-    if (seen.has(h.rec.id)) continue;
-    seen.add(h.rec.id);
-    out.push(h.rec);
+  for (const hit of productsInText(text)) {
+    if (!hit.record || seen.has(hit.record.id)) continue;
+    seen.add(hit.record.id);
+    out.push(hit.record);
     if (out.length === 8) break;
   }
   return out;
@@ -172,6 +343,8 @@ export interface IntakePlanArgs {
   current?: { assistant: string; plan: string };
   /** Rows to read. Defaults to the fact sheet. */
   sheet?: readonly PlanRow[];
+  /** Owner product names for the paste prompt. Catalogue names are the fallback. */
+  productNames?: string[];
   lang: "et" | "en";
 }
 export interface IntakeStep { text: string; href?: string; }
@@ -213,9 +386,10 @@ function intakeRecommendation(args: IntakePlanArgs): Recommendation {
   return recommendAssistant(customerFromServices(args.services ?? [], currentPlan(args, sheet)), sheet);
 }
 
-/** Prompt sentences use only the register name, the registry code and catalogue names. */
-function intakePrompt(lang: "et" | "en", company: IntakeCompany | null | undefined, services: ServiceRecord[]): string {
-  const names = services.map((s) => s.name).filter((n) => typeof n === "string" && n.length > 0);
+/** Prompt sentences use the register name, the registry code and the owner's product names. */
+function intakePrompt(lang: "et" | "en", company: IntakeCompany | null | undefined, services: ServiceRecord[], productNames?: string[]): string {
+  const named = (productNames ?? []).map((n) => n.trim()).filter((n) => n.length > 0);
+  const names = named.length ? named : services.map((s) => s.name).filter((n) => typeof n === "string" && n.length > 0);
   const parts: string[] = [];
   const code = company?.registry_code?.trim();
   const name = company?.name?.trim();
@@ -248,23 +422,32 @@ export function buildIntakePlan(args: IntakePlanArgs): IntakePlan {
       why: whyRows(sheet, lang),
       candidates: [...sheet],
       steps: [],
-      prompt: intakePrompt(lang, args.company, services),
+      prompt: intakePrompt(lang, args.company, services, args.productNames),
     };
   }
   const assistant = asAssistantId(rec.recommended);
   const candidates = candidateRows(rec);
   const steps: IntakeStep[] = [];
   const download = offerDownload(args.uses, assistant);
-  if (download) steps.push({ text: lang === "et" ? "Hangi see." : "Get it.", href: download });
+  const brand = assistant === "chatgpt" ? "ChatGPT" : assistant === "grok" ? "Grok" : "Claude";
+  if (download) steps.push({ text: lang === "et" ? `Laadi alla ${brand}` : `Download ${brand}`, href: download });
   steps.push({ text: lang === "et" ? "Loo konto." : "Sign up." });
   const href = lang === "en" ? `/uhenda?a=${assistant}&lang=en` : `/uhenda?a=${assistant}`;
   steps.push({ text: lang === "et" ? "Ühenda AI-hüppelaud." : "Connect AI Launchpad.", href });
+  const inessive = brand === "Claude" ? "Claude'is" : brand === "ChatGPT" ? "ChatGPT-s" : brand === "Grok" ? "Grokis" : `${brand}is`;
+  const turnOn = (what: string) => steps.push({
+    text: lang === "et" ? `Lülita ${inessive} sisse ${what} (see on sisse ehitatud)` : `Turn on ${what} in ${brand} (built in)`,
+  });
+  if (rec.recommended.builtin_google.length && services.some((s) => emailKind(s) === "google")) turnOn("Gmail");
+  if (rec.recommended.builtin_microsoft.length && services.some((s) => emailKind(s) === "microsoft")) turnOn("Outlook");
   const slots = rec.recommended.custom_connectors;
   const room = slots === "no_cap" || (typeof slots === "number" && slots > 1);
   if (room) for (const service of services) {
+    if (service.interface_class !== "hosted_mcp" || emailKind(service)) continue;
     const url = safeHttps(service.connection);
     if (!url || !service.name) continue;
-    steps.push({ text: lang === "et" ? `Ühenda ${service.name}.` : `Connect ${service.name}.`, href: url });
+    const label = connectLabel(service);
+    steps.push({ text: lang === "et" ? `Ühenda ${label}.` : `Connect ${label}.`, href: url });
   }
   steps.push({ text: lang === "et" ? "Kleebi see juhis oma assistenti." : "Paste this prompt into your assistant." });
   return {
@@ -277,8 +460,21 @@ export function buildIntakePlan(args: IntakePlanArgs): IntakePlan {
     why: whyRows(candidates, lang),
     candidates,
     steps,
-    prompt: intakePrompt(lang, args.company, services),
+    prompt: intakePrompt(lang, args.company, services, args.productNames),
   };
+}
+
+/** Gmail and Microsoft 365 follow the playbook's built-in connector, not a custom one. */
+function emailKind(rec: ServiceRecord): "google" | "microsoft" | null {
+  const blob = `${rec.id} ${rec.name} ${rec.sector ?? ""}`.toLowerCase();
+  if (!/email|gmail|outlook|mailbox|mail/.test(blob) || /google-calendar/.test(rec.id)) return null;
+  if (/gmail|google-gmail|google workspace/.test(blob)) return "google";
+  if (/outlook|microsoft 365|microsoft-graph-mail|workiq/.test(blob)) return "microsoft";
+  return null;
+}
+
+function connectLabel(rec: ServiceRecord): string {
+  return cleanHostedName(rec);
 }
 
 /** Compact JSON for intake_plan. Obligations, then services, then unmatched names drop until it fits. */
@@ -361,7 +557,7 @@ export function mockIntake(): IntakeClient {
   return {
     mock: true,
     async extract(text) {
-      const products = fallbackExtract(text).map((rec) => ({ name: rec.name.slice(0, 60), kind: kindOf(rec) }));
+      const products = productsInText(text).map((hit) => ({ name: hit.product.slice(0, 60), kind: hit.kind }));
       return { ok: true, output: JSON.stringify({ products }), mock: true };
     },
     async summarize(input) {

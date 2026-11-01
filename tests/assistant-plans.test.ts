@@ -275,12 +275,20 @@ describe("recommendAssistant", () => {
   test("Merit from the catalogue needs a second own connection and Gmail does not", () => {
     const merit = customerFromServices(matchCatalog(["Merit Aktiva"]).matched);
     expect(merit.customConnectorsNeeded).toBe(2);
-    expect(merit.connectionNames).toEqual(["Merit"]);
+    expect(merit.connectionNames).toEqual(["Werkzeug"]);
     expect(recommendAssistant(merit).recommended).toBe(row("claude", "pro"));
     const gmail = customerFromServices(matchCatalog(["Gmail"]).matched);
     expect(gmail.customConnectorsNeeded).toBe(1);
     expect(gmail.emailSuite).toBe("google");
     expect(recommendAssistant(gmail).recommended).toBe(row("claude", "free"));
+    const both = customerFromServices(matchCatalog(["Merit Aktiva", "Gmail"]).matched);
+    expect(both.customConnectorsNeeded).toBe(2);
+    expect(both.connectionNames).toEqual(["Werkzeug"]);
+    expect(both.emailSuite).toBe("google");
+    const books = customerFromServices(matchCatalog(["e-arveldaja"]).matched);
+    expect(books.connectionNames).toEqual(["Werkzeug"]);
+    expect(books.customConnectorsNeeded).toBe(2);
+    expect(customerFromServices(matchCatalog(["Swedbank"]).matched).customConnectorsNeeded).toBe(1);
   });
 
   test("memo UNKNOWN fields stay null and are not stored as a conservative default", () => {

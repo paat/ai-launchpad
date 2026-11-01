@@ -18,7 +18,7 @@ const HOUR = 3_600_000;
 const CODE = "10000062";
 const MISSING = "10000018";
 const MUSE_DOWN = "Muse ei ole praegu saadaval — plaan on koostatud meie reeglitest.";
-const PAID_BIT = "See piir on assistendi oma.";
+const PAID_BIT = "mitte AI-hüppelaua.";
 
 describe("intake guards", () => {
   beforeEach(() => resetAlustaGuards());
@@ -192,6 +192,9 @@ describe("/alusta", () => {
     const start = await getPage();
     expect(start.res.status).toBe(200);
     expect(start.html).toContain('lang="et"');
+    expect(start.html).toContain("Kolm lühikest küsimust. Leiame su ettevõtte avalikust registrist ja soovitame, millise AI-assistendi ja ühendustega alustada. Midagi ei salvestata.");
+    const intake = start.html.slice(start.html.indexOf('<div class="intake"'));
+    expect(intake.indexOf("Kolm lühikest küsimust")).toBeLessThan(intake.indexOf("<h1"));
     expect(start.html).toContain("Mis on sinu ettevõtte nimi või registrikood?");
     expect(start.html).toContain('id="alusta-q"');
     expect(start.html).toContain('name="website"');
@@ -200,6 +203,7 @@ describe("/alusta", () => {
     expect(start.res.headers.getSetCookie().some((c) => c.includes("Path=/alusta") && c.includes("HttpOnly") && c.includes("Max-Age=1800"))).toBe(true);
     const en = await getPage("/alusta?lang=en");
     expect(en.html).toContain('lang="en"');
+    expect(en.html).toContain("Three short questions. We look your company up in the public register and suggest which AI assistant and connections to start with. Nothing is saved.");
     expect(en.html).toContain("What is your company&#39;s name or registry code?");
     expect(en.html).toContain('action="/alusta?lang=en"');
   });
@@ -278,17 +282,27 @@ describe("/alusta", () => {
   test("programs can be skipped or understood, and Fix returns to the question", async () => {
     const start = await skipToAssistant();
     expect(start.html).toContain("Millist AI-assistenti sa kasutad?");
-    for (const id of assistants) expect(start.html).toContain(`>${planLabel({ assistant: id, plan: PLANS.find((row) => row.assistant === id)!.plan }).split(" ")[0] === "Google" ? "Google" : ""}`);
-    expect(start.html).toContain(">Claude</button>");
-    expect(start.html).toContain(">ChatGPT</button>");
-    expect(start.html).toContain(">Muu</button>");
-    expect(start.html).toContain(">Mul pole veel</button>");
+    for (const label of ["Claude", "ChatGPT", "Gemini", "Copilot", "Meta AI", "Grok", "Muu", "Mul pole veel"]) {
+      expect(start.html).toContain(`>${label}</button>`);
+    }
+    expect(start.html).not.toContain(">Google</button>");
+    expect(start.html).toContain('<button type="submit" class="secondary" name="choose" value="claude">Claude</button>');
+    expect(start.html).toContain('<button type="submit" class="secondary" name="choose" value="gemini">Gemini</button>');
+    const gemini = await post(start, { ...hidden(start.html), go: "assistant", choose: "gemini" });
+    expect(gemini.html).toContain(">Gemini</button>");
+    expect(gemini.html).toContain(">Google AI Pro</button>");
+    expect(gemini.html).toContain(">Google Workspace Business Standard</button>");
+    expect(gemini.html).toContain('class="secondary"');
+    const workspace = await post(gemini, { ...hidden(gemini.html), go: "plan", chooseplan: "workspace" });
+    expect(workspace.html).toContain("<h1>Soovitame:");
+    expect(workspace.html).not.toContain("Milline pakett sul on?");
 
     const fresh = await getPage();
     const company = await post(fresh, { ...hidden(fresh.html), go: "nocompany" });
     const wrote = await post(company, { ...hidden(company.html), go: "programs", text: "Merit Aktiva ja saladusXYZ" });
     expect(wrote.html).toContain("Sain aru:");
-    expect(wrote.html).toContain("Merit");
+    expect(wrote.html).toContain("Merit Aktiva → via Werkzeug");
+    expect(wrote.html).toContain('<button type="submit" class="text" name="go" value="fix">Paranda</button>');
     expect(wrote.html).toContain('class="bubble bubble--me"');
     expect(wrote.html).toContain("saladusXYZ");
     const fixed = await post(wrote, { ...hidden(wrote.html), go: "fix", got: "", shown: "", svc: "", unmatched: "" });
@@ -308,9 +322,10 @@ describe("/alusta", () => {
       expect(asked.html).toContain(">Ei tea</button>");
       const done = await post(asked, { ...hidden(asked.html), go: "plan", chooseplan: row.plan });
       const expected = buildIntakePlan(argsFor(row.assistant, row.plan));
-      const headline = expected.recommendation.recommended ? planLabel(expected.recommendation.recommended) : "Ühtegi sobivat paketti ei leitud — vaata tabelit";
+      const headline = expected.recommendation.recommended ? `Soovitame: ${planLabel(expected.recommendation.recommended)}` : "Ühtegi sobivat paketti ei leitud — vaata tabelit";
       expect(done.html).toContain(`<h1>${headline}</h1>`);
       expect(done.html).toContain("<caption>Miks?</caption>");
+      expect(done.html).toContain("<summary>Miks just see?</summary>");
       expect(done.html).toContain("Näidisplaan");
       expect(done.html).toContain(">Näidis<");
       if (expected.paidNote) expect(done.html).toContain(PAID_BIT);
@@ -328,7 +343,7 @@ describe("/alusta", () => {
       const asked = await post(programs, { ...hidden(programs.html), go: "assistant", choose: assistant });
       const done = await post(asked, { ...hidden(asked.html), go: "plan", chooseplan: "unsure" });
       const expected = buildIntakePlan(argsFor(assistant, "unsure"));
-      const headline = expected.recommendation.recommended ? planLabel(expected.recommendation.recommended) : "Ühtegi sobivat paketti ei leitud — vaata tabelit";
+      const headline = expected.recommendation.recommended ? `Soovitame: ${planLabel(expected.recommendation.recommended)}` : "Ühtegi sobivat paketti ei leitud — vaata tabelit";
       expect(done.html, assistant).toContain(`<h1>${headline}</h1>`);
       expect(done.html).toContain("Ei tea");
       if (expected.paidNote) expect(done.html).toContain(PAID_BIT);
@@ -339,7 +354,7 @@ describe("/alusta", () => {
       const programs = await skipToAssistant(choose === "none" ? "10.4.0.1" : "10.4.0.2");
       const done = await post(programs, { ...hidden(programs.html), go: "assistant", choose });
       const expected = buildIntakePlan(argsFor(choose, null));
-      const headline = expected.recommendation.recommended ? planLabel(expected.recommendation.recommended) : "Ühtegi sobivat paketti ei leitud — vaata tabelit";
+      const headline = expected.recommendation.recommended ? `Soovitame: ${planLabel(expected.recommendation.recommended)}` : "Ühtegi sobivat paketti ei leitud — vaata tabelit";
       expect(done.html).toContain(`<h1>${headline}</h1>`);
       expect(done.html).not.toContain("Milline pakett sul on?");
       if (expected.paidNote) expect(done.html).toContain(PAID_BIT);
@@ -349,6 +364,7 @@ describe("/alusta", () => {
     const en = await post({ ...enStart, html: enStart.html.replace('action="/alusta"', 'action="/alusta?lang=en"') }, { ...hidden(enStart.html), go: "assistant", choose: "none" }, { ip: "10.4.0.3" });
     expect(en.html).toContain('lang="en"');
     expect(en.html).toContain("Why?");
+    expect(en.html).toContain("Why this one?");
     expect(en.html).toContain("Sample plan");
     // "You can start for free" is the fact sheet's start row. None with no programs recommends Claude Free itself, so start is absent.
     const enExpected = buildIntakePlan({ uses: "none", lang: "en" });
@@ -367,6 +383,12 @@ describe("/alusta", () => {
     const done = await post(wrote, { ...hidden(wrote.html), go: "assistant", choose: "none" }, { ip: "10.5.0.1" });
     const expected = buildIntakePlan(argsFor("none", null, servicesFrom(wrote.html)));
     expect(expected.services?.length ?? servicesFrom(wrote.html).length).toBeGreaterThan(0);
+    expect(servicesFrom(wrote.html).map((r) => r.id)).toEqual(["werkzeug"]);
+    expect(promptBox(done.html)).toContain("Merit Aktiva");
+    expect(promptBox(done.html)).not.toContain("Merit Aktiva API");
+    expect(done.html).toContain("Laadi alla Claude");
+    expect(done.html).toContain('href="https://claude.ai/download"');
+    expect(done.html).not.toContain("Hangi see.");
     if (expected.paidNote) expect(done.html).toContain(PAID_BIT);
     expect(promptBox(done.html)).not.toContain("saladusXYZ");
     expect(done.html).toContain("saladusXYZ");
