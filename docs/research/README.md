@@ -21,6 +21,7 @@ Research date 25 Oct 2026. Five Codex legs (`codex --search exec`, gpt-6-astra, 
 | [O-value-expansion.md](O-value-expansion.md) | More value (1 Nov 2026): Google's Open Knowledge Format (OKF), the owner's business folder on their own Drive, e-invoice and retention rules, ranked next jobs | — |
 | [P-lightweight-crm.md](P-lightweight-crm.md) | Customers without a CRM app (1 Nov 2026): Google Sheet in the owner's Drive vs Markdown vs SQLite, official CRM MCPs (HubSpot, Pipedrive, Trivis, Scoro, Attio…), GDPR minimums | — |
 | [Q-phone-call-agent-services.md](Q-phone-call-agent-services.md) | Phone calls through the owner's assistant (1 Nov 2026): Retell, Speko, Bland, Telnyx, Vapi, ElevenLabs MCPs; +372 numbers, Estonian voices, AI Act Art. 50 and § 103¹ rules; call approval left as a follow-up | — |
+| [R-marketing-agent-services.md](R-marketing-agent-services.md) | Marketing jobs the owner's assistant can do (1 Nov 2026): MailerLite, Omnisend, Buffer, Canva, Meta Ads MCP (writes), read-only Google MCPs, ESS § 103¹, Google review policy, AI Act Art. 50, ad spend caps | — |
 | [S-website-agent-services.md](S-website-agent-services.md) | Websites the owner's assistant can build and run (1 Nov 2026): Wix, Shopify, WordPress.com, Framer, Webflow, Hostinger MCPs; Estonian builders and .ee domains; site-information, price and accessibility rules | — |
 | **Total** | | **354** |
 
