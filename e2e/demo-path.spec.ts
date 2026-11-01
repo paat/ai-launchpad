@@ -42,17 +42,18 @@ test("/uhenda: Claude preselected (QA m11), ChatGPT one tap away, no phone hand-
   expect(await page.locator('meta[http-equiv="refresh"]').count()).toBe(0);
   await noOverflow(page);
   await page.screenshot({ path: `${SHOTS}/uhenda-390.png`, fullPage: true });
-  // The old steps and the plan line stay behind „Tee ise”; ?naita=1 keeps them open across a reload.
+  // The old steps stay behind „Tee ise”; ?naita=1 keeps them open across a reload.
+  // The plan line is only in the public-HTTPS hero, so this local server does not show it.
   await page.getByRole("link", { name: "Tee ise, ilma juhendita" }).click();
   await expect(page).toHaveURL(/\/uhenda\?a=claude&naita=1#ise$/);
   await expect(page.locator("#ise")).toBeVisible();
-  await expect(page.getByText("Testitud Claude'i tasuta paketis (30.10.2026).", { exact: false })).toBeVisible();
+  await expect(page.getByText("Testitud Claude'i tasuta paketis (30.10.2026).", { exact: false })).toHaveCount(0);
   await expect(page.getByText("Vajuta Connect, logi sisse ja kinnita. Kui Claude küsib tööriista luba, vajuta Allow.")).toBeVisible();
   await page.getByRole("link", { name: "ChatGPT", exact: true }).click();
   await expect(page.getByRole("link", { name: "ChatGPT", exact: true })).toHaveAttribute("aria-current", "true");
   await page.getByRole("link", { name: "Tee ise, ilma juhendita" }).click();
   await expect(page).toHaveURL(/\/uhenda\?a=chatgpt&naita=1#ise$/);
-  await expect(page.getByText("Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Kinnitused („Kinnita täpselt see”) vajavad ChatGPT Business paketti.", { exact: false })).toHaveCount(0);
 });
 
 test("/uhenda for a sample owner: „Käest ära” before the setup steps, no amber local-setup notice (QA M2)", async ({ page }) => {

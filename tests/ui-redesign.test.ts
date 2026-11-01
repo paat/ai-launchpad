@@ -593,6 +593,8 @@ describe("landing and connect", () => {
     expect(html.slice(0, diyAt)).not.toContain('class="step-title"');
     const diy = html.slice(diyAt, html.indexOf("</section>", diyAt));
     expect(diy).toContain('class="step-title"');
+    expect(diy).not.toContain("ChatGPT Business");
+    expect(html.slice(html.indexOf('class="card connect-hero"'), diyAt)).toContain("ChatGPT Business");
     expect(html).not.toContain('<summary id="steps-h"');
     expect([...html.matchAll(/<h3 class="step-title">(.*?)<\/h3>/g)].map(m => m[1])).toEqual(["Kopeeri aadress", "Ava ChatGPT seadetes ühendused, lisa uus ühendus ja kleebi sinna aadress.", "Logi sisse ja vali, mida assistent tohib"]);
     expect(html).toContain("Ootan, et ChatGPT ühenduks…");
@@ -613,6 +615,8 @@ describe("landing and connect", () => {
     expect(claude).toContain("Claude lubab kohandatud ühendusi igas paketis (tasuta paketis üks ühendus). Testitud Claude&#39;i tasuta paketis (30.10.2026).");
     expect(claude).not.toContain("pole seda veel testitud");
     const claudeDiy = claude.indexOf('<section class="card" id="ise"><h2>Tee ise, ilma juhendita</h2>');
+    expect(claude.slice(claude.indexOf('class="card connect-hero"'), claudeDiy)).toContain("Testitud Claude&#39;i tasuta paketis (30.10.2026).");
+    expect(claude.slice(claudeDiy, claude.indexOf("</section>", claudeDiy))).not.toContain("Testitud Claude");
     expect(claudeDiy).toBeGreaterThan(claude.indexOf('id="connect-status"'));
     expect(claude.indexOf('class="step-title"')).toBeGreaterThan(claudeDiy);
     const steps = [...claude.matchAll(/<h3 class="step-title">(.*?)<\/h3>/g)].map(m => m[1]);
@@ -650,6 +654,7 @@ describe("landing and connect", () => {
     expect(closed).not.toContain('class="steps-big"');
     expect(closed).not.toContain('id="tekst"');
     expect(closed).not.toContain('id="ise"');
+    expect(closed).toContain("ChatGPT Business");
     const open = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true, expanded: true });
     expect(open).toContain(`<pre id="tekst">${esc(assistantGuidePrompt("et", "chatgpt", endpoint))}</pre>`);
     expect(open).not.toContain("Näita teksti");
@@ -725,7 +730,8 @@ describe("/uhenda/ava", () => {
     const claudeQ = new URL(claudeLoc).searchParams.get("q");
     expect(claudeQ).toBe(assistantGuidePrompt("et", "claude", endpoint));
     expect(claudeQ).toContain(endpoint);
-    expect(claudeQ).toBe(`Tere! Aita mul ühendada AI-hüppelaud oma Claude'iga. Juhenda mind lihtsate sõnadega, üks samm korraga, ja oota, kuni ütlen „tehtud”.\n1. Ava Customize → Connectors → Add custom connector. Kui telefonis seda valikut pole, tee see samm arvutis claude.ai lehel.\n2. Nimi: AI-hüppelaud. Aadress: ${endpoint}. Vajuta Add.\n3. Vajuta Connect, logi sisse ja kinnita. Kui küsitakse tööriista luba, vali Always allow.\nKui ühendus töötab, kasuta AI-hüppelaua tööriista get_started.`);
+    expect(claudeQ).toContain("Continue");
+    expect(claudeQ).toBe(`Tere! Aita mul ühendada AI-hüppelaud oma Claude'iga. Juhenda mind lihtsate sõnadega, üks samm korraga, ja oota, kuni ütlen „tehtud”.\n1. Ava Customize → Connectors → Add custom connector. Kui telefonis seda valikut pole, tee see samm arvutis claude.ai lehel.\n2. Nimi: AI-hüppelaud. Aadress: ${endpoint}. Vajuta Continue ja siis Add. Ära muuda midagi muud.\n3. Vajuta Connect, logi sisse ja kinnita. Kui küsitakse tööriista luba, vali Always allow.\nKui ühendus töötab, kasuta AI-hüppelaua tööriista get_started.`);
 
     const gptLoc = await location("/uhenda/ava?a=chatgpt");
     expect(gptLoc.startsWith("https://chatgpt.com/?q=")).toBe(true);
@@ -738,7 +744,8 @@ describe("/uhenda/ava", () => {
     const enLoc = await location("/uhenda/ava?lang=en");
     const enQ = new URL(enLoc).searchParams.get("q");
     expect(enQ).toBe(assistantGuidePrompt("en", "claude", endpoint));
-    expect(enQ).toBe(`Hi! Help me connect AI Launchpad to my Claude. Guide me in plain words, one step at a time, and wait until I say "done".\n1. Open Customize → Connectors → Add custom connector. If your phone does not show this option, do this step on a computer at claude.ai.\n2. Name: AI Launchpad. Address: ${endpoint}. Press Add.\n3. Press Connect, sign in and confirm. If asked for tool permission, choose Always allow.\nOnce the connection works, use the AI Launchpad tool get_started.`);
+    expect(enQ).toContain("Continue");
+    expect(enQ).toBe(`Hi! Help me connect AI Launchpad to my Claude. Guide me in plain words, one step at a time, and wait until I say "done".\n1. Open Customize → Connectors → Add custom connector. If your phone does not show this option, do this step on a computer at claude.ai.\n2. Name: AI Launchpad. Address: ${endpoint}. Press Continue, then Add. Change nothing else.\n3. Press Connect, sign in and confirm. If asked for tool permission, choose Always allow.\nOnce the connection works, use the AI Launchpad tool get_started.`);
     expect(enQ).not.toContain("Tere!");
 
     const enGpt = new URL(await location("/uhenda/ava?a=chatgpt&lang=en")).searchParams.get("q");
