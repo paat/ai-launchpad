@@ -253,12 +253,12 @@ test("new assistant-approved and standing-rule approvals are checked without cha
   expect((await get(c, standing.approval_id)).state).toBe("approved");
 });
 
-async function httpApp(mode: "test" | "disabled" | "public_cards") {
+async function httpApp(mode: "test" | "disabled" | "public_cards", seedLedger?: (ledger: ModelQualityLedger) => void) {
   const db = dbForTest(), oid = owner(db), calls: string[] = [];
   const dir = mkdtempSync(join(tmpdir(), "approval-check-http-"));
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
   const ledgerPath = join(dir, "ledger.db");
-  const ledger = ModelQualityLedger.open(ledgerPath); ledger.close(); chmodSync(ledgerPath, 0o600);
+  const ledger = ModelQualityLedger.open(ledgerPath); seedLedger?.(ledger); ledger.close(); chmodSync(ledgerPath, 0o600);
   const fetchFn: FetchFn = async (_url, init) => {
     calls.push(String(init?.body));
     return new Response(JSON.stringify({ model: BASETEN_MODEL, choices: [{ finish_reason: "stop", message: { content: JSON.stringify(ok) } }], usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 } }), { status: 200, headers: { "content-type": "application/json" } });
@@ -276,6 +276,21 @@ async function httpApp(mode: "test" | "disabled" | "public_cards") {
   cleanup.push(() => c.close());
   return { db, oid, c, calls, base, ledgerPath };
 }
+
+test("live app startup finalizes interrupted ledger rows without refund and allows one new check", async () => {
+  const { c, calls, ledgerPath } = await httpApp("public_cards", (ledger) => {
+    ledger.reserve("interrupted-check", "check_approval", "synthetic-hash", 12345);
+  });
+  const receipt = await request(c, "after-restart");
+  expect(receipt.check).toMatchObject({ state: "ok", by: BASETEN_MODEL });
+  expect(calls).toHaveLength(1);
+  const ledger = ModelQualityLedger.open(ledgerPath);
+  try {
+    expect(ledger.get("interrupted-check")).toMatchObject({ status: "uncertain", error_code: "interrupted", allocated_micro_usd: 12345 });
+    expect(ledger.reserve("interrupted-check", "check_approval", "synthetic-hash", 12345)).toMatchObject({ replayed: true, row: { status: "uncertain" } });
+    expect((ledger.db.prepare("SELECT count(*) n FROM mq_attempts").get() as { n: number }).n).toBe(2);
+  } finally { ledger.close(); }
+});
 
 test.each(["test", "disabled", "public_cards"] as const)("app %s mode uses the intended checker and includes all check fields in owner export", async (mode) => {
   const { c, calls, base, ledgerPath } = await httpApp(mode);

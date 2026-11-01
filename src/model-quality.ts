@@ -241,6 +241,12 @@ export class ModelQualityLedger {
     return this.db.prepare("SELECT * FROM mq_attempts WHERE request_id=?").get(requestId) as StoredAttempt | undefined;
   }
 
+  /** App startup only: interrupted calls remain charged and cannot be retried. */
+  finalizeInterrupted() {
+    this.db.prepare("UPDATE mq_attempts SET status='uncertain',error_code='interrupted',updated_at=? WHERE status='pending'")
+      .run(new Date().toISOString());
+  }
+
   /** Atomic (BEGIN IMMEDIATE) reservation of `allocationMicroUsd`. Returns
    * the stored row on exact replay, or a fresh pending row. Throws on
    * conflict / suppression / another pending attempt / exhausted budget
@@ -261,7 +267,7 @@ export class ModelQualityLedger {
         throw new ModelQualityError("suppressed_after_breach", "Future calls are suppressed after a provider contract breach; manual review required.");
       }
       if (this.db.prepare("SELECT 1 FROM mq_attempts WHERE status='pending' LIMIT 1").get()) {
-        throw new ModelQualityError("attempt_in_flight", "Another attempt is pending (in flight or crashed); fail-closed, manual review required. No lease expiry or refund.");
+        throw new ModelQualityError("attempt_in_flight", "Another attempt is pending (in flight or crashed); no lease expiry or refund. App startup finalizes interrupted attempts.");
       }
       const agg = this.db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(allocated_micro_usd),0) AS s FROM mq_attempts").get() as { n: number; s: number };
       if (agg.n >= ABSOLUTE_MAX_ATTEMPTS || agg.s + allocationMicroUsd > this.ceilingMicroUsd || agg.s + allocationMicroUsd > ABSOLUTE_CAP_MICRO_USD) {

@@ -225,6 +225,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     if (!cfg.basetenApiKey) throw new Error("MODEL_MODE=public_cards requires BASETEN_API_KEY; refusing to start.");
     if (!cfg.modelLedgerPath) throw new Error("MODEL_MODE=public_cards requires LAUNCHPAD_MODEL_LEDGER_PATH (the exact existing reviewed ledger); refusing to start.");
     const ledger = openExistingPublicLedger(cfg.modelLedgerPath);
+    ledger.finalizeInterrupted();
     publicCards = new PublicCards({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
     needClassifier = liveClassifier({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
     approvalChecker = liveChecker({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });

@@ -390,21 +390,21 @@ function stalePendingLedgerFile(topicId: string, locale: "en" | "et"): { path: s
   return { path, pendingId };
 }
 
-test("reopened stale pending ledger: same card honestly unresolved, zero calls, no new allocation", async () => {
+test("reopened stale pending ledger: same card uncertain, zero calls, no new allocation", async () => {
   const { path, pendingId } = stalePendingLedgerFile("connector", "en");
   const { calls, fetchFn } = fakeModel(() => okChat());
   const s = await start({ modelLedgerPath: path, modelFetchFn: fetchFn });
   try {
     const a = makeOwner(s.db, "own_a", `google:${SUB_A}`, "google");
     const html = await (await postSetup(s, a, { topic: "connector", locale: "en" })).text();
-    expect(html).toContain("may have been interrupted"); // unresolved, not active progress
+    expect(html).toContain("its result is uncertain; no automatic retry");
     expect(html).not.toContain("being generated");
     expect(html).not.toContain("Come back shortly");
     expect(html).not.toContain("has not started");
     expect(calls).toHaveLength(0); // replayed row: no fetch
     expect(rowCount(path)).toBe(1); // no new allocation
     const l = openExistingPublicLedger(path);
-    try { expect(l.get(pendingId)?.status).toBe("pending"); } finally { l.close(); }
+    try { expect(l.get(pendingId)).toMatchObject({ status: "uncertain", error_code: "interrupted" }); } finally { l.close(); }
   } finally { await s.close(); }
 });
 
@@ -509,7 +509,7 @@ test("setup POST invalidated by /delete during generate writes no owner activity
   } finally { await s.close(); }
 });
 
-test("reopened stale pending ledger: different card blocked/not started, zero calls, no requested row", async () => {
+test("reopened stale pending ledger: different card completes with exactly one call", async () => {
   const { path } = stalePendingLedgerFile("connector", "en");
   const other = SETUP_TOPICS.find((t) => t.id === "choose-assistant")!;
   const otherId = publicCardRequestId(other, "en");
@@ -518,13 +518,14 @@ test("reopened stale pending ledger: different card blocked/not started, zero ca
   try {
     const a = makeOwner(s.db, "own_a", `google:${SUB_A}`, "google");
     const html = await (await postSetup(s, a, { topic: "choose-assistant", locale: "en" })).text();
-    expect(html).toContain("has not started"); // blocked before allocation
+    expect(html).toContain("Generated now");
+    expect(html).not.toContain("has not started");
     expect(html).not.toContain("being generated");
     expect(html).not.toContain("Come back shortly");
     expect(html).not.toContain("may have been interrupted");
-    expect(calls).toHaveLength(0); // blocked: no fetch
-    expect(rowCount(path)).toBe(1); // no new allocation
+    expect(calls).toHaveLength(1);
+    expect(rowCount(path)).toBe(2); // old allocation retained plus the new card
     const l = openExistingPublicLedger(path);
-    try { expect(l.get(otherId)).toBeUndefined(); } finally { l.close(); } // requested card never started
+    try { expect(l.get(otherId)?.status).toBe("completed"); } finally { l.close(); }
   } finally { await s.close(); }
 });

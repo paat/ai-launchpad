@@ -132,11 +132,9 @@ model. Rules:
   prompt-version + job + input (raw inputs are never stored). Repeating
   an ID with the same payload returns the stored result/status with no
   new call; a different payload is rejected as `request_conflict`.
-- One attempt in flight globally. A crash leaves a `pending` row that
-  stays charged, is non-replayable as a result, and blocks new attempts
-  fail-closed. There is no lease expiry. Clearing that state needs manual
-  review of the ledger and the provider billing view by the operator;
-  the harness will not do it automatically.
+- One attempt in flight globally, with no lease expiry. At live app startup,
+  leftover `pending` rows become `uncertain` / `interrupted`, keeping their
+  full allocation and preventing retries while allowing new attempts.
 - Saved outputs include synthetic CLI results and runtime job results. Approval
   results can repeat recipient names, amounts and document details; they are
   private to the owner, not public guidance cards. Raw inputs and API keys
