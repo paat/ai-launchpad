@@ -202,8 +202,10 @@ test("setup POST generates once beside deterministic steps, escapes output, repl
     const h2 = await (await postSetup(s, a, { topic: "connector", locale: "en" })).text(); // double-click replay
     expect(h2).toContain("Saved guidance");
     expect(calls).toHaveLength(1);
-    await req(s.base, "/setup", { cookie: a.raw });
-    await req(s.base, "/playbooks", { cookie: a.raw });
+    // Drain GET bodies: the shared CSS can push /playbooks over Undici's
+    // buffer limit, leaving its parser paused when Connection: close ends it.
+    await (await req(s.base, "/setup", { cookie: a.raw })).text();
+    await (await req(s.base, "/playbooks", { cookie: a.raw })).text();
     expect(calls).toHaveLength(1); // GETs never fetch
     const acts = s.db.prepare("SELECT outcome,summary FROM activity WHERE owner_id='own_a' AND action='setup_guidance_card'").all() as { outcome: string; summary: string }[];
     expect(acts).toHaveLength(2);
