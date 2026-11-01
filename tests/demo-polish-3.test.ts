@@ -44,11 +44,11 @@ describe("#63 m9: /connection and /playbooks follow the UI language", () => {
     const et = await get("/playbooks");
     expect(et).toContain('<html lang="et">');
     expect(et).not.toContain('<div lang="en">');
-    expect(headings(et)).toEqual(expect.arrayContaining(["Mängukavad", "Vaata üle oma tähtajad", "Meenuta kliendile tasumata arvet"]));
+    expect(headings(et)).toEqual(expect.arrayContaining(["Mängukavad", "Vaata üle oma tähtajad", "Meenuta kliendile tasumata arvet", "Jätka sealt, kus eelmine assistent pooleli jäi"]));
     expect(et).toContain('<p lang="en">Your assistant lists your upcoming tax and register deadlines');
     expect(et).toContain("Ametlik allikas:");
     const en = await get("/playbooks?lang=en");
-    expect(headings(en)).toEqual(expect.arrayContaining(["Playbooks", "Check the owner&#39;s deadlines", "Remind a customer about an overdue invoice"]));
+    expect(headings(en)).toEqual(expect.arrayContaining(["Playbooks", "Check the owner&#39;s deadlines", "Remind a customer about an overdue invoice", "Pick up where your other assistant stopped"]));
     expect(en).toContain("<p>Your assistant lists your upcoming tax and register deadlines");
     expect(en).toContain("Official source:");
     expect(en).not.toContain("Mängukavad");
