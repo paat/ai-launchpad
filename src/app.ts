@@ -696,10 +696,13 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const prompt = assistantGuidePrompt(l, assistant, endpoint);
     const target = `${assistant === "chatgpt" ? "https://chatgpt.com/?q=" : "https://claude.ai/new?q="}${encodeURIComponent(prompt)}`;
     const name = assistant === "claude" ? "Claude" : "ChatGPT";
+    // Estonian object case is not a suffix: Claude'i (apostrophe, same as Claude'iga); ChatGPT takes none.
+    const openedEt: Record<typeof assistant, string> = { claude: "Claude'i", chatgpt: "ChatGPT" };
     const t = tr(l);
     const s = session(req);
-    const body = `<h1>${esc(t(`Avasin ${name}-i`, `Opened ${name}`))}</h1><p>${esc(t(`Kui ${name} ei avanenud,`, `If ${name} did not open,`))} <a class="btn" href="${esc(target)}">${esc(t("vajuta siia", "press here"))}</a>.</p><p><a class="tap-link" href="/uhenda">${esc(t("Tagasi: Ühendus", "Back: Connection"))}</a></p>`;
-    res.status(302).location(target).type("html").send(shell({ title: t(`Avasin ${name}-i`, `Opened ${name}`), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, toggle: toggleHref(req, l), body }));
+    const opened = t(`Avasin ${openedEt[assistant]}`, `Opened ${name}`);
+    const body = `<h1>${esc(opened)}</h1><p>${esc(t(`Kui ${name} ei avanenud,`, `If ${name} did not open,`))} <a class="btn" href="${esc(target)}">${esc(t("vajuta siia", "press here"))}</a>.</p><p><a class="tap-link" href="/uhenda">${esc(t("Tagasi: Ühendus", "Back: Connection"))}</a></p>`;
+    res.status(302).location(target).type("html").send(shell({ title: opened, active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, toggle: toggleHref(req, l), body }));
   });
 
   // Connect (spec screen 2): public page; the status chip needs a signed-in owner.

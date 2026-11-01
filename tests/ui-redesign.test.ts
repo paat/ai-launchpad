@@ -727,12 +727,18 @@ describe("/uhenda/ava", () => {
       expect(html).not.toContain("Redirecting to");
       expect(html).toContain(`<a class="btn" href="${esc(loc)}">`);
       expect(html).toContain('<a class="tap-link" href="/uhenda">');
+      const gpt = path.includes("a=chatgpt");
       if (path.includes("lang=en")) {
         expect(html).toContain(">press here</a>");
         expect(html).toContain("Back: Connection");
+        expect(html).toContain(gpt ? "<h1>Opened ChatGPT</h1>" : "<h1>Opened Claude</h1>");
+        expect(html).toContain(gpt ? "<title>Opened ChatGPT · AI Launchpad</title>" : "<title>Opened Claude · AI Launchpad</title>");
       } else {
         expect(html).toContain(">vajuta siia</a>");
         expect(html).toContain("Tagasi: Ühendus");
+        expect(html).toContain(gpt ? "<h1>Avasin ChatGPT</h1>" : "<h1>Avasin Claude&#39;i</h1>");
+        expect(html).toContain(gpt ? "<title>Avasin ChatGPT · AI-hüppelaud</title>" : "<title>Avasin Claude&#39;i · AI-hüppelaud</title>");
+        expect(html).not.toContain("-i</h1>");
       }
       return loc;
     };
