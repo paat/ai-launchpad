@@ -63,7 +63,8 @@ describe("„Käest ära” states", () => {
     // Cap = the largest owner-approved amount (240 €) rounded up to the next 100 €; recipients = the owner-approved addresses.
     expect(h.next).toMatchObject({ type: "standing", kind: "send_message", capCents: 30_000, basis: { maxCents: 24_000 } });
     expect(h.next.type === "standing" && h.next.recipients.map((r) => r.address).sort()).toEqual(CLIENTS.map((c) => c.address).sort());
-    expect(h.fromAssessment).toBe(1);
+    // Invoicing is now backed by a playbook, so it counts as a playbook job, not fromAssessment.
+    expect(h.fromAssessment).toBe(0);
     const page = html(h);
     expect(page).toContain('<p class="ho-sum">1 ootab sinu kinnitust<small>1 tähtaeg läheneb · 1 kontrollimata · 1 hiljem</small></p>');
     expect(page).toContain("Teeb raamatupidaja");
@@ -204,7 +205,13 @@ describe("„Käest ära” honesty rules", () => {
     }
     const page = handoverSection(computeHandover({ assessment: alpha, obligations, approvals: [], rules: [], now: NOW }), "et", "c", NOW);
     const rows = page.match(/<li class="ho-job">[^]*?<\/li>/g)!;
-    for (const id of ["Arvete koostamine", "KMD ettevalmistus"]) expect(rows.find((r) => r.includes(id))).toContain("Assistendi hinnang");
+    // KMD ettevalmistus is assessed to accountant (rung: other), so it carries „Assistendi hinnang”.
+    expect(rows.find((r) => r.includes("KMD ettevalmistus"))).toContain("Assistendi hinnang");
+    // Arvete koostamine is now backed by a playbook, so it shows the assistant can prepare it rather than raw assessment text.
+    expect(rows.find((r) => r.includes("Arvete koostamine"))).toContain("Assistent saab arve ette valmistada");
+    // Non-playbook assessment rows (e.g. from beta) still carry „Assistendi hinnang”.
+    const betaPage = handoverSection(computeHandover({ assessment: DEMO_FIXTURES.beta, obligations, approvals: [], rules: [], now: NOW }), "et", "c", NOW);
+    expect(betaPage).toContain("Assistendi hinnang");
   });
 
   test("books-catch-up: a posted month joins the job at prep, never done, and reads as posted, not filed", () => {
@@ -404,10 +411,12 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     const reminderEn = nextCard(handoverSection(reminder, "en", "c", NOW));
     expect(reminderEt).toContain("Lase assistendil koostada esimene maksemeeldetuletus");
     expect(reminderEt).toContain("Vaata, millised minu arved on tasumata, ja koosta esimesele meeldetuletus. Küsi minult kinnitust enne saatmist.");
-    expect(reminderEt).toContain("Kõige kiirem võit: see on ainus igakuine töö, mille saab hiljem püsiloaga täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.");
+    expect(reminderEt).toContain("Kõige kiirem võit: püsiloaga saab selle hiljem täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.");
+    expect(reminderEt).not.toContain("ainus igakuine töö");
     expect(reminderEn).toContain("Let your assistant draft the first payment reminder");
     expect(reminderEn).toContain("Check which of my invoices are unpaid and draft a reminder for the first one. Ask me to approve it before sending.");
-    expect(reminderEn).toContain("The quickest win: the only monthly job a standing approval can later take off your plate completely. It needs your unpaid invoices: your accounting connector or a file you share with your assistant.");
+    expect(reminderEn).toContain("The quickest win: a standing approval can later take it off your plate completely. It needs your unpaid invoices: your accounting connector or a file you share with your assistant.");
+    expect(reminderEn).not.toContain("the only monthly job");
 
     const late = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2027-07-05T10:00:00Z"), months: 2 }).obligations.find((x) => x.rule_id === "annual-report-overdue")!;
     const overdue = { ...late, effective_due: "2026-11-11", statutory_due: "2026-11-11" } as Obligation;
@@ -439,5 +448,37 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
       expect(card).toContain('href="/kataloog?g=raamatupidamine"');
       expect(card).not.toContain("/kataloog?g=kliendid");
     }
+  });
+
+  test("invoicing next step: tailored prompt and description, no filing fallback (#120)", () => {
+    const h = computeHandover({ assessment: alpha, obligations: [], approvals: [fired()], rules: [rule()], now: NOW });
+    expect(h.next).toMatchObject({ type: "playbook", playbookId: "invoicing", obligation: null, job: { kind: "send_invoice" } });
+    const et = nextCard(handoverSection(h, "et", "c", NOW));
+    const en = nextCard(handoverSection(h, "en", "c", NOW));
+    expect(et).toContain("Valmista järgmine arve ette. Näita mulle täpset arvet ja küsi kinnitust enne saatmist.");
+    expect(et).toContain("Vajab sinu raamatupidamisprogrammi ühendust (arve ja PDF) ja sinu e-posti. Arve saadetakse alles pärast sinu kinnitust.");
+    expect(et).not.toContain("kinnitust enne, kui midagi esitan");
+    expect(en).toContain("Prepare the next invoice. Show me the exact invoice and ask me to approve before you send it.");
+    expect(en).toContain("It needs your accounting connector (the invoice and its PDF) and your e-mail. The invoice is sent only after you approve it.");
+    expect(en).not.toContain("file anything");
+  });
+
+  test("invoicing appearance rule: an owner with no invoicing assessment row and no send_invoice approval has no invoicing job (#120)", () => {
+    // 1. No assessment, no approvals: three baseline jobs, no invoicing.
+    const h1 = computeHandover({ assessment: null, obligations, approvals: [], rules: [], now: NOW });
+    expect(h1.jobs.some((j) => j.id === "invoicing")).toBe(false);
+
+    // 2. Assessment without invoicing (e.g. beta: payroll, bookkeeping-access, consulting): no invoicing job.
+    const hBeta = computeHandover({ assessment: DEMO_FIXTURES.beta, obligations, approvals: [], rules: [], now: NOW });
+    expect(hBeta.jobs.some((j) => j.id === "invoicing")).toBe(false);
+
+    // 3. Invoicing appears when an assessment responsibility names it.
+    const hAlpha = computeHandover({ assessment: alpha, obligations, approvals: [], rules: [], now: NOW });
+    expect(hAlpha.jobs.some((j) => j.id === "invoicing")).toBe(true);
+
+    // 4. Invoicing appears when an approval with kind send_invoice exists, even with no assessment.
+    const invoiceAppr = appr({ kind: "send_invoice", outcome: "sent", cents: 50_000, to: { name: "Demo Klient OÜ", address: "arved@demo-klient.example" } });
+    const hAppr = computeHandover({ assessment: null, obligations, approvals: [invoiceAppr], rules: [], now: NOW });
+    expect(hAppr.jobs.some((j) => j.id === "invoicing")).toBe(true);
   });
 });
