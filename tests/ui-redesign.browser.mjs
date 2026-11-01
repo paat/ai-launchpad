@@ -419,6 +419,14 @@ try {
     geometry[`t5uhendus${vp.width}`] = ho;
   }
 
+  // Public HTTPS /uhenda: a phone cannot scan its own screen, so the QR (.qr-card, display:none ≤719px) is hidden at 390 and visible at 1280.
+  for (const [width, height, visible] of [[390, 844, false], [1280, 800, true]]) {
+    await page.setViewportSize({ width, height });
+    await page.setContent(pageHtml.uhenda());
+    const shown = await page.locator(".qr-card").isVisible();
+    assert.equal(shown, visible, `public-HTTPS /uhenda @${width}: .qr ${visible ? "visible" : "not visible"}`);
+  }
+
   // #63 wow: after „Saadetud” the receipt carries the „Käest ära” strip, so the approval and the progress show in one shot.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.setContent(pageHtml["approval-receipt-strip"]());

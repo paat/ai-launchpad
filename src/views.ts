@@ -502,9 +502,6 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .big-url{margin:var(--s-2) 0;font-size:var(--fs-lg);font-weight:750;overflow-wrap:anywhere}
 .big-url a{color:var(--c-text);text-decoration:none}
 .connect-hero .btn{margin-top:0;font-size:var(--fs-lg)}
-.qr{display:flex;flex-direction:column;align-items:center;margin:12px 0 4px}
-.qr svg{display:block;width:200px;max-width:100%;height:auto}
-.qr figcaption{margin:8px 0 0;font-size:var(--fs-sm);text-align:center;color:var(--c-muted)}
 .status-chip a{color:inherit}
 .tech-list dd{overflow-wrap:anywhere}
 /* ===== Kataloog ===== */
@@ -1844,7 +1841,7 @@ ${unmetNeedsBody({ csrf: o.csrf, needs: o.needs, lang: l })}
 ${how}`;
 }
 
-// --- Connect (spec screen 2, simplified per ux2: no QR) ---
+// --- Connect (spec screen 2): the button is the phone path; a public HTTPS page also shows a QR of that same link for a second screen (hidden under 720px) ---
 export type ConnectState = { kind: "anon" } | { kind: "sample" } | { kind: "waiting" } | { kind: "connected"; who: string | null; at: string };
 // --- Calendar feed (#29): the owner's own calendar is the notifier; read-only, no Launchpad sender. ---
 const calendarSetup = (l: Lang) => { const t = tr(l); return `<ul class="small">
@@ -1898,7 +1895,7 @@ export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "
   const address = remoteReady ? `<div class="endpoint"><code>${wbr(endpoint)}</code></div><p class="small muted">${t("Vali aadress ja kopeeri see.", "Select the address and copy it.")}</p>` : httpsNote;
   const prompt = assistantGuidePrompt(l, o.assistant, endpoint);
   const caption = t("Telefonis: suuna kaamera sellele koodile.", "On your phone: point the camera at this code.");
-  const qr = remoteReady ? `<figure class="qr">${(await QRCode.toString(`${base}${openPath}`, { type: "svg", margin: 1 })).trim().replace("<svg", `<svg role="img" aria-label="${esc(caption)}"`)}<figcaption>${esc(caption)}</figcaption></figure>` : "";
+  const qr = remoteReady ? `<figure class="qr-card"><div class="qr-box">${(await QRCode.toString(`${base}${openPath}`, { type: "svg", margin: 1 })).trim().replace("<svg", `<svg role="img" aria-label="${esc(caption)}"`)}</div><figcaption class="small muted">${esc(caption)}</figcaption></figure>` : "";
   const openLabel = t(`Ava ${name} — juhend on juba sees`, `Open ${name} — the guide is already in`);
   const openHint = t(`Vajuta saatmisnuppu ja tee, mida ${name} ütleb. Kui ${name} hoiatab, et tekst tuli lingist, on see tavaline: tekst on meilt.`, `Press the send button and do what ${name} says. If ${name} warns that the text came from a link, that is normal: the text is from us.`);
   const s = o.state;
@@ -1915,7 +1912,7 @@ ${sampleFirst ? handover : ""}
 ${o.owner ? `<p class="small"><a class="tap-link" href="/setup">${t("Pole veel assistenti? Aitame valida", "No assistant yet? We'll help you choose")}</a></p>` : ""}
 <section class="card connect-hero"><a class="btn" href="${openPath}">${esc(openLabel)}</a>
 <p class="small">${esc(openHint)}</p>
-${remoteReady ? qr : httpsNote}
+${qr || httpsNote}
 <details><summary role="button">${t("Näita teksti", "Show the text")}</summary><pre>${esc(prompt)}</pre></details></section>
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p><p><a class="tap-link" href="/kataloog?g=raamatupidamine">${t("Järgmine samm: ühenda oma raamatupidamine → Kataloog", "Next step: connect your accounting → Catalogue")}</a></p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
