@@ -151,7 +151,9 @@ describe("executable job playbooks (#26)", () => {
     expect(acc[tradeOff]).toContain("Never tick or request payment functions.");
     expect(acc.at(-1)).toMatch(/Once the connector is added, go to the last step\.$/);
     expect(acc.join(" ")).toContain("own Smart-ID or ID-card (never automate the login)");
-    expect(acc[0]).toMatch(/^Accounting: if an accounting connector for this company already answers a question about its books, skip the remaining Accounting steps and go to the last step\./);
+    expect(acc[0]).toMatch(/^Accounting: if an accounting connector for this company already answers a question about its books and can create a sales invoice, skip the remaining Accounting steps and go to the last step\./);
+    expect(acc[0]).toContain("If it answers but cannot create one (a read-only key), say once that its current key cannot create invoices, and continue with the key steps below to add those rights.");
+    expect(acc[0]).toContain("Otherwise, when no accounting connector answers, call search_services with \"werkzeug\"");
     expect(acc.join(" ")).toContain("ticks reading plus sales invoices and journal entries (not payments)");
     expect(acc.join(" ")).toContain("Merit Aktiva or Erply Books: follow the connector's own published setup guide for a key with those rights; if the guide documents none, say plainly it cannot be linked yet and stop. Other software: say plainly that it cannot be linked yet and stop here: skip all remaining steps.");
     expect(acc.join(" ")).not.toMatch(/offers no read-only key|cannot be limited to reading/);
@@ -178,11 +180,14 @@ describe("executable job playbooks (#26)", () => {
     }
     expect(cust).not.toContain('search_services with "CRM"');
     expect(cust).not.toContain("cannot be limited to reading");
-    expect(cust).toContain("Trivis uses the same connection as the books (https://ai-api.trivis.ee/mcp), so it can also change the books. Add Trivis as a custom connector.");
+    expect(cust).toContain("Trivis uses the same connection as the books (https://ai-api.trivis.ee/mcp), so it can also change the books.");
+    expect(cust).toContain("Add Trivis as a custom connector.");
     expect(acc.join(" ")).toContain(freePlan);
     expect(acc.join(" ")).toContain(nav);
     const scoro = customers.find((x) => x.includes('search_services with "scoro"'))!;
     const trivis = customers.find((x) => x.includes('search_services with "trivis"'))!;
+    expect(trivis).toContain('Say once, plainly: "This connection lets me create and change invoices and entries in your books. I still ask you before anything is sent or posted, and I can never pay."');
+    expect(trivis).toContain("Never grant or use payment functions.");
     for (const step of [scoro, trivis]) {
       expect(step).toContain(nav);
       expect(step).toContain(freePlan);
@@ -200,6 +205,13 @@ describe("executable job playbooks (#26)", () => {
     expect(cust).toContain("Launchpad does not vouch for it, and once it is added, go to the last step.");
     expect(customers.find((x) => x.includes("no customer tool"))).toContain("Then stop here without the last step.");
     for (const id of ["payment-reminder", "vat-return-prep", "annual-report"]) expect(byId(id).needs[0], id).toContain("(if no accounting connector answers yet, follow the connect-service playbook)");
+  });
+
+  test("connect-service: Trivis step states trade-off and refuses payment functions (#120, tribunal T-005)", () => {
+    const p = byId("connect-service");
+    const trivis = p.steps.find((x) => x.includes('search_services with "trivis"'))!;
+    expect(trivis).toContain('Say once, plainly: "This connection lets me create and change invoices and entries in your books. I still ask you before anything is sent or posted, and I can never pay."');
+    expect(trivis).toContain("Never grant or use payment functions.");
   });
 
   test("every trigger is a rule_id the engine can emit, mapped to one playbook, with the same official source", () => {
@@ -556,6 +568,18 @@ describe("agent-facing copy over MCP", () => {
     }
     const actIdx = p.steps.indexOf(SEND_INVOICE_ACT);
     expect(actIdx).toBeGreaterThan(approvalIdx);
+  });
+
+  test("invoicing: unsent invoice cleanup offer exists and comes after request_approval (#120, tribunal T-006)", () => {
+    const p = byId("invoicing");
+    const cleanupStep = "If the owner declines, the approval expires, or the send fails, tell the owner the invoice is still in their books and offer once to delete the draft (or invalidate it, if the software already confirmed it); do that only after they say yes.";
+    expect(p.steps).toContain(cleanupStep);
+    const cleanupIdx = p.steps.indexOf(cleanupStep);
+    const approvalIdx = p.steps.findIndex((s) => s.includes("request_approval"));
+    expect(approvalIdx).toBeGreaterThan(0);
+    expect(cleanupIdx).toBeGreaterThan(approvalIdx);
+    const recordIdx = p.steps.findIndex((s) => s.includes("record_action_outcome with outcome sent"));
+    expect(cleanupIdx).toBe(recordIdx + 1);
   });
 
   test("remember_business_facts: owner phrasing finds it, read-only, returns the remember-facts playbook for any scope", async () => {
