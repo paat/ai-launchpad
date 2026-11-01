@@ -553,7 +553,7 @@ describe("agent-facing copy over MCP", () => {
     expect(steps).not.toContain("draft the invoice lines and total");
     expect(steps.replace("Never compute VAT or a total yourself, and do not confirm the draft yet.", "")).not.toMatch(/compute (a total|VAT)|calculate (a total|VAT)/i);
     expect(steps).toContain("1 250,00 € → 125000");
-    expect(steps).toContain("document.title: the draft's number or ID as the software shows it;");
+    expect(steps).toContain('document.title: the channel, then the draft\'s number or ID: "E-arve <number>" (EN "E-invoice <number>") when the owner said the buyer asked for an e-invoice, otherwise "Arve PDF <number>" ("Invoice PDF <number>");');
     expect(steps).toContain("the total written in document.content must be the same amount as amount_cents");
     expect(steps).toContain("4000 characters");
     expect(SEND_INVOICE_ACT).toContain("same buyer, lines, total and due date");
@@ -563,6 +563,11 @@ describe("agent-facing copy over MCP", () => {
     expect(SEND_INVOICE_ACT).toContain("recipient.address");
     expect(SEND_INVOICE_ACT).toContain("total in euro cents equals amount_cents");
     expect(SEND_INVOICE_ACT).toContain("Launchpad sends nothing");
+    expect(SEND_INVOICE_ACT).toContain('for an "E-arve" or "E-invoice" title, send it by the accounting software\'s e-invoice delivery');
+    expect(SEND_INVOICE_ACT).toContain("e-mail its PDF to the approved recipient.address");
+    expect(SEND_INVOICE_ACT).not.toContain("if that is the buyer's e-invoice address");
+    expect(SEND_INVOICE_ACT).not.toContain("e-invoice address");
+    expect(SEND_INVOICE_ACT).toContain("already confirmed (a retry after a failed send), do not confirm again");
     for (const step of p.steps) {
       expect(step).not.toMatch(/\b(paying|filing|signing)\b/i);
     }
@@ -583,10 +588,12 @@ describe("agent-facing copy over MCP", () => {
   test("invoicing: unsent invoice cleanup offer exists and comes after request_approval (#120, tribunal T-006)", () => {
     const p = byId("invoicing");
     const cleanupStep =
-      "If the owner declines, or the approval expires while the draft is still unconfirmed in the software, offer once to delete that unconfirmed draft and delete it only after they say yes. Never delete or invalidate a confirmed invoice. If the send fails after you confirmed the invoice, record failed before the approval expires and tell the owner the invoice is in their books but was not sent.";
+      "If the owner declines, or the approval expires while the draft is still unconfirmed in the software, offer once to delete that unconfirmed draft and delete it only after they say yes. Never delete or invalidate a confirmed invoice. If the send fails after you confirmed the invoice, record failed before the approval expires and tell the owner the invoice is in their books but was not sent. To retry, request a new approval for that same confirmed invoice (same number, lines, total) and send it; never create a new draft for the same sale.";
     expect(p.steps).toContain(cleanupStep);
     expect(cleanupStep).toContain("still unconfirmed");
     expect(cleanupStep).toContain("Never delete or invalidate a confirmed invoice");
+    expect(cleanupStep).toContain("To retry, request a new approval for that same confirmed invoice (same number, lines, total) and send it");
+    expect(cleanupStep).toContain("never create a new draft for the same sale");
     const cleanupIdx = p.steps.indexOf(cleanupStep);
     const approvalIdx = p.steps.findIndex((s) => s.includes("request_approval"));
     expect(approvalIdx).toBeGreaterThan(0);

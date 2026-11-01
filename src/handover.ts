@@ -180,9 +180,9 @@ function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], o
     const maxCents = largestAmount(basis), capCents = offerCapCents(maxCents);
     return { type: "standing", job: j, kind: j.kind, recipients: [...recipients].map(([address, name]) => ({ name, address })), capCents, basis: { count: basis.length, maxCents } };
   }
-  // Reminders first (they can reach the top rung), then filings by the soonest rule-computed date; a job already in order waits.
+  // Reminders first (they can reach the top rung), then the soonest rule-computed date. Equal dues keep the status order (#153). A job already in order waits.
   const open = jobs.filter((j) => j.rung === "mine" && j.source === "playbook" && j.status !== "in_order")
-    .sort((a, b) => (a.id === "payment-reminder" ? -1 : b.id === "payment-reminder" ? 1 : (a.due ?? "9999") < (b.due ?? "9999") ? -1 : 1))[0];
+    .sort((a, b) => (a.id === "payment-reminder" ? -1 : b.id === "payment-reminder" ? 1 : (a.due ?? "9999") < (b.due ?? "9999") ? -1 : (a.due ?? "9999") > (b.due ?? "9999") ? 1 : 0))[0];
   if (open) {
     const trig = PLAYBOOKS.find((p) => p.id === open.id)?.triggers ?? [];
     // No future date: the job is there because a trigger is already past (e.g. annual-report-overdue), so use the latest such row.

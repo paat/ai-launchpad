@@ -450,6 +450,19 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     }
   });
 
+  test("equal dues keep status order: a waiting follow-up stays ahead of invoicing (#153)", () => {
+    const pending = appr({ state: "pending", playbook: "customer-follow-ups", to: { name: "Pakkumine OÜ", address: "info@pakkumine.example" }, title: "Järgmine kõne", summary: "Follow up on the quote" });
+    const h = computeHandover({ assessment: alpha, obligations: [], approvals: [fired(), pending], rules: [rule()], now: NOW });
+    const open = h.jobs.filter((j) => j.rung === "mine" && j.source === "playbook" && j.status !== "in_order");
+    expect(open.map((j) => [j.id, j.status, j.due])).toEqual([
+      ["customer-follow-ups", "waiting", null],
+      ["invoicing", "not_checked", null],
+    ]);
+    expect(h.jobs.find((j) => j.id === "payment-reminder")!.status).toBe("in_order");
+    expect(h.next).toMatchObject({ type: "playbook", playbookId: "customer-follow-ups" });
+    expect(h.next).not.toMatchObject({ playbookId: "invoicing" });
+  });
+
   test("invoicing next step: tailored prompt and description, no filing fallback (#120)", () => {
     const h = computeHandover({ assessment: alpha, obligations: [], approvals: [fired()], rules: [rule()], now: NOW });
     expect(h.next).toMatchObject({ type: "playbook", playbookId: "invoicing", obligation: null, job: { kind: "send_invoice" } });
