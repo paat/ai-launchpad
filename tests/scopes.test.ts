@@ -201,16 +201,16 @@ test("consent storage sentence lists private service nominations in both languag
 
 test("consent copy is derived from the requested scopes and never claims we store only approvals (#21)", async () => {
   const both = await reject(await consentPage("progress:read progress:report"));
-  expect(both).toContain("näha sinu ettevõtte tähtaegu ja tööde seisu");
+  expect(both).toContain("näha sinu ettevõtte tähtaegu, tööde seisu ja loetud pangaväljavõtete kokkuvõtet (pank, konto neli viimast numbrit, periood ja lõppsaldo)");
   expect(both).toContain(STORED_ET);
   expect(both).toContain("Ilma selleta saab Scope test assistant ainult lugeda.");
   const read = await reject(await consentPage("progress:read"));
-  expect(read).toContain("näha sinu ettevõtte tähtaegu ja tööde seisu");
+  expect(read).toContain("näha sinu ettevõtte tähtaegu, tööde seisu ja loetud pangaväljavõtete kokkuvõtet (pank, konto neli viimast numbrit, periood ja lõppsaldo)");
   expect(read).not.toContain("salvestame");
   expect(read).toContain("Sinu vestlusi ega faile AI-hüppelaud ei saa.");
   // Report-only: no read ability is promised, and the unticked box means no connection (the handler denies it).
   const { b, html } = await consentPage("progress:report");
-  expect(html).not.toContain("tähtaegu ja tööde seisu");
+  expect(html).not.toContain("tähtaegu, tööde seisu");
   expect(html).toContain("öelda, mida ta saab sinu eest ära teha");
   expect(html).toContain("Ilma linnukeseta ühendust ei looda ja Scope test assistant saab teate, et keeldusid.");
   expect(html).not.toContain("ainult lugeda");

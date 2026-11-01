@@ -411,7 +411,10 @@ describe("agent-facing copy over MCP", () => {
     const db2 = openDb(":memory:");
     const none = await connect([], db2);
     db2.prepare("INSERT INTO statements_read VALUES('o','LHV','5618','2026-01-01','2026-10-31',67710,'2026-11-01T10:00:00Z')").run();
-    expect(JSON.parse(((await none.callTool({ name: "check_my_books", arguments: {} })) as { content: { text: string }[] }).content[0].text).statements_read).toEqual([]);
+    const hidden = JSON.parse(((await none.callTool({ name: "check_my_books", arguments: {} })) as { content: { text: string }[] }).content[0].text);
+    // Grok r4: hidden history is said out loud, never an empty list that reads as "nothing was read".
+    expect(hidden.statements_read).toBeUndefined();
+    expect(hidden.statements_read_hidden).toContain("statements read in earlier chats are not shown");
   });
 
   test("check_my_customers: owner phrasing finds it, read-only, returns the customer-follow-ups playbook for any scope", async () => {
