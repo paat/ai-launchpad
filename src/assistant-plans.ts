@@ -1,0 +1,479 @@
+/** Assistant plan facts as of 1 Nov 2026, and the rule that picks one.
+ * Costs and reasons are read off these rows. Nothing is converted or filled in.
+ * A plan we have not run is recommended only when it is the customer's current
+ * plan, or when it is the same assistant as a plan we have already run. */
+import type { ServiceRecord } from "./catalog.js";
+
+export const CHECKED = "2026-11-01" as const;
+
+export interface SourceRef { n: number; url: string; }
+export interface PlanPrice {
+  amount: number;
+  currency: "USD" | "EUR";
+  tax: "excluded" | "unknown";
+  per: "month" | "seat_month";
+  min_seats: number;
+}
+export interface PlanRow {
+  assistant: string;
+  plan: string;
+  price: PlanPrice | null;
+  /** 0 and null cannot run AI Launchpad. "no_cap" means the page states no count. */
+  custom_connectors: number | "no_cap" | null;
+  write_tools: boolean | null;
+  admin_needed: boolean;
+  phone: boolean | null;
+  builtin_google: string[];
+  builtin_microsoft: string[];
+  trains_by_default: boolean | null;
+  /** ISO date we ran AI Launchpad on this plan, or null. */
+  launchpad_tested: string | null;
+  sources: SourceRef[];
+  checked: typeof CHECKED;
+}
+export type EmailSuite = "google" | "microsoft" | "both" | "other" | "unknown";
+export interface Customer {
+  current?: { assistant: string; plan: string };
+  customConnectorsNeeded: number;
+  emailSuite: EmailSuite;
+  /** 1 unless the company size is known. */
+  seats: number;
+  /** Extra own-connection names. Used only in the reason sentence. */
+  connectionNames?: string[];
+}
+export interface Reason { text_et: string; text_en: string; sources: number[]; }
+export interface Recommendation {
+  keep?: PlanRow;
+  recommended: PlanRow;
+  start?: PlanRow;
+  stayAlternative?: PlanRow;
+  paidNote: boolean;
+  reasons: Reason[];
+}
+export interface WhyRow {
+  assistant: string;
+  plan: string;
+  planLabel: string;
+  cost: string;
+  taxNote: string;
+  connections: string;
+  phone: string;
+  tested: string;
+  checked: string;
+  sources: number[];
+}
+
+export const SOURCES: SourceRef[] = [
+  { n: 1, url: "https://claude.com/pricing" },
+  { n: 2, url: "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp" },
+  { n: 3, url: "https://support.claude.com/en/articles/10166901-use-google-workspace-connectors" },
+  { n: 4, url: "https://support.claude.com/en/articles/15183774-connect-to-microsoft-365" },
+  { n: 5, url: "https://privacy.claude.com/en/articles/10023580-is-my-data-used-for-model-training" },
+  { n: 6, url: "https://privacy.claude.com/en/articles/7996868-is-my-data-used-for-model-training" },
+  { n: 7, url: "https://support.claude.com/en/articles/10769299-how-to-use-claude-in-your-preferred-language" },
+  { n: 8, url: "https://support.claude.com/en/articles/8461763-where-can-i-access-claude" },
+  { n: 9, url: "https://chatgpt.com/et-EE/pricing/" },
+  { n: 10, url: "https://help.openai.com/en/articles/12584461-developer-mode-apps-and-full-mcp-connectors-in-chatgpt-beta" },
+  { n: 11, url: "https://help.openai.com/en/articles/8792828-what-is-chatgpt-business" },
+  { n: 12, url: "https://help.openai.com/en/articles/5722486-how-your-data-is-used-to-improve-model-performance" },
+  { n: 13, url: "https://help.openai.com/en/articles/8357869-how-to-change-your-language-setting-in-chatgpt" },
+  { n: 14, url: "https://help.openai.com/et-ee/articles/7947663-chatgpt-supported-countries" },
+  { n: 15, url: "https://help.openai.com/et-ee/articles/11989085-what-is-chatgpt-go" },
+  { n: 16, url: "https://openai.com/business/pricing/" },
+  { n: 17, url: "https://gemini.google/ee/subscriptions/?hl=et" },
+  { n: 18, url: "https://support.google.com/gemini/answer/17209137" },
+  { n: 19, url: "https://support.google.com/gemini/answer/13575153" },
+  { n: 20, url: "https://support.google.com/gemini/answer/13594961" },
+  { n: 21, url: "https://workspace.google.com/intl/fi/" },
+  { n: 22, url: "https://www.microsoft.com/et-ee/microsoft-365/business/with-copilot-plans-and-pricing" },
+  { n: 23, url: "https://support.microsoft.com/en-us/microsoft-365-copilot/about-microsoft-copilot-pro" },
+  { n: 24, url: "https://learn.microsoft.com/en-us/microsoft-365/copilot/connectors/set-up-custom-federated-connectors" },
+  { n: 25, url: "https://about.fb.com/news/2025/04/making-ai-work-harder-for-europeans/" },
+  { n: 26, url: "https://about.fb.com/news/2025/03/europe-meet-your-newest-assistant-meta-ai/" },
+  { n: 27, url: "https://help.openai.com/en/articles/11487775-connected-apps-in-chatgpt" },
+  { n: 28, url: "https://openai.com/index/introducing-chatgpt-go/" },
+];
+
+const byN = new Map(SOURCES.map((s) => [s.n, s]));
+const src = (...ns: number[]): SourceRef[] => ns.map((n) => byN.get(n)!);
+
+const usd = (amount: number, per: PlanPrice["per"] = "month", min_seats = 1): PlanPrice =>
+  ({ amount, currency: "USD", tax: "excluded", per, min_seats });
+const eur = (amount: number, tax: PlanPrice["tax"], per: PlanPrice["per"] = "month", min_seats = 1): PlanPrice =>
+  ({ amount, currency: "EUR", tax, per, min_seats });
+
+const CLAUDE_GOOGLE = ["Gmail", "Google Calendar", "Google Drive"];
+const CLAUDE_MICROSOFT = ["Outlook", "SharePoint", "OneDrive", "Teams"];
+const checked = CHECKED;
+
+/** One row per plan in the 1 Nov 2026 memo. Unknown stays null. */
+export const PLANS: PlanRow[] = [
+  { assistant: "claude", plan: "free", price: usd(0), custom_connectors: 1, write_tools: true, admin_needed: false, phone: true, builtin_google: CLAUDE_GOOGLE, builtin_microsoft: CLAUDE_MICROSOFT, trains_by_default: null, launchpad_tested: "2026-10-30", sources: src(1, 2, 3, 4, 5), checked },
+  { assistant: "claude", plan: "pro", price: usd(20), custom_connectors: "no_cap", write_tools: true, admin_needed: false, phone: true, builtin_google: CLAUDE_GOOGLE, builtin_microsoft: CLAUDE_MICROSOFT, trains_by_default: null, launchpad_tested: null, sources: src(1, 2, 3, 4, 5), checked },
+  { assistant: "claude", plan: "max", price: usd(100), custom_connectors: "no_cap", write_tools: true, admin_needed: false, phone: true, builtin_google: CLAUDE_GOOGLE, builtin_microsoft: CLAUDE_MICROSOFT, trains_by_default: null, launchpad_tested: null, sources: src(1, 2, 3, 4, 5), checked },
+  { assistant: "claude", plan: "team", price: usd(25, "seat_month", 2), custom_connectors: "no_cap", write_tools: true, admin_needed: true, phone: true, builtin_google: CLAUDE_GOOGLE, builtin_microsoft: CLAUDE_MICROSOFT, trains_by_default: false, launchpad_tested: null, sources: src(1, 2, 3, 4, 6), checked },
+  { assistant: "chatgpt", plan: "free", price: usd(0), custom_connectors: 0, write_tools: false, admin_needed: false, phone: false, builtin_google: [], builtin_microsoft: [], trains_by_default: true, launchpad_tested: null, sources: src(9, 10, 12, 27), checked },
+  { assistant: "chatgpt", plan: "go", price: usd(8), custom_connectors: 0, write_tools: false, admin_needed: false, phone: false, builtin_google: [], builtin_microsoft: [], trains_by_default: true, launchpad_tested: null, sources: src(9, 10, 15, 27, 28), checked },
+  { assistant: "chatgpt", plan: "plus", price: usd(20), custom_connectors: 0, write_tools: false, admin_needed: false, phone: false, builtin_google: [], builtin_microsoft: [], trains_by_default: true, launchpad_tested: null, sources: src(9, 10, 12, 27, 28), checked },
+  { assistant: "chatgpt", plan: "pro", price: null, custom_connectors: "no_cap", write_tools: false, admin_needed: false, phone: false, builtin_google: ["Google Drive"], builtin_microsoft: [], trains_by_default: true, launchpad_tested: null, sources: src(9, 10, 12, 27, 28), checked },
+  { assistant: "chatgpt", plan: "business", price: usd(25, "seat_month", 2), custom_connectors: "no_cap", write_tools: true, admin_needed: true, phone: false, builtin_google: ["Google Workspace"], builtin_microsoft: ["Microsoft 365"], trains_by_default: false, launchpad_tested: null, sources: src(10, 11, 12, 16), checked },
+  { assistant: "gemini", plan: "free", price: eur(0, "unknown"), custom_connectors: 0, write_tools: false, admin_needed: false, phone: false, builtin_google: [], builtin_microsoft: [], trains_by_default: null, launchpad_tested: null, sources: src(17, 18, 20), checked },
+  { assistant: "gemini", plan: "ai_pro", price: eur(21.99, "unknown"), custom_connectors: 0, write_tools: false, admin_needed: false, phone: false, builtin_google: ["Gmail", "Docs", "Vids"], builtin_microsoft: [], trains_by_default: null, launchpad_tested: null, sources: src(17, 18, 20), checked },
+  { assistant: "google", plan: "workspace", price: eur(16.2, "unknown", "seat_month"), custom_connectors: 0, write_tools: null, admin_needed: false, phone: null, builtin_google: ["Gmail", "Docs", "Meet"], builtin_microsoft: [], trains_by_default: null, launchpad_tested: null, sources: src(18, 21), checked },
+  { assistant: "copilot", plan: "free", price: eur(0, "unknown"), custom_connectors: 0, write_tools: false, admin_needed: false, phone: null, builtin_google: [], builtin_microsoft: [], trains_by_default: null, launchpad_tested: null, sources: src(23), checked },
+  { assistant: "copilot", plan: "m365_business", price: eur(18.2, "excluded", "seat_month"), custom_connectors: "no_cap", write_tools: true, admin_needed: true, phone: false, builtin_google: [], builtin_microsoft: ["Word", "Excel", "PowerPoint", "Outlook", "Teams"], trains_by_default: false, launchpad_tested: null, sources: src(22, 24), checked },
+  { assistant: "copilot", plan: "pro", price: null, custom_connectors: null, write_tools: null, admin_needed: false, phone: null, builtin_google: [], builtin_microsoft: [], trains_by_default: null, launchpad_tested: null, sources: src(23), checked },
+  { assistant: "meta", plan: "free", price: eur(0, "unknown"), custom_connectors: 0, write_tools: false, admin_needed: false, phone: null, builtin_google: [], builtin_microsoft: [], trains_by_default: true, launchpad_tested: null, sources: src(25, 26), checked },
+];
+
+const TABLE_NAME: Record<string, string> = {
+  "claude/free": "Claude Free",
+  "claude/pro": "Claude Pro",
+  "claude/max": "Claude Max",
+  "claude/team": "Claude Team",
+  "chatgpt/free": "ChatGPT Free",
+  "chatgpt/go": "ChatGPT Go",
+  "chatgpt/plus": "ChatGPT Plus",
+  "chatgpt/pro": "ChatGPT Pro",
+  "chatgpt/business": "ChatGPT Business",
+  "gemini/free": "Gemini",
+  "gemini/ai_pro": "Google AI Pro",
+  "google/workspace": "Google Workspace Business Standard",
+  "copilot/free": "Microsoft Copilot",
+  "copilot/m365_business": "Microsoft 365 Copilot Business",
+  "copilot/pro": "Copilot Pro",
+  "meta/free": "Meta AI",
+};
+
+const keyOf = (row: { assistant: string; plan: string }) => `${row.assistant}/${row.plan}`;
+export const planLabel = (row: { assistant: string; plan: string }): string => TABLE_NAME[keyOf(row)] ?? keyOf(row);
+
+const samePlan = (row: PlanRow, current: Customer["current"]) =>
+  !!current && row.assistant === current.assistant && row.plan === current.plan;
+
+const sourceNums = (row: PlanRow): number[] => [...new Set(row.sources.map((s) => s.n))].sort((a, b) => a - b);
+
+/** Company cost for one month. Null when the page published no price. */
+export function monthlyCost(row: PlanRow, seats: number): number | null {
+  if (!row.price) return null;
+  return row.price.amount * Math.max(seats, row.price.min_seats);
+}
+
+/** The cheaper row, or null when the prices cannot be compared. */
+export function cheaperPlan(a: PlanRow, b: PlanRow, seats: number): PlanRow | null {
+  if (!a.price || !b.price || a.price.currency !== b.price.currency) return null;
+  const ca = monthlyCost(a, seats);
+  const cb = monthlyCost(b, seats);
+  if (ca === null || cb === null) return null;
+  return ca <= cb ? a : b;
+}
+
+export function rowFits(row: PlanRow, customer: Customer): boolean {
+  return eligible(row) && slotsOk(row, customer.customConnectorsNeeded) && coversEmail(row, customer.emailSuite);
+}
+
+function eligible(row: PlanRow): boolean {
+  if (row.custom_connectors === 0 || row.custom_connectors === null) return false;
+  return row.write_tools === true;
+}
+
+function slotsOk(row: PlanRow, needed: number): boolean {
+  if (row.custom_connectors === "no_cap") return true;
+  return typeof row.custom_connectors === "number" && row.custom_connectors >= needed;
+}
+
+function coversEmail(row: PlanRow, suite: EmailSuite): boolean {
+  if (suite === "other" || suite === "unknown") return true;
+  if (suite === "google") return row.builtin_google.length > 0;
+  if (suite === "microsoft") return row.builtin_microsoft.length > 0;
+  return row.builtin_google.length > 0 && row.builtin_microsoft.length > 0;
+}
+
+function testedAssistants(sheet: readonly PlanRow[]): Set<string> {
+  return new Set(sheet.filter((r) => r.launchpad_tested).map((r) => r.assistant));
+}
+
+function canRecommend(row: PlanRow, customer: Customer, sheet: readonly PlanRow[]): boolean {
+  if (!rowFits(row, customer)) return false;
+  if (row.launchpad_tested) return true;
+  if (samePlan(row, customer.current)) return true;
+  return testedAssistants(sheet).has(row.assistant);
+}
+
+function cheapest(rows: PlanRow[], seats: number): PlanRow | undefined {
+  if (!rows.length) return undefined;
+  const priced = rows.filter((r) => r.price);
+  if (!priced.length) return rows[0];
+  const currencies = [...new Set(priced.map((r) => r.price!.currency))];
+  let group = priced;
+  if (currencies.length > 1) {
+    const firstTested = priced.find((r) => r.launchpad_tested);
+    const currency = firstTested?.price?.currency ?? priced[0]!.price!.currency;
+    group = priced.filter((r) => r.price!.currency === currency);
+  }
+  return group.reduce((best, row) => (monthlyCost(row, seats)! < monthlyCost(best, seats)! ? row : best));
+}
+
+function runsLaunchpadAlone(row: PlanRow): boolean {
+  return eligible(row) && !!row.price && row.price.amount === 0 && slotsOk(row, 1);
+}
+
+function costsMoney(row: PlanRow): boolean {
+  return !!row.price && row.price.amount > 0;
+}
+
+export function recommendAssistant(customer: Customer, sheet: readonly PlanRow[] = PLANS): Recommendation {
+  const rows = [...sheet];
+  const current = customer.current ? rows.find((r) => samePlan(r, customer.current)) : undefined;
+  const keep = current && rowFits(current, customer) ? current : undefined;
+  const fitting = rows.filter((r) => rowFits(r, customer));
+  const recommendable = rows.filter((r) => canRecommend(r, customer, rows));
+  const recommended = keep ?? cheapest(recommendable, customer.seats) ?? cheapest(fitting, customer.seats) ?? rows[0]!;
+  const start = costsMoney(recommended) ? rows.find(runsLaunchpadAlone) : undefined;
+  let stayAlternative: PlanRow | undefined;
+  if (customer.current && recommended.assistant !== customer.current.assistant) {
+    const alt = cheapest(fitting.filter((r) => r.assistant === customer.current!.assistant), customer.seats);
+    if (alt && keyOf(alt) !== keyOf(recommended)) stayAlternative = alt;
+  }
+  const result: Recommendation = {
+    ...(keep ? { keep } : {}),
+    recommended,
+    ...(start ? { start } : {}),
+    ...(stayAlternative ? { stayAlternative } : {}),
+    paidNote: costsMoney(recommended) && !samePlan(recommended, customer.current),
+    reasons: [],
+  };
+  result.reasons = buildReasons(customer, result, rows);
+  return result;
+}
+
+export function candidateRows(rec: Recommendation): PlanRow[] {
+  const out: PlanRow[] = [];
+  const seen = new Set<string>();
+  for (const row of [rec.keep, rec.recommended, rec.start, rec.stayAlternative]) {
+    if (!row || seen.has(keyOf(row))) continue;
+    seen.add(keyOf(row));
+    out.push(row);
+  }
+  return out;
+}
+
+function formatAmount(amount: number, lang: "et" | "en"): string {
+  if (Number.isInteger(amount)) return String(amount);
+  const s = amount.toFixed(2);
+  return lang === "et" ? s.replace(".", ",") : s;
+}
+
+function fmtDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${Number(m[3])}.${m[2]}.${m[1]}` : iso;
+}
+
+function currencyWord(currency: PlanPrice["currency"], lang: "et" | "en"): string {
+  if (currency === "USD") return lang === "et" ? "dollarit" : "US dollars";
+  return lang === "et" ? "eurot" : "euros";
+}
+
+function joinList(items: string[], and: string): string {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]}${and}${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}${and}${items[items.length - 1]}`;
+}
+
+function sentenceName(row: PlanRow, lang: "et" | "en"): string {
+  if (row.assistant === "claude" && row.plan === "free") return lang === "et" ? "Claude'i tasuta pakett" : "Claude's free plan";
+  return planLabel(row);
+}
+
+function priceText(row: PlanRow, seats: number, lang: "et" | "en"): string | null {
+  const p = row.price;
+  if (!p) return null;
+  const name = sentenceName(row, lang);
+  const amt = formatAmount(p.amount, lang);
+  const cur = currencyWord(p.currency, lang);
+  const unit = p.per === "seat_month"
+    ? (lang === "et" ? "kasutaja kohta kuus" : "per user a month")
+    : (lang === "et" ? "kuus" : "a month");
+  const min = p.min_seats > 1
+    ? (lang === "et" ? `, vähemalt ${p.min_seats} kasutajat` : `, at least ${p.min_seats} users`)
+    : "";
+  const tax = p.tax === "excluded"
+    ? (lang === "et" ? "maksud ei ole hinna sees" : "tax is not included")
+    : (lang === "et" ? "lehel ei ole öeldud, kas maks on hinna sees" : "the page does not say whether tax is included");
+  const total = monthlyCost(row, seats)!;
+  const extra = total !== p.amount
+    ? (lang === "et"
+      ? ` ${seats} kasutajaga on see ${formatAmount(total, "et")} ${cur} kuus.`
+      : ` For ${seats} ${seats === 1 ? "user" : "users"} that is ${formatAmount(total, "en")} ${cur} a month.`)
+    : "";
+  const checkedOn = lang === "et" ? `Kontrollitud ${fmtDate(row.checked)}.` : `Checked ${fmtDate(row.checked)}.`;
+  const verb = lang === "et" ? "maksab" : "costs";
+  return `${name} ${verb} ${amt} ${cur} ${unit}${min}, ${tax}. ${checkedOn}${extra}`;
+}
+
+function factText(row: PlanRow, lang: "et" | "en"): string {
+  const name = sentenceName(row, lang);
+  const bits: string[] = [];
+  if (row.phone === true) bits.push(lang === "et" ? `${name} töötab ka telefonis.` : `${name} works on the phone too.`);
+  if (row.phone === false) bits.push(lang === "et" ? `${name} töötab ainult veebis.` : `${name} works on the web only.`);
+  if (row.admin_needed) bits.push(lang === "et" ? "Oma ühenduse lisab haldur." : "An admin has to add your own connection.");
+  if (row.launchpad_tested) {
+    const d = fmtDate(row.launchpad_tested);
+    bits.push(lang === "et" ? `Oleme seda AI-hüppelauaga proovinud ${d}.` : `We tried it with AI Launchpad on ${d}.`);
+  } else {
+    bits.push(lang === "et" ? "Meie ei ole seda paketti AI-hüppelauaga proovinud." : "We have not tried this plan with AI Launchpad.");
+  }
+  return bits.join(" ");
+}
+
+function buildReasons(customer: Customer, rec: Recommendation, sheet: readonly PlanRow[]): Reason[] {
+  const reasons: Reason[] = [];
+  const free = sheet.find((r) => r.assistant === "claude" && r.plan === "free");
+  if (!rec.keep && free && typeof free.custom_connectors === "number" && customer.customConnectorsNeeded > free.custom_connectors) {
+    const names = customer.connectionNames ?? [];
+    const paren = (lang: "et" | "en") => {
+      if (!names.length) return "";
+      const all = lang === "et" ? ["AI-hüppelaud", ...names] : ["AI Launchpad", ...names];
+      return ` (${joinList(all, lang === "et" ? " ja " : " and ")})`;
+    };
+    const slots = free.custom_connectors === 1
+      ? { et: "üks oma ühendus", en: "one own connection" }
+      : { et: `${free.custom_connectors} oma ühendust`, en: `${free.custom_connectors} own connections` };
+    reasons.push({
+      text_et: `Claude'i tasuta paketis on ${slots.et}; sul on vaja ${customer.customConnectorsNeeded}${paren("et")}.`,
+      text_en: `Claude's free plan has ${slots.en}; you need ${customer.customConnectorsNeeded}${paren("en")}.`,
+      sources: sourceNums(free),
+    });
+  } else if (rec.keep) {
+    const c = rec.keep.custom_connectors;
+    const slots = c === "no_cap"
+      ? { et: "Oma ühenduste arvul ei ole piiri.", en: "There is no limit on own connections." }
+      : typeof c === "number"
+        ? { et: `Oma ühendusi on ${c}.`, en: `It has ${c} own ${c === 1 ? "connection" : "connections"}.` }
+        : { et: "Oma ühenduste arv on teadmata.", en: "The number of own connections is unknown." };
+    const name = sentenceName(rec.keep, "et");
+    const nameEn = sentenceName(rec.keep, "en");
+    reasons.push({
+      text_et: `Sinu praegune pakett on ${name}. ${slots.et} Sul on vaja ${customer.customConnectorsNeeded}.`,
+      text_en: `Your current plan is ${nameEn}. ${slots.en} You need ${customer.customConnectorsNeeded}.`,
+      sources: sourceNums(rec.keep),
+    });
+  }
+  if (customer.emailSuite === "google" || customer.emailSuite === "microsoft" || customer.emailSuite === "both") {
+    const g = rec.recommended.builtin_google;
+    const m = rec.recommended.builtin_microsoft;
+    const names = customer.emailSuite === "google" ? g : customer.emailSuite === "microsoft" ? m : [...g, ...m];
+    if (names.length) {
+      const name = sentenceName(rec.recommended, "et");
+      const nameEn = sentenceName(rec.recommended, "en");
+      reasons.push({
+        text_et: `${name} sisaldab: ${joinList(names, " ja ")}.`,
+        text_en: `${nameEn} includes: ${joinList(names, " and ")}.`,
+        sources: sourceNums(rec.recommended),
+      });
+    }
+  }
+  const price = priceText(rec.recommended, customer.seats, "et");
+  const priceEn = priceText(rec.recommended, customer.seats, "en");
+  if (price && priceEn) reasons.push({ text_et: price, text_en: priceEn, sources: sourceNums(rec.recommended) });
+  reasons.push({
+    text_et: factText(rec.recommended, "et"),
+    text_en: factText(rec.recommended, "en"),
+    sources: sourceNums(rec.recommended),
+  });
+  if (rec.start && keyOf(rec.start) !== keyOf(rec.recommended)) {
+    const slots = rec.start.custom_connectors === 1 ? "üks oma ühendus" : `${String(rec.start.custom_connectors)} oma ühendust`;
+    const slotsEn = rec.start.custom_connectors === 1 ? "one own connection" : `${String(rec.start.custom_connectors)} own connections`;
+    const tried = rec.start.launchpad_tested ? fmtDate(rec.start.launchpad_tested) : "";
+    reasons.push({
+      text_et: `AI-hüppelaua üksi saad käivitada Claude'i tasuta paketis: ${slots}${rec.start.phone ? ", töötab ka telefonis" : ""}${tried ? `, proovitud ${tried}` : ""}.`,
+      text_en: `You can run AI Launchpad alone on Claude's free plan: ${slotsEn}${rec.start.phone ? ", works on the phone too" : ""}${tried ? `, tried ${tried}` : ""}.`,
+      sources: sourceNums(rec.start),
+    });
+  }
+  if (rec.stayAlternative) {
+    const bits = [priceText(rec.stayAlternative, customer.seats, "et"), factText(rec.stayAlternative, "et")].filter((s): s is string => !!s);
+    const bitsEn = [priceText(rec.stayAlternative, customer.seats, "en"), factText(rec.stayAlternative, "en")].filter((s): s is string => !!s);
+    reasons.push({ text_et: bits.join(" "), text_en: bitsEn.join(" "), sources: sourceNums(rec.stayAlternative) });
+  }
+  return reasons;
+}
+
+export function whyRows(rows: readonly PlanRow[], lang: "et" | "en"): WhyRow[] {
+  return rows.map((row) => {
+    const p = row.price;
+    const cost = !p ? (lang === "et" ? "hinda ei ole avaldatud" : "no published price")
+      : `${formatAmount(p.amount, lang)} ${p.currency} ${p.per === "seat_month"
+        ? (lang === "et" ? "kasutaja kohta kuus" : "per user a month")
+        : (lang === "et" ? "kuus" : "a month")}${p.min_seats > 1 ? (lang === "et" ? `, vähemalt ${p.min_seats}` : `, at least ${p.min_seats}`) : ""}`;
+    const taxNote = !p ? (lang === "et" ? "teadmata" : "unknown")
+      : p.tax === "excluded"
+        ? (lang === "et" ? "maksud ei ole hinna sees" : "tax is not included")
+        : (lang === "et" ? "lehel ei ole öeldud, kas maks on hinna sees" : "the page does not say whether tax is included");
+    const connections = row.custom_connectors === null ? (lang === "et" ? "teadmata" : "unknown")
+      : row.custom_connectors === "no_cap" ? (lang === "et" ? "piiranguta" : "no limit")
+      : String(row.custom_connectors);
+    const phone = row.phone === null ? (lang === "et" ? "teadmata" : "unknown") : row.phone ? (lang === "et" ? "jah" : "yes") : (lang === "et" ? "ei" : "no");
+    const tested = row.launchpad_tested ? fmtDate(row.launchpad_tested) : (lang === "et" ? "ei" : "no");
+    return {
+      assistant: row.assistant, plan: row.plan, planLabel: planLabel(row),
+      cost, taxNote, connections, phone, tested, checked: row.checked, sources: sourceNums(row),
+    };
+  });
+}
+
+function isBuiltinEmail(rec: ServiceRecord): boolean {
+  const blob = `${rec.id} ${rec.name} ${rec.sector ?? ""}`.toLowerCase();
+  if (!/email|gmail|outlook|mail/.test(blob)) return false;
+  return /gmail|google workspace|outlook|microsoft 365|microsoft-graph-mail|workiq/.test(blob);
+}
+
+function needsAccountingHost(rec: ServiceRecord): boolean {
+  if (rec.interface_class === "hosted_mcp") return false;
+  if (/palk/i.test(rec.id)) return false;
+  return /merit|e-arveldaja|earveldaja|e-financials|erply/.test(`${rec.id} ${rec.name}`.toLowerCase());
+}
+
+function shortName(rec: ServiceRecord): string {
+  const blob = `${rec.id} ${rec.name}`;
+  if (/merit/i.test(blob)) return "Merit";
+  if (/e-arveldaja|earveldaja|e-financials/i.test(blob)) return "e-arveldaja";
+  if (/erply/i.test(blob)) return "Erply";
+  if (/^lhv/i.test(rec.name) || rec.id.startsWith("lhv")) return "LHV";
+  if (/pipedrive/i.test(blob)) return "Pipedrive";
+  if (/werkzeug/i.test(blob)) return "Werkzeug";
+  return rec.name.replace(/ MCP.*/, "").trim();
+}
+
+/** 1 for AI Launchpad, plus each matched hosted connection. E-mail that the plan's built-in list covers does not take a slot. Merit, e-arveldaja and Erply share one hosted connection. */
+export function customerFromServices(services: readonly ServiceRecord[], current?: Customer["current"], seats = 1): Customer {
+  const hosted = services.filter((s) => s.interface_class === "hosted_mcp" && !isBuiltinEmail(s));
+  const hostedAccounting = hosted.some((s) => /werkzeug|merit|erply|arveldaja|financials/i.test(`${s.id} ${s.name}`));
+  const accounting = hostedAccounting ? [] : services.filter(needsAccountingHost);
+  const names = [...hosted.map(shortName), ...(accounting.length ? [joinList([...new Set(accounting.map(shortName))], " ja ")] : [])];
+  return {
+    ...(current ? { current } : {}),
+    customConnectorsNeeded: 1 + names.length,
+    emailSuite: emailSuiteFrom(services),
+    seats,
+    ...(names.length ? { connectionNames: names } : {}),
+  };
+}
+
+function emailSuiteFrom(services: readonly ServiceRecord[]): EmailSuite {
+  let google = false;
+  let microsoft = false;
+  let other = false;
+  for (const rec of services) {
+    const blob = `${rec.id} ${rec.name} ${rec.sector ?? ""}`.toLowerCase();
+    if (!/email|gmail|outlook|mailbox/.test(blob) || /google-calendar/.test(rec.id)) continue;
+    if (/gmail|google workspace|google-gmail/.test(blob)) google = true;
+    else if (/outlook|microsoft 365|microsoft-graph-mail|workiq/.test(blob)) microsoft = true;
+    else other = true;
+  }
+  if (google && microsoft) return "both";
+  if (google) return "google";
+  if (microsoft) return "microsoft";
+  if (other) return "other";
+  return "unknown";
+}

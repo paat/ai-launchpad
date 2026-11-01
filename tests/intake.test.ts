@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { PLAN_NOTE, REASONS, chooseAssistant, needsPaidNote, offerDownload, type Business, type Tier, type Uses } from "../src/assistant-choice.js";
+import { PLAN_NOTE, chooseAssistant, needsPaidNote, offerDownload, type Business, type Tier, type Uses } from "../src/assistant-choice.js";
 import { loadCatalog, safeHttps } from "../src/catalog.js";
 import {
   buildIntakePlan, fallbackExtract, intakeRateOk, liveIntake, matchCatalog, mockIntake, parseExtract, planModelInput,
@@ -93,15 +93,15 @@ describe("buildIntakePlan", () => {
     name: "Synthetic Register OÜ", registry_code: CODE,
     legal_form: HOSTILE, emtak_code: "74101", emtak_label: "EMTAK-LABEL-LEAK",
   };
-  const paths: { uses: Uses; tier: Tier | null; business: Business | null; paid: boolean; connect: boolean }[] = [
-    { uses: "none", tier: null, business: null, paid: true, connect: false },
-    { uses: "claude", tier: "free", business: null, paid: true, connect: false },
-    { uses: "claude", tier: "paid", business: null, paid: false, connect: true },
-    { uses: "claude", tier: "unsure", business: null, paid: true, connect: false },
-    { uses: "chatgpt", tier: null, business: "yes", paid: false, connect: true },
-    { uses: "chatgpt", tier: null, business: "no", paid: true, connect: false },
-    { uses: "chatgpt", tier: null, business: "unsure", paid: true, connect: false },
-    { uses: "other", tier: null, business: null, paid: true, connect: false },
+  const paths: { uses: Uses; tier: Tier | null; business: Business | null; paid: boolean }[] = [
+    { uses: "none", tier: null, business: null, paid: true },
+    { uses: "claude", tier: "free", business: null, paid: true },
+    { uses: "claude", tier: "paid", business: null, paid: true },
+    { uses: "claude", tier: "unsure", business: null, paid: true },
+    { uses: "chatgpt", tier: null, business: "yes", paid: false },
+    { uses: "chatgpt", tier: null, business: "no", paid: true },
+    { uses: "chatgpt", tier: null, business: "unsure", paid: true },
+    { uses: "other", tier: null, business: null, paid: true },
   ];
 
   test("paid note, download and service links follow the rule, with and without a company", () => {
@@ -116,7 +116,12 @@ describe("buildIntakePlan", () => {
       const label = `${lang} ${path.uses} ${path.tier ?? "-"} ${path.business ?? "-"} company=${withCompany}`;
       expect(plan.paidNote, label).toBe(path.paid);
       expect(plan.assistant, label).toBe(choice!.assistant);
-      expect(plan.reason, label).toBe(REASONS[choice!.reason].text[lang]);
+      expect(plan.reason.length, label).toBeGreaterThan(10);
+      expect(plan.reasons.length, label).toBeGreaterThan(0);
+      expect(plan.why.length, label).toBeGreaterThan(0);
+      expect(plan.candidates.length, label).toBe(plan.why.length);
+      expect(plan.why.every((w) => w.sources.length > 0 && w.cost.length > 0), label).toBe(true);
+      if (lang === "et") expect(plan.reason, label).not.toMatch(/\b(MCP|API|connector)\b/);
       expect(plan.prompt, label).not.toContain(HOSTILE);
       expect(plan.prompt, label).not.toContain("EMTAK-LABEL-LEAK");
       expect(plan.prompt, label).not.toContain("OBLIGATION-TITLE-LEAK");
@@ -135,37 +140,32 @@ describe("buildIntakePlan", () => {
       }
       expect(plan.prompt, label).toContain("Werkzeug");
       expect(plan.prompt, label).toContain(swedbank.name);
-      if (path.paid) {
-        expect(plan.planNote, label).toContain(PLAN_NOTE.text[lang]);
-        expect(plan.planNote, label).toContain(PLAN_NOTE.source[lang]);
-      } else if (path.connect) {
-        expect(plan.planNote, label).toBe(PLAN_NOTE.connect[lang]);
-      }
+      if (path.paid) expect(plan.planNote, label).toBe(plan.reason);
+      else expect(plan.planNote, label).toBeUndefined();
       const download = offerDownload(path.uses, choice!.assistant);
       if (download) expect(plan.steps[0], label).toEqual({ text: lang === "et" ? "Hangi see." : "Get it.", href: download });
       else expect(plan.steps.some((s) => s.href === "https://claude.ai/download" || s.href === "https://chatgpt.com/download"), label).toBe(false);
       const connectHref = lang === "en" ? `/uhenda?a=${choice!.assistant}&lang=en` : `/uhenda?a=${choice!.assistant}`;
       expect(plan.steps.some((s) => s.href === connectHref), label).toBe(true);
       const serviceHrefs = plan.steps.map((s) => s.href).filter((h) => h?.startsWith("https://") && !h.includes("claude.ai") && !h.includes("chatgpt.com"));
-      if (path.connect) {
-        expect(serviceHrefs, label).toEqual([safeHttps(werkzeug.connection), safeHttps(swedbank.connection)]);
-        expect(serviceHrefs, label).not.toContain(safeHttps(lhv.connection));
-        expect(plan.steps.some((s) => s.text.includes("Pipedrive")), label).toBe(false);
-      } else {
-        expect(serviceHrefs, label).toEqual([]);
-      }
+      expect(serviceHrefs, label).toEqual([safeHttps(werkzeug.connection), safeHttps(swedbank.connection)]);
+      expect(serviceHrefs, label).not.toContain(safeHttps(lhv.connection));
+      expect(plan.steps.some((s) => s.text.includes("Pipedrive")), label).toBe(false);
       expect(plan.steps.at(-1)?.text, label).toBe(lang === "et" ? "Kleebi see juhis oma assistenti." : "Paste this prompt into your assistant.");
       expect(plan.steps.some((s) => s.text === (lang === "et" ? "Loo konto." : "Sign up.")), label).toBe(true);
     }
   });
 
-  test("a grok user gets no paid note and no service links", () => {
+  test("a grok user is recommended a tested assistant that can hold the services", () => {
     const choice = chooseAssistant({ uses: "grok", tier: "paid" })!;
     const plan = buildIntakePlan({ choice, uses: "grok", tier: "paid", services, lang: "et" });
-    expect(plan.paidNote).toBe(false);
-    expect(plan.planNote).toBeUndefined();
-    expect(plan.assistant).toBe("grok");
-    expect(plan.steps.map((s) => s.href).filter(Boolean)).toEqual(["/uhenda?a=grok"]);
+    expect(plan.paidNote).toBe(true);
+    expect(plan.planNote).toBe(plan.reason);
+    expect(plan.assistant).toBe("claude");
+    expect(plan.candidates.some((r) => r.assistant === "claude" && r.plan === "pro")).toBe(true);
+    expect(plan.steps.map((s) => s.href).filter(Boolean)).toEqual([
+      "https://claude.ai/download", "/uhenda?a=claude", safeHttps(werkzeug.connection), safeHttps(swedbank.connection),
+    ]);
   });
 
   test("the prompt drops the company sentence and the program sentence when either is missing", () => {
@@ -250,7 +250,7 @@ describe("intake clients and limiter", () => {
     expect(paid).toMatchObject({ ok: true, mock: true });
     expect(freeOfNote).toMatchObject({ ok: true, mock: true });
     if (paid.ok) expect(paid.output).toMatch(/mock/);
-    if (paid.ok) expect(paid.output).toContain("Parim tulemus vajab tasulist AI paketti.");
+    if (paid.ok) expect(paid.output).not.toContain("Parim tulemus vajab tasulist AI paketti.");
     if (freeOfNote.ok) {
       expect(freeOfNote.output).toContain("local mock");
       expect(freeOfNote.output).not.toContain("paid AI plan");

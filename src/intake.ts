@@ -5,9 +5,13 @@
  * caller passes in is the existing model-quality ledger. */
 import { createHash } from "node:crypto";
 import {
-  PLAN_NOTE, REASONS, needsPaidNote, offerDownload,
+  offerDownload,
   type AssistantChoice, type AssistantId, type Business, type Tier, type Uses,
 } from "./assistant-choice.js";
+import {
+  candidateRows, customerFromServices, recommendAssistant, whyRows,
+  type PlanRow, type Recommendation, type WhyRow,
+} from "./assistant-plans.js";
 import { loadCatalog, safeHttps, type ServiceRecord } from "./catalog.js";
 import {
   MAX_INPUT_BYTES, MAX_INPUT_CHARS, ModelQualityError, runModelQualityAttempt,
@@ -161,7 +165,7 @@ export interface IntakePlanArgs {
   obligations?: IntakeObligation[];
   services?: ServiceRecord[];
   unmatched?: string[];
-  choice: AssistantChoice;
+  choice?: AssistantChoice;
   uses: Uses;
   tier?: Tier | null;
   business?: Business | null;
@@ -171,14 +175,31 @@ export interface IntakeStep { text: string; href?: string; }
 export interface IntakePlan {
   assistant: AssistantId;
   reason: string;
+  reasons: Recommendation["reasons"];
   paidNote: boolean;
   planNote?: string;
+  /** Candidate plans for the why table: plan, published cost, tax, own connections, phone, tested. */
+  why: WhyRow[];
+  candidates: PlanRow[];
   steps: IntakeStep[];
   prompt: string;
 }
 
-const connectsServices = (uses: Uses, tier: Tier | null, business: Business | null) =>
-  (uses === "claude" && tier === "paid") || (uses === "chatgpt" && business === "yes");
+function currentPlan(uses: Uses, tier: Tier | null, business: Business | null): { assistant: string; plan: string } | undefined {
+  if (uses === "claude" && tier === "free") return { assistant: "claude", plan: "free" };
+  if (uses === "chatgpt" && business === "yes") return { assistant: "chatgpt", plan: "business" };
+  return undefined;
+}
+
+function asAssistantId(row: PlanRow): AssistantId {
+  if (row.assistant === "chatgpt") return "chatgpt";
+  if (row.assistant === "grok") return "grok";
+  return "claude";
+}
+
+function intakeRecommendation(args: IntakePlanArgs): Recommendation {
+  return recommendAssistant(customerFromServices(args.services ?? [], currentPlan(args.uses, args.tier ?? null, args.business ?? null)));
+}
 
 /** Prompt sentences use only the register name, the registry code and catalogue names. */
 function intakePrompt(lang: "et" | "en", company: IntakeCompany | null | undefined, services: ServiceRecord[]): string {
@@ -200,34 +221,34 @@ function intakePrompt(lang: "et" | "en", company: IntakeCompany | null | undefin
 
 export function buildIntakePlan(args: IntakePlanArgs): IntakePlan {
   const lang = args.lang === "en" ? "en" : "et";
-  const tier = args.tier ?? null;
-  const business = args.business ?? null;
   const services = args.services ?? [];
-  const paidNote = needsPaidNote(args.uses, tier, business);
-  const connect = connectsServices(args.uses, tier, business);
-  const assistant = args.choice.assistant;
+  const rec = intakeRecommendation(args);
+  const assistant = asAssistantId(rec.recommended);
+  const candidates = candidateRows(rec);
+  const reasons = rec.reasons;
+  const reason = reasons.map((r) => lang === "en" ? r.text_en : r.text_et).join(" ");
   const steps: IntakeStep[] = [];
   const download = offerDownload(args.uses, assistant);
   if (download) steps.push({ text: lang === "et" ? "Hangi see." : "Get it.", href: download });
   steps.push({ text: lang === "et" ? "Loo konto." : "Sign up." });
   const href = lang === "en" ? `/uhenda?a=${assistant}&lang=en` : `/uhenda?a=${assistant}`;
   steps.push({ text: lang === "et" ? "Ühenda AI-hüppelaud." : "Connect AI Launchpad.", href });
-  if (connect) {
-    for (const rec of services) {
-      const url = safeHttps(rec.connection);
-      if (!url || !rec.name) continue;
-      steps.push({ text: lang === "et" ? `Ühenda ${rec.name}.` : `Connect ${rec.name}.`, href: url });
-    }
+  const slots = rec.recommended.custom_connectors;
+  const room = slots === "no_cap" || (typeof slots === "number" && slots > 1);
+  if (room) for (const service of services) {
+    const url = safeHttps(service.connection);
+    if (!url || !service.name) continue;
+    steps.push({ text: lang === "et" ? `Ühenda ${service.name}.` : `Connect ${service.name}.`, href: url });
   }
   steps.push({ text: lang === "et" ? "Kleebi see juhis oma assistenti." : "Paste this prompt into your assistant." });
-  const planNote = paidNote
-    ? `${PLAN_NOTE.text[lang]} ${PLAN_NOTE.source[lang]}`
-    : connect ? PLAN_NOTE.connect[lang] : undefined;
   return {
     assistant,
-    reason: REASONS[args.choice.reason].text[lang],
-    paidNote,
-    ...(planNote ? { planNote } : {}),
+    reason,
+    reasons,
+    paidNote: rec.paidNote,
+    ...(rec.paidNote ? { planNote: reason } : {}),
+    why: whyRows(candidates, lang),
+    candidates,
     steps,
     prompt: intakePrompt(lang, args.company, services),
   };
@@ -249,10 +270,11 @@ export function planModelInput(args: IntakePlanArgs): string {
     .map((n) => n.slice(0, 60));
   let companyName = args.company?.name?.trim() || "";
   let businessArea = args.company?.emtak_label?.trim() || "";
+  const rec = intakeRecommendation(args);
   const fixed = {
-    assistant: args.choice.assistant,
+    assistant: asAssistantId(rec.recommended),
     tier: args.tier ?? null,
-    paid_note: needsPaidNote(args.uses, args.tier ?? null, args.business ?? null),
+    paid_note: rec.paidNote,
     lang,
   };
   const build = () => {

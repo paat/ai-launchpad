@@ -23,6 +23,7 @@ Research date 25 Oct 2026. Five Codex legs (`codex --search exec`, gpt-6-astra, 
 | [Q-phone-call-agent-services.md](Q-phone-call-agent-services.md) | Phone calls through the owner's assistant (1 Nov 2026): Retell, Speko, Bland, Telnyx, Vapi, ElevenLabs MCPs; +372 numbers, Estonian voices, AI Act Art. 50 and § 103¹ rules; call approval left as a follow-up | — |
 | [R-marketing-agent-services.md](R-marketing-agent-services.md) | Marketing jobs the owner's assistant can do (1 Nov 2026): MailerLite, Omnisend, Buffer, Canva, Meta Ads MCP (writes), read-only Google MCPs, ESS § 103¹, Google review policy, AI Act Art. 50, ad spend caps | — |
 | [S-website-agent-services.md](S-website-agent-services.md) | Websites the owner's assistant can build and run (1 Nov 2026): Wix, Shopify, WordPress.com, Framer, Webflow, Hostinger MCPs; Estonian builders and .ee domains; site-information, price and accessibility rules | — |
+| [assistant-plans.md](assistant-plans.md) | AI assistant plans for Estonian small businesses, as of 1 Nov 2026 (re-check after 1 Feb 2027) | — |
 | **Total** | | **354** |
 
 ## Earlier synthesis
