@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { computeHandover, handoverObligations, jobOfApproval, standingBasis, type Handover } from "../src/handover.js";
+import { byOpenPlaybookOrder, computeHandover, handoverObligations, jobOfApproval, standingBasis, type Handover } from "../src/handover.js";
 import { arikratt } from "../src/arikratt.js";
 import { openDb } from "../src/db.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
@@ -458,7 +458,12 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
       ["customer-follow-ups", "waiting", null],
       ["invoicing", "not_checked", null],
     ]);
-    expect(h.jobs.find((j) => j.id === "payment-reminder")!.status).toBe("in_order");
+    // The job that must win is already first. Equal null dues compare equal; the old comparator returned 1 (#153).
+    expect(byOpenPlaybookOrder(open[0]!, open[1]!)).toBe(0);
+    expect(byOpenPlaybookOrder(open[1]!, open[0]!)).toBe(0);
+    const reminder = h.jobs.find((j) => j.id === "payment-reminder")!;
+    expect(reminder.status).toBe("in_order");
+    expect([open[1]!, reminder].sort(byOpenPlaybookOrder).map((j) => j.id)).toEqual(["payment-reminder", "invoicing"]);
     expect(h.next).toMatchObject({ type: "playbook", playbookId: "customer-follow-ups" });
     expect(h.next).not.toMatchObject({ playbookId: "invoicing" });
   });
