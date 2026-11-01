@@ -1072,7 +1072,8 @@ const HO_STATUS: Record<Status, { chip: string; et: string; en: string }> = {
 function hoHead(h: Handover, l: Lang): string {
   const t = tr(l), c = h.count;
   return c.waiting ? t(`${c.waiting} ootab sinu kinnitust`, `${c.waiting} waiting for your approval`) : c.overdue ? t(`${c.overdue} ${c.overdue === 1 ? "tähtaeg on" : "tähtaega on"} möödas`, `${c.overdue} overdue`)
-    : c.due_soon ? t(`${c.due_soon} ${c.due_soon === 1 ? "tähtaeg" : "tähtaega"} läheneb`, `${c.due_soon} due soon`) : t("Täna ei vaja miski sind", "Nothing needs you today");
+    : c.due_soon ? t(`${c.due_soon} ${c.due_soon === 1 ? "tähtaeg" : "tähtaega"} läheneb`, `${c.due_soon} due soon`)
+    : c.open ? t(`${c.open} ${c.open === 1 ? "töö" : "tööd"} ootel`, `${c.open} with work waiting`) : t("Täna ei vaja miski sind", "Nothing needs you today");
 }
 /** „2 korras · 1 kontrollimata · 1 hiljem”: the rest of the jobs, by status. */
 function hoRest(h: Handover, l: Lang): string {
@@ -1080,7 +1081,7 @@ function hoRest(h: Handover, l: Lang): string {
   // Urgent statuses below the headline's one stay visible here.
   return [c.waiting && c.overdue ? t(`${c.overdue} ${c.overdue === 1 ? "tähtaeg" : "tähtaega"} möödas`, `${c.overdue} overdue`) : "",
     (c.waiting || c.overdue) && c.due_soon ? t(`${c.due_soon} ${c.due_soon === 1 ? "tähtaeg" : "tähtaega"} läheneb`, `${c.due_soon} due soon`) : "",
-    c.open ? t(`${c.open} ${c.open === 1 ? "töö" : "tööd"} ootel`, `${c.open} with work waiting`) : "", c.in_order ? t(`${c.in_order} korras`, `${c.in_order} in order`) : "", c.not_checked ? t(`${c.not_checked} kontrollimata`, `${c.not_checked} not checked yet`) : "", c.later ? t(`${c.later} hiljem`, `${c.later} later`) : ""].filter(Boolean).join(" · ");
+    c.open && (c.waiting || c.overdue || c.due_soon) ? t(`${c.open} ${c.open === 1 ? "töö" : "tööd"} ootel`, `${c.open} with work waiting`) : "", c.in_order ? t(`${c.in_order} korras`, `${c.in_order} in order`) : "", c.not_checked ? t(`${c.not_checked} kontrollimata`, `${c.not_checked} not checked yet`) : "", c.later ? t(`${c.later} hiljem`, `${c.later} later`) : ""].filter(Boolean).join(" · ");
 }
 const HO_CONN: Record<ConnectionKind | "register", [string, string]> = { accounting: ["Raamatupidamine", "Accounting"], email: ["E-post", "E-mail"], bank: ["Pank", "Bank"], calendar: ["Kalender", "Calendar"], drive: ["Veebiketas", "Online drive"], customers: ["Kliendid", "Customers"], browser: ["Brauser", "Browser"], register: ["Äriregister", "Business register"] };
 const HO_CONN_STATE: Record<ConnectionState | "public", [string, string, string]> = { linked: ["ühendatud", "linked", "accepted"], file: ["failina", "as a file", "drafted"], not_linked: ["ühendamata", "not linked", "drafted"], unknown: ["teadmata", "not reported", "drafted"], public: ["avalik", "public", "accepted"] };

@@ -143,6 +143,29 @@ describe("Kontoritöö: review-grok #127 fixes", () => {
   });
 });
 
+describe("Kontoritöö: review-grok #127 round 2", () => {
+  const withState = (id: string, current: "in_order" | "open") => ({ ...alpha, responsibilities: alpha.responsibilities.map((r) => (r.id === id ? { ...r, current_state: current } : r)) });
+  test("a near date beats the assistant's look and a filing earlier this month", () => {
+    expect(statuses(computeHandover({ assessment: withState("vat-prep", "open"), assessedAt: "2026-11-10T09:00:00Z", obligations, approvals: [], rules: [], now: NOW }))["vat-return-prep"]).toBe("due_soon");
+    const filed = appr({ kind: "prepare_filing", outcome: "submitted", to: { name: "EMTA (e-MTA)" }, at: "2026-11-05T10:00:00Z", playbook: "vat-return-prep" });
+    expect(statuses(computeHandover({ assessment: null, obligations, approvals: [filed], rules: [], now: NOW }))["vat-return-prep"]).toBe("due_soon");
+  });
+  test("an older look loses to a later send, also next month; one posted month is not the whole books job", () => {
+    const sent = appr({ kind: "send_invoice", outcome: "sent", at: "2026-11-05T09:00:00Z" });
+    const h = computeHandover({ assessment: withState("invoicing", "open"), assessedAt: "2026-11-01T09:00:00Z", obligations: [annual], approvals: [sent], rules: [], now: new Date("2026-12-02T10:00:00Z") });
+    expect(statuses(h).invoicing).toBe("not_checked");
+    // The stale look is not quoted as the check behind the row.
+    expect(handoverSection(h, "et", "c", NOW).match(/<li class="ho-job">[^]*?<\/li>/g)!.find((r) => r.includes("Arvete koostamine"))).not.toContain("vaadatud");
+    const posted = appr({ kind: "post_entries", outcome: "posted", to: { name: "Näidis OÜ, e-arveldaja" }, title: "Oktoober 2026", summary: "October entries" });
+    expect(statuses(computeHandover({ assessment: null, obligations, approvals: [posted], rules: [], now: NOW }))["books-catch-up"]).not.toBe("in_order");
+  });
+  test("work waiting is the headline when nothing is more urgent", () => {
+    const h = computeHandover({ assessment: withState("invoicing", "open"), assessedAt: "2026-11-10T09:00:00Z", obligations: [annual], approvals: [], rules: [], now: NOW });
+    expect(handoverStrip(h, "et")).toContain("<b>Kontoritöö: 1 töö ootel</b>");
+    expect(handoverStrip(h, "en")).not.toContain("Nothing needs you today");
+  });
+});
+
 describe("„Käest ära” honesty rules", () => {
   test("a live rule with zero fires stays mid green; only a fire by a live rule fills deep green", () => {
     const owned = [appr({ outcome: "sent", cents: 10_000 })];

@@ -62,6 +62,8 @@ const NEEDS: Record<string, ConnectionKind[]> = {
   "payment-reminder": ["accounting", "email"], invoicing: ["accounting", "email"], "books-catch-up": ["bank", "accounting"],
   "vat-return-prep": ["accounting"], "annual-report": ["accounting"], "customer-follow-ups": ["customers", "email"],
 };
+/** Jobs that go on: a recorded outcome is one step, never the whole job. */
+const ONGOING = ["customer-follow-ups", "books-catch-up"];
 /** A rule date this close (days) makes the job due soon. */
 const SOON_DAYS = 14;
 /** The assistant's „in order” or „open” counts for this long after its assessment (ms). */
@@ -108,14 +110,17 @@ export function computeHandover(o: { assessment: Assessment | null; assessedAt?:
     const rule = ceiling === "rule" ? live.find((r) => r.kind === kind && done.some((a) => a.approved_by_rule === r.id)) : undefined;
     // Book entries need the owner's yes for every month, and each customer follow-up is approved one by one, so both stay at prep and never reach done under a rule (#96).
     const rung: Rung = done.length && kind !== "post_entries" && id !== "customer-follow-ups" && (rule || ceiling === "law") ? "done" : done.length ? "prep" : assessed?.executor ? "other" : "mine";
-    const last = done.map((a) => a.consumed_at ?? "").sort().pop() || null, due = dueRow?.effective_due ?? null, current = fresh ? assessed?.current : undefined;
-    // First match wins: the owner's yes, a missed date, a newer look that found work, done this month (a monthly filing done this
-    // month answers this month's date; one follow-up never finishes the list), a near date, the assistant's look, a far date.
-    // Naming who does it (executor) is not a look at the work, so it never reads as in order.
-    const doneThisMonth = !!last && id !== "customer-follow-ups" && tallinnDate(new Date(last)).startsWith(ym);
-    const status: Status = pending ? "waiting" : due && due < today ? "overdue" : current === "open" && (!last || assessedAt! > last) ? "open" : doneThisMonth ? "in_order"
-      : due && due <= soon ? "due_soon" : current ?? (due ? "later" : "not_checked");
-    return { id, title_et: titles[0], title_en: titles[1], kind, rung, ceiling, status, needs: NEEDS[id] ?? [], source, due, dueSource: dueRow?.source ?? null, ...(assessed ? { assessed } : {}),
+    const last = done.map((a) => a.consumed_at ?? "").sort().pop() || null, due = dueRow?.effective_due ?? null;
+    // The assistant's look counts only while fresh and newer than the last recorded outcome.
+    const look = fresh && assessed?.current && (!last || assessedAt! > last) ? assessed.current : undefined;
+    // One posted month or one follow-up never finishes an ongoing job.
+    const doneThisMonth = !!last && !ONGOING.includes(id) && tallinnDate(new Date(last)).startsWith(ym);
+    // First match wins, in the order of STATUSES: the owner's yes, a missed date, a near date, work the assistant saw, done this
+    // month or a look that found nothing, a far date. Naming who does it (executor) is not a look, so it never reads as in order.
+    const status: Status = pending ? "waiting" : due && due < today ? "overdue" : due && due <= soon ? "due_soon" : look === "open" ? "open"
+      : doneThisMonth || look === "in_order" ? "in_order" : due ? "later" : "not_checked";
+    const { current: _seen, ...said } = assessed ?? { reason: "" };
+    return { id, title_et: titles[0], title_en: titles[1], kind, rung, ceiling, status, needs: NEEDS[id] ?? [], source, due, dueSource: dueRow?.source ?? null, ...(assessed ? { assessed: { ...said, ...(look ? { current: look } : {}) } } : {}),
       evidence: { done: done.length, auto: done.filter((a) => a.approved_by_rule).length, paid: done.filter((a) => outcomeOf(a) === "paid").length, last, pending, ...(rule ? { rule } : {}) } };
   };
   const assessedOf = (r: (typeof rows)[number]) => ({ reason: r.reason, ...(isHandled(r) ? { executor: r.executor } : {}), ...(r.current_state ? { current: r.current_state } : {}) });
