@@ -28,17 +28,17 @@ These steps are for an owner who can sign in. Judges use the path above.
 3. **Ask** in ChatGPT (valid as written 1–4 Nov 2026; add `Kasuta AI-hüppelauda: ` at the start if it doesn't call the tool):
    - `Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?` → deadlines as offers, with sources.
    - `Vaata mu arved üle ja tee ära, mis on vaja. Enne saatmist küsi minult kinnitust.` with `docs/demo/naidis-arved.csv` attached → the assistant reports the overdue invoice (Assistant says (example, not product copy; its own words may vary): „Leidsin 1 tähtaja ületanud arve”), and the exact reminder draft (recipient, address, amount, text), and asks once whether to send it. Answer `jah, saada` in the chat: that is the only approval. The assistant records your words with `request_approval`, Launchpad binds them to exactly that payload, and the approval card shows „Kinnitasid assistendis”; change anything and Launchpad refuses it: a new approval is needed. Launchpad never sends. On a real workspace the assistant records the outcome with `record_action_outcome` (labelled assistant-reported). The receipt „Saadetud: demo” and „päriselt ei saadetud” is the sample workspace in the judge path. Invoice 2026-015 turns overdue after 10 Nov, which changes the count.
-   - `Esita minu oktoobri käibedeklaratsioon.` → the `vat-return-prep` playbook prepares the figures from your accounting software's own report; you file in e-MTA with Smart-ID. A gap the assistant cannot do is reported with `report_unmet_need`, de-identified, and classified in the background. It joins the public „Avatud soovid” list (`/demand`) only if the owner publishes it. See Meta's models for where that output is labelled, and that the public list shows none until then.
+   - `Esita minu oktoobri käibedeklaratsioon.` → the `vat-return-prep` playbook prepares the figures from your accounting software's own report; you file in e-MTA with Smart-ID. A gap the assistant cannot do is reported with `report_unmet_need`, de-identified, and classified in the background. It joins the public „Avatud soovid” list (`/demand`) only if the owner publishes it. See Meta's models for where that output is labelled.
 4. **Täna:** „Ootab sinult · Assistent tegi · Tulekul” shows what needs you, what your assistant did and what is coming. Signed-in owners see it at `/`. The same three sections are on `/naidis` and in the sample workspace.
 
 ## Meta's models
 
-Muse Spark Open (`meta-models/muse-spark-open-1026`, via Baseten, `src/model-quality.ts`) runs off the pages a judge opens:
+Muse Spark Open (`meta-models/muse-spark-open-1026`, via Baseten, `src/model-quality.ts`) runs in background jobs and an operator batch; opening a page never calls the model:
 
 - **Unmet needs.** A background job (`src/unmet-needs.ts`) classifies a de-identified need after `report_unmet_need`. Live output is labelled „AI liigitus · Meta Muse Spark Open”. Mock output is labelled „Näidis”.
 - **Setup guidance cards.** An operator generates them (`src/model-public-cards-cli.ts`, job `setup_guidance`). A page shows one only when a completed card is already saved. `/vali` labels that saved answer „Selgitab Muse Spark (Meta) · salvestatud vastus”. `/setup` labels it „General guidance · Meta/Baseten”. Opening the page does not call the model.
 
-The live public pages do not show that output. `/demand` renders „Avaldatud soove veel pole.” when nothing is published, which is the live list. `/vali` shows the Muse sentence only for a saved completed card, and the live page has none.
+A page shows Muse output only when a saved card or a published classified need exists; otherwise it says so plainly (`/demand`: „Avaldatud soove veel pole.”).
 
 The model never computes a deadline or an amount. Model use is capped at USD 10 on existing credits.
 
