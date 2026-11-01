@@ -18,6 +18,7 @@ Research date 25 Oct 2026. Five Codex legs (`codex --search exec`, gpt-6-astra, 
 | [L-courier-agent-services.md](L-courier-agent-services.md) | Courier MCP/API coverage, Estonia origins and operation boundaries | — |
 | [M-email-calendar-agent-services.md](M-email-calendar-agent-services.md) | Email, calendars, scheduling and reusable IMAP/SMTP/CalDAV connection routes | — |
 | [N-obligation-deadline-rules.md](N-obligation-deadline-rules.md) | Deterministic deadline rules for a one-person OÜ (29 Oct 2026): tier-A statute quotes, rule ids, holiday shift, computed Nov 2026–Dec 2027 dates, Ärikratt field mapping, UNKNOWN defaults | — |
+| [O-value-expansion.md](O-value-expansion.md) | More value (1 Nov 2026): Google's Open Knowledge Format (OKF), the owner's business folder on their own Drive, e-invoice and retention rules, ranked next jobs | — |
 | [P-lightweight-crm.md](P-lightweight-crm.md) | Customers without a CRM app (1 Nov 2026): Google Sheet in the owner's Drive vs Markdown vs SQLite, official CRM MCPs (HubSpot, Pipedrive, Trivis, Scoro, Attio…), GDPR minimums | — |
 | **Total** | | **354** |
 
