@@ -61,8 +61,8 @@ const fullAssessment = {
 beforeAll(async () => { await new Promise<void>((ok) => { server = app.listen(0, "127.0.0.1", ok); }); base = `http://127.0.0.1:${(server.address() as { port: number }).port}`; cfg.baseUrl = base; });
 afterAll(() => server.close());
 
-test("catalog has 182 records; search preserves connection guidance and safe primary sources", () => {
-  expect(loadCatalog()).toHaveLength(182);
+test("catalog has 192 records; search preserves connection guidance and safe primary sources", () => {
+  expect(loadCatalog()).toHaveLength(192);
   const r = searchServices("invoice", 5);
   expect(r.length).toBeGreaterThan(0); expect(r.length).toBeLessThanOrEqual(5);
   expect(r.every((x) => x.runtime_verified === false)).toBe(true);
@@ -268,7 +268,7 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     const after = parse(await cA.callTool({ name: "get_progress", arguments: {} }));
     expect(after.assessment.responsibilities.find((r: { id: string }) => r.id === "invoicing").applicability).toBe("not_applicable");
     const search = parse(await cA.callTool({ name: "search_services", arguments: { query: "accounting", limit: 3 } }));
-    expect(search.catalog_size).toBe(182);
+    expect(search.catalog_size).toBe(192);
     expect(search.results.some((x: { sources: string[] }) => x.sources.length > 0)).toBe(true);
     // Candidates are private per owner: no shared IDs, no existence oracle.
     const cand = { name: "Demo New Service", connection: "https://example.invalid/mcp", jobs: "demo job" };

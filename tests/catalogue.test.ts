@@ -37,8 +37,8 @@ describe("public catalogue", () => {
     const all = loadCatalog();
     const mcp = all.filter((r) => ["hosted_mcp", "local_mcp", "self_hosted_mcp"].includes(r.interface_class ?? "")).length;
     const api = all.filter((r) => r.interface_class === "ordinary_api").length;
-    expect([mcp, api]).toEqual([89, 50]); // hosted MCP +1 (HubSpot, 2026-11-01); update with the data
-    expect(all.length).toBe(182);
+    expect([mcp, api]).toEqual([97, 52]); // phone/speech rows: hosted MCP +8, API +2 (2026-11-01); update with the data
+    expect(all.length).toBe(192);
     expect(await page("/kataloog")).toContain(`<strong>${mcp} MCP-ühendust ja ${api} API-t</strong> (kokku ${all.length} uuritud teenusest) Eesti ettevõtja tööde jaoks.`);
     expect(await page("/kataloog?lang=en")).toContain(`<strong>${mcp} MCP connections and ${api} APIs</strong> (out of ${all.length} researched services)`);
   });
@@ -108,6 +108,25 @@ describe("public catalogue", () => {
     expect(cards(await page("/kataloog?g=kullerid")).every((c) => catalogueGroups(loadCatalog().find((r) => r.id === c.id)!.sector).includes("kullerid"))).toBe(true);
     const kliendid = cards(await page("/kataloog?g=kliendid")).map((c) => c.id);
     expect(kliendid).toEqual(expect.arrayContaining(["pipedrive", "hubspot"]));
+    const tel = CATALOGUE_GROUPS.findIndex((g) => g.id === "telefon");
+    expect(tel).toBeGreaterThan(-1);
+    expect(tel).toBeLessThan(CATALOGUE_GROUPS.findIndex((g) => g.id === "muu"));
+    expect(catalogueGroup("phone/voice")).toBe("telefon");
+    expect(catalogueGroup("speech")).toBe("telefon");
+    const phoneIds = ["retell-ai", "speko", "bland-ai", "telnyx-ai-connector", "vapi", "elevenlabs-agents", "agentphone", "synthflow", "twilio-voice", "azure-speech"];
+    const telefon = cards(await page("/kataloog?g=telefon"));
+    expect(telefon.map((c) => c.id)).toEqual(expect.arrayContaining(phoneIds));
+    expect(telefon.find((c) => c.id === "azure-speech")!.html).toContain("Eesti keel: jah");
+    expect(telefon.find((c) => c.id === "retell-ai")!.html).toContain("Eesti keel: ei");
+    expect(telefon.find((c) => c.id === "vapi")!.html).toContain("Eesti keel: osaliselt");
+    expect(telefon.find((c) => c.id === "twilio-voice")!.html).toContain("Eesti keel: teadmata");
+    const enPhone = cards(await page("/kataloog?lang=en&g=telefon"));
+    expect(enPhone.find((c) => c.id === "azure-speech")!.html).toContain("Estonian: yes");
+    expect(enPhone.find((c) => c.id === "bland-ai")!.html).toContain("Estonian: no");
+    expect(enPhone.find((c) => c.id === "speko")!.html).toContain("Estonian: partly");
+    expect(enPhone.find((c) => c.id === "agentphone")!.html).toContain("Estonian: unknown");
+    const hub = cards(await page("/kataloog?q=hubspot")).find((c) => c.id === "hubspot")!;
+    expect(hub.html).not.toContain("Eesti keel:");
     expect(await page("/kataloog?g=kliendid")).toContain("Kliendid (CRM)");
     // Unknown group shows everything.
     expect(cards(await page("/kataloog?g=bogus")).length).toBe(listed.length);
@@ -154,6 +173,30 @@ describe("public catalogue", () => {
     expect(html).toContain('<nav class="main"');
     expect(html).toContain('href="/kataloog">Kataloog</a>');
   });
+});
+
+test("Estonian badge shows the four values, and a record without the field has none", () => {
+  const base = listed.find((r) => r.id === "werkzeug")!;
+  const row = (id: string, value: "yes" | "partial" | "no" | "unknown") => ({ ...base, id, sector: "phone/voice", estonian_language: value, estonian_note: `Note for ${value}` });
+  const records = [row("et-yes", "yes"), row("et-partial", "partial"), row("et-no", "no"), row("et-unknown", "unknown"), { ...base, id: "et-none" }];
+  const et = catalogueBody({ lang: "et", q: "", g: null, records, matched: null });
+  const en = catalogueBody({ lang: "en", q: "", g: null, records, matched: null });
+  const card = (html: string, id: string) => cards(html).find((c) => c.id === id)!.html;
+  expect(card(et, "et-yes")).toContain('<span class="label-chip label-chip--official">Eesti keel: jah</span>');
+  expect(card(en, "et-yes")).toContain('<span class="label-chip label-chip--official">Estonian: yes</span>');
+  expect(card(et, "et-partial")).toContain('<span class="label-chip label-chip--partial">Eesti keel: osaliselt</span>');
+  expect(card(en, "et-partial")).toContain('<span class="label-chip label-chip--partial">Estonian: partly</span>');
+  expect(card(et, "et-no")).toContain('<span class="label-chip label-chip--amber">Eesti keel: ei</span>');
+  expect(card(en, "et-no")).toContain('<span class="label-chip label-chip--amber">Estonian: no</span>');
+  expect(card(et, "et-unknown")).toContain('<span class="label-chip label-chip--assistant">Eesti keel: teadmata</span>');
+  expect(card(en, "et-unknown")).toContain('<span class="label-chip label-chip--assistant">Estonian: unknown</span>');
+  expect(card(et, "et-yes")).toContain('<p class="svc-et" lang="en">Note for yes</p>');
+  expect(card(en, "et-yes")).toContain('<p class="svc-et">Note for yes</p>');
+  for (const html of [card(et, "et-none"), card(en, "et-none")]) {
+    expect(html).not.toContain("Eesti keel:");
+    expect(html).not.toContain("Estonian:");
+    expect(html).not.toContain("svc-et");
+  }
 });
 
 test("/uhenda links to the catalogue once the assistant is connected", async () => {

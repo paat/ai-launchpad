@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-export interface ServiceRecord { id: string; name: string; sector?: string; jobs?: string; interface_class?: string; connection?: string; access_and_price?: string; limitations?: string; evidence_status?: string; runtime_tested?: boolean; checked_on?: string; sources?: string[]; }
+export interface ServiceRecord { id: string; name: string; sector?: string; jobs?: string; interface_class?: string; connection?: string; access_and_price?: string; limitations?: string; evidence_status?: string; runtime_tested?: boolean; checked_on?: string; sources?: string[]; estonian_language?: "yes" | "partial" | "no" | "unknown"; estonian_note?: string; estonian_source?: string; }
 
 let cache: ServiceRecord[] | null = null;
 export function loadCatalog(): ServiceRecord[] {
@@ -40,6 +40,8 @@ export function searchServices(query: string, limit: number) {
     access_and_price: r.access_and_price ?? "",
     limitations: r.limitations ?? "", evidence_status: r.evidence_status ?? "",
     checked_on: r.checked_on ?? "",
+    ...(r.estonian_language ? { estonian_language: r.estonian_language } : {}),
+    ...(r.estonian_note ? { estonian_note: r.estonian_note } : {}),
     sources: (r.sources ?? []).map(safeHttps).filter((x): x is string => !!x).slice(0, 4),
     runtime_verified: false as const,
     note: "Research catalog entry, not runtime-verified by Launchpad. Connect it in your own assistant; Launchpad does not fetch or broker it.",
