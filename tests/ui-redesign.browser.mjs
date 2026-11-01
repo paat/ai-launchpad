@@ -29,6 +29,9 @@ const assessment = assessmentSchema.parse({
   next_action: { title: "Check the urgent filing", rationale: "It may carry a deadline.", savings_basis: "unknown", uncertainty: "High.", needs_owner: true },
 });
 const { NOW, mariDeadlines, longApproval, pendingApproval, longLetterApproval, approvedApproval, demoAssessment, twoDeadlines, tanaHandover, week2, uhendaHandover, preparedProgress } = NAIDIS;
+const uhendaWaiting = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
+const uhendaHoBody = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: CSRF, rules: [] }, handover: uhendaHandover });
+const uhendaLocalBody = await connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "chatgpt", state: { kind: "anon" }, owner: false });
 const tana = (a, extra = {}) => tanaBody({ lang: "et", csrf: CSRF, sample: true, label: "Synthetic OÜ", assessment: a, coverage: computeCoverage(a), assessedAt: a ? "2026-10-28T10:00:00Z" : null, exclusions: [], approvals: [], progress: [], deadlines: null, needs: [], reportCount: 1, now: NOW, ...extra });
 const pageHtml = {
   "connection-https": () =>
@@ -59,11 +62,11 @@ const pageHtml = {
   "landing-en": () =>
     shell({ title: "Your AI assistant does the office work", active: "none", csrf: "", lang: "en", body: landingBody({ lang: "en", demo: true }) }),
   uhenda: () =>
-    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true }) }),
+    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: uhendaWaiting }),
   "uhenda-ho": () =>
-    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, sample: true, body: connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: CSRF, rules: [] }, handover: uhendaHandover }) }),
+    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, sample: true, body: uhendaHoBody }),
   "uhenda-local": () =>
-    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "chatgpt", state: { kind: "anon" }, owner: false }) }),
+    shell({ title: "Ühenda", active: "uhendus", csrf: CSRF, body: uhendaLocalBody }),
   "approval-receipt-long": () =>
     shell({ title: "Kinnitus", active: "none", csrf: CSRF, sample: true, body: approvalCardBody({ csrf: CSRF, a: longApproval, lang: "et", sample: true, now: NOW }) }),
   "approval-receipt-strip": () =>
