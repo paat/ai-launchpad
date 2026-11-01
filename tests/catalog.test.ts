@@ -114,6 +114,7 @@ describe("safeHttps strict standalone-URL gate", () => {
       "retell-ai": "no", speko: "partial", "bland-ai": "no", "telnyx-ai-connector": "partial", vapi: "partial",
       "elevenlabs-agents": "yes", agentphone: "unknown", synthflow: "no", "twilio-voice": "unknown", "azure-speech": "yes",
       "ekilex-community": "yes", "voro-community": "partial", "vendus-agentibus": "unknown",
+      pactum: "unknown", "tommos-crm": "unknown",
     };
     for (const id of phone) {
       const rec = byId(id);
@@ -182,4 +183,48 @@ describe("safeHttps strict standalone-URL gate", () => {
     expect(safeHttps(undefined)).toBeNull();
     expect(safeHttps("")).toBeNull();
   });
+
+  test("CSV export matches JSON, including empty Estonian columns", () => {
+    const dir = join(import.meta.dirname, "..", "docs", "research", "catalog");
+    const raw = JSON.parse(readFileSync(join(dir, "estonian-business-services.json"), "utf8")) as { records: Record<string, unknown>[] };
+    const rows = parseCsv(readFileSync(join(dir, "estonian-business-services.csv"), "utf8"));
+    const header = rows[0];
+    expect(header.slice(-3)).toEqual(["estonian_language", "estonian_note", "estonian_source"]);
+    const body = rows.slice(1);
+    expect(body).toHaveLength(raw.records.length);
+    const at = Object.fromEntries(header.map((name, i) => [name, i]));
+    const cell = (rec: Record<string, unknown>, key: string) => {
+      if (key === "sources") return ((rec.sources as string[] | undefined) ?? []).join(" | ");
+      if (key === "runtime_tested" || key === "parent_source_reopened") return rec[key] ? "True" : "False";
+      const v = rec[key];
+      return v == null ? "" : String(v);
+    };
+    for (let i = 0; i < raw.records.length; i++) {
+      const rec = raw.records[i];
+      const row = body[i];
+      expect(row, String(rec.id)).toHaveLength(header.length);
+      for (const key of header) expect(row[at[key]], `${rec.id} ${key}`).toBe(cell(rec, key));
+    }
+  });
 });
+
+/** RFC 4180 reader for the catalog export. Fields do not contain raw newlines. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [], cell = "", quoted = false;
+  const s = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quoted) {
+      if (c === '"') {
+        if (s[i + 1] === '"') { cell += '"'; i++; }
+        else quoted = false;
+      } else cell += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += c;
+  }
+  if (cell.length || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => !(r.length === 1 && r[0] === ""));
+}

@@ -184,8 +184,8 @@ test("Estonian badge shows the four values, and a record without the field has n
   const card = (html: string, id: string) => cards(html).find((c) => c.id === id)!.html;
   expect(card(et, "et-yes")).toContain('<span class="label-chip label-chip--official">Eesti keel: jah</span>');
   expect(card(en, "et-yes")).toContain('<span class="label-chip label-chip--official">Estonian: yes</span>');
-  expect(card(et, "et-partial")).toContain('<span class="label-chip label-chip--partial">Eesti keel: osaliselt</span>');
-  expect(card(en, "et-partial")).toContain('<span class="label-chip label-chip--partial">Estonian: partly</span>');
+  expect(card(et, "et-partial")).toContain('<span class="label-chip label-chip--amber">Eesti keel: osaliselt</span>');
+  expect(card(en, "et-partial")).toContain('<span class="label-chip label-chip--amber">Estonian: partly</span>');
   expect(card(et, "et-no")).toContain('<span class="label-chip label-chip--amber">Eesti keel: ei</span>');
   expect(card(en, "et-no")).toContain('<span class="label-chip label-chip--amber">Estonian: no</span>');
   expect(card(et, "et-unknown")).toContain('<span class="label-chip label-chip--assistant">Eesti keel: teadmata</span>');

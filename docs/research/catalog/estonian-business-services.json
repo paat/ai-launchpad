@@ -3263,7 +3263,10 @@
       "sources": [
         "https://api-docs.pactum.com/"
       ],
-      "research_leg": "other-b2b"
+      "research_leg": "other-b2b",
+      "estonian_language": "unknown",
+      "estonian_note": "Pactum's agents negotiate with suppliers. The public page does not say whether they write in Estonian.",
+      "estonian_source": "https://pactum.com/campaigns-agents"
     },
     {
       "id": "texta-toolkit",
@@ -3500,7 +3503,10 @@
       "sources": [
         "https://github.com/tommoscrm/tommos-mcp"
       ],
-      "research_leg": "other-b2b"
+      "research_leg": "other-b2b",
+      "estonian_language": "unknown",
+      "estonian_note": "Tommos agents answer inquiries and send proposals and follow-ups. The public page does not say whether they write in Estonian.",
+      "estonian_source": "https://github.com/tommoscrm/tommos-mcp"
     },
     {
       "id": "shoproller",
@@ -5173,7 +5179,7 @@
       "connection": "https://mcp.agentphone.ai/mcp",
       "access_and_price": "You sign in, or you paste a key. A number is $3 for 30 days. Calls are about 13 to 22 US cents a minute.",
       "read_write": "See jobs and limitations; not tested by Launchpad.",
-      "limitations": "Placing a call or buying a number spends money, and a call rings a real phone. Numbers are US and Canada only. Nothing on the page says it asks you to confirm first.",
+      "limitations": "Placing a call or buying a number spends money, and a call rings a real phone. Numbers are US and Canada only. Purchases need confirm:true. Calls have no documented confirmation.",
       "evidence_status": "documented",
       "runtime_tested": false,
       "checked_on": "2026-11-01",
@@ -5203,7 +5209,7 @@
       "connection": "https://mcp.synthflow.ai/mcp",
       "access_and_price": "You sign in with Synthflow. The voice engine is about 9 US cents a minute. A number is about $1.50.",
       "read_write": "See jobs and limitations; not tested by Launchpad.",
-      "limitations": "The call this connection documents is a test call. A test call can still spend money. Do not use it to call customers.",
+      "limitations": "The call this connection documents is a test call. A test call can ring a real phone. A test call can still spend money. Do not use it to call customers.",
       "evidence_status": "documented",
       "runtime_tested": false,
       "checked_on": "2026-11-01",

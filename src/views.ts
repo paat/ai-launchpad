@@ -297,7 +297,7 @@ h1,h2,h3,.link-row-title,.receipt-head{overflow-wrap:anywhere}
 .label-chip--owner{background:var(--lbl-owner-bg);color:var(--lbl-owner-fg);border-color:var(--lbl-owner-bd)}
 .label-chip--ai{background:var(--lbl-ai-bg);color:var(--lbl-ai-fg);border-color:var(--lbl-ai-bd)}
 .label-chip--where{background:var(--lbl-where-bg);color:var(--lbl-where-fg);border-color:var(--lbl-where-bd)}
-.label-chip--amber,.label-chip--partial{background:var(--c-att-bg);color:var(--c-att-dark);border-color:var(--c-att-bd)}
+.label-chip--amber{background:var(--c-att-bg);color:var(--c-att-dark);border-color:var(--c-att-bd)}
 .label-chip--sample{background:var(--lbl-sample-bg);color:var(--lbl-sample-fg);border:1px dashed var(--lbl-sample-bd);text-transform:uppercase;letter-spacing:.05em}
 .state-chip{border-radius:999px;padding:2px 10px 2px 8px}
 .state-chip::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:currentColor}
@@ -724,7 +724,7 @@ const timeEl = (iso: string, text: string) => `<time datetime="${esc(iso)}">${es
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // --- Chips: one label system (design-spec §2.2–2.3) ---
-const labelChip = (kind: "official" | "rule" | "assistant" | "owner" | "ai" | "sample" | "where" | "amber" | "partial", text: string) => `<span class="label-chip label-chip--${kind}">${esc(text)}</span>`;
+const labelChip = (kind: "official" | "rule" | "assistant" | "owner" | "ai" | "sample" | "where" | "amber", text: string) => `<span class="label-chip label-chip--${kind}">${esc(text)}</span>`;
 const stateChip = (kind: string, text: string, demo = false) => `<span class="state-chip state-chip--${kind}${demo ? " state-chip--demo" : ""}">${esc(text)}</span>`;
 const sampleChip = (l: Lang) => labelChip("sample", tr(l)("Näidis", "Sample"));
 const techDetails = (l: Lang, inner: string) => `<details class="tech-details"><summary>${tr(l)("Tehniline info", "Technical details")}</summary>${inner}</details>`;
@@ -1373,7 +1373,7 @@ const fmtYmd = (ymd: string) => /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd.split("-")
 
 const ESTONIAN_BADGE = {
   yes: { kind: "official", et: "Eesti keel: jah", en: "Estonian: yes" },
-  partial: { kind: "partial", et: "Eesti keel: osaliselt", en: "Estonian: partly" },
+  partial: { kind: "amber", et: "Eesti keel: osaliselt", en: "Estonian: partly" },
   no: { kind: "amber", et: "Eesti keel: ei", en: "Estonian: no" },
   unknown: { kind: "assistant", et: "Eesti keel: teadmata", en: "Estonian: unknown" },
 } as const;
