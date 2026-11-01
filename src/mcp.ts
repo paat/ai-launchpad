@@ -315,7 +315,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     const given = canonicalBank(args.bank);
     // Any other bank: reuse the spelling already stored for this owner, so "wise" updates the "Wise" row.
     const bank = (db.prepare("SELECT bank FROM statements_read WHERE owner_id=? AND lower(bank)=lower(?) LIMIT 1").get(ctx.ownerId, given) as { bank: string } | undefined)?.bank ?? given;
-    if (bank.length < 2 || /\d/.test(bank)) return err("bank is the bank's name only, with no digits (put the last four digits in last4). Nothing was saved.");
+    if (bank.length < 2 || /\d{4}/.test(bank) || !/\p{L}/u.test(bank)) return err("bank is the bank's name only, with no digits (put the last four digits in last4). Nothing was saved.");
     const known = db.prepare("SELECT 1 FROM statements_read WHERE owner_id=? AND bank=? AND last4=? AND period_from=? AND period_to=?").get(ctx.ownerId, bank, args.last4, args.period_from, args.period_to);
     if (!known && (db.prepare("SELECT COUNT(*) n FROM statements_read WHERE owner_id=?").get(ctx.ownerId) as { n: number }).n >= MAX_STATEMENTS) return err(`Up to ${MAX_STATEMENTS} statements are kept; the owner can delete progress to start over. Nothing was saved.`);
     const row = { bank, last4: args.last4, period_from: args.period_from, period_to: args.period_to, closing_balance_cents: args.closing_balance_cents, read_at: nowIso() };

@@ -392,6 +392,8 @@ describe("agent-facing copy over MCP", () => {
     for (const bank of ["Swedbank AS", "swedbank"]) expect((await call("record_statement_read", { bank, last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 0 })).isError).toBeFalsy();
     await call("record_statement_read", { bank: "Wise", last4: "7777", period_from: "2026-01-01", period_to: "2026-01-31", closing_balance_cents: 0 });
     await call("record_statement_read", { bank: "wise", last4: "7777", period_from: "2026-01-01", period_to: "2026-01-31", closing_balance_cents: 5 });
+    expect((await call("record_statement_read", { bank: "N26", last4: "4242", period_from: "2026-01-01", period_to: "2026-01-31", closing_balance_cents: 0 })).isError).toBeFalsy();
+    db.prepare("DELETE FROM statements_read WHERE bank='N26'").run();
     await call("record_statement_read", { bank: "AS LHV Pank", last4: "5618", period_from: "2026-01-01", period_to: "2026-01-31", closing_balance_cents: 0 });
     expect(db.prepare("SELECT bank, last4 FROM statements_read ORDER BY bank").all()).toEqual([{ bank: "LHV", last4: "5618" }, { bank: "Swedbank", last4: "1884" }, { bank: "Wise", last4: "7777" }]);
     db.prepare("DELETE FROM statements_read WHERE bank IN ('LHV','Wise')").run();
