@@ -508,6 +508,6 @@ export async function runModelQualityAttempt(opts: ModelQualityOptions): Promise
   try { text = extractChatText(json); } catch (e) {
     return fail("failed", e instanceof ModelQualityError ? e.code : "invalid_response", extra);
   }
-  opts.ledger.finalize(requestId, { status: "completed", output: text, ...extra });
-  return toResult(opts.ledger.get(requestId)!, false);
+  opts.ledger.finalize(requestId, { status: "completed", output: job === "check_approval" ? null : text, ...extra });
+  return { ...toResult(opts.ledger.get(requestId)!, false), output: text };
 }

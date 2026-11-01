@@ -135,10 +135,10 @@ model. Rules:
 - One attempt in flight globally, with no lease expiry. At live app startup,
   leftover `pending` rows become `uncertain` / `interrupted`, keeping their
   full allocation and preventing retries while allowing new attempts.
-- Saved outputs include synthetic CLI results and runtime job results. Approval
-  results can repeat recipient names, amounts and document details; they are
-  private to the owner, not public guidance cards. Raw inputs and API keys
-  are never stored in the ledger.
+- The ledger saves completion text for all jobs except `check_approval`, whose
+  text is returned only to the live caller for validation and storage on the
+  approval row (textless ledger replays are unavailable as `interrupted`),
+  and never stores raw inputs or API keys.
 
 ## CLI
 

@@ -95,6 +95,24 @@ describe("model quality harness (Baseten)", () => {
     ledger.close();
   });
 
+  test.each(["setup_guidance", "classify_friction", "classify_unmet_need", "check_approval"] as const)("%s returns live text and only approval checks omit ledger text", async (job) => {
+    const ledger = ModelQualityLedger.open(":memory:");
+    try {
+      const { calls, fetchFn } = happy();
+      const opts = { ...base(ledger, fetchFn), job };
+      const result = await runModelQualityAttempt(opts);
+      expect(result).toMatchObject({ status: "completed", output: "Synthetic bounded answer.", replayed: false,
+        inputTokens: 100, outputTokens: 10, actualCostMicroUsd: 168,
+        allocatedMicroUsd: reservationMicroUsd(job, opts.input) });
+      const savedOutput = job === "check_approval" ? null : result.output;
+      expect(ledger.get(opts.requestId)).toMatchObject({ status: "completed", output: savedOutput,
+        input_tokens: 100, output_tokens: 10, actual_cost_micro_usd: 168,
+        payload_hash: payloadHash(job, opts.input), allocated_micro_usd: result.allocatedMicroUsd });
+      expect(await runModelQualityAttempt(opts)).toEqual({ ...result, output: savedOutput, replayed: true });
+      expect(calls).toHaveLength(1);
+    } finally { ledger.close(); }
+  });
+
   test("validation, pricing confirmation and missing key happen before network/allocation", async () => {
     const ledger = ModelQualityLedger.open(":memory:");
     const { calls, fetchFn } = happy();

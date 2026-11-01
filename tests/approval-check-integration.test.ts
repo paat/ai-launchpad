@@ -153,6 +153,8 @@ test("a busy ledger keeps the approval running until its one model call can star
   await vi.advanceTimersByTimeAsync(2_000);
   await work;
   expect(getApproval(db, oid, id)?.check_state).toBe("ok");
+  expect(JSON.parse(getApproval(db, oid, id)!.check_json!)).toEqual(ok);
+  expect(ledger.db.prepare("SELECT output FROM mq_attempts WHERE request_id=?").get(approvalCheckRequestId(id, approvalDigest(action)))).toEqual({ output: null });
   expect(fetchFn).toHaveBeenCalledTimes(1);
   expect(getApproval(db, oid, id)?.check_by).toBe(BASETEN_MODEL);
   expect(reserve).toHaveBeenCalledTimes(4);

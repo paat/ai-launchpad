@@ -5,7 +5,7 @@ import {
 } from "../src/approval-check.js";
 import {
   BASETEN_MODEL, FIXED_INSTRUCTIONS, JOB_MAX_INPUT, JOB_MAX_OUTPUT_TOKENS, MAX_INPUT_BYTES, MAX_INPUT_CHARS,
-  ModelQualityLedger, TIMEOUT_MS, calculateCostMicroUsd, inputTokenBound, reservationMicroUsd, validateInput,
+  ModelQualityLedger, TIMEOUT_MS, calculateCostMicroUsd, inputTokenBound, payloadHash, reservationMicroUsd, validateInput,
   type FetchFn,
 } from "../src/model-quality.js";
 
@@ -110,19 +110,21 @@ describe("live approval check through sole model ledger", () => {
   });
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); ledger.close(); });
 
-  test.each([ok, review])("returns validated $verdict, pins job, and replays without another fetch", async (output) => {
+  test.each([ok, review])("returns validated $verdict without saving ledger text, and replay is interrupted", async (output) => {
     const fetchFn = vi.fn(async () => response(JSON.stringify(output))) as unknown as FetchFn;
     const checker = liveChecker({ ledger, apiKey: "synthetic-key", fetchFn });
     expect(checker.by).toBe(BASETEN_MODEL);
     const result = await checker.check("approval-a", "digest-a", input);
     expect(result).toEqual({ kind: "text", text: JSON.stringify(output) });
-    expect(await checker.check("approval-a", "digest-a", input)).toEqual(result);
+    expect(await checker.check("approval-a", "digest-a", input)).toEqual({ kind: "failed", reason: "interrupted" });
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const call = vi.mocked(fetchFn).mock.calls[0];
     expect(JSON.parse(String(call[1]?.body))).toMatchObject({ model: BASETEN_MODEL, max_tokens: 1024,
       messages: [{ role: "developer", content: FIXED_INSTRUCTIONS.check_approval }, { role: "user", content: input }] });
     const stored = ledger.get(approvalCheckRequestId("approval-a", "digest-a"));
-    expect(stored).toMatchObject({ job: "check_approval", status: "completed", allocated_micro_usd: reservationMicroUsd("check_approval", input) });
+    expect(stored).toMatchObject({ job: "check_approval", status: "completed", output: null,
+      input_tokens: 120, output_tokens: 100, actual_cost_micro_usd: calculateCostMicroUsd(120, 100),
+      payload_hash: payloadHash("check_approval", input), allocated_micro_usd: reservationMicroUsd("check_approval", input) });
     expect(stored).not.toHaveProperty("input");
     expect(approvalCheckRequestId("approval-a", "digest-b")).not.toBe(approvalCheckRequestId("approval-a", "digest-a"));
   });

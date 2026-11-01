@@ -124,7 +124,7 @@ export function liveChecker(opts: { ledger: ModelQualityLedger; apiKey: string; 
           return parseApprovalCheck(r.output).ok ? { kind: "text", text: r.output } : { kind: "failed", reason: "invalid_output" };
         }
         if (r.status === "uncertain") return { kind: "failed", reason: r.errorCode === "timeout" ? "timeout" : "provider_uncertain" };
-        if (r.status === "pending") return { kind: "failed", reason: "interrupted" };
+        if (r.status === "pending" || r.status === "completed") return { kind: "failed", reason: "interrupted" };
         if (r.status === "provider_contract_breach") return { kind: "failed", reason: "provider_contract_breach" };
         if (r.errorCode === "invalid_response" || r.errorCode === "truncated") return { kind: "failed", reason: "invalid_output" };
         return { kind: "failed", reason: "provider_failed" };
