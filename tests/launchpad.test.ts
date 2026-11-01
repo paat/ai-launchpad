@@ -232,7 +232,7 @@ describe("MCP integration (two unrelated synthetic businesses)", () => {
     const cookieB = await login("beta"); await grantSharing(cookieB);
     const cA = await mcpClient(await issueToken(cookieA));
     const cB = await mcpClient(await issueToken(cookieB));
-    expect((await cA.listTools()).tools.map((t) => t.name).sort()).toEqual(["check_my_books", "check_my_customers", "connect_my_services", "get_approval", "get_obligations", "get_progress", "get_started", "record_action_outcome", "report_assessment", "report_progress", "report_unmet_need", "request_approval", "search_services", "submit_service_candidate"]);
+    expect((await cA.listTools()).tools.map((t) => t.name).sort()).toEqual(["check_my_books", "check_my_customers", "connect_my_services", "get_approval", "get_obligations", "get_progress", "get_started", "record_action_outcome", "remember_business_facts", "report_assessment", "report_progress", "report_unmet_need", "request_approval", "search_services", "submit_service_candidate"]);
     // Each demo workspace was seeded only after explicit demo login, with a different next action.
     const a0 = parse(await cA.callTool({ name: "get_progress", arguments: {} }));
     const b0 = parse(await cB.callTool({ name: "get_progress", arguments: {} }));
