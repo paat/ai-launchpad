@@ -587,6 +587,7 @@ ${TEASER_CSS}
 .job-chips{margin:0}.job-chips .label-chip{min-height:var(--tap);padding:6px 14px;border-radius:999px}
 .job-pager{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2);margin-top:var(--s-3)}
 .job-pager button{width:auto;min-height:var(--tap);margin:0;padding:8px 14px}.job-pager span{font-variant-numeric:tabular-nums}
+.job-more{margin:var(--s-3) 0 0;padding:var(--s-3) var(--s-4);border-left:4px solid var(--c-primary);border-radius:var(--r-md);background:var(--c-surface-2)}
 .use-caption{margin:var(--s-3) 0 0}
 @media (min-width:760px){.job-card{flex-basis:calc((100% - var(--s-3))/2)}}
 @media (min-width:1100px){.job-card{flex-basis:calc((100% - 2 * var(--s-3))/3)}}
@@ -1723,7 +1724,7 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
     const j = Math.floor(rand() * (i + 1));
     [jobs[i], jobs[j]] = [jobs[j], jobs[i]];
   }
-  const jobsHeading = t("Mida assistent saab ära teha", "What your assistant can take off you");
+  const jobsHeading = t("Mõned tööd, mida assistent saab sinult üle võtta", "A few jobs your assistant can take off you");
   const jobCards = jobs.map((job, index) => `<li class="job-card${index === 0 ? " job-card--active" : ""}" data-job-card="${esc(job.id)}"><h3><button type="button" class="job-activate" aria-pressed="${index === 0}" aria-controls="landing-phone" data-job-activate="${esc(job.id)}">${esc(t(job.et, job.en))}</button></h3><p>${esc(t(job.bodyEt, job.bodyEn))}</p><p class="job-needs">${esc(t("Vajab ühendusi:", "Needs connectors:"))}</p><div class="chips job-chips">${job.connectors.map(connector).join("")}</div>${job.registerData ? `<p class="job-register small muted">${esc(t("Registriandmed: Ärikratt", "Register data: Ärikratt"))}</p>` : ""}</li>`).join("");
   const steps = [
     t("Ühenda oma ChatGPT või Claude", "Connect your ChatGPT or Claude"),
@@ -1750,7 +1751,8 @@ ${jobs.map(conversation).join("\n")}
 <section class="use-cases" aria-labelledby="jobs-h"><h2 id="jobs-h">${esc(jobsHeading)}</h2>
 <ul class="job-track" id="job-track" role="region" aria-label="${esc(jobsHeading)}" tabindex="0">${jobCards}</ul>
 <div class="job-pager"><button type="button" class="secondary" aria-controls="job-track" data-job-prev hidden>${esc(t("‹ Eelmine", "‹ Previous"))}</button><button type="button" class="secondary" aria-controls="job-track" data-job-next hidden>${esc(t("Järgmine ›", "Next ›"))}</button><span class="small muted" aria-live="polite" data-job-status hidden>1 / ${jobs.length}</span></div>
-<p class="small muted use-caption">${esc(t("Näited. Raamatupidamise, panga ja e-posti ühendused on nende pakkujate omad — ", "Examples. Accounting, bank and e-mail connectors belong to their providers — "))}<a href="/kataloog">${esc(t("vaata kataloogist", "see the catalogue"))}</a>${esc(t(", mis sinu programmile olemas on.", " for what exists for your software."))} ${esc(t("Ärikratti soovitame tungivalt: sellest tulevad sinu ettevõtte registriandmed.", "We strongly recommend Ärikratt: it supplies your company's register data."))}</p>
+<p class="job-more">${esc(t("Ja palju muud. Küsi oma assistendilt: ", "And much more. Ask your assistant: "))}<strong>${esc(t("„Mida veel saad minu eest ära teha?”", "“What else can you take off me?”"))}</strong> ${esc(t("Ta vaatab üle sinu ettevõtte tähtajad ja ütleb, milliseid töid ta saab sinu eest teha. ", "It checks your company's deadlines and tells you which jobs it can do for you. The "))}<a href="/kataloog">${esc(t("Kataloogist", "catalogue"))}</a> ${esc(t("leiad ühendused oma programmidele.", "lists connectors for your software."))}</p>
+<p class="small muted use-caption">${esc(t("Näited. Raamatupidamise, panga ja e-posti ühendused on nende pakkujate omad. Ärikratti soovitame tungivalt: sellest tulevad sinu ettevõtte registriandmed.", "Examples. Accounting, bank and e-mail connectors belong to their providers. We strongly recommend Ärikratt: it supplies your company's register data."))}</p>
 ${JOB_CAROUSEL_SCRIPT}</section></section>
 <section aria-labelledby="how-h"><h2 id="how-h">${esc(t("Kuidas alustada", "How to start"))}</h2>
 <ol class="how">${steps.map((s, i) => `<li>${icon(STEP_ICONS[i])}${i === 0 ? `<a class="how-go" href="/uhenda">${esc(s)}</a>` : `<span>${esc(s)}</span>`}</li>`).join("")}</ol>
