@@ -286,7 +286,7 @@ export class LaunchpadOAuth implements OAuthServerProvider {
       const l: Lang = res.locals.lang === "en" ? "en" : "et", t = tr(l);
       const name = esc(client.client_name ?? t("assistent", "assistant")), back = new URL(c.params.redirectUri);
       // Grok Bot (xAI, built with Cursor) registers as "Cursor" and returns to cursor.com; owners only know it as Grok Bot.
-      const viaCursor = client.client_name === "Cursor" && (back.hostname === "cursor.com" || back.hostname.endsWith(".cursor.com"));
+      const viaCursor = client.client_name === "Cursor" && ["cursor.com", "www.cursor.com"].includes(back.hostname);
       // Copy follows the requested scopes: read abilities only when asked for; storage only when reporting is offered.
       const read = c.params.scopes!.includes("progress:read"), report = c.params.scopes!.includes("progress:report");
       res.set({ "content-security-policy": "frame-ancestors 'none'", "referrer-policy": "same-origin" }).type("html").send(shell({ title: t("Ühenda assistent", "Connect assistant"), active: "none", lang: l, csrf: c.s.csrf, bare: true, body: `<section class="card" aria-labelledby="k-h"><h1 id="k-h">${t(`Ühenda ${name} AI-hüppelauaga?`, `Connect ${name} to AI Launchpad?`)}</h1>

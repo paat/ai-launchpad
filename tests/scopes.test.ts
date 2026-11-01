@@ -373,4 +373,5 @@ test("consent names Grok Bot when the client registers as Cursor and returns to 
   // A client that only calls itself Cursor does not get the note: the return address decides.
   expect((await page("Cursor", "https://evil.example/cursor.com/callback")).et).not.toContain("Grok Bot");
   expect((await page("Scope test assistant", "https://www.cursor.com/oauth/callback")).et).not.toContain("Grok Bot");
+  expect((await page("Cursor", "https://login.cursor.com/callback")).et).not.toContain("Grok Bot");
 });
