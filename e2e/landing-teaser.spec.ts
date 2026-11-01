@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
-// The public landing (owner request 2026-10-30): hero, the carousel's chat
+// The public landing (owner request 2026-10-30): hero, the switcher's chat
 // teaser, the 8 jobs and the 4 start steps at phone and desktop width. TEASER_VIDEO_DIR also
 // records a 20 s loop at 390 px for the demo B-roll (the page renders at DPR 2;
 // Playwright records the video at CSS-pixel size, 390×844).
@@ -20,35 +20,26 @@ const activateUnpaid = async (page: Page) => {
   await page.locator('[data-job-activate="unpaid"]').click();
   await page.waitForFunction(() => matchMedia("(prefers-reduced-motion: reduce)").matches || (document.querySelector('[data-job-conversation]:not([hidden])')?.getAnimations({ subtree: true }).length ?? 0) > 0);
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.ready)));
-  // Wait for the click's smooth scroll to settle instead of a fixed 180 ms (#69): the unpaid card
-  // fully inside the track (±1 px, as the carousel's own scrollend handler judges it) and the same
-  // scrollLeft on two consecutive animation frames — so a later full-page screenshot cannot
-  // interrupt the scroll and hand the active card to a neighbour.
-  await page.waitForFunction(() => {
-    const track = document.querySelector("#job-track"), card = document.querySelector('[data-job-card="unpaid"]');
-    if (!track || !card) return false;
-    const r = card.getBoundingClientRect(), t = track.getBoundingClientRect();
-    const inside = r.left >= t.left - 1 && r.right <= t.right + 1;
-    const left = track.scrollLeft, w = window as typeof window & { __jobTrackScrollLeft?: number };
-    const settled = w.__jobTrackScrollLeft === left;
-    w.__jobTrackScrollLeft = left;
-    return inside && settled;
-  }, undefined, { polling: "raf" });
+  await expect(page.locator('[data-job-activate="unpaid"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('[data-job-detail="unpaid"]')).toBeVisible();
   await expect(page.locator(UNPAID)).toBeVisible();
 };
 /** The final frame: the owner's opening question (#63 m1), the whole card (with the standing-approval chip) and the last bubble sit inside the visible chat. */
 const finalFrameFits = async (page: Page) => {
-  const box = (sel: string) => page.locator(scoped(sel)).evaluate((e) => { const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
-  const chat = await box(".chat");
-  for (const sel of [".b-unpaid-me1", ".b-unpaid-card", ".mock-rule", ".b-unpaid-ai2"]) {
-    const b = await box(sel);
-    expect(b.top, sel).toBeGreaterThanOrEqual(chat.top - 1);
-    expect(b.bottom, sel).toBeLessThanOrEqual(chat.bottom + 1);
+  // The mobile switcher scrolls the phone into view. Read all rectangles in one
+  // frame so scrolling between separate browser calls cannot distort the bounds.
+  const { chat, bubbles } = await page.locator(UNPAID).evaluate((conversation) => {
+    const box = (sel: string) => { const r = conversation.querySelector(sel)!.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; };
+    return { chat: box(".chat"), bubbles: [".b-unpaid-me1", ".b-unpaid-card", ".mock-rule", ".b-unpaid-ai2"].map((sel) => ({ sel, ...box(sel) })) };
+  });
+  for (const b of bubbles) {
+    expect(b.top, b.sel).toBeGreaterThanOrEqual(chat.top - 1);
+    expect(b.bottom, b.sel).toBeLessThanOrEqual(chat.bottom + 1);
   }
 };
 
 for (const width of [390, 1280]) {
-  test(`landing at ${width}px: hero, teaser frame, 8 jobs and 4 steps, no overflow, one carousel script`, async ({ page }) => {
+  test(`landing at ${width}px: hero, teaser frame, 8 jobs and 4 steps, no overflow, one switcher script`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
     await page.goto("/");
     await activateUnpaid(page);
@@ -58,9 +49,9 @@ for (const width of [390, 1280]) {
     await expect(conversation.locator(".phone")).toBeVisible();
     await expect(conversation.locator(".phone")).toHaveAttribute("aria-hidden", "true");
     await expect(page.locator(".teaser figcaption .label-chip--sample")).toHaveText("Näidis");
-    await expect(page.locator("#job-track > li")).toHaveCount(8);
+    await expect(page.locator("[data-job-activate]")).toHaveCount(8);
     await expect(page.locator(".how li")).toHaveCount(4);
-    for (const li of await page.locator("#job-track > li, .how li").all()) await expect(li).toBeVisible();
+    for (const li of await page.locator("[data-job-activate], .how li").all()) await expect(li).toBeVisible();
     await expect(page.locator("form, input:not(#teaser-pause)")).toHaveCount(0);
     await expect(page.locator("script")).toHaveCount(1);
     await expect(page.locator("script:not([src])")).toHaveCount(1);
@@ -108,18 +99,6 @@ test("390px: layout changes do not change the active job card (#69)", async ({ p
   }
 });
 
-test("390px: an owner wheel scroll activates the card it lands on", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/");
-  const active = page.locator(".job-card--active");
-  const initial = (await active.getAttribute("data-job-card"))!;
-  await page.locator("#job-track").hover();
-  await page.mouse.wheel(250, 0);
-  await expect(active).not.toHaveAttribute("data-job-card", initial);
-  await expect(page.locator(`[data-job-conversation="${await active.getAttribute("data-job-card")}"]`)).toBeVisible();
-});
-
 test("each of the 8 job cards shows exactly its own conversation in the phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -130,6 +109,10 @@ test("each of the 8 job cards shows exactly its own conversation in the phone", 
     const button = buttons.nth(i), id = (await button.getAttribute("data-job-activate"))!;
     await button.click();
     await expect(button).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator('[data-job-activate][aria-pressed="true"]')).toHaveCount(1);
+    await expect(page.locator('[data-job-activate][aria-pressed="false"]')).toHaveCount(7);
+    await expect(page.locator("[data-job-detail]:visible")).toHaveCount(1);
+    await expect(page.locator(`[data-job-detail="${id}"]`)).toBeVisible();
     await expect(page.locator(".job-card--active")).toHaveAttribute("data-job-card", id);
     await expect(page.locator("[data-job-conversation]:visible")).toHaveCount(1);
     await expect(page.locator(`[data-job-conversation="${id}"]`)).toBeVisible();
@@ -169,7 +152,7 @@ test("pause toggle: keyboard-focusable, 44 px, stops the animation without scrip
   await expect(label).toHaveText("Peata animatsioon", { useInnerText: true });
   expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   const states = () => page.evaluate(() => [...new Set(document.getAnimations().map((a) => a.playState))]);
-  expect(await states()).toEqual(["running"]);
+  await expect.poll(states).toEqual(["running"]);
   await page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma assistent" }).focus();
   await page.keyboard.press("Tab"); // the public sample link follows the primary action
   await expect(page.locator(".landing-hero").getByRole("link", { name: "Vaata näidist" })).toBeFocused();
@@ -182,14 +165,14 @@ test("pause toggle: keyboard-focusable, 44 px, stops the animation without scrip
   expect(await label.evaluate((e) => getComputedStyle(e).outlineStyle)).toBe("solid");
   await page.keyboard.press("Space");
   await expect(page.locator("#teaser-pause")).toBeChecked();
-  expect(await states()).toEqual(["paused"]);
+  await expect.poll(states).toEqual(["paused"]);
   expect(await page.locator(scoped(".b-unpaid-card")).evaluate((e) => getComputedStyle(e).animationPlayState)).toBe("paused");
   // #63 m2: paused, the visible label says how to resume; same size, same focus ring.
   await expect(label).toHaveText("Jätka animatsiooni", { useInnerText: true });
   expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   expect(await label.evaluate((e) => getComputedStyle(e).outlineStyle)).toBe("solid");
   await label.click();
-  expect(await states()).toEqual(["running"]);
+  await expect.poll(states).toEqual(["running"]);
   await expect(label).toHaveText("Peata animatsioon", { useInnerText: true });
   await page.locator("#teaser-pause").focus();
   await page.screenshot({ path: `${SHOTS}/teaser-390-pause-focus.png`, fullPage: true });
@@ -203,13 +186,9 @@ test("390px: activating another card while paused shows its final frame and stay
   await expect(page.locator("#teaser-pause")).toBeChecked();
   const id = "invoice";
   await page.locator(`[data-job-activate="${id}"]`).click();
-  await page.waitForFunction((job) => {
-    const track = document.querySelector("#job-track"), card = document.querySelector(`[data-job-card="${job}"]`);
-    if (!track || !card) return false;
-    const r = card.getBoundingClientRect(), t = track.getBoundingClientRect();
-    const inside = r.left >= t.left - 1 && r.right <= t.right + 1;
-    return inside && document.querySelector(".job-card--active")?.getAttribute("data-job-card") === job;
-  }, id);
+  await expect(page.locator(`[data-job-activate="${id}"]`)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".job-card--active")).toHaveAttribute("data-job-card", id);
+  await expect(page.locator(`[data-job-detail="${id}"]`)).toBeVisible();
   const conversation = page.locator(`[data-job-conversation="${id}"]`);
   await expect(conversation).toBeVisible();
   const lastBubble = conversation.locator(".bubble").last();

@@ -383,12 +383,12 @@ describe("landing and connect", () => {
 
   test("landing: the assistant works through vendor connectors; Launchpad adds deadlines, approvals and receipts (#69)", () => {
     const et = landingBody({ lang: "et", demo: false, rand: () => 0 }), en = landingBody({ lang: "en", demo: false, rand: () => 0 });
-    for (const s of ["Tegele sellega, milles oled hea. <span>Kontoritöö teeb sinu AI-assistent.</span>", "Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud juhib tööd: ütleb, milliseid ühendusi vaja, küsib sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude&#39;iga.",
+    for (const s of ["Tegele sellega, milles oled hea. <span>Kontoritöö teeb sinu AI-assistent.</span>", "Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud aitab: ütleb, milliseid ühendusi vaja, küsib enne iga saatmist sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude&#39;iga.",
       '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "ühendatud: raamatupidamine, e-post, AI-hüppelaud", "Kes mulle võlgu on?", `Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${fmtEur(72000, "et")}. Koostasin igale viisaka meeldetuletuse.`,
       "Maksemeeldetuletus · 1/3", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud sinu e-postist: demo", `<span class="mock-allow">Luba sarnased automaatselt</span><span class="mock-rule">Püsiluba: meeldetuletused kuni ${fmtEur(50000, "et")}</span>`,
       "Järgmised saadan ise.", "Raamatupidamise järgi on oktoobris 14 müügi- ja 9 ostuarvet.", "Mida assistent saab ära teha", '<a href="/kataloog">vaata kataloogist</a>, mis sinu programmile olemas on.',
       "Kuidas alustada", "Ühenda oma ChatGPT või Claude", "Ühenda ka oma raamatupidamine ja e-post — assistent ütleb, milline ühendus sobib", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega — või luba edaspidi automaatselt", 'href="/demand"']) expect(et, s).toContain(s);
-    for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Your assistant does the office work through your accounting, bank and e-mail connectors. AI Launchpad runs the work: it tells you which connectors you need, asks for your approval, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude.", "Connect your assistant", ">Sample<", "connected: accounting, e-mail, AI Launchpad",
+    for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Your assistant does the office work through your accounting, bank and e-mail connections. AI Launchpad helps: it tells you which connections you need, asks for your approval before anything is sent, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude.", "Connect your assistant", ">Sample<", "connected: accounting, e-mail, AI Launchpad",
       "Who owes me money?", `Your accounting software shows three invoices overdue, ${fmtEur(72000, "en")} in total. I drafted a polite reminder for each.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "✓ Approved · Sent from your e-mail: demo", "Allow similar ones automatically", `Standing approval: reminders up to ${fmtEur(50000, "en")}`,
       "I&#39;ll send the next ones myself.", "Your books show 14 sales and 9 purchase invoices for October.", "What your assistant can take off you", '<a href="/kataloog">see the catalogue</a> for what exists for your software.', "How to start", "Connect your accounting software and e-mail too — your assistant tells you which connector fits", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
     expect(et.match(/<ol class="how">.*?<\/ol>/s)![0].match(/<li>/g)).toHaveLength(4);
@@ -415,21 +415,21 @@ describe("landing and connect", () => {
   test("landing switcher: all 8 title-only buttons own connector details in ET and EN", () => {
     const expected = {
       et: [
-        ["Võlgnikud", [["Raamatupidamine", "raamatupidamine"], ["E-post", "epost"], ["AI-hüppelaud: kinnitus", null]]],
-        ["KMD", [["Raamatupidamine", "raamatupidamine"], ["AI-hüppelaud: tähtaeg", null]]],
-        ["Aastaaruanne", [["Raamatupidamine", "raamatupidamine"], ["AI-hüppelaud: tähtaeg", null]]],
-        ["Tähtajad kalendrisse", [["AI-hüppelaud: tähtajad", null], ["Kalender", "epost"]]],
-        ["Arve kliendile", [["Raamatupidamine", "raamatupidamine"], ["E-post", "epost"], ["AI-hüppelaud: kinnitus", null]]],
+        ["Võlgnikud", [["Raamatupidamine", "raamatupidamine"], ["E-post", "epost"]]],
+        ["KMD", [["Raamatupidamine", "raamatupidamine"]]],
+        ["Aastaaruanne", [["Raamatupidamine", "raamatupidamine"]]],
+        ["Tähtajad kalendrisse", [["Kalender", "epost"]]],
+        ["Arve kliendile", [["Raamatupidamine", "raamatupidamine"], ["E-post", "epost"]]],
         ["Laekumised", [["Pank", "pank"], ["Raamatupidamine", "raamatupidamine"]]],
         ["Uue kliendi kontroll", [["Ärikratt · soovitatud", "/kataloog?q=%C3%84rikratt"]]],
         ["Ostuarved", [["E-post", "epost"], ["Raamatupidamine", "raamatupidamine"]]],
       ],
       en: [
-        ["Unpaid invoices", [["Accounting", "raamatupidamine"], ["E-mail", "epost"], ["AI Launchpad: approval", null]]],
-        ["VAT return", [["Accounting", "raamatupidamine"], ["AI Launchpad: deadline", null]]],
-        ["Annual report", [["Accounting", "raamatupidamine"], ["AI Launchpad: deadline", null]]],
-        ["Deadlines in your calendar", [["AI Launchpad: deadlines", null], ["Calendar", "epost"]]],
-        ["Invoice a customer", [["Accounting", "raamatupidamine"], ["E-mail", "epost"], ["AI Launchpad: approval", null]]],
+        ["Unpaid invoices", [["Accounting", "raamatupidamine"], ["E-mail", "epost"]]],
+        ["VAT return", [["Accounting", "raamatupidamine"]]],
+        ["Annual report", [["Accounting", "raamatupidamine"]]],
+        ["Deadlines in your calendar", [["Calendar", "epost"]]],
+        ["Invoice a customer", [["Accounting", "raamatupidamine"], ["E-mail", "epost"]]],
         ["Incoming payments", [["Bank", "pank"], ["Accounting", "raamatupidamine"]]],
         ["Check a new customer", [["Ärikratt · recommended", "/kataloog?q=%C3%84rikratt"]]],
         ["Purchase invoices", [["E-mail", "epost"], ["Accounting", "raamatupidamine"]]],
@@ -445,12 +445,11 @@ describe("landing and connect", () => {
         expect(tab).not.toMatch(/<h3|<p|job-chips/);
         const id = tab!.match(/data-job-card="([^"]+)"/)![1];
         const card = html.split(`data-job-detail="${id}"`)[1]?.split('\n')[0];
-        expect(card).toContain(`<h3>${title}</h3>`);
+        expect(card).toContain(`<p class="job-detail-title">${title}</p>`);
+        expect(card).not.toMatch(/<h[1-6]\b/);
         expect(card, `${lang}: ${title}`).toBeDefined();
         const positions = chips.map(([label, group]) => {
-          const chip = group
-            ? `<a href="${group.startsWith("/") ? group : `/kataloog?g=${group}`}">${label}</a>`
-            : `<span class="label-chip label-chip--rule">${label}</span>`;
+          const chip = `<a href="${group.startsWith("/") ? group : `/kataloog?g=${group}`}">${label}</a>`;
           expect(card, `${lang}: ${title} / ${label}`).toContain(chip);
           return card!.indexOf(chip);
         });
@@ -463,8 +462,23 @@ describe("landing and connect", () => {
     }
     const css = shell({ title: "x", active: "none", csrf: "", body: "" });
     expect(css).toContain('.job-switcher{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))');
-    expect(css).toContain('border-left-color:var(--c-primary)');
+    expect(css).not.toContain('.job-card--active::after');
+    expect(css).toContain('border-top:var(--s-1) solid var(--c-primary)');
   });
+
+  for (const lang of ["et", "en"] as const) {
+    test(`landing detail (${lang}): assistant connections and Launchpad approval help are separate`, () => {
+      const html = landingBody({ lang, demo: false });
+      const detail = html.split('data-job-detail="unpaid"')[1]!.split('\n')[0]!;
+      expect(detail).toContain(lang === "et" ? "Teeb sinu assistent nende ühenduste kaudu:" : "Your assistant does it through these connections:");
+      const chips = detail.match(/<div class="chips job-chips">(.*?)<\/div>/)![1];
+      expect(chips.match(/<a /g)).toHaveLength(2);
+      expect(chips).not.toMatch(/AI-hüppelaud|AI Launchpad|label-chip--rule/);
+      expect(detail).toContain(lang === "et"
+        ? '<p class="job-help small muted">AI-hüppelaud aitab: näitab, milliseid ühendusi vaja, küsib sinu kinnitust.</p>'
+        : '<p class="job-help small muted">AI Launchpad helps: shows which connections you need, asks for your approval.</p>');
+    });
+  }
 
   test("landing switcher: no-JS detail matches the first shuffled conversation inside the pause figure", () => {
     for (const rand of [() => 0, () => 0.999999]) {

@@ -15,7 +15,8 @@ export const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({
 // One landing case supplies the card, its phone conversation, transcript and
 // scoped 18 s CSS timeline. Amount tokens are formatted with fmtEur at render.
 type LandingText = { et: string; en: string };
-type LandingConnector = LandingText & { g?: CatalogueGroup; href?: string; launchpad?: boolean; subtitleEt?: string; subtitleEn?: string };
+type LandingConnection = LandingText & { g?: CatalogueGroup; href?: string; launchpad?: false; subtitleEt?: string; subtitleEn?: string };
+type LandingConnector = LandingConnection | { launchpad: true; helpEt: string; helpEn: string };
 type LandingChip = { kind: "rule" } | { kind: "official"; source: "kmd" | "annual" } | { kind: "official"; et: string; en: string };
 type LandingApproval = { title: LandingText; client: string; amountCents: number; allow?: LandingText & { standingEt: string; standingEn: string } };
 type LandingCase = LandingText & {
@@ -28,9 +29,9 @@ const EMAIL: LandingConnector = { et: "E-post", en: "E-mail", g: "epost" };
 const BANK: LandingConnector = { et: "Pank", en: "Bank", g: "pank" };
 const CALENDAR: LandingConnector = { et: "Kalender", en: "Calendar", g: "epost" };
 const ARIKRATT: LandingConnector = { et: "Ärikratt · soovitatud", en: "Ärikratt · recommended", href: "/kataloog?q=%C3%84rikratt", subtitleEt: "äriandmed", subtitleEn: "business data" };
-const APPROVAL: LandingConnector = { et: "AI-hüppelaud: kinnitus", en: "AI Launchpad: approval", launchpad: true };
-const DEADLINE: LandingConnector = { et: "AI-hüppelaud: tähtaeg", en: "AI Launchpad: deadline", launchpad: true };
-const DEADLINES: LandingConnector = { et: "AI-hüppelaud: tähtajad", en: "AI Launchpad: deadlines", launchpad: true };
+const APPROVAL: LandingConnector = { launchpad: true, helpEt: "küsib sinu kinnitust", helpEn: "asks for your approval" };
+const DEADLINE: LandingConnector = { launchpad: true, helpEt: "arvutab tähtaja", helpEn: "calculates the deadline" };
+const DEADLINES: LandingConnector = { launchpad: true, helpEt: "arvutab tähtajad", helpEn: "calculates the deadlines" };
 const RULE: LandingChip = { kind: "rule" };
 const KMD_SOURCE: LandingChip = { kind: "official", source: "kmd" };
 const ANNUAL_SOURCE: LandingChip = { kind: "official", source: "annual" };
@@ -577,11 +578,10 @@ ${TEASER_CSS}
 .job-activate{width:100%;height:100%;min-height:var(--tap);margin:0;padding:var(--s-3) var(--s-4);border:0;border-radius:var(--r-lg);background:none;color:inherit;font:inherit;font-weight:750;line-height:1.4;text-align:left}
 .job-activate:hover{background:var(--c-surface-2);color:var(--c-text)}
 .job-card--active .job-activate:hover{background:var(--c-primary);color:#fff}
-@media (min-width:880px){.job-card--active::after{content:"";position:absolute;left:100%;top:50%;transform:translateY(-50%);border:var(--s-2) solid transparent;border-right:0;border-left-color:var(--c-primary)}}
 .job-detail{position:relative;margin:0;padding:var(--s-4);border:1px solid var(--c-primary);border-top:var(--s-1) solid var(--c-primary);border-radius:0 0 var(--r-xl) var(--r-xl);background:#fff}
-.job-detail h3{margin:0 0 var(--s-2)}.job-detail>p{margin:0 0 var(--s-3)}
+.job-detail>p{margin:0 0 var(--s-3)}.job-detail>p.job-detail-title{margin:0 0 var(--s-2);font-size:var(--fs-md);font-weight:750;overflow-wrap:anywhere}
 .job-detail>p.job-needs{margin:var(--s-4) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}
-.job-detail>p.job-register{margin:var(--s-2) 0 0}
+.job-detail>p.job-register,.job-detail>p.job-help{margin:var(--s-2) 0 0}
 .job-chips{margin:0}.job-chips .label-chip{min-height:var(--tap);padding:6px 14px;border-radius:999px}
 .use-caption{margin:var(--s-3) 0 0}
 .how{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s-3);margin:0;padding:0;list-style:none;counter-reset:how}
@@ -1654,7 +1654,7 @@ export function landingBody(o: { lang: Lang; demo: boolean; rand?: () => number 
     return t(chip.et, chip.en);
   };
   const chipLabels = (chips: readonly LandingChip[] = []) => chips.length ? `<span class="labels">${chips.map((chip) => labelChip(chip.kind, chipText(chip))).join("")}</span>` : "";
-  const connector = (c: LandingConnector) => {
+  const connector = (c: LandingConnection) => {
     const href = c.href ?? (c.g ? `/kataloog?g=${c.g}` : null);
     return href ? `<a href="${esc(href)}">${esc(t(c.et, c.en))}</a>` : `<span class="label-chip label-chip--rule">${esc(t(c.et, c.en))}</span>`;
   };
@@ -1708,7 +1708,7 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
   }
   const jobsHeading = t("Mida assistent saab ära teha", "What your assistant can take off you");
   const jobCards = jobs.map((job, index) => `<li class="job-card${index === 0 ? " job-card--active" : ""}" data-job-card="${esc(job.id)}"><button type="button" class="job-activate" aria-pressed="${index === 0}" aria-controls="landing-phone" data-job-activate="${esc(job.id)}">${esc(t(job.et, job.en))}</button></li>`).join("");
-  const jobDetails = jobs.map((job, index) => `<div class="job-detail" data-job-detail="${esc(job.id)}"${index === 0 ? "" : " hidden"}><h3>${esc(t(job.et, job.en))}</h3><p>${esc(t(job.bodyEt, job.bodyEn))}</p><p class="job-needs">${esc(t("Vajab ühendusi:", "Needs connectors:"))}</p><div class="chips job-chips">${job.connectors.map(connector).join("")}</div>${job.registerData ? `<p class="job-register small muted">${esc(t("Registriandmed: Ärikratt", "Register data: Ärikratt"))}</p>` : ""}</div>`).join("\n");
+  const jobDetails = jobs.map((job, index) => `<div class="job-detail" data-job-detail="${esc(job.id)}"${index === 0 ? "" : " hidden"}><p class="job-detail-title">${esc(t(job.et, job.en))}</p><p>${esc(t(job.bodyEt, job.bodyEn))}</p><p class="job-needs">${esc(t("Teeb sinu assistent nende ühenduste kaudu:", "Your assistant does it through these connections:"))}</p><div class="chips job-chips">${job.connectors.filter((c) => !c.launchpad).map(connector).join("")}</div><p class="job-help small muted">${esc([t("AI-hüppelaud aitab: näitab, milliseid ühendusi vaja", "AI Launchpad helps: shows which connections you need"), ...job.connectors.filter((c) => c.launchpad === true).map((c) => t(c.helpEt, c.helpEn))].join(", ") + ".")}</p>${job.registerData ? `<p class="job-register small muted">${esc(t("Registriandmed: Ärikratt", "Register data: Ärikratt"))}</p>` : ""}</div>`).join("\n");
   const steps = [
     t("Ühenda oma ChatGPT või Claude", "Connect your ChatGPT or Claude"),
     t("Ühenda ka oma raamatupidamine ja e-post — assistent ütleb, milline ühendus sobib", "Connect your accounting software and e-mail too — your assistant tells you which connector fits"),
@@ -1723,7 +1723,7 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
   return `<div class="landing">
 <section class="landing-hero" aria-labelledby="hero-h"><div>
 <h1 id="hero-h">${t("Tegele sellega, milles oled hea.", "Focus on what you're good at.")} <span>${t("Kontoritöö teeb sinu AI-assistent.", "Your AI assistant does the office work.")}</span></h1>
-<p class="lede">${esc(t("Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud juhib tööd: ütleb, milliseid ühendusi vaja, küsib sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude'iga.", "Your assistant does the office work through your accounting, bank and e-mail connectors. AI Launchpad runs the work: it tells you which connectors you need, asks for your approval, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude."))}</p>
+<p class="lede">${esc(t("Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud aitab: ütleb, milliseid ühendusi vaja, küsib enne iga saatmist sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude'iga.", "Your assistant does the office work through your accounting, bank and e-mail connections. AI Launchpad helps: it tells you which connections you need, asks for your approval before anything is sent, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude."))}</p>
 <div class="landing-actions"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a><a class="tap-link" href="/naidis">${t("Vaata näidist", "See a sample")}</a><a class="tap-link" href="/proovi">${t("Proovi ise", "Try it yourself")}</a></div>
 <p class="small"><a class="tap-link" href="/vali">${t(...CHOOSE_LINK)}</a></p></div>
 <figure class="teaser" id="landing-phone">

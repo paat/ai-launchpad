@@ -531,10 +531,17 @@ try {
     const layout = await page.evaluate(() => {
       const rect = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width }; };
       return { phone: rect('[data-job-conversation]:not([hidden]) .phone'), detail: rect('[data-job-detail]:not([hidden])'),
+        accent: getComputedStyle(document.querySelector('[data-job-detail]:not([hidden])')).borderTopColor,
+        tabColor: getComputedStyle(document.querySelector('.job-card--active')).backgroundColor,
+        notch: getComputedStyle(document.querySelector('.job-card--active'), '::after').content,
+        headings: [...document.querySelectorAll('.landing h1, .landing h2, .landing h3')].slice(0, 2).map((e) => e.tagName),
         tab: rect('.job-card--active'), left: rect('.use-cases'), figure: rect('#landing-phone'),
         scrolls: window.phoneScrolls, overflow: document.documentElement.scrollWidth - innerWidth,
         taps: [...document.querySelectorAll('[data-job-activate]')].map((e) => e.getBoundingClientRect().height) };
     });
+    assert.equal(layout.accent, layout.tabColor, "detail accent matches the active tab");
+    assert.equal(layout.notch, "none", "active tab has no arrow");
+    assert.deepEqual(layout.headings, ["H1", "H2"], "detail title does not interrupt heading order");
     assert.equal(layout.overflow, 0, `${width}/${lang}: no horizontal overflow`);
     assert.ok(layout.taps.every((h) => h >= 44), `${width}/${lang}: all eight tabs ≥44px`);
     assert.equal(layout.detail.width, layout.phone.width, `${width}/${lang}: detail shares phone width`);
@@ -561,6 +568,13 @@ try {
     for (let i = 0; i < ids.length; i++) {
       await page.locator("[data-job-activate]").nth(i).click();
       await expectActive(ids[i]);
+    }
+    if ([390, 1280].includes(width) && lang === "et") {
+      await page.locator('[data-job-activate="unpaid"]').click();
+      await expectActive("unpaid");
+      await page.screenshot({ path: path.join(panelShots, `landing-${width}-approval.png`) });
+      await page.screenshot({ path: path.join(panelShots, `landing-${width}-approval-full.png`), fullPage: true });
+      await page.locator("[data-job-activate]").last().click();
     }
     await page.setViewportSize({ width: width + 1, height: 844 });
     await expectActive(ids.at(-1));
