@@ -318,7 +318,8 @@ describe("agent-facing copy over MCP", () => {
     expect(books).toContain("Call each account by its bank's name, not its number; if two accounts are at one bank, add the last four digits.");
     expect(books).not.toMatch(/grouped by vendor/);
     // Grok r1: absence in the books never answers a TSD question, and approvals are never shortened.
-    expect(OWNER_VOICE).toContain("Seeing no payment in the books is never an answer");
+    expect(OWNER_VOICE).toContain("seeing no payment is never an answer, and a bank total is never the owner's turnover");
+    expect(OWNER_VOICE).not.toMatch(/VAT limit|Right\?/);
     expect(OWNER_VOICE).toContain("This never shortens what must be shown: the exact content before any approval");
     expect(OWNER_VOICE).not.toMatch(/salary/);
     expect(i).toContain("Before asking the owner for any fact or document, check both public data (get_obligations public_facts) and the owner's own connected files, such as Google Drive; ask only if neither has it. Always ask the facts_needed questions from get_obligations, and never let a file stand in for the owner's answer to them, except that a TSD payout the connected books or bank show answers yes.");
