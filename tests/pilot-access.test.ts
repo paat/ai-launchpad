@@ -57,12 +57,18 @@ async function start(overrides: Partial<Config>, db: Db = openDb(":memory:"), po
   return { cfg, db, server, base, port: actualPort, close: () => new Promise<void>((ok) => { server.close(() => ok()); server.closeAllConnections(); }) };
 }
 
+async function consume(res: Response) {
+  const body = await res.text();
+  return { status: res.status, headers: res.headers, text: async () => body, json: async () => JSON.parse(body) };
+}
+const responseStatus = async (response: Promise<Response>) => (await consume(await response)).status;
+
 class Browser {
   cookies = new Map<string, string>();
   async request(base: string, path: string, fields?: Record<string, string>) {
     const res = await fetch(path.startsWith("http") ? path : base + path, { method: fields ? "POST" : "GET", redirect: "manual", headers: { connection: "close", cookie: [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; "), ...(fields ? { "content-type": "application/x-www-form-urlencoded", origin: base } : {}) }, body: fields ? new URLSearchParams(fields) : undefined });
     for (const c of res.headers.getSetCookie()) { const [pair] = c.split(";"); const i = pair.indexOf("="); this.cookies.set(pair.slice(0, i), pair.slice(i + 1)); }
-    return res;
+    return consume(res);
   }
   async googleLogin(base: string, sub: string) {
     subject = sub;
@@ -82,8 +88,8 @@ class Browser {
 const field = (html: string, name: string) => new RegExp(`name="${name}" value="([^"]+)"`).exec(html)![1];
 const count = (db: Db, table: string) => (db.prepare(`SELECT count(*) n FROM ${table}`).get() as { n: number }).n;
 
-const postToken = (base: string, fields: Record<string, string>) =>
-  fetch(base + "/token", { method: "POST", headers: { connection: "close", "content-type": "application/x-www-form-urlencoded", origin: "https://assistant.example" }, body: new URLSearchParams(fields), redirect: "manual" });
+const postToken = async (base: string, fields: Record<string, string>) =>
+  consume(await fetch(base + "/token", { method: "POST", headers: { connection: "close", "content-type": "application/x-www-form-urlencoded", origin: "https://assistant.example" }, body: new URLSearchParams(fields), redirect: "manual" }));
 
 async function oauthCode(base: string, browser: Browser) {
   const registration = await fetch(base + "/register", { method: "POST", headers: { connection: "close", "content-type": "application/json", origin: "https://assistant.example" }, body: JSON.stringify({ redirect_uris: ["http://127.0.0.1:45678/callback"], client_name: "Pilot test assistant", token_endpoint_auth_method: "none" }) });
@@ -107,9 +113,8 @@ async function oauthCode(base: string, browser: Browser) {
 const refresh = (base: string, clientId: string, token: string) =>
   postToken(base, { grant_type: "refresh_token", client_id: clientId, refresh_token: token, resource: base + "/mcp" });
 
-async function mcpStatus(base: string, token: string) {
-  const r = await fetch(base + "/mcp", { method: "POST", headers: { connection: "close", authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "pilot-test", version: "1" } } }) });
-  return r.status;
+function mcpStatus(base: string, token: string) {
+  return responseStatus(fetch(base + "/mcp", { method: "POST", headers: { connection: "close", authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "pilot-test", version: "1" } } }) }));
 }
 async function manualToken(base: string, browser: Browser) {
   const r = await browser.request(base, "/tokens", { csrf: await browser.csrf(base) });
@@ -284,9 +289,9 @@ test("removing a subject and restarting denies old browser/consent sessions, man
     expect((await new Browser().googleLogin(base, SUB_B)).status).toBe(302);
 
     // Metadata and health remain anonymous.
-    expect((await fetch(base + "/health", { headers: { connection: "close" } })).status).toBe(200);
-    expect((await fetch(base + "/.well-known/oauth-authorization-server", { headers: { connection: "close" } })).status).toBe(200);
-    expect((await fetch(base + "/.well-known/oauth-protected-resource/mcp", { headers: { connection: "close" } })).status).toBe(200);
+    expect(await responseStatus(fetch(base + "/health", { headers: { connection: "close" } }))).toBe(200);
+    expect(await responseStatus(fetch(base + "/.well-known/oauth-authorization-server", { headers: { connection: "close" } }))).toBe(200);
+    expect(await responseStatus(fetch(base + "/.well-known/oauth-protected-resource/mcp", { headers: { connection: "close" } }))).toBe(200);
   } finally {
     await first.close().catch(() => {});
     if (second) await second.close().catch(() => {});
