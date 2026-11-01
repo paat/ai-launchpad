@@ -35,7 +35,8 @@ Host (Ubuntu 24.04, Node 22, systemd, Caddy, no Docker)
   /var/lib/launchpad-offhost/receipt.json  off-host operator receipt
   /etc/launchpad/launchpad.env           root-installed, mode 0600
   /usr/local/lib/launchpad/              root-owned control scripts
-  Caddy: huppelaud.arikratt.ee -> 127.0.0.1:4310 via
+  Caddy: huppelaud.arikratt.ee -> 127.0.0.1:4310 and
+         launchpad.arikratt.ee -> 302 huppelaud.arikratt.ee{path}?lang=en via
     import /etc/caddy/launchpad.caddy  (additive vhost only)
 ```
 
@@ -139,6 +140,13 @@ packaging so the host extractor can reject **all** symlinks.
    `/etc/caddy/launchpad.caddy` and add exactly one line,
    `import /etc/caddy/launchpad.caddy`, to the main Caddyfile (never
    rewrite the existing Caddy hosts); `caddy validate`, then reload.
+   The same file also holds the English alias `launchpad.arikratt.ee`: a
+   302 redirect to `https://huppelaud.arikratt.ee{path}?lang=en`, never a
+   second origin (the app accepts only `LAUNCHPAD_BASE_URL`, and OAuth and
+   the MCP address stay on `huppelaud`). It needs its own DNS record
+   pointing at the host, proxied through Cloudflare like `huppelaud`.
+   It is for browsers only: never give it as an MCP or OAuth address (a
+   302 turns a POST into a GET).
    TLS issuance is Caddy's normal ACME once DNS resolves. The origin
    accepts Cloudflare traffic only (operator-owned firewall), and the
    vhost overwrites `X-Forwarded-For` with the Cloudflare
