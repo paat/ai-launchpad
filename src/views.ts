@@ -571,20 +571,19 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .beat--allow .mock-btn>.mock-tap{background:rgba(26,77,46,.25);box-shadow:0 0 0 3px rgba(26,77,46,.15)}
 ${TEASER_CSS}
 .landing h2{margin:0 0 var(--s-4);font-size:var(--fs-xl);letter-spacing:-.02em}
-.job-track{display:flex;gap:var(--s-3);max-width:100%;margin:0;padding:0;overflow-x:auto;scroll-snap-type:x mandatory;list-style:none}
-.job-track:focus-visible{outline:3px solid var(--c-focus);outline-offset:2px}
-.job-card{flex:0 0 100%;min-width:0;padding:var(--s-4);scroll-snap-align:start;border:1px solid var(--c-border);border-radius:var(--r-xl);background:#fff}
-.job-card--active{border-color:var(--c-primary);box-shadow:inset 0 0 0 1px var(--c-primary)}
-.job-card h3{margin:0 0 var(--s-2)}.job-card>p{margin:0 0 var(--s-3)}
-.job-activate{width:auto;min-height:var(--tap);margin:0;padding:0;border:0;background:none;color:var(--c-text);font:inherit;font-weight:750;text-align:left}
-.job-card>p.job-needs{margin:var(--s-4) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}
-.job-card>p.job-register{margin:var(--s-2) 0 0}
+.job-switcher{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s-3);margin:0;padding:0;list-style:none}
+.job-card{position:relative;min-width:0;border:1px solid var(--c-border);border-radius:var(--r-lg);background:#fff}
+.job-card--active{border-color:var(--c-primary);background:var(--c-primary);color:#fff}
+.job-activate{width:100%;height:100%;min-height:var(--tap);margin:0;padding:var(--s-3) var(--s-4);border:0;border-radius:var(--r-lg);background:none;color:inherit;font:inherit;font-weight:750;line-height:1.4;text-align:left}
+.job-activate:hover{background:var(--c-surface-2);color:var(--c-text)}
+.job-card--active .job-activate:hover{background:var(--c-primary);color:#fff}
+@media (min-width:880px){.job-card--active::after{content:"";position:absolute;left:100%;top:50%;transform:translateY(-50%);border:var(--s-2) solid transparent;border-right:0;border-left-color:var(--c-primary)}}
+.job-detail{position:relative;margin:0;padding:var(--s-4);border:1px solid var(--c-primary);border-top:var(--s-1) solid var(--c-primary);border-radius:0 0 var(--r-xl) var(--r-xl);background:#fff}
+.job-detail h3{margin:0 0 var(--s-2)}.job-detail>p{margin:0 0 var(--s-3)}
+.job-detail>p.job-needs{margin:var(--s-4) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}
+.job-detail>p.job-register{margin:var(--s-2) 0 0}
 .job-chips{margin:0}.job-chips .label-chip{min-height:var(--tap);padding:6px 14px;border-radius:999px}
-.job-pager{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2);margin-top:var(--s-3)}
-.job-pager button{width:auto;min-height:var(--tap);margin:0;padding:8px 14px}.job-pager span{font-variant-numeric:tabular-nums}
 .use-caption{margin:var(--s-3) 0 0}
-@media (min-width:760px){.job-card{flex-basis:calc((100% - var(--s-3))/2)}}
-@media (min-width:1100px){.job-card{flex-basis:calc((100% - 2 * var(--s-3))/3)}}
 .how{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s-3);margin:0;padding:0;list-style:none;counter-reset:how}
 .how li{counter-increment:how;display:flex;align-items:flex-start;gap:var(--s-4);padding:var(--s-4);border:1px solid var(--c-border);border-radius:var(--r-xl);background:#fff;font-size:var(--fs-lg);font-weight:650;line-height:1.35}
 .how li>span{min-width:0;overflow-wrap:break-word}
@@ -1613,19 +1612,8 @@ const STEP_ICONS = [
   '<rect x="6.5" y="1.5" width="11" height="21" rx="2.5"/><path d="M9 12l2.2 2.2L15.5 10M10.5 19.5h3"/>',
 ];
 
-/** After scrolling, preserve the active card when it is wholly in view. */
-export function jobCardAfterScroll(active: number, track: { left: number; right: number }, cards: readonly { left: number; right: number }[]): number {
-  if (cards[active].left >= track.left - 1 && cards[active].right <= track.right + 1) return active;
-  for (let i = 0; i < cards.length; i++) if (cards[i].left >= track.left - 1 && cards[i].right <= track.right + 1) return i;
-  let nearest = 0, distance = Infinity;
-  for (let i = 0; i < cards.length; i++) {
-    const d = Math.abs(cards[i].left - track.left);
-    if (d < distance) { distance = d; nearest = i; }
-  }
-  return nearest;
-}
-
-const JOB_CAROUSEL_SCRIPT = `<script>(function(){var jobCardAfterScroll=${jobCardAfterScroll};var track=document.getElementById("job-track");if(!track)return;var prev=document.querySelector("[data-job-prev]"),next=document.querySelector("[data-job-next]"),status=document.querySelector("[data-job-status]");if(!prev||!next||!status)return;var cards=[].slice.call(track.querySelectorAll("[data-job-card]")),conversations=[].slice.call(document.querySelectorAll("[data-job-conversation]"));if(!cards.length)return;var controls=[prev,next,status],active=cards[0];for(var i=0;i<controls.length;i++)controls[i].hidden=false;function activate(card,scroll){if(!card)return;active=card;var id=card.getAttribute("data-job-card"),n=cards.indexOf(card);for(var i=0;i<cards.length;i++){var on=cards[i]===card;cards[i].classList.toggle("job-card--active",on);cards[i].querySelector("[data-job-activate]").setAttribute("aria-pressed",on?"true":"false");}var shown=null,revealed=false;for(var j=0;j<conversations.length;j++){var show=conversations[j].getAttribute("data-job-conversation")===id;if(show){revealed=conversations[j].hidden;shown=conversations[j];}conversations[j].hidden=!show;}var pause=document.getElementById("teaser-pause");if(pause&&pause.checked&&revealed&&shown){var finalMs=14000;var seek=function(){var anims=shown.getAnimations({subtree:true});for(var a=0;a<anims.length;a++)anims[a].currentTime=finalMs;return anims;};Promise.all(seek().map(function(anim){return anim.ready;})).then(function(){if(pause.checked)seek();});}status.textContent=(n+1)+" / "+cards.length;if(scroll)card.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"nearest",inline:"start"});}function nearest(){if(!ownerScroll)return;ownerScroll=false;var box=track.getBoundingClientRect(),rects=cards.map(function(card){var r=card.getBoundingClientRect();return {left:r.left,right:r.right};});activate(cards[jobCardAfterScroll(cards.indexOf(active),{left:box.left,right:box.right},rects)],false);}function go(d){activate(cards[Math.max(0,Math.min(cards.length-1,cards.indexOf(active)+d))],true);}prev.addEventListener("click",function(){go(-1);});next.addEventListener("click",function(){go(1);});for(var k=0;k<cards.length;k++)(function(card){card.querySelector("[data-job-activate]").addEventListener("click",function(){activate(card,true);});})(cards[k]);var ownerScroll=false;function scrolling(){ownerScroll=true;}track.addEventListener("pointerdown",scrolling);track.addEventListener("touchstart",scrolling,{passive:true});track.addEventListener("wheel",scrolling,{passive:true});track.addEventListener("keydown",scrolling);var timer;if("onscrollend" in track)track.addEventListener("scrollend",nearest);else track.addEventListener("scroll",function(){clearTimeout(timer);timer=setTimeout(nearest,120);},{passive:true});activate(active,false);})();</script>`;
+// One selection controls both the decorative conversation and its connector details.
+const JOB_SWITCHER_SCRIPT = `<script>(function(){var cards=[].slice.call(document.querySelectorAll("[data-job-card]")),phone=document.getElementById("landing-phone"),conversations=[].slice.call(document.querySelectorAll("[data-job-conversation]")),details=[].slice.call(document.querySelectorAll("[data-job-detail]"));function activate(card){var id=card.getAttribute("data-job-card");for(var i=0;i<cards.length;i++){var on=cards[i]===card;cards[i].classList.toggle("job-card--active",on);cards[i].querySelector("[data-job-activate]").setAttribute("aria-pressed",on?"true":"false");}var shown=null,revealed=false;for(var j=0;j<conversations.length;j++){var show=conversations[j].getAttribute("data-job-conversation")===id;if(show){revealed=conversations[j].hidden;shown=conversations[j];}conversations[j].hidden=!show;}for(var d=0;d<details.length;d++)details[d].hidden=details[d].getAttribute("data-job-detail")!==id;var pause=document.getElementById("teaser-pause");if(pause&&pause.checked&&revealed&&shown){var finalMs=14000;var seek=function(){var anims=shown.getAnimations({subtree:true});for(var a=0;a<anims.length;a++)anims[a].currentTime=finalMs;return anims;};Promise.all(seek().map(function(anim){return anim.ready;})).then(function(){if(pause.checked)seek();});}if(window.matchMedia("(max-width: 879px)").matches&&phone.getBoundingClientRect().top<0)phone.scrollIntoView({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});}for(var k=0;k<cards.length;k++)(function(card){card.querySelector("[data-job-activate]").addEventListener("click",function(){activate(card);});})(cards[k]);})();</script>`;
 
 const CHOOSE_LINK: [string, string] = ["Pole veel AI-assistenti? Aita mul valida", "No AI assistant yet? Help me choose"];
 
@@ -1719,7 +1707,8 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
     [jobs[i], jobs[j]] = [jobs[j], jobs[i]];
   }
   const jobsHeading = t("Mida assistent saab ära teha", "What your assistant can take off you");
-  const jobCards = jobs.map((job, index) => `<li class="job-card${index === 0 ? " job-card--active" : ""}" data-job-card="${esc(job.id)}"><h3><button type="button" class="job-activate" aria-pressed="${index === 0}" aria-controls="landing-phone" data-job-activate="${esc(job.id)}">${esc(t(job.et, job.en))}</button></h3><p>${esc(t(job.bodyEt, job.bodyEn))}</p><p class="job-needs">${esc(t("Vajab ühendusi:", "Needs connectors:"))}</p><div class="chips job-chips">${job.connectors.map(connector).join("")}</div>${job.registerData ? `<p class="job-register small muted">${esc(t("Registriandmed: Ärikratt", "Register data: Ärikratt"))}</p>` : ""}</li>`).join("");
+  const jobCards = jobs.map((job, index) => `<li class="job-card${index === 0 ? " job-card--active" : ""}" data-job-card="${esc(job.id)}"><button type="button" class="job-activate" aria-pressed="${index === 0}" aria-controls="landing-phone" data-job-activate="${esc(job.id)}">${esc(t(job.et, job.en))}</button></li>`).join("");
+  const jobDetails = jobs.map((job, index) => `<div class="job-detail" data-job-detail="${esc(job.id)}"${index === 0 ? "" : " hidden"}><h3>${esc(t(job.et, job.en))}</h3><p>${esc(t(job.bodyEt, job.bodyEn))}</p><p class="job-needs">${esc(t("Vajab ühendusi:", "Needs connectors:"))}</p><div class="chips job-chips">${job.connectors.map(connector).join("")}</div>${job.registerData ? `<p class="job-register small muted">${esc(t("Registriandmed: Ärikratt", "Register data: Ärikratt"))}</p>` : ""}</div>`).join("\n");
   const steps = [
     t("Ühenda oma ChatGPT või Claude", "Connect your ChatGPT or Claude"),
     t("Ühenda ka oma raamatupidamine ja e-post — assistent ütleb, milline ühendus sobib", "Connect your accounting software and e-mail too — your assistant tells you which connector fits"),
@@ -1740,13 +1729,13 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
 <figure class="teaser" id="landing-phone">
 <input type="checkbox" id="teaser-pause" class="vh-input">
 ${jobs.map(conversation).join("\n")}
+${jobDetails}
 <figcaption>${sampleChip(l)}<span class="small muted">${t("Vestlus sinu ChatGPT-s või Claude'is", "A conversation in your ChatGPT or Claude")}</span><label class="teaser-pause" for="teaser-pause"><span class="tp-pause">${t("Peata animatsioon", "Pause animation")}</span><span class="tp-resume">${t("Jätka animatsiooni", "Resume animation")}</span></label></figcaption>
 </figure>
 <section class="use-cases" aria-labelledby="jobs-h"><h2 id="jobs-h">${esc(jobsHeading)}</h2>
-<ul class="job-track" id="job-track" role="region" aria-label="${esc(jobsHeading)}" tabindex="0">${jobCards}</ul>
-<div class="job-pager"><button type="button" class="secondary" aria-controls="job-track" data-job-prev hidden>${esc(t("‹ Eelmine", "‹ Previous"))}</button><button type="button" class="secondary" aria-controls="job-track" data-job-next hidden>${esc(t("Järgmine ›", "Next ›"))}</button><span class="small muted" aria-live="polite" data-job-status hidden>1 / ${jobs.length}</span></div>
+<ul class="job-switcher" aria-labelledby="jobs-h">${jobCards}</ul>
 <p class="small muted use-caption">${esc(t("Näited. Raamatupidamise, panga ja e-posti ühendused on nende pakkujate omad — ", "Examples. Accounting, bank and e-mail connectors belong to their providers — "))}<a href="/kataloog">${esc(t("vaata kataloogist", "see the catalogue"))}</a>${esc(t(", mis sinu programmile olemas on.", " for what exists for your software."))} ${esc(t("Ärikratti soovitame tungivalt: sellest tulevad sinu ettevõtte registriandmed.", "We strongly recommend Ärikratt: it supplies your company's register data."))}</p>
-${JOB_CAROUSEL_SCRIPT}</section></section>
+${JOB_SWITCHER_SCRIPT}</section></section>
 <section aria-labelledby="how-h"><h2 id="how-h">${esc(t("Kuidas alustada", "How to start"))}</h2>
 <ol class="how">${steps.map((s, i) => `<li>${icon(STEP_ICONS[i])}${i === 0 ? `<a class="how-go" href="/uhenda">${esc(s)}</a>` : `<span>${esc(s)}</span>`}</li>`).join("")}</ol>
 <p class="how-cta"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a>${o.demo ? `<a class="tap-link" href="/login">${t("Vaata näidisettevõtet", "See the sample company")}</a>` : ""}</p></section>

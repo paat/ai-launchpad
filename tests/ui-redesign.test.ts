@@ -2,7 +2,7 @@ import type { Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createApp, type Config } from "../src/app.js";
 import { openDb } from "../src/db.js";
-import { esc, shell, loginBody, tanaBody, deadlinesList, approvalsListBody, activityBody, connectionBody, setupBody, landingBody, connectBody, assistantGuidePrompt, approvalCardBody, fmtEur, fmtDeadline, deadlineParts, fmtPeriod, fmtWhen, jobCardAfterScroll, type TanaOpts } from "../src/views.js";
+import { esc, shell, loginBody, tanaBody, deadlinesList, approvalsListBody, activityBody, connectionBody, setupBody, landingBody, connectBody, assistantGuidePrompt, approvalCardBody, fmtEur, fmtDeadline, deadlineParts, fmtPeriod, fmtWhen, type TanaOpts } from "../src/views.js";
 import { computeObligations } from "../src/obligations.js";
 import { SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import type { ApprovalRow, StandingRule } from "../src/mcp.js";
@@ -397,14 +397,14 @@ describe("landing and connect", () => {
     for (const gone of ["Kuidas see töötab", "Mis mul sel kuul adminis ees on?", "täpselt see saaja, summa ja dokument", "Muide,"]) expect(et, gone).not.toContain(gone);
     // The animation is decorative (aria-hidden, no focusable element); a visually hidden transcript carries the same conversation.
     expect(et).toContain('<div class="phone" aria-hidden="true">');
-    const phone = et.slice(et.indexOf('<div class="phone"'), et.indexOf("<figcaption>"));
+    const phone = et.slice(et.indexOf('<div class="phone"'), et.indexOf('<div class="job-detail"'));
     expect(phone).not.toMatch(/<(a|button|input)\b|tabindex/);
     expect(et).toMatch(/<div class="vh"><p>Näidisvestlus:<\/p><ol><li>Sina: Kes mulle võlgu on\?<\/li><li>Assistent: Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja/);
-    // No search or unsupported saving claim; the only script is the local carousel pager.
+    // No search or unsupported saving claim; the only script is the local job switcher.
     for (const html of [et, en]) {
       expect(html.replace('<input type="checkbox" id="teaser-pause" class="vh-input">', "")).not.toMatch(/<form|<input|name="q"|\bsäästa|\bsaves? \d/i);
       expect(html.match(/<script>/g)).toHaveLength(1);
-      expect(scripts(html)).toContain("data-job-prev");
+      expect(scripts(html)).toContain("data-job-detail");
       expect(scripts(html)).not.toMatch(/fetch\(|XMLHttpRequest|sendBeacon|eval\(/);
       expect(html.slice(html.indexOf("</figure>")).replace(/<script>[\s\S]*?<\/script>/g, "").replace(/<svg.*?<\/svg>/gs, "").replace(/<[^>]+>/g, ""), "no figures outside the sample chat").not.toMatch(/\d+\s*(€|%|h\b|tundi|hours)/);
     }
@@ -412,7 +412,7 @@ describe("landing and connect", () => {
     expect(et).toContain('<span class="mock-wait"><span class="state-chip state-chip--waiting">Ootab sinu kinnitust</span></span><span class="mock-ok"><span class="state-chip state-chip--approved">Kinnitatud</span></span>');
   });
 
-  test("landing carousel: all 8 use cases name their connectors in ET and EN; the no-JS pager and scroll region stay accessible (#69)", () => {
+  test("landing switcher: all 8 title-only buttons own connector details in ET and EN", () => {
     const expected = {
       et: [
         ["Võlgnikud", [["Raamatupidamine", "raamatupidamine"], ["E-post", "epost"], ["AI-hüppelaud: kinnitus", null]]],
@@ -440,7 +440,12 @@ describe("landing and connect", () => {
       const cards = html.match(/<li class="job-card[\s\S]*?<\/li>/g) ?? [];
       expect(cards).toHaveLength(8);
       for (const [title, chips] of expected[lang]) {
-        const card = cards.find((c) => c.includes(`>${title}</button></h3>`));
+        const tab = cards.find((c) => c.includes(`>${title}</button>`));
+        expect(tab).toBeDefined();
+        expect(tab).not.toMatch(/<h3|<p|job-chips/);
+        const id = tab!.match(/data-job-card="([^"]+)"/)![1];
+        const card = html.split(`data-job-detail="${id}"`)[1]?.split('\n')[0];
+        expect(card).toContain(`<h3>${title}</h3>`);
         expect(card, `${lang}: ${title}`).toBeDefined();
         const positions = chips.map(([label, group]) => {
           const chip = group
@@ -452,27 +457,31 @@ describe("landing and connect", () => {
         expect([...positions].sort((a, b) => a - b)).toEqual(positions);
       }
       expect(html).toContain(`<h2 id="jobs-h">${lang === "et" ? "Mida assistent saab ära teha" : "What your assistant can take off you"}</h2>`);
-      expect(html).toContain(`role="region" aria-label="${lang === "et" ? "Mida assistent saab ära teha" : "What your assistant can take off you"}" tabindex="0"`);
-      expect(html).toContain(`data-job-prev hidden>${lang === "et" ? "‹ Eelmine" : "‹ Previous"}</button>`);
-      expect(html).toContain(`data-job-next hidden>${lang === "et" ? "Järgmine ›" : "Next ›"}</button>`);
-      expect(html).toContain('aria-live="polite" data-job-status hidden>1 / 8</span>');
+      expect(html).toContain('<ul class="job-switcher" aria-labelledby="jobs-h">');
+      expect(html).not.toMatch(/data-job-prev|data-job-next|data-job-status|job-track/);
       expect(scripts(html)).toContain("prefers-reduced-motion: reduce");
     }
     const css = shell({ title: "x", active: "none", csrf: "", body: "" });
-    expect(css).toContain("overflow-x:auto;scroll-snap-type:x mandatory");
-    expect(css).toContain("scroll-snap-align:start");
+    expect(css).toContain('.job-switcher{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))');
+    expect(css).toContain('border-left-color:var(--c-primary)');
   });
 
-  test("landing carousel: scroll end preserves a visible active card, then prefers the first visible or nearest card (#69)", () => {
-    expect(String(jobCardAfterScroll)).not.toContain("__name");
-    const track = { left: 0, right: 300 };
-    expect(jobCardAfterScroll(2, track, [{ left: 0, right: 100 }, { left: 100, right: 200 }, { left: 200, right: 300 }])).toBe(2);
-    expect(jobCardAfterScroll(2, track, [{ left: 0, right: 100 }, { left: 110, right: 210 }, { left: 220, right: 320 }])).toBe(0);
-    expect(jobCardAfterScroll(0, { left: 0, right: 100 }, [{ left: -150, right: -50 }, { left: 120, right: 220 }])).toBe(1);
+  test("landing switcher: no-JS detail matches the first shuffled conversation inside the pause figure", () => {
+    for (const rand of [() => 0, () => 0.999999]) {
+      const html = landingBody({ lang: "en", demo: false, rand });
+      const figure = html.match(/<figure class="teaser"[\s\S]*?<\/figure>/)![0];
+      expect(figure).toMatch(/id="landing-phone">\s*<input[^>]*id="teaser-pause"/);
+      const details = [...figure.matchAll(/data-job-detail="([^"]+)"( hidden)?>/g)];
+      const conversations = [...figure.matchAll(/data-job-conversation="([^"]+)"( hidden)?>/g)];
+      expect(details).toHaveLength(8);
+      expect(details.map((m) => [m[1], !!m[2]])).toEqual(conversations.map((m) => [m[1], !!m[2]]));
+      expect(details.filter((m) => !m[2])).toHaveLength(1);
+      expect(figure.indexOf('data-job-detail=')).toBeLessThan(figure.indexOf('<figcaption>'));
+    }
   });
 
-  test("landing carousel: deterministic shuffles differ and retain every card (#69)", () => {
-    const titles = (rand: () => number) => [...landingBody({ lang: "et", demo: false, rand }).matchAll(/<li class="job-card[^"]*" data-job-card="[^"]+"><h3><button[^>]*>(.*?)<\/button><\/h3>/g)].map((m) => m[1]);
+  test("landing switcher: deterministic shuffles differ and retain every card (#69)", () => {
+    const titles = (rand: () => number) => [...landingBody({ lang: "et", demo: false, rand }).matchAll(/<li class="job-card[^"]*" data-job-card="[^"]+"><button[^>]*>(.*?)<\/button>/g)].map((m) => m[1]);
     const first = titles(() => 0), second = titles(() => 0.999999);
     expect(first).not.toEqual(second);
     const all = ["Võlgnikud", "KMD", "Aastaaruanne", "Tähtajad kalendrisse", "Arve kliendile", "Laekumised", "Uue kliendi kontroll", "Ostuarved"];
@@ -495,7 +504,7 @@ describe("landing and connect", () => {
 
   test("landing teaser: KMD and annual-report answers carry rule chips and their SRC source labels", () => {
     const et = landingBody({ lang: "et", demo: false }), en = landingBody({ lang: "en", demo: false });
-    const teaser = (h: string) => h.slice(h.indexOf('<figure class="teaser"'), h.indexOf("</figure>"));
+    const teaser = (h: string) => h.slice(h.indexOf('<figure class="teaser"'), h.indexOf('<div class="job-detail"'));
     const chip = (k: string, text: string) => `<span class="label-chip label-chip--${k}">${text}</span>`;
     for (const h of [et, en]) expect(teaser(h)).not.toContain("label-chip--assistant");
     expect(teaser(et)).toContain(`Tähtaeg on <b>20.\u00a0nov</b>.<span class="labels">${chip("rule", "Arvutatud reeglist")}${chip("official", "Allikas: KMS § 27 lg 1, § 38 lg 1")}</span>`);

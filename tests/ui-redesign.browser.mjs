@@ -448,7 +448,7 @@ try {
   await page.screenshot({ path: path.join(T2_SHOTS, "receipt-strip-390.png") });
   geometry.receiptStrip = receiptStrip;
 
-  // --- T4 (#59) landing fold: header, headline, button and the carousel heading in the first 1280×800 viewport beside a 656 px phone
+  // --- T4 (#59) landing fold: header, headline, button and the switcher heading in the first 1280×800 viewport beside a 656 px phone
   // whose first and last bubbles are not clipped (#63 m1); at 390 the fold shows the headline, the button and the top of the phone ---
   const landingFold = () => page.evaluate(() => {
     document.getAnimations().forEach((a) => { a.pause(); a.currentTime = 14000; }); // the teaser's final frame
@@ -467,7 +467,7 @@ try {
   await page.setContent(pageHtml.landing());
   const fold1280 = await landingFold();
   const inFold = (b) => b.top >= 0 && b.bottom <= fold1280.innerH;
-  assert.ok([fold1280.header, fold1280.h1, fold1280.btn].every(inFold) && fold1280.jobsHeading.top >= 0 && fold1280.jobsHeading.top < fold1280.innerH, `t4 landing@1280: header, headline, button and carousel heading in 800 px ${JSON.stringify(fold1280)}`);
+  assert.ok([fold1280.header, fold1280.h1, fold1280.btn].every(inFold) && fold1280.jobsHeading.top >= 0 && fold1280.jobsHeading.top < fold1280.innerH, `t4 landing@1280: header, headline, button and switcher heading in 800 px ${JSON.stringify(fold1280)}`);
   assert.ok(fold1280.phone.h === 656 && fold1280.phone.bottom <= fold1280.innerH && fold1280.phone.left > fold1280.h1.left + 300, `t4 landing@1280: 656 px phone in the fold beside the text ${JSON.stringify(fold1280.phone)}`);
   assert.ok(fold1280.last.top >= fold1280.chat.top - 1 && fold1280.last.bottom <= fold1280.chat.bottom + 1, `t4 landing@1280: last bubble not clipped ${JSON.stringify(fold1280)}`);
   assert.ok(fold1280.first.top >= fold1280.chat.top - 1, `t4 landing@1280: the opening question is not under the chat header ${JSON.stringify(fold1280)}`);
@@ -498,37 +498,92 @@ try {
   assert.deepEqual(finalFrame, ["1", "1", "1", "1"], "t4 reduced motion: the visible unpaid teaser shows its final frame");
   await page.emulateMedia({ reducedMotion: null });
 
-  // #69: scroll end must not undo a deliberate selection, including the last cards on a three-up track.
+  // The switcher and phone form one unit: exactly one selected title, conversation and detail.
+  const panelShots = path.resolve(".shots");
+  await mkdir(panelShots, { recursive: true });
+  geometry.jobSwitcher = [];
   await page.emulateMedia({ reducedMotion: "reduce" });
-  for (const width of [360, 760, 1280]) for (const lang of ["et", "en"]) {
-    await page.setViewportSize({ width, height: 1000 });
+  for (const width of [360, 390, 760, 1280]) for (const lang of ["et", "en"]) {
+    await page.setViewportSize({ width, height: width === 1280 ? 800 : 844 });
     await page.setContent(shell({ title: "Landing", active: "none", csrf: "", lang, body: landingBody({ lang, demo: false, rand: () => 0.999999 }) }));
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+      window.phoneScrolls = [];
+      const phone = document.getElementById("landing-phone");
+      const scroll = phone.scrollIntoView.bind(phone);
+      phone.scrollIntoView = (options) => {
+        window.phoneScrolls.push({ top: phone.getBoundingClientRect().top, ...options });
+        scroll(options);
+      };
+    });
     const ids = await page.locator("[data-job-card]").evaluateAll((cards) => cards.map((card) => card.getAttribute("data-job-card")));
-    const expectActive = async (id, action) => {
-      await page.waitForTimeout(180); // let native scrollend (or the 120 ms fallback) run before checking
+    const expectActive = async (id) => {
       const state = await page.evaluate(() => ({
-        active: document.querySelector(".job-card--active")?.getAttribute("data-job-card"),
-        visible: document.querySelector("[data-job-conversation]:not([hidden])")?.getAttribute("data-job-conversation"),
+        active: [...document.querySelectorAll(".job-card--active")].map((e) => e.dataset.jobCard),
+        pressed: [...document.querySelectorAll('[data-job-activate][aria-pressed="true"]')].map((e) => e.dataset.jobActivate),
+        conversations: [...document.querySelectorAll("[data-job-conversation]:not([hidden])")].map((e) => e.dataset.jobConversation),
+        details: [...document.querySelectorAll("[data-job-detail]:not([hidden])")].map((e) => e.dataset.jobDetail),
       }));
-      assert.equal(state.visible, state.active, `${width}/${lang} ${action}: phone matches active card ${JSON.stringify(state)}`);
-      assert.equal(state.active, id, `${width}/${lang} ${action}: reached ${id} ${JSON.stringify(state)}`);
+      for (const [key, values] of Object.entries(state)) assert.deepEqual(values, [id], `${width}/${lang}: ${key} matches selection`);
     };
-    for (let i = 1; i < ids.length; i++) {
-      await page.locator("[data-job-next]").click();
-      await expectActive(ids[i], `Next ${i + 1}`);
+    await page.locator("[data-job-activate]").nth(2).click();
+    await expectActive(ids[2]);
+    const layout = await page.evaluate(() => {
+      const rect = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width }; };
+      return { phone: rect('[data-job-conversation]:not([hidden]) .phone'), detail: rect('[data-job-detail]:not([hidden])'),
+        tab: rect('.job-card--active'), left: rect('.use-cases'), figure: rect('#landing-phone'),
+        scrolls: window.phoneScrolls, overflow: document.documentElement.scrollWidth - innerWidth,
+        taps: [...document.querySelectorAll('[data-job-activate]')].map((e) => e.getBoundingClientRect().height) };
+    });
+    assert.equal(layout.overflow, 0, `${width}/${lang}: no horizontal overflow`);
+    assert.ok(layout.taps.every((h) => h >= 44), `${width}/${lang}: all eight tabs ≥44px`);
+    assert.equal(layout.detail.width, layout.phone.width, `${width}/${lang}: detail shares phone width`);
+    assert.ok(Math.abs(layout.detail.top - layout.phone.bottom) <= 40, `${width}/${lang}: detail attached to phone`);
+    if (width >= 880) {
+      assert.ok(layout.tab.right < layout.phone.left, `${lang}: active tab is left of phone`);
+      assert.equal(layout.scrolls.length, 0, `${lang}: desktop never scrolls the phone`);
+      assert.ok(Math.abs(layout.left.bottom - layout.figure.bottom) < 180, `${lang}: column bottoms roughly aligned ${JSON.stringify(layout)}`);
+    } else {
+      assert.equal(layout.scrolls.length, 1, `${width}/${lang}: tab brings phone back into view`);
+      assert.ok(layout.scrolls[0].top < 0, "only scroll when phone was above viewport");
+      assert.equal(layout.scrolls[0].block, "start");
+      assert.equal(layout.scrolls[0].behavior, "auto", "reduced motion uses auto");
+      assert.ok(Math.abs(layout.figure.top) <= 1, "phone aligned to viewport start");
     }
-    for (let i = ids.length - 2; i >= 0; i--) {
-      await page.locator("[data-job-prev]").click();
-      await expectActive(ids[i], `Previous ${i + 1}`);
+    geometry.jobSwitcher.push({ width, lang, ...layout });
+    if ([390, 1280].includes(width) && lang === "et") {
+      await page.screenshot({ path: path.join(panelShots, `landing-${width}-third-tab.png`) });
+      await page.screenshot({ path: path.join(panelShots, `landing-${width}-third-tab-full.png`), fullPage: true });
     }
+    // A visible phone must stay put, even if a tab is activated by keyboard or script.
+    await page.evaluate(() => { window.scrollTo(0, 0); window.phoneScrolls = []; document.querySelectorAll('[data-job-activate]')[1].click(); });
+    assert.equal(await page.evaluate(() => window.phoneScrolls.length), 0, "visible phone does not scroll");
     for (let i = 0; i < ids.length; i++) {
       await page.locator("[data-job-activate]").nth(i).click();
-      await expectActive(ids[i], `card button ${i + 1}`);
+      await expectActive(ids[i]);
     }
-    await page.setViewportSize({ width: width + 1, height: 1000 });
-    await expectActive(ids.at(-1), "resize keeps the active last card");
+    await page.setViewportSize({ width: width + 1, height: 844 });
+    await expectActive(ids.at(-1));
   }
   await page.emulateMedia({ reducedMotion: null });
+  // Switching while paused seeks the newly revealed conversation to its final frame.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setContent(pageHtml.landing());
+  await page.evaluate(() => { document.getElementById("teaser-pause").checked = true; document.querySelector('[data-job-activate="customer"]').click(); });
+  await page.locator('[data-job-activate="unpaid"]').click();
+  await page.waitForFunction(() => {
+    const animations = document.querySelector('[data-job-conversation="unpaid"]').getAnimations({ subtree: true });
+    return animations.length > 0 && animations.every((a) => a.playState === "paused" && a.currentTime === 14000);
+  });
+  // Normal motion requests smooth scrolling; the geometry check above covers reduced motion.
+  await page.evaluate(() => {
+    window.phoneScrolls = [];
+    const phone = document.getElementById("landing-phone");
+    phone.scrollIntoView = (options) => window.phoneScrolls.push(options);
+    window.scrollTo(0, document.querySelector('.use-cases').offsetTop);
+    document.querySelectorAll('[data-job-activate]')[2].click();
+  });
+  assert.deepEqual(await page.evaluate(() => window.phoneScrolls), [{ block: "start", behavior: "smooth" }]);
 
   // --- Guide tabs: one panel, click + keyboard (Arrow/Home/End, roving tabindex) ---
   await page.setViewportSize({ width: 390, height: 844 });
@@ -596,12 +651,12 @@ try {
       }
     }
   }
-  // Täna is zero-JS; the landing has only the carousel's inline IIFE.
+  // Täna is zero-JS; the landing has only the switcher's inline IIFE.
   for (const name of ["status-assessed", "status-unassessed", "uhenda", "activity", "login"]) {
     assert.ok(!pageHtml[name]().includes("<script"), `${name}: zero inline JS`);
   }
   for (const name of ["landing", "landing-en"]) {
-    assert.deepEqual(pageHtml[name]().match(/<script\b[^>]*>/g) ?? [], ["<script>"], `${name}: exactly one inline carousel script, no external script`);
+    assert.deepEqual(pageHtml[name]().match(/<script\b[^>]*>/g) ?? [], ["<script>"], `${name}: exactly one inline switcher script, no external script`);
   }
 
   // --- Unknowns visible outside closed details; synthetic/unchecked labels ---
