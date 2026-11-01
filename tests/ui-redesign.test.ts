@@ -5,7 +5,7 @@ import { openDb } from "../src/db.js";
 import { esc, shell, loginBody, tanaBody, deadlinesList, approvalsListBody, activityBody, connectionBody, setupBody, landingBody, connectBody, assistantGuidePrompt, approvalCardBody, fmtEur, fmtDeadline, deadlineParts, fmtPeriod, fmtWhen, jobCardAfterScroll, type TanaOpts } from "../src/views.js";
 import { computeObligations } from "../src/obligations.js";
 import { SYNTHETIC_COMPANIES } from "../src/fixtures.js";
-import type { ApprovalRow } from "../src/mcp.js";
+import type { ApprovalRow, StandingRule } from "../src/mcp.js";
 import { assessmentSchema, computeCoverage } from "../src/core.js";
 import { computeHandover } from "../src/handover.js";
 
@@ -701,6 +701,27 @@ describe("landing and connect", () => {
     expect(approved).toContain("Saadetud: ootab assistendi teadet");
     expect(approved).not.toContain("<script");
     expect(approvalCardBody({ csrf: "c", a: approval({ state: "declined", decided_at: "2026-11-03T12:36:00Z" }), lang: "et", sample: false, now: NOW })).toContain("Keeldusid. Midagi ei saadetud. Ütle assistendile, mida muuta.");
+  });
+
+  test("a customer follow-up send shows no standing offer or coverage; a payment reminder still does (#96)", () => {
+    const covering: StandingRule = { id: "rule_1", owner_id: "o", kind: "send_message", recipients_json: null, max_amount_cents: 30_000, max_per_day: 10, expires_at: "2027-02-10T00:00:00Z", created_at: "2026-11-01T00:00:00Z", revoked_at: null };
+    const follow = (payload: Record<string, unknown>, playbook: string | null = "customer-follow-ups") => approval({
+      state: "approved", decided_at: "2026-11-03T12:36:00Z", playbook_id: playbook,
+      payload_json: JSON.stringify({ kind: "send_message", recipient: { name: "Pakkumine OÜ", address: "info@pakkumine.example" }, period: "2026-11-12", document: { title: "Järgmine kõne", content: "Tere!" }, summary: "Follow up on the quote", ...payload }),
+    });
+    const card = (a: ApprovalRow, rules: StandingRule[] = [covering]) => approvalCardBody({ csrf: "c", a, lang: "et", sample: false, now: NOW, rules });
+    for (const a of [follow({}), follow({ amount_cents: 24_000 }), follow({}, null)]) {
+      const html = card(a);
+      expect(html).not.toContain("Luba edaspidi");
+      expect(html).not.toContain("Püsiluba on olemas");
+      expect(html).not.toContain('action="/standing-approvals"');
+      expect(html).not.toContain('class="standing-offer"');
+    }
+    const reminder = card(approval({ state: "approved", decided_at: "2026-11-03T12:36:00Z", playbook_id: "payment-reminder" }));
+    expect(reminder).toContain("Püsiluba on olemas");
+    expect(reminder).not.toContain("Luba edaspidi sarnased automaatselt");
+    const offered = approvalCardBody({ csrf: "c", a: approval({ state: "approved", decided_at: "2026-11-03T12:36:00Z", playbook_id: "payment-reminder" }), lang: "et", sample: false, now: NOW });
+    expect(offered).toContain("Luba edaspidi sarnased automaatselt");
   });
 });
 

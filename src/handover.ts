@@ -42,6 +42,8 @@ export const JOB_TITLES: Record<string, [string, string]> = {
   "annual-report": ["Majandusaasta aruanne", "Annual report"],
   invoicing: ["Arvete koostamine", "Invoicing"],
   "books-catch-up": ["Raamatupidamine korras", "Books brought up to date"],
+  // No obligation trigger: the row appears only from a tagged approval or a matching assessment label.
+  "customer-follow-ups": ["Kellele helistada", "Who to call"],
 };
 export const DONE_OUTCOMES = ["sent", "submitted", "paid", "accepted", "posted"];
 const RANK: Record<Rung, number> = { done: 0, prep: 1, other: 2, mine: 3 };
@@ -82,8 +84,8 @@ export function computeHandover(o: { assessment: Assessment | null; obligations:
     const ceiling = kind && STANDING_KINDS.includes(kind) ? "rule" as const : "law" as const;
     // Deep green under a rule only once a live rule of this kind has approved a done outcome.
     const rule = ceiling === "rule" ? live.find((r) => r.kind === kind && done.some((a) => a.approved_by_rule === r.id)) : undefined;
-    // Book entries need the owner's yes for every month, so posted months keep the job at prep, never done.
-    const rung: Rung = done.length && kind !== "post_entries" && (rule || ceiling === "law") ? "done" : done.length ? "prep" : assessed?.executor ? "other" : "mine";
+    // Book entries need the owner's yes for every month, and each customer follow-up is approved one by one, so both stay at prep and never reach done under a rule (#96).
+    const rung: Rung = done.length && kind !== "post_entries" && id !== "customer-follow-ups" && (rule || ceiling === "law") ? "done" : done.length ? "prep" : assessed?.executor ? "other" : "mine";
     const last = done.map((a) => a.consumed_at ?? "").sort().pop() || null;
     return { id, title_et: titles[0], title_en: titles[1], kind, rung, ceiling, source, due: dueRow?.effective_due ?? null, dueSource: dueRow?.source ?? null, ...(assessed ? { assessed } : {}),
       evidence: { done: done.length, auto: done.filter((a) => a.approved_by_rule).length, paid: done.filter((a) => outcomeOf(a) === "paid").length, last, pending: mine.filter((a) => a.state === "pending").length, ...(rule ? { rule } : {}) } };
@@ -120,9 +122,10 @@ export function computeHandover(o: { assessment: Assessment | null; obligations:
 }
 
 /** The sends a standing offer for this kind is built from, and POST /standing-approvals (scope "approved") draws its recipients from:
- * owner-decided, not declined, not by a rule, and attributed to the kind's job (tribunal T-003). */
+ * owner-decided, not declined, not by a rule, and attributed to the kind's job (tribunal T-003).
+ * send_message is shared with customer-follow-ups, which is never standing-approved: only payment-reminder rows count (tribunal T-001, #96). */
 export function standingBasis(approvals: ApprovalRow[], kind: string): ApprovalRow[] {
-  const job = KNOWN.find((k) => k.kind === kind)?.id;
+  const job = kind === "send_message" ? "payment-reminder" : KNOWN.find((k) => k.kind === kind)?.id;
   return approvals.filter((a) => a.kind === kind && a.decided_at && a.state !== "declined" && !a.approved_by_rule && jobOfApproval(a) === job);
 }
 
@@ -133,7 +136,8 @@ export const offerCapCents = (maxCents: number) => maxCents ? Math.ceil(maxCents
 /** One next step, first match wins: standing offer → playbook prompt → connector. */
 function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], obligations: Obligation[]): NextStep {
   for (const j of jobs) {
-    if (j.rung !== "prep" || !j.kind || !STANDING_KINDS.includes(j.kind) || live.some((r) => r.kind === j.kind)) continue;
+    // A follow-up stays one approval at a time: reminder rows of the same kind must not build its standing card (#96).
+    if (j.id === "customer-follow-ups" || j.rung !== "prep" || !j.kind || !STANDING_KINDS.includes(j.kind) || live.some((r) => r.kind === j.kind)) continue;
     const basis = standingBasis(approvals, j.kind);
     const recipients = new Map<string, string>();
     for (const a of basis) { const r = payloadOf(a).recipient; if (r?.address?.trim()) recipients.set(normAddress(r.address), r.name ?? r.address); }

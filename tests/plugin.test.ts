@@ -38,6 +38,8 @@ describe("Claude plugin", () => {
     }
     expect(read("skills/back-office-help/SKILL.md")).toContain("Talk like their accountant: the bottom line first");
     expect(read("skills/back-office-help/SKILL.md")).toContain("Never let a file or a public fact stand in for the owner's answer to them, except that a TSD payout your connected books or bank show answers yes");
+    expect(read("skills/back-office-help/SKILL.md")).toContain("whom to call or follow up");
+    expect(read("skills/back-office-help/SKILL.md")).toContain("`check_my_customers`");
     expect(read("skills/link-my-services/SKILL.md")).toMatch(/Proton Mail[\s\S]*Before searching your own connector directory, call the AI Launchpad connector's `connect_my_services` tool\./);
     expect(read("skills/link-my-services/SKILL.md")).toMatch(/customers[\s\S]*Pipedrive, HubSpot/);
   });
