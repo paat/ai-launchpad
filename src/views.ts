@@ -540,15 +540,17 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .tp-resume,#teaser-pause:checked~figcaption .tp-pause{display:none}#teaser-pause:checked~figcaption .tp-resume{display:inline}
 #teaser-pause:checked~.teaser-conversation .phone *{animation-play-state:paused!important}
 @media (prefers-reduced-motion:reduce){.teaser-pause,.vh-input{display:none}}
-/* Fixed phone and chat heights fit every case's longest final frame in ET and EN at 360 px and desktop; switching cases cannot resize the phone. */
-.phone{height:672px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
-@media (max-width:380px){.phone{height:700px}}@media (max-width:359px){.phone{height:772px}}@media (min-width:880px){.phone{height:656px}}
+/* Fixed phone heights fit every case's longest final frame in ET and EN from 320 px to desktop; switching cases cannot resize the phone.
+   The chat fills from the top above a composer, like the real apps, so a short case leaves the screen calm instead of half empty. */
+.phone{height:632px;padding:10px;border-radius:46px;background:#12291a;box-shadow:0 30px 60px -24px rgba(18,41,26,.55),inset 0 0 0 2px #2c4a35}
+@media (max-width:380px){.phone{height:656px}}@media (max-width:359px){.phone{height:712px}}@media (min-width:880px){.phone{height:616px}}
 .phone-screen{display:flex;flex-direction:column;height:100%;overflow:hidden;border-radius:36px;background:var(--c-surface-2)}
 .phone-bar{display:flex;align-items:center;gap:10px;padding:22px 16px 10px;background:#fff;border-bottom:1px solid var(--c-divider)}
 .phone-ava{flex:none;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1a4d2e,#6f9c63)}
 .phone-who{line-height:1.25}.phone-who b{display:block;font-size:var(--fs-sm)}.phone-who small{color:var(--c-muted);font-size:.75rem}
-.chat{display:flex;flex:1;flex-direction:column;justify-content:flex-end;min-height:540px;overflow:hidden;padding:4px 12px 14px;font-size:.875rem;line-height:1.4}
-@media (max-width:380px){.chat{min-height:568px}}@media (max-width:359px){.chat{min-height:640px}}
+.chat{display:flex;flex:1;flex-direction:column;justify-content:flex-start;min-height:0;overflow:hidden;padding:4px 12px 14px;font-size:.875rem;line-height:1.4}
+.phone-input{display:flex;flex:none;align-items:center;justify-content:space-between;margin:0 12px 14px;padding:5px 5px 5px 14px;border:1px solid var(--c-border);border-radius:999px;background:#fff;color:var(--c-muted);font-size:.8125rem}
+.phone-input i{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--c-primary);color:#fff;font-style:normal;font-weight:800}
 .beat{display:flex;flex:none;flex-direction:column;overflow:hidden;animation-duration:18s;animation-timing-function:ease-out;animation-iteration-count:infinite}
 .beat>*{margin:10px 0 0}.beat--ai+.beat--ai>*{margin-top:4px}
 .bubble{max-width:88%;padding:8px 12px;border-radius:18px}
@@ -584,7 +586,7 @@ ${TEASER_CSS}
 .job-activate{width:100%;height:100%;min-height:var(--tap);margin:0;padding:var(--s-3) var(--s-4);border:0;border-radius:var(--r-lg);background:none;color:inherit;font:inherit;font-weight:750;line-height:1.4;text-align:center}
 .job-activate:hover{background:var(--c-surface-2);color:var(--c-text)}
 .job-card--active .job-activate:hover{background:var(--c-primary);color:#fff}
-.job-detail{position:relative;margin:0;padding:var(--s-4);border:1px solid var(--c-primary);border-top:var(--s-1) solid var(--c-primary);border-radius:0 0 var(--r-xl) var(--r-xl);background:#fff}
+.job-detail{position:relative;margin:var(--s-5) 0 0;padding:var(--s-4);border:1px solid var(--c-border);border-top:var(--s-1) solid var(--c-primary);border-radius:var(--r-xl);background:#fff;box-shadow:0 6px 16px -10px rgba(26,36,29,.25)}
 .job-detail>p{margin:0 0 var(--s-3)}.job-detail>p.job-detail-title{margin:0 0 var(--s-2);font-size:var(--fs-md);font-weight:750;overflow-wrap:anywhere}
 .job-detail>p.job-needs{margin:var(--s-4) 0 0;font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}
 .job-detail>p.job-register,.job-detail>p.job-help{margin:var(--s-2) 0 0}
@@ -1712,7 +1714,7 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
     return `<div class="teaser-conversation" data-job-conversation="${esc(id)}"${index === 0 ? "" : " hidden"}>
 <div class="vh"><p>${t("Näidisvestlus:", "Sample conversation:")}</p><ol>${transcript.map(([who, value]) => `<li>${esc(who)}: ${esc(value)}</li>`).join("")}</ol></div>
 <div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${esc(subtitle(job))}</small></span></div>
-<div class="chat">${chat.join("\n")}</div></div></div></div>`;
+<div class="chat">${chat.join("\n")}</div><div class="phone-input"><span>${t("Küsi midagi", "Ask anything")}</span><i>↑</i></div></div></div></div>`;
   };
   const jobs = [...LANDING_CARDS], rand = o.rand ?? Math.random;
   for (let i = jobs.length - 1; i > 0; i--) {
