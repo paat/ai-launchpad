@@ -40,7 +40,7 @@ Muse Spark Open (`meta-models/muse-spark-open-1026`, via Baseten, `src/model-qua
 
 A page shows Muse output only when a saved card or a published classified need exists; otherwise it says so plainly (`/demand`: „Avaldatud soove veel pole.”).
 
-The model never computes a deadline or an amount. Model use is capped at USD 10 on existing credits.
+The model never computes a deadline or an amount. Model use is capped at USD 100 on existing credits (owner decision 1 Nov 2026; the owner-only pilot allocated USD 8 under the then USD 10 ceiling).
 
 ## What is synthetic
 

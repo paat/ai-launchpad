@@ -162,8 +162,11 @@ const LEDGER_COLUMNS = ["request_id", "payload_hash", "job", "status", "allocate
  * pinned metadata are validated read-only — no writes — before that SAME
  * handle is handed to the constructor, so a missing/empty/unrecognized/
  * unsafe file can never become a fresh budget; the handle is closed on
- * any validation or construction failure. Current metadata, cap and
- * prior allocations are preserved. */
+ * any validation or construction failure. Current metadata and prior
+ * allocations are preserved. The one ceiling write lives in the ledger
+ * constructor: a ledger pinned at exactly the old USD 10 ceiling is
+ * raised once to USD 100 (owner decision 1 Nov 2026). Every other
+ * existing ceiling is unchanged. */
 export function openExistingPublicLedger(path: string): ModelQualityLedger {
   const fail = (msg: string): never => { throw new ModelQualityError("ledger_unavailable", msg); };
   if (!path || path === ":memory:") fail("Public cards require the exact existing model ledger path; refusing to initialize a new one.");
@@ -189,7 +192,9 @@ export function openExistingPublicLedger(path: string): ModelQualityLedger {
       fail("Model ledger ceiling metadata is unrecognized; refusing to use it.");
     }
     // Pre-validated on this same handle: the constructor's CREATE IF NOT
-    // EXISTS and metadata inserts are no-ops on this recognized ledger.
+    // EXISTS and identity inserts are no-ops on this recognized ledger.
+    // The constructor applies the one-time USD 10 → USD 100 ceiling raise
+    // when this file is pinned at exactly that old ceiling.
     const ledger = new ModelQualityLedger(db);
     db = null; // ownership transferred to the ledger
     return ledger;

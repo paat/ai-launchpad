@@ -161,13 +161,23 @@ describe("strict classification output", () => {
 
 const tmpDir = () => mkdtempSync(join(tmpdir(), "un-"));
 /** Recognized existing 0600 ledger seeded like production (n × USD 2). */
-function ledgerFile(seed = 0, status = "completed"): string {
+function ledgerFile(seed = 0, status = "completed", capMicroUsd?: number): string {
   const path = join(tmpDir(), "ledger.db");
-  const l = ModelQualityLedger.open(path);
+  const l = ModelQualityLedger.open(path, capMicroUsd);
   for (let i = 1; i <= seed; i++) {
     l.reserve(`quality-seed-${i}`, "setup_guidance", payloadHash("setup_guidance", `seed ${i}`), 2_000_000);
     if (status !== "pending") l.finalize(`quality-seed-${i}`, { status: status as "completed", output: "OPERATOR-ONLY" });
   }
+  l.close();
+  chmodSync(path, 0o600);
+  return path;
+}
+/** Ledger already at the USD 100 ceiling, so the next reservation is refused. */
+function exhaustedLedger(): string {
+  const path = join(tmpDir(), "ledger.db");
+  const l = ModelQualityLedger.open(path);
+  l.reserve("filled", "setup_guidance", payloadHash("setup_guidance", "filled"), 100_000_000);
+  l.finalize("filled", { status: "completed", output: "full" });
   l.close();
   chmodSync(path, 0o600);
   return path;
@@ -188,7 +198,11 @@ function fakeModel(handler: (n: number, body: Record<string, unknown>) => Respon
 }
 
 test("production-seeded ledger (4 × USD 2) allows ≥ 40 worst-case classify attempts, then budget_exhausted with no fetch", { timeout: 60_000 }, async () => {
-  const ledger = openExistingPublicLedger(ledgerFile(4));
+  // One micro-USD above the old USD 10 pin, so opening does not raise it to USD 100
+  // and the remaining headroom stays one historical USD 2 plus 1 micro-USD.
+  const cap = 10_000_001;
+  const ledger = openExistingPublicLedger(ledgerFile(4, "completed", cap));
+  expect(ledger.ceilingMicroUsd).toBe(cap);
   const { bodies, fetchFn } = fakeModel(() => chat(classification()));
   const live = liveClassifier({ ledger, apiKey: KEY, fetchFn });
   const worst = "€".repeat(2000); // largest valid input
@@ -198,13 +212,13 @@ test("production-seeded ledger (4 × USD 2) allows ≥ 40 worst-case classify at
     if (r.kind !== "text") { expect(r).toEqual({ kind: "failed", reason: "budget_exhausted" }); break; }
     done++;
   }
-  expect(done).toBe(Math.floor(2_000_000 / reservationMicroUsd("classify_unmet_need", worst))); // 73
+  expect(done).toBe(Math.floor((cap - 8_000_000) / reservationMicroUsd("classify_unmet_need", worst))); // 73
   expect(done).toBeGreaterThanOrEqual(40);
   expect(bodies).toHaveLength(done); // the refused attempt made no call
   expect(bodies.every((b) => b.max_tokens === 512)).toBe(true);
   const agg = ledger.db.prepare("SELECT COUNT(*) n, SUM(allocated_micro_usd) s FROM mq_attempts").get() as { n: number; s: number };
   expect(agg.n).toBe(4 + done);
-  expect(agg.s).toBeLessThanOrEqual(10_000_000);
+  expect(agg.s).toBeLessThanOrEqual(cap);
   ledger.close();
 });
 
@@ -498,7 +512,7 @@ test("failure states are honest and terminal; ledger refusals map to visible sta
   expect(JSON.stringify(out.row) + out.html).not.toContain("secret-provider-detail");
   out = await run(ledgerFile(0), () => chat(classification(), 513)); // over the job's 512 max_tokens
   expect(out.row).toMatchObject(failed("provider_contract_breach"));
-  out = await run(ledgerFile(5), () => chat(classification()));
+  out = await run(exhaustedLedger(), () => chat(classification()));
   expect(out.row).toMatchObject(failed("budget_exhausted"));
   expect(out.calls).toBe(0);
   expect(out.html).toContain("mudelieelarve on otsas");

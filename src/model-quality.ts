@@ -5,9 +5,10 @@
  * hard-disabled. A trusted caller must explicitly open the existing
  * SQLite ledger, explicitly confirm current published pricing/credits,
  * and supply a key (option or BASETEN_API_KEY env). Costs are guarded by
- * a conservative per-attempt reservation under a pinned USD 10 all-time
- * ledger ceiling — not a general billing framework and not a hard
- * guarantee against provider billing bugs or future price changes.
+ * a conservative per-attempt reservation under a pinned USD 100 all-time
+ * ledger ceiling (owner decision 1 Nov 2026) — not a general billing
+ * framework and not a hard guarantee against provider billing bugs or
+ * future price changes.
  *
  * Baseten documents no input-token preflight endpoint for this route, so
  * none is used. Instead each attempt reserves, before any network call,
@@ -61,8 +62,16 @@ export const TEMPLATE_OVERHEAD_TOKENS = 2048;
 export const RESERVATION_MARGIN = 2;
 export const TIMEOUT_MS = 45_000; // Entire fetch + body read; no retries.
 export const MAX_RESPONSE_BYTES = 128 * 1024;
-export const ABSOLUTE_CAP_MICRO_USD = 10_000_000; // USD 10 all-time per ledger.
-// Backstop only: the USD 10 ceiling is the binding limit.
+// USD 100 all-time per ledger. Owner decision 1 Nov 2026, matches the owner's Baseten credit.
+export const ABSOLUTE_CAP_MICRO_USD = 100_000_000;
+// Previous absolute ceiling. An existing ledger pinned at exactly this value
+// is raised once to ABSOLUTE_CAP_MICRO_USD. Any other stored ceiling is left
+// unchanged, and a lower requested cap is still refused.
+const LEGACY_CAP_MICRO_USD = 10_000_000;
+const LEGACY_CAP_RAISED_ON = "2026-11-01";
+// Backstop only. Realistic reservations are under about USD 0.05, so 1,000
+// attempts stay under the USD 100 ceiling and this backstop binds first.
+// Owner decision 1 Nov 2026 left the backstop unchanged.
 export const ABSOLUTE_MAX_ATTEMPTS = 1000;
 
 export type AttemptStatus =
@@ -213,15 +222,33 @@ export class ModelQualityLedger {
       }
     }
     if (capMicroUsd !== undefined && (!Number.isInteger(capMicroUsd) || capMicroUsd < 0 || capMicroUsd > ABSOLUTE_CAP_MICRO_USD)) {
-      throw new ModelQualityError("invalid_cap", "Cap must be an integer micro-USD value between 0 and the absolute USD 10 cap.");
+      throw new ModelQualityError("invalid_cap", "Cap must be an integer micro-USD value between 0 and the absolute USD 100 cap.");
     }
     const row = db.prepare("SELECT value FROM mq_meta WHERE key='ceiling_micro_usd'").get() as { value: string } | undefined;
     if (row) {
       const existing = Number(row.value);
-      if (capMicroUsd !== undefined && capMicroUsd !== existing) {
+      if (existing === LEGACY_CAP_MICRO_USD) {
+        // The only allowed change: the old USD 10 pin rises once to USD 100.
+        // Any other requested value, including a lower cap, still refuses
+        // and leaves the stored ceiling untouched.
+        if (capMicroUsd !== undefined && capMicroUsd !== ABSOLUTE_CAP_MICRO_USD) {
+          throw new ModelQualityError("cap_change_refused", "An existing ledger ceiling cannot be changed (neither raised nor lowered).");
+        }
+        const raise = db.transaction((): number => {
+          const current = db.prepare("SELECT value FROM mq_meta WHERE key='ceiling_micro_usd'").get() as { value: string };
+          if (Number(current.value) !== LEGACY_CAP_MICRO_USD) return Number(current.value);
+          db.prepare("UPDATE mq_meta SET value=? WHERE key='ceiling_micro_usd'").run(String(ABSOLUTE_CAP_MICRO_USD));
+          const put = db.prepare("INSERT INTO mq_meta(key,value) VALUES(?,?)");
+          put.run("ceiling_raised_from", String(LEGACY_CAP_MICRO_USD));
+          put.run("ceiling_raised_on", LEGACY_CAP_RAISED_ON);
+          return ABSOLUTE_CAP_MICRO_USD;
+        });
+        this.ceilingMicroUsd = raise.immediate();
+      } else if (capMicroUsd !== undefined && capMicroUsd !== existing) {
         throw new ModelQualityError("cap_change_refused", "An existing ledger ceiling cannot be changed (neither raised nor lowered).");
+      } else {
+        this.ceilingMicroUsd = existing;
       }
-      this.ceilingMicroUsd = existing;
     } else {
       this.ceilingMicroUsd = capMicroUsd ?? ABSOLUTE_CAP_MICRO_USD;
       db.prepare("INSERT INTO mq_meta(key,value) VALUES('ceiling_micro_usd',?)").run(String(this.ceilingMicroUsd));

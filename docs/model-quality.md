@@ -114,11 +114,17 @@ model. Rules:
 
 - Every distinct attempt allocates its own reservation (above), reserved
   atomically (`BEGIN IMMEDIATE`) **before any network call**.
-- Absolute all-time ceiling: **$10** on the same global ledger — the
-  binding limit. A backstop of at most 1,000 distinct attempts (raised
-  from 5 on 2026-10-29) also applies. The operator may create a ledger with a lower
-  ceiling (including $0) but cannot raise it above $10 or change an
-  existing ledger's ceiling in either direction.
+- Absolute all-time ceiling: **$100** on the same global ledger (owner
+  decision 1 Nov 2026, matching the owner's Baseten credit). A ledger
+  pinned at exactly the previous $10 ceiling is raised once to $100 when
+  opened, recording `ceiling_raised_from=10000000` and
+  `ceiling_raised_on=2026-11-01`. Any other existing ceiling still cannot
+  be changed, and a ceiling cannot be lowered. A backstop of at most
+  1,000 distinct attempts (raised from 5 on 2026-10-29) also applies.
+  Realistic per-attempt reservations are under about $0.05, so that
+  backstop binds before $100. The operator may create a ledger with a
+  lower ceiling (including $0) but cannot raise it above $100 except for
+  that one-time $10 → $100 raise.
 - No evasion: there is no daily reset, no deletion/reset flow, and no
   provider/model rotation in the harness. Provider, model and
   prompt-version are pinned in ledger metadata; reopening a ledger whose
@@ -198,11 +204,11 @@ $2 per attempt, $4 allocated total for these two attempts, never refunded
 and never labelled actual spend. At that time the operator-authorized pilot
 cap was $10 with at most 5 distinct attempts on the same ledger. Aggregate
 owner-only pilot (see [live-pilot.md](live-pilot.md)): 4 real calls total
-including these two, $8 allocated of the $10 cap, usage estimate $0.014840
-(not billing). Since 2026-10-29 the same sole ledger keeps its $10 ceiling
-and those $8 allocations, but new attempts reserve per request (above) and
-the attempt backstop is 1,000. No new live calls were made for this docs
-update.
+including these two, $8 allocated of the then $10 cap, usage estimate $0.014840
+(not billing). Since 2026-10-29 new attempts reserve per request (above)
+and the attempt backstop is 1,000; those $8 allocations stay. On 1 Nov
+2026 the owner raised that ledger's ceiling from $10 to $100. No new live
+calls were made for this docs update.
 
 ## Public guidance cards (explicit opt-in product slice; piloted owner-only, not general availability)
 
@@ -234,8 +240,8 @@ remaining budget) and never the key, path or ledger contents.
   constructor, not a separate read-only precheck: a missing, empty,
   symlinked or unrecognized file refuses use and is never created. Prior
   allocations — including the two quality calls above — are preserved, so
-  only the remaining headroom under the same $10 ceiling can ever be
-  allocated.
+  only the remaining headroom under the $100 ceiling (the $10 pin raised
+  on 1 Nov 2026) can ever be allocated.
 - Setup generation is an explicit POST behind session + current
   allowlisted Google (never demo) + CSRF, checked before reservation;
   result views use the same policy and page GETs never fetch. Cards are
@@ -287,8 +293,9 @@ second ledger, store or cap exists.
   on the output; any change rejects it. Invalid output is an honest
   `classification_failed` state, never a fabricated classification.
 - `max_tokens` 512; reservation per the formula above (about $0.013 to $0.027).
-  On the production ledger (4 × $2 used) the remaining $2 allows at least
-  73 worst-case classifications before `budget_exhausted`.
+  On the production ledger (4 × $2 used) the ceiling is $100 since 1 Nov
+  2026, so the remaining headroom is $92. The 1,000-attempt backstop binds
+  before that dollar ceiling for these reservations.
 - Limits: the tool accepts at most 20 needs per owner per day and 200 in
   total; at most 10 classifications per owner per day (the rest wait,
   visibly); one in flight globally (the ledger's pending rule) and a
@@ -320,5 +327,6 @@ compiled one-shot background `copying-invoices/en` generated a saved card
 displayed via Playbooks GET (GET performs no inference; no scheduler or
 continuous-autonomy claim). The generic old `src/model.ts` adapter stays
 hard-disabled; local development and tests default to mock ($0). Aggregate
-pilot: 4 real calls total, $8 allocated of $10, estimate $0.014840 (not
+pilot: 4 real calls total, $8 allocated of the then $10 cap (ceiling raised
+to $100 on 1 Nov 2026), estimate $0.014840 (not
 billing). Full pilot facts: [live-pilot.md](live-pilot.md).

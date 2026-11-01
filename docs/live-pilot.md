@@ -56,14 +56,17 @@ synthetic data only. Not a Pro/Team/Enterprise claim.
 ## Cost and ledger (aggregate)
 
 - 4 real calls total, including the earlier 2 quality calls.
-- Conservative $8 allocated of the $10 cap; usage estimate $0.014840, which
-  is not billing. No private business input.
+- Conservative $8 allocated of the then $10 cap; usage estimate $0.014840, which
+  is not billing. No private business input. On 1 Nov 2026 (issue #158) the
+  owner raised that ledger's ceiling from $10 to $100, matching the Baseten
+  credit. The $8 of allocations stays.
 - Historical stage preserved: the original 2 quality calls estimated
   $0.005588 with $4 allocated at that stage; the aggregate pilot is now
   4 calls / $8 allocated. Sole ledger and max-5-attempts rules were
   unchanged at that time; since 2026-10-29 (issue #20) new attempts reserve
-  per request under the same $10 ceiling, with a 1,000-attempt backstop
-  (see [model-quality.md](model-quality.md)).
+  per request under the then $10 ceiling, with a 1,000-attempt backstop.
+  That backstop is unchanged and, at the $100 ceiling, binds first for
+  realistic reservations (see [model-quality.md](model-quality.md)).
 
 ## Release evidence and recovery limits
 

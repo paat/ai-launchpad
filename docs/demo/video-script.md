@@ -95,7 +95,7 @@ Status as of 2026-10-30 (merged on `main` at 0262c01, not necessarily deployed).
 - **Background classifier: Muse Spark Open** (`meta-models/muse-spark-open-1026`, via Baseten's OpenAI-compatible endpoint). The owner's assistant reports an unmet need, the text is de-identified, and the model classifies it. A live classification carries the label "AI liigitus · Meta Muse Spark Open"; the local mock shows a sample label instead. Say "live" only if the call is real on the day.
 - **Setup helper:** Muse Spark Open writes the Estonian setup guidance cards that the public pages show.
 - **The model never computes deadlines or amounts.** Deterministic code with an official source per rule owns dates and approvals (README principle 4); the amounts come from the owner's files or accounting software.
-- **Bounded spend:** one ledger with a USD 10 cap on existing credits. As of `docs/live-pilot.md`: 4 real calls, USD 8 allocated of the cap, usage estimate about USD 0.015 (an estimate, not billing). Do not say "free" or "unlimited"; do not quote a total beyond these figures. Local runs and tests use mock mode ($0).
+- **Bounded spend:** one ledger with a USD 100 cap on existing credits (owner decision 1 Nov 2026). As of `docs/live-pilot.md`: 4 real calls, USD 8 allocated under the then USD 10 cap, usage estimate about USD 0.015 (an estimate, not billing). Do not say "free" or "unlimited"; do not quote a total beyond these figures. Local runs and tests use mock mode ($0).
 - Not claimed: Meta consumer apps, vision, voice, or any use not listed above.
 
 ## 7. Submission checklist
@@ -122,6 +122,6 @@ Label every fallback honestly on screen; never present a mock as live.
 | ChatGPT cannot read the CSV (H3) | Paste the rows as text, captioned. |
 | ChatGPT cannot create a draft (H2) | Show the receipt "Valmis saatmiseks · saada oma postist"; keep "Saadetud: demo" only for the demo outcome. |
 | Approval flow fails | Show the recorded 390 px scripted run of the card pages, captioned "Salvestatud testistsenaarium / recorded scripted run". |
-| Meta call is budget-blocked or Baseten is down | Show the unmet-request card from mock mode, captioned "Mock mode, no model call"; say in VO that live runs are capped at USD 10. Show the real setup-guidance card from the pilot instead if it is available. |
+| Meta call is budget-blocked or Baseten is down | Show the unmet-request card from mock mode, captioned "Mock mode, no model call"; say in VO that live runs are capped at USD 100 (since 1 Nov 2026). Show the real setup-guidance card from the pilot instead if it is available. |
 | Unmet-need path fails on the day | Drop the open-demand segment; keep the diagram and the setup-guidance use, stated exactly as in section 6. |
 | Live site down | Local demo (`docs/local-demo.md`), captioned "lokaalne demo / local demo". |
