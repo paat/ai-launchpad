@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, test, expect } from "vitest";
 import { safeHttps, searchServices, loadCatalog } from "../src/catalog.js";
 
@@ -52,6 +54,56 @@ describe("safeHttps strict standalone-URL gate", () => {
       "https://example.com/a/../mcp",
       "https://müller.ee/mcp",
     ]) expect(safeHttps(u)).toBe(new URL(u).href);
+  });
+
+  test("hubspot is one pinned row; scoro stays one row", () => {
+    const hub = searchServices("hubspot", 25);
+    expect(hub.map((r) => r.id)).toEqual(["hubspot"]);
+    expect(hub[0].connection_url === null || safeHttps(hub[0].connection_url) === hub[0].connection_url).toBe(true);
+    expect(searchServices("scoro", 25).map((r) => r.id)).toEqual(["scoro"]);
+    expect(byId("hubspot")).toMatchObject({
+      sector: "CRM",
+      interface_class: "hosted_mcp",
+      connection: "Official Claude directory connector; remote MCP https://mcp.hubspot.com",
+      access_and_price: "OAuth 2.1; free CRM for new accounts: up to 1,000 contacts and 2 users (HubSpot FAQ, updated 2026-06-20)",
+      limitations: "Writes (manage_crm_objects) show a proposed change and ask for confirmation; deletes not offered; exact-action approval by Launchpad not established",
+      checked_on: "2026-11-01",
+      runtime_tested: false,
+    });
+    expect(byId("trivis").jobs).toContain("contacts, deals, interactions");
+    expect(byId("trivis").access_and_price).toContain("write");
+  });
+
+  test("count partitions reconcile with the record total", () => {
+    const raw = JSON.parse(readFileSync(join(import.meta.dirname, "..", "docs", "research", "catalog", "estonian-business-services.json"), "utf8")) as {
+      counts: {
+        records: number; email_calendar_records: number; initial_sector_records: number;
+        supplement_records: number; supporting_records: number;
+        by_research_leg: Record<string, number>; by_group: Record<string, number>; by_interface: Record<string, number>;
+      };
+      records: { research_leg: string; catalog_group: string; interface_class: string }[];
+    };
+    const { counts, records } = raw;
+    expect(records).toHaveLength(counts.records);
+    expect(loadCatalog()).toHaveLength(counts.records);
+    const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0);
+    expect(sum(counts.by_research_leg)).toBe(counts.records);
+    expect(sum(counts.by_group)).toBe(counts.records);
+    expect(sum(counts.by_interface)).toBe(counts.records);
+    const legs = counts.by_research_leg;
+    expect(legs.accounting + legs["banking-data"] + legs["other-b2b"]).toBe(counts.initial_sector_records);
+    expect(legs["email-workspaces"] + legs["email-local"] + legs["email-scheduling"] + legs["email-community"]).toBe(counts.email_calendar_records);
+    expect(legs.couriers + legs.browsers).toBe(counts.supplement_records);
+    expect(legs.supplementary).toBe(counts.supporting_records);
+    expect(counts.initial_sector_records + counts.supporting_records + counts.supplement_records + counts.email_calendar_records).toBe(counts.records);
+    const tally = (key: "research_leg" | "catalog_group" | "interface_class") => {
+      const m: Record<string, number> = {};
+      for (const r of records) m[r[key]] = (m[r[key]] ?? 0) + 1;
+      return m;
+    };
+    expect(tally("research_leg")).toEqual(counts.by_research_leg);
+    expect(tally("catalog_group")).toEqual(counts.by_group);
+    expect(tally("interface_class")).toEqual(counts.by_interface);
   });
 
   test("all actual catalog source URLs stay linkable", () => {

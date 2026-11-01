@@ -37,8 +37,8 @@ describe("public catalogue", () => {
     const all = loadCatalog();
     const mcp = all.filter((r) => ["hosted_mcp", "local_mcp", "self_hosted_mcp"].includes(r.interface_class ?? "")).length;
     const api = all.filter((r) => r.interface_class === "ordinary_api").length;
-    expect([mcp, api]).toEqual([88, 50]); // research snapshot 2026-10-28; update with the data
-    expect(all.length).toBe(181);
+    expect([mcp, api]).toEqual([89, 50]); // hosted MCP +1 (HubSpot, 2026-11-01); update with the data
+    expect(all.length).toBe(182);
     expect(await page("/kataloog")).toContain(`<strong>${mcp} MCP-ühendust ja ${api} API-t</strong> (kokku ${all.length} uuritud teenusest) Eesti ettevõtja tööde jaoks.`);
     expect(await page("/kataloog?lang=en")).toContain(`<strong>${mcp} MCP connections and ${api} APIs</strong> (out of ${all.length} researched services)`);
   });
@@ -106,6 +106,9 @@ describe("public catalogue", () => {
     expect(ids.length).toBe(listed.filter((r) => catalogueGroups(r.sector).includes("raamatupidamine")).length);
     expect(ids).toContain("werkzeug");
     expect(cards(await page("/kataloog?g=kullerid")).every((c) => catalogueGroups(loadCatalog().find((r) => r.id === c.id)!.sector).includes("kullerid"))).toBe(true);
+    const kliendid = cards(await page("/kataloog?g=kliendid")).map((c) => c.id);
+    expect(kliendid).toEqual(expect.arrayContaining(["pipedrive", "hubspot"]));
+    expect(await page("/kataloog?g=kliendid")).toContain("Kliendid (CRM)");
     // Unknown group shows everything.
     expect(cards(await page("/kataloog?g=bogus")).length).toBe(listed.length);
   });
@@ -222,8 +225,8 @@ describe("catalogue polish (#52)", () => {
 
   test("4: the English hero date is formatted with Intl, never ISO", async () => {
     const en = await page("/kataloog?lang=en");
-    expect(en).toContain("checked 28 Oct 2026.");
+    expect(en).toContain("checked 1 Nov 2026.");
     expect(en).not.toMatch(/checked \d{4}-\d{2}-\d{2}/);
-    expect(await page("/kataloog")).toContain("kontrollitud 28.10.2026.");
+    expect(await page("/kataloog")).toContain("kontrollitud 01.11.2026.");
   });
 });
