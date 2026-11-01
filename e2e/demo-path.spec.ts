@@ -32,10 +32,11 @@ test("/uhenda: Claude preselected (QA m11), ChatGPT one tap away, no phone hand-
   // „Lihtsaim algus: Claude”, so the Claude tab is the one selected.
   await expect(page.getByRole("link", { name: "Claude", exact: true })).toHaveAttribute("aria-current", "true");
   await expect(page.getByRole("link", { name: "ChatGPT", exact: true })).not.toHaveAttribute("aria-current", "true");
-  await expect(page.getByRole("link", { name: "Ava Claude — juhend on juba sees" })).toBeVisible();
-  // The local server has no public HTTPS address, so there is no QR and no phone-URL card (QA D-14).
+  await expect(page.getByRole("link", { name: "Ava Claude — juhend on juba sees" })).toHaveCount(0);
+  // The local server has no public HTTPS address, so there is no open button, no prompt, no QR and no phone-URL card (QA D-14).
   await expect(page.getByRole("heading", { name: "Jätka telefonis" })).toHaveCount(0);
-  await expect(page.locator(".qr")).toHaveCount(0);
+  await expect(page.locator(".qr-card")).toHaveCount(0);
+  await expect(page.getByText("Näita teksti")).toHaveCount(0);
   await expect(page.locator(".connect-hero").getByText("Avalik HTTPS-aadress pole selles serveris veel seadistatud", { exact: false })).toBeVisible();
   await expect(page.locator("#connect-status")).toContainText("Logi sisse");
   expect(await page.locator('meta[http-equiv="refresh"]').count()).toBe(0);

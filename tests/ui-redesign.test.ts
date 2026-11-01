@@ -723,16 +723,17 @@ describe("/uhenda/ava", () => {
     expect(fixed.pathname).toBe("/new");
   });
 
-  test("the page has the button href and the prompt; old steps sit in a details element", async () => {
-    const endpoint = `${base}/mcp`;
+  test("a local server hides the open link and the prompt; old steps sit in a details element", async () => {
     const html = await (await fetch(`${base}/uhenda?a=claude`)).text();
-    expect(html).toContain('<a class="btn" href="/uhenda/ava?a=claude&lang=et">Ava Claude — juhend on juba sees</a>');
-    expect(html).toContain(`<pre>${esc(assistantGuidePrompt("et", "claude", endpoint))}</pre>`);
+    expect(html).not.toContain("/uhenda/ava");
+    expect(html).not.toContain("<pre>");
+    expect(html).toContain("Avalik HTTPS-aadress pole selles serveris veel seadistatud");
     expect(html).not.toContain("<svg");
     expect(html).toMatch(/<details><summary id="steps-h" role="button">Tee ise, ilma juhendita<\/summary>[\s\S]*class="step-title"/);
     const en = await (await fetch(`${base}/uhenda?a=chatgpt&lang=en`)).text();
-    expect(en).toContain('<a class="btn" href="/uhenda/ava?a=chatgpt&lang=en">Open ChatGPT — the guide is already in</a>');
-    expect(en).toContain(`<pre>${esc(assistantGuidePrompt("en", "chatgpt", endpoint))}</pre>`);
+    expect(en).not.toContain("/uhenda/ava");
+    expect(en).not.toContain("<pre>");
+    expect(en).toContain("A public HTTPS address is not configured on this server yet");
     expect(en).toMatch(/<details><summary id="steps-h" role="button">Do it yourself, without the guide<\/summary>[\s\S]*class="step-title"/);
   });
 });
@@ -752,12 +753,18 @@ describe("QA minors (#21)", () => {
     const local = await connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "chatgpt", state: { kind: "anon" }, owner: false });
     expect(local).not.toContain("Jätka telefonis");
     expect(local).not.toContain("<svg");
+    expect(local).not.toContain("/uhenda/ava");
+    expect(local).not.toContain("<pre>");
     expect(local).toContain("Avalik HTTPS-aadress pole selles serveris veel seadistatud");
     const localhost = await connectBody({ lang: "et", baseUrl: "http://localhost:3000", assistant: "claude", state: { kind: "anon" }, owner: false });
     expect(localhost).not.toContain("<svg");
+    expect(localhost).not.toContain("/uhenda/ava");
+    expect(localhost).not.toContain("<pre>");
     expect(localhost).toContain("Avalik HTTPS-aadress pole selles serveris veel seadistatud");
     const https = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "anon" }, owner: false });
     expect(https).toContain("<svg");
+    expect(https).toContain('<a class="btn" href="/uhenda/ava?a=chatgpt&lang=et">Ava ChatGPT — juhend on juba sees</a>');
+    expect(https).toContain(`<pre>${esc(assistantGuidePrompt("et", "chatgpt", "https://launchpad.example.com/mcp"))}</pre>`);
     expect(https).not.toContain("Jätka telefonis");
     expect(https).not.toContain("Avalik HTTPS-aadress pole selles serveris veel seadistatud");
   });

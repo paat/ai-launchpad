@@ -499,8 +499,6 @@ details.plain>summary>h2{margin:0;font:inherit;color:inherit}
 .tana-grid~details.plain{margin-top:var(--s-4)}
 /* ===== Issue #21 implementation additions ===== */
 pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(--c-surface-2);border-color:var(--c-divider);font:inherit;font-size:var(--fs-md);white-space:pre-wrap;overflow-wrap:anywhere}
-.big-url{margin:var(--s-2) 0;font-size:var(--fs-lg);font-weight:750;overflow-wrap:anywhere}
-.big-url a{color:var(--c-text);text-decoration:none}
 .connect-hero .btn{margin-top:0;font-size:var(--fs-lg)}
 .status-chip a{color:inherit}
 .tech-list dd{overflow-wrap:anywhere}
@@ -1898,6 +1896,13 @@ export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "
   const qr = remoteReady ? `<figure class="qr-card"><div class="qr-box">${(await QRCode.toString(`${base}${openPath}`, { type: "svg", margin: 1 })).trim().replace("<svg", `<svg role="img" aria-label="${esc(caption)}"`)}</div><figcaption class="small muted">${esc(caption)}</figcaption></figure>` : "";
   const openLabel = t(`Ava ${name} — juhend on juba sees`, `Open ${name} — the guide is already in`);
   const openHint = t(`Vajuta saatmisnuppu ja tee, mida ${name} ütleb. Kui ${name} hoiatab, et tekst tuli lingist, on see tavaline: tekst on meilt.`, `Press the send button and do what ${name} says. If ${name} warns that the text came from a link, that is normal: the text is from us.`);
+  // Without a public HTTPS address the open link would hand a localhost URL to a cloud assistant, so the hero is only the note.
+  const hero = remoteReady
+    ? `<a class="btn" href="${openPath}">${esc(openLabel)}</a>
+<p class="small">${esc(openHint)}</p>
+${qr}
+<details><summary role="button">${t("Näita teksti", "Show the text")}</summary><pre>${esc(prompt)}</pre></details>`
+    : httpsNote;
   const s = o.state;
   const chip = s.kind === "connected"
     ? (() => { const d = new Date(s.at), time = TIME[l].format(d), sameDay = tallinnYmd(d) === tallinnYmd(now); const who = s.who ?? t("Sinu assistent", "Your assistant"); return `<div class="status-chip" id="connect-status" data-state="connected" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${esc(t(`Ühendatud · ${who} jõudis kohale ${sameDay ? "" : `${DAY.et.format(d)} `}kell ${time}`, `Connected · ${who} reached AI Launchpad ${sameDay ? "" : `on ${DAY.en.format(d)} `}at ${time}`))}</span></div>`; })()
@@ -1910,10 +1915,7 @@ ${sampleFirst ? handover : ""}
 <p class="small">${esc(t("Lihtsaim algus: Claude — töötab ka tasuta paketis.", "Easiest start: Claude — works on the free plan too."))}</p>
 <nav class="choice" aria-label="${t("Vali assistent", "Choose your assistant")}"><a href="/uhenda?a=chatgpt"${o.assistant === "chatgpt" ? ' aria-current="true"' : ""}>ChatGPT</a><a href="/uhenda?a=claude"${o.assistant === "claude" ? ' aria-current="true"' : ""}>Claude</a></nav>
 ${o.owner ? `<p class="small"><a class="tap-link" href="/setup">${t("Pole veel assistenti? Aitame valida", "No assistant yet? We'll help you choose")}</a></p>` : ""}
-<section class="card connect-hero"><a class="btn" href="${openPath}">${esc(openLabel)}</a>
-<p class="small">${esc(openHint)}</p>
-${qr || httpsNote}
-<details><summary role="button">${t("Näita teksti", "Show the text")}</summary><pre>${esc(prompt)}</pre></details></section>
+<section class="card connect-hero">${hero}</section>
 <section class="card" aria-labelledby="st-h"><h2 id="st-h">${t("Ühenduse olek", "Connection status")}</h2>${chip}
 ${s.kind === "connected" ? `<p>${t("Proovi kohe:", "Try now:")} „${esc(t(TRY_PROMPT[0], TRY_PROMPT[1]))}”</p><p><a class="tap-link" href="/kataloog?g=raamatupidamine">${t("Järgmine samm: ühenda oma raamatupidamine → Kataloog", "Next step: connect your accounting → Catalogue")}</a></p>` : s.kind === "waiting" ? `<p class="small muted">${t("Leht uueneb ise iga 5 sekundi järel.", "This page refreshes itself every 5 seconds.")}</p>` : ""}</section>
 <details><summary id="steps-h" role="button">${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</summary>
