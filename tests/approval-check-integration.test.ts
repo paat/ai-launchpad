@@ -160,6 +160,38 @@ test("a busy ledger keeps the approval running until its one model call can star
   expect((ledger.db.prepare("SELECT count(*) n FROM mq_attempts").get() as { n: number }).n).toBe(2);
 });
 
+test("deleting progress while waiting for a ledger slot stops the check without a fetch or write", async () => {
+  const { db, oid, base, ledgerPath } = await httpApp("public_cards");
+  vi.useFakeTimers();
+  const id = approval(db, oid);
+  const ledger = ModelQualityLedger.open(ledgerPath);
+  cleanup.push(() => ledger.close());
+  ledger.reserve("other-attempt", "setup_guidance", "synthetic-hash", 10000);
+  const fetchFn = vi.fn<FetchFn>();
+  const live = liveChecker({ ledger, apiKey: "synthetic-key", fetchFn });
+  const check = vi.spyOn(live, "check");
+  const work = startApprovalCheck(db, oid, id, live);
+  await vi.advanceTimersByTimeAsync(2_000);
+  expect(getApproval(db, oid, id)?.check_state).toBe("running");
+  const response = await fetch(`${base}/delete`, {
+    method: "POST", redirect: "manual",
+    headers: { cookie: "lp_session=synthetic-session", "content-type": "application/x-www-form-urlencoded", connection: "close" },
+    body: "csrf=synthetic-csrf",
+  });
+  await response.text();
+  expect(response.status).toBe(302);
+  expect(db.prepare("SELECT 1 FROM approvals WHERE id=?").get(id)).toBeUndefined();
+  const changes = db.prepare("SELECT total_changes() n").get();
+  const checks = check.mock.calls.length;
+  ledger.finalize("other-attempt", { status: "completed" });
+  await vi.advanceTimersByTimeAsync(2_000);
+  await work;
+  expect(fetchFn).not.toHaveBeenCalled();
+  expect(check).toHaveBeenCalledTimes(checks);
+  expect(db.prepare("SELECT total_changes() n").get()).toEqual(changes);
+  expect(ledger.get(approvalCheckRequestId(id, approvalDigest(action)))).toBeUndefined();
+});
+
 test("a ledger slot still busy after 60 seconds becomes terminal unavailable", async () => {
   vi.useFakeTimers();
   const db = dbForTest(), oid = owner(db), id = approval(db, oid);

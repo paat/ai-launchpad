@@ -261,6 +261,7 @@ export async function startApprovalCheck(db: Db, ownerId: string, id: string, co
     // Keep the same approval/digest (and thus ledger request ID) throughout.
     while (result.kind === "failed" && result.reason === "attempt_in_flight" && Date.now() < slotDeadline) {
       await new Promise<void>((resolve) => setTimeout(resolve, Math.min(2_000, slotDeadline - Date.now())));
+      if (!db.prepare("SELECT 1 FROM approvals WHERE id=? AND owner_id=?").get(id, ownerId)) return;
       result = await checker.check(a.id, a.digest, input, started);
     }
     if (result.kind === "failed") { unavailable(result.reason); return; }
