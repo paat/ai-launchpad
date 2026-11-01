@@ -637,6 +637,25 @@ describe("landing and connect", () => {
     expect(ok).toContain("Proovi kohe: „Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?”");
   });
 
+  test("connect: computer and phone are equal alternatives, with shared notes below, in both languages", async () => {
+    for (const lang of ["et", "en"] as const) {
+      const html = await connectBody({ lang, baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "anon" }, owner: false });
+      const row = html.match(/<div class="connect-options">([\s\S]*?)<\/figure><\/div>/)?.[1];
+      expect(row).toBeDefined();
+      expect(row).toContain(`<div class="connect-option"><h2 class="connect-here">${lang === "et" ? "Selles arvutis" : "On this computer"}</h2>`);
+      expect(row).toContain(`<span class="connect-or">${lang === "et" ? "või" : "or"}</span>`);
+      expect(row).toMatch(new RegExp(`<figure class="connect-option qr-card"><h2>${lang === "et" ? "Telefonis" : "On your phone"}</h2><div class="qr-box"><svg role="img" aria-label="[^"]+"`));
+      expect(row).not.toContain(lang === "et" ? "Claude lubab" : "Claude allows");
+      expect(html.indexOf(lang === "et" ? "Claude lubab" : "Claude allows")).toBeGreaterThan(html.indexOf("</figure></div>"));
+      expect(html.indexOf(`#tekst"`)).toBeGreaterThan(html.indexOf("</figure></div>"));
+    }
+    for (const options of [{ baseUrl: "http://localhost:3000" }, { baseUrl: "https://launchpad.example.com", sandbox: true }]) {
+      const html = await connectBody({ lang: "en", assistant: "claude", state: { kind: "anon" }, owner: false, ...options });
+      expect(html).not.toContain('class="connect-options"');
+      expect(html).not.toContain('class="connect-option qr-card"');
+    }
+  });
+
   test("connect: the open link follows the selected assistant and language", async () => {
     const link = async (assistant: "chatgpt" | "claude", lang: "et" | "en" = "et") => (await connectBody({ lang, baseUrl: "https://launchpad.example.com", assistant, state: { kind: "anon" }, owner: false })).match(/<a class="btn" href="([^"]+)">/)?.[1];
     expect(await link("claude")).toBe("/uhenda/ava?a=claude&lang=et");
