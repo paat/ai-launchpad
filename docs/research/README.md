@@ -20,6 +20,7 @@ Research date 25 Oct 2026. Five Codex legs (`codex --search exec`, gpt-6-astra, 
 | [N-obligation-deadline-rules.md](N-obligation-deadline-rules.md) | Deterministic deadline rules for a one-person OÜ (29 Oct 2026): tier-A statute quotes, rule ids, holiday shift, computed Nov 2026–Dec 2027 dates, Ärikratt field mapping, UNKNOWN defaults | — |
 | [O-value-expansion.md](O-value-expansion.md) | More value (1 Nov 2026): Google's Open Knowledge Format (OKF), the owner's business folder on their own Drive, e-invoice and retention rules, ranked next jobs | — |
 | [P-lightweight-crm.md](P-lightweight-crm.md) | Customers without a CRM app (1 Nov 2026): Google Sheet in the owner's Drive vs Markdown vs SQLite, official CRM MCPs (HubSpot, Pipedrive, Trivis, Scoro, Attio…), GDPR minimums | — |
+| [R-marketing-agent-services.md](R-marketing-agent-services.md) | Marketing jobs the owner's assistant can do (1 Nov 2026): MailerLite, Omnisend, Buffer, Canva, Meta Ads MCP (writes), read-only Google MCPs, ESS § 103¹, Google review policy, AI Act Art. 50, ad spend caps | — |
 | **Total** | | **354** |
 
 ## Earlier synthesis
