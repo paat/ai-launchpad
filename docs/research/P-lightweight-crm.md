@@ -20,12 +20,12 @@ Launchpad has no customer support today: the connect-service playbook (`src/cata
 | Who owes money | Accounting receivables (Werkzeug: e-arveldaja, Merit, Erply) | Nothing |
 | Customer name, registry code, address | Accounting customer list; Ärikratt for companies | Nothing; never copy the accounting list |
 | Last contact | Gmail / Microsoft 365 connectors | A date only for a call or visit |
-| Who to follow up, quote chase, renewal | Nowhere | **The real gap**: a row with `next_follow_up` and a short note, only while a follow-up is due |
+| Who to follow up, quote chase, renewal | Nowhere | **The real gap**: a row with a next follow-up date and a short note, only while a follow-up is due |
 
 ## Storage choice by what the owner already has
 
 1. **A CRM already in use** → connect it; Launchpad stores nothing.
-2. **No CRM, uses Google** → one Google Sheet `Kliendid` in the owner's `AI-hüppelaud/` Drive folder (the same folder as issue #91), columns `customer`, `next_follow_up`, `last_call_or_visit`, `note`. A row exists only while a follow-up is due; a customer with no follow-up has no row. `customer` is the display name used in the accounting software and serves only as the join key; registry code, address, debts and e-mail history are read live from accounting, mail and Ärikratt, never copied. `last_call_or_visit` is only for contact that is not in the mailbox. Only for a prospect not yet in the accounting software may `note` hold an e-mail or phone number. The assistant changes cells, never rewrites the sheet.
+2. **No CRM, uses Google** → one Google Sheet `Kliendid` in the owner's `AI-hüppelaud/` Drive folder (the same folder as issue #91), columns `Customer`, `Next follow-up`, `Last call or visit`, `Note` (plain words, because the owner reads the sheet; phone test 1 Nov 2026). A row exists only while a follow-up is due; a customer with no follow-up has no row. `Customer` is the display name used in the accounting software and serves only as the join key; registry code, address, debts and e-mail history are read live from accounting, mail and Ärikratt, never copied. `Last call or visit` is only for contact that is not in the mailbox. Only for a prospect not yet in the accounting software may `Note` hold an e-mail or phone number. The assistant changes cells, never rewrites the sheet.
 3. **No Google, no CRM** → follow-ups live in mail drafts and calendar holds. No other store.
 
 | Option | Phone | Assistant edits in place | Employees | Owner setup | Launchpad's GDPR role |

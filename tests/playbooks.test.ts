@@ -445,6 +445,7 @@ describe("agent-facing copy over MCP", () => {
     expect(r.first_step).toContain("read the follow-up dates first");
     expect(r.first_step).toContain("Never answer from memory");
     expect(r.first_step).toContain("folder named AI-hüppelaud in the owner's own Google Drive (My Drive)");
+    expect(r.first_step).toContain("never say they have a Kliendid sheet: ask once where they keep track of whom to call back");
     const started = JSON.parse(((await c.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { tools: string[] };
     expect(started.tools).toContain("check_my_customers");
     expect(TOOL_ARG_KEYS.check_my_customers).toEqual(TOOL_ARG_KEYS.check_my_books);
@@ -457,12 +458,14 @@ describe("agent-facing copy over MCP", () => {
     expect(p).toMatchObject({ approval_kind: "send_message", triggers: [], title: "See who needs a call or message this week", title_et: "Vaata, kellele sel nädalal helistada või kirjutada" });
     const steps = p.steps.join("\n");
     expect(steps).toContain("if the owner asks about unpaid invoices, follow the payment-reminder playbook instead");
-    expect(steps).toContain("columns are customer, next_follow_up, last_call_or_visit and note");
-    expect(steps).toContain("only those four columns: customer, next_follow_up, last_call_or_visit, note");
+    expect(steps).toContain("columns are Customer, Next follow-up, Last call or visit and Note");
+    expect(steps).toContain("only those four columns, named in plain words: Customer, Next follow-up, Last call or visit, Note");
     expect(steps).toContain("A customer gets a row only while a follow-up is due");
     expect(steps).toContain("Never copy identity, address, debts or e-mail history into the sheet");
-    expect(steps).toContain("A phone or e-mail may go in note only for a prospect who is not yet in the accounting software");
+    expect(steps).toContain("A phone or e-mail may go in Note only for a prospect who is not yet in the accounting software");
     expect(steps).toContain("Create it only after the owner says yes");
+    expect(steps).toContain("read them from it; if you cannot read their Google Drive either, never say that sheet exists");
+    expect(steps).toContain("If there is no customer tool and you read their Google Drive and it has no Kliendid sheet, offer once to create");
     expect(steps).toContain("Show the exact change, write it only after they say yes, and never write a different value");
     expect(steps).toContain("Never invent or compute a follow-up date yourself");
     expect(steps).toContain("call request_approval again with a NEW report_id, the same action and owner_confirmation: their words, verbatim");
