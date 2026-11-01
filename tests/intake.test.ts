@@ -196,14 +196,20 @@ describe("buildIntakePlan", () => {
     const et = buildIntakePlan({ uses: "none", lang: "et", services, productNames: ["Merit Aktiva", "Gmail"] });
     expect(et.prompt).toContain("Kasutan: Merit Aktiva, Gmail.");
     expect(et.prompt).not.toMatch(/merit-aktiva|google-gmail|usefulapi|roosa|Elnora|MCP/);
-    expect(et.steps.filter((s) => /^Ühenda\s/.test(s.text)).map((s) => s.text)).toEqual(["Ühenda AI-hüppelaud.", "Ühenda Werkzeug."]);
+    expect(et.steps.filter((s) => /^Ühenda\s/.test(s.text)).map((s) => s.text)).toEqual(["Ühenda AI-hüppelaud.", "Ühenda Werkzeug (Merit Aktiva jaoks)."]);
     expect(et.steps.find((s) => s.text.includes("Gmail"))).toEqual({ text: "Lülita Claude'is sisse Gmail (see on sisse ehitatud)" });
     expect(et.steps[0]).toEqual({ text: "Laadi alla Claude", href: "https://claude.ai/download" });
     const en = buildIntakePlan({ uses: "none", lang: "en", services, productNames: ["Merit Aktiva", "Gmail"] });
     expect(en.prompt).toContain("I use: Merit Aktiva, Gmail.");
     expect(en.steps.find((s) => s.text.includes("Gmail"))).toEqual({ text: "Turn on Gmail in Claude (built in)" });
+    expect(en.steps.filter((s) => /^Connect\s/.test(s.text)).map((s) => s.text)).toEqual(["Connect AI Launchpad.", "Connect Werkzeug (for Merit Aktiva)."]);
     const books = buildIntakePlan({ uses: "none", lang: "et", services: matchCatalog(["e-arveldaja"]).matched, productNames: ["e-arveldaja"] });
-    expect(books.steps.filter((s) => /^Ühenda\s/.test(s.text)).map((s) => s.text)).toEqual(["Ühenda AI-hüppelaud.", "Ühenda Werkzeug."]);
+    expect(books.steps.filter((s) => /^Ühenda\s/.test(s.text)).map((s) => s.text)).toEqual(["Ühenda AI-hüppelaud.", "Ühenda Werkzeug (e-arveldaja jaoks)."]);
+    const shared = matchCatalog(["Merit Aktiva", "e-arveldaja"]).matched;
+    const sharedEt = buildIntakePlan({ uses: "none", lang: "et", services: shared, productNames: ["Merit Aktiva", "e-arveldaja"] });
+    expect(sharedEt.steps.filter((s) => /^Ühenda\s/.test(s.text)).map((s) => s.text)).toEqual(["Ühenda AI-hüppelaud.", "Ühenda Werkzeug (Merit Aktiva ja e-arveldaja jaoks)."]);
+    const sharedEn = buildIntakePlan({ uses: "none", lang: "en", services: shared, productNames: ["Merit Aktiva", "e-arveldaja"] });
+    expect(sharedEn.steps.filter((s) => /^Connect\s/.test(s.text)).map((s) => s.text)).toEqual(["Connect AI Launchpad.", "Connect Werkzeug (for Merit Aktiva and e-arveldaja)."]);
     expect(books.prompt).toContain("e-arveldaja");
     const bank = buildIntakePlan({ uses: "none", lang: "en", services: matchCatalog(["Swedbank"]).matched, productNames: ["Swedbank"] });
     expect(bank.steps.some((s) => /swedbank/i.test(`${s.text} ${s.href ?? ""}`))).toBe(false);
@@ -227,6 +233,10 @@ describe("buildIntakePlan", () => {
     expect(head.match(/Sources:/g)).toHaveLength(1);
     const lead = head.match(/<\/div><p>([^<]+)<\/p>/);
     expect(lead?.[1].split(/(?<=[.!?])\s+/).filter(Boolean).length).toBeLessThanOrEqual(3);
+    expect(lead?.[1]).toContain("Claude Pro is the same Claude we tried on the free plan (30.10.2026).");
+    expect(head).not.toContain("We have not tried this plan with AI Launchpad.");
+    expect(html.slice(detailsAt)).toContain("We have not tried this plan with AI Launchpad.");
+    expect(html).toContain(">no<");
     expect(head).not.toContain("includes:");
     expect(html.slice(detailsAt)).toContain("includes:");
     expect(html.slice(detailsAt)).toContain("<caption>Why?</caption>");
@@ -234,6 +244,10 @@ describe("buildIntakePlan", () => {
     const etDetails = et.indexOf("<details");
     expect(et.startsWith("<h1>Soovitame: Claude Pro</h1>")).toBe(true);
     expect(et.slice(0, etDetails).match(/Allikad:/g)).toHaveLength(1);
+    expect(et.slice(0, etDetails)).toContain("Claude Pro on sama Claude, mida proovisime tasuta paketiga (30.10.2026).");
+    expect(et.slice(0, etDetails)).not.toContain("Meie ei ole seda paketti AI-hüppelauaga proovinud.");
+    expect(et.slice(etDetails)).toContain("Meie ei ole seda paketti AI-hüppelauaga proovinud.");
+    expect(et).toContain(">ei<");
     expect(et.slice(etDetails)).toContain("<summary>Miks just see?</summary>");
   });
 

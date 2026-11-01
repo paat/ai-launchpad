@@ -442,12 +442,17 @@ export function buildIntakePlan(args: IntakePlanArgs): IntakePlan {
   if (rec.recommended.builtin_microsoft.length && services.some((s) => emailKind(s) === "microsoft")) turnOn("Outlook");
   const slots = rec.recommended.custom_connectors;
   const room = slots === "no_cap" || (typeof slots === "number" && slots > 1);
+  const routedFor = productsRoutedThrough(args.productNames ?? []);
   if (room) for (const service of services) {
     if (service.interface_class !== "hosted_mcp" || emailKind(service)) continue;
     const url = safeHttps(service.connection);
     if (!url || !service.name) continue;
     const label = connectLabel(service);
-    steps.push({ text: lang === "et" ? `Ühenda ${label}.` : `Connect ${label}.`, href: url });
+    const products = routedFor.get(service.id) ?? [];
+    const listed = products.length
+      ? (lang === "et" ? ` (${joinProducts(products, " ja ")} jaoks)` : ` (for ${joinProducts(products, " and ")})`)
+      : "";
+    steps.push({ text: lang === "et" ? `Ühenda ${label}${listed}.` : `Connect ${label}${listed}.`, href: url });
   }
   steps.push({ text: lang === "et" ? "Kleebi see juhis oma assistenti." : "Paste this prompt into your assistant." });
   return {
@@ -475,6 +480,25 @@ function emailKind(rec: ServiceRecord): "google" | "microsoft" | null {
 
 function connectLabel(rec: ServiceRecord): string {
   return cleanHostedName(rec);
+}
+
+/** Owner products that reach this catalogue row through a named route (Merit Aktiva → Werkzeug). */
+function productsRoutedThrough(names: string[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  if (!names.length) return map;
+  for (const hit of routeProducts(names).hits) {
+    if (!hit.record || !hit.via) continue;
+    const list = map.get(hit.record.id) ?? [];
+    if (!list.includes(hit.product)) list.push(hit.product);
+    map.set(hit.record.id, list);
+  }
+  return map;
+}
+
+function joinProducts(items: string[], and: string): string {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]}${and}${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}${and}${items[items.length - 1]}`;
 }
 
 /** Compact JSON for intake_plan. Obligations, then services, then unmatched names drop until it fits. */

@@ -360,8 +360,15 @@ function reasonBucket(sentence: string): "connections" | "cost" | "tested" | "ot
   const s = sentence.toLowerCase();
   if (/ühendus|connection/.test(s) && /vaja|need|piirang|limit|praegune|current/.test(s)) return "connections";
   if (/maksab|costs|dollar|euro/.test(s)) return "cost";
-  if (/proovinud|tried|testitud|tested/.test(s)) return "tested";
+  if (/proovinud|proovisime|tried|testitud|tested/.test(s)) return "tested";
   return "other";
+}
+
+/** Sibling trial explains why an untested row is allowed. It outranks "not tried". */
+function testedRank(sentence: string): number {
+  if (/sama .+ mida proovisime|is the same .+ we tried/i.test(sentence)) return 2;
+  if (/ei ole seda paketti|have not tried this plan/i.test(sentence)) return 0;
+  return 1;
 }
 
 /** The rules plan, then at most one phrasing from the model. Model text is escaped and never enters the prompt. */
@@ -376,7 +383,13 @@ export function planScreenHtml(plan: IntakePlan, muse: { text: string; mock: boo
   const deciding: typeof bits = [];
   const used = new Set<number>();
   for (const bucket of ["connections", "cost", "tested"] as const) {
-    const at = bits.findIndex((bit, i) => !used.has(i) && reasonBucket(bit.text) === bucket);
+    let at = -1;
+    let rank = -1;
+    for (let i = 0; i < bits.length; i++) {
+      if (used.has(i) || reasonBucket(bits[i]!.text) !== bucket) continue;
+      const next = bucket === "tested" ? testedRank(bits[i]!.text) : 1;
+      if (at < 0 || next > rank) { at = i; rank = next; }
+    }
     if (at >= 0) { deciding.push(bits[at]!); used.add(at); }
   }
   const rest = bits.filter((_, i) => !used.has(i));
