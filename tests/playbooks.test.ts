@@ -35,7 +35,7 @@ describe("executable job playbooks (#26)", () => {
     for (const p of PLAYBOOKS) expect(JSON.stringify(p), p.id).not.toMatch(/does not compute|fabricate/i);
     // EMTA moved its tax pages; the old /taxes-and-payment hub returns 404 (QA m10). Checked 200 on 2026-10-31.
     expect(byId("deadlines-check").source).toBe("https://www.emta.ee/en/business-client/taxes-and-payment/payment-arrears/payment-taxes");
-    expect(byId("deadlines-check").steps[0]).toBe("Call get_obligations. Rules compute every date; never compute a deadline yourself. Say each date in one line with its condition in a few everyday words, and give its source link when the owner asks.");
+    expect(byId("deadlines-check").steps[0]).toBe("Call get_obligations. Rules compute every date; never compute a deadline yourself. Say each date in one line with its condition as the row states it and its source as a short link; never read out law paragraphs.");
     const vat = byId("vat-return-prep").steps.join(" ");
     expect(vat).toContain("accounting software's own VAT report");
     expect(vat).toContain("Never calculate a tax amount yourself");
@@ -233,7 +233,7 @@ describe("executable job playbooks (#26)", () => {
   test("assistant_instruction: a conditional next_deadline is presented as conditional, its question first (tribunal T-006)", async () => {
     const r = await companyObligations(ar(), { registryCode: MARI, months: 1, today: at("2026-10-30") });
     if (!r.ok) throw new Error(r.error);
-    expect(r.result.assistant_instruction.endsWith(" If next_deadline.applies is 'if', present it as conditional and say its condition in a few everyday words.")).toBe(true);
+    expect(r.result.assistant_instruction.endsWith(" If next_deadline.applies is 'if', present it as conditional and quote its condition.")).toBe(true);
   });
 
   test("next_deadline is present when the window is empty (30 Oct, months 1, VAT-registered sample)", async () => {
@@ -314,9 +314,13 @@ describe("agent-facing copy over MCP", () => {
     // Phone tests 31 Oct–1 Nov: replies read like audit logs (checked lists, IBANs, law paragraphs, 31-receipt lists).
     expect(i).toContain(OWNER_VOICE);
     const books = byId("books-catch-up").steps.join(" ");
-    expect(books).toContain("never send the owner the whole list");
-    expect(books).toContain("Call each account by its bank's name, never by its number.");
+    expect(books).toContain("Show at most five vendors and say how many more there are.");
+    expect(books).toContain("Call each account by its bank's name, not its number; if two accounts are at one bank, add the last four digits.");
     expect(books).not.toMatch(/grouped by vendor/);
+    // Grok r1: absence in the books never answers a TSD question, and approvals are never shortened.
+    expect(OWNER_VOICE).toContain("Seeing no payment in the books is never an answer");
+    expect(OWNER_VOICE).toContain("This never shortens what must be shown: the exact content before any approval");
+    expect(OWNER_VOICE).not.toMatch(/salary/);
     expect(i).toContain("Before asking the owner for any fact or document, check both public data (get_obligations public_facts) and the owner's own connected files, such as Google Drive; ask only if neither has it. Always ask the facts_needed questions from get_obligations, and never let a file stand in for the owner's answer to them, except that a TSD payout the connected books or bank show answers yes.");
     expect(i).toContain("call connect_my_services and follow the connect-service playbook it returns before answering from your own connector directory; it says which lookups are allowed.");
     expect(i).toContain("customers");
