@@ -592,7 +592,8 @@ test("no sandbox page links to a route that refuses sandboxes", async () => with
   }
   const csrf = await browser.csrf(s);
   for (const action of posts) {
-    if (action === "/auth/logout" || action === "/delete") continue;
+    // /proovi rejects every post that lacks its one-time cookie. The public About page links to the sample, which links here. That 403 is not a sandbox refusal.
+    if (action === "/auth/logout" || action === "/delete" || action === "/proovi") continue;
     const res = await browser.request(s, "POST", action, { csrf });
     expect(res.status, action).not.toBe(403);
   }

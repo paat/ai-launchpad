@@ -765,12 +765,12 @@ export function shell(o: ShellOpts): string {
   // The bare consent page keeps the brand as text: nothing invites leaving the flow.
   const brand = `<span class="mark" aria-hidden="true"></span>${t("AI-hüppelaud", "AI Launchpad")}`;
   const main = o.bodyLang && o.bodyLang !== l ? `<div lang="${o.bodyLang}">${o.body}</div>` : o.body;
-  const ownerGuides = ([["/approvals", t("Kinnitused", "Approvals")], ["/connection", t("Andmed ja õigused", "Data and permissions")], ["/demand", t("Avatud soovid", "Open demand")], ["/playbooks", t("Mängukavad", "Playbooks")], ["/kataloog", t("Kataloog", "Catalogue")], ["/setup", t("Abi alustamiseks", "Setup helper")]] as const).filter(([href]) => !o.skipGuides?.includes(href)).map(([href, label]) => `<a href="${href}">${label}</a>`).join("");
+  const ownerGuides = ([["/approvals", t("Kinnitused", "Approvals")], ["/connection", t("Andmed ja õigused", "Data and permissions")], ["/demand", t("Avatud soovid", "Open demand")], ["/playbooks", t("Mängukavad", "Playbooks")], ["/kataloog", t("Kataloog", "Catalogue")], ["/setup", t("Abi alustamiseks", "Setup helper")], ["/meist", t("Meist", "About")]] as const).filter(([href]) => !o.skipGuides?.includes(href)).map(([href, label]) => `<a href="${href}">${label}</a>`).join("");
   const footer = o.bare ? ""
     : owner
     ? `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}">${ownerGuides}</nav>
 <form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(o.csrf)}"><button type="submit">${t("Logi välja", "Log out")}</button></form></footer>`
-    : `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/login">${t("Logi sisse", "Sign in")}</a></nav></footer>`;
+    : `<footer><nav class="guides" aria-label="${t("Lisad", "Guides")}"><a href="/kataloog">${t("Kataloog", "Catalogue")}</a><a href="/demand">${t("Avatud soovid", "Open demand")}</a><a href="/meist">${t("Meist", "About")}</a><a href="/login">${t("Logi sisse", "Sign in")}</a></nav></footer>`;
   return `<!doctype html><html lang="${l}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${o.head ?? ""}<title>${esc(o.title)} · ${t("AI-hüppelaud", "AI Launchpad")}</title><style>${CSS}</style></head><body><div class="wrap">
 <header class="top">${o.bare ? `<span class="brand">${brand}</span>` : `<a class="brand" href="/">${brand}</a>`}${toggle}</header>
 ${owner && !o.bare ? `<nav class="main" aria-label="${t("Peamenüü", "Main")}">${nav.map(([href, label, key]) => `<a href="${href}"${o.active === key ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>` : ""}
@@ -1521,6 +1521,35 @@ export function demandBody(items: DemandItem[], l: Lang): string {
 <p class="small muted">${t("Järjestatud soovide arvu järgi. Iga soov ütleb, kuidas see liigitati: Meta mudel või kohalik testliigitaja (mitte mudel). Arvud on omanike kinnitatud teated, mitte turu suurus.", "Sorted by number of requests. Each item says how it was classified — live by Meta's model or by the local mock (not a model). Counts are owner-approved reports, not market size.")}</p></section>
 ${items.length ? items.map((i) => `<section class="card"><h2>${esc(i.label)}</h2><div class="labels">${i.live ? labelChip("ai", t("AI liigitus · Meta Muse Spark Open", "AI classification · Meta Muse Spark Open")) : sampleChip(l)}${labelChip("assistant", categoryLabel(i.category, l))}</div>
 <p>${esc(i.spec)}</p><p class="small"><strong>${i.count} ${i.count === 1 ? t("soov", "request") : t("soovi", "requests")}</strong></p><p class="small muted">${t("Esimest korda", "First seen")} ${esc(fmtPeriod(i.firstSeen, l))} · ${t("viimati", "last seen")} ${esc(fmtPeriod(i.lastSeen, l))}<br>${t("Liigitaja", "Classified by")}: ${esc(by(i))}</p></section>`).join("") : `<section class="card"><p>${t("Avaldatud soove veel pole.", "No published demand yet.")}</p></section>`}`;
+}
+
+/** Public, login-free About page. Estonian first; static copy is interpolated with t(), as on the demand page. */
+export function aboutBody(l: Lang): string {
+  const t = tr(l);
+  const items = (rows: [string, string][]) => `<ul>${rows.map(([et, en]) => `<li>${t(et, en)}</li>`).join("")}</ul>`;
+  const section = (et: string, en: string, inner: string) => `<section class="card"><h2>${t(et, en)}</h2>${inner}</section>`;
+  return `<section class="card hero"><h1>${t("Mis on AI-hüppelaud?", "What is AI Launchpad?")}</h1>
+<p class="lede">${t("AI-hüppelaud ei ole uus AI-assistent ega vestlusrobot. See aitab sinu olemasoleval AI-assistendil — ChatGPT-l või Claude'il — võtta kontoritöö sinu õlult.", "AI Launchpad is not another AI assistant, and not a chatbot. It helps the AI assistant you already have — ChatGPT or Claude — take the office work off your shoulders.")}</p>
+<p>${t("Sinu assistent teeb kontoritööd: tähtajad, arved, raamatupidamine, meeldetuletused. AI-hüppelaud ütleb talle, mida Eesti reeglid nõuavad ja milliseid ühendusi on vaja, ning küsib enne iga tegevust sinu kinnitust.", "Your assistant does the office work: deadlines, invoices, bookkeeping, reminders. AI Launchpad tells it what Estonian rules require and which connections it needs, and asks for your approval before each action.")}</p></section>
+${section("Kellele see on", "Who it is for", items([
+  ["Eesti väikeettevõtjale, kes teeb kontoritöö ise. Esimesena ühe inimese OÜ, mille raamatud on e-arveldajas või Meritis.", "Estonian small-business owners who do their own office work. First, a one-person OÜ with its books in e-arveldaja or Merit."],
+  ["Neile, kes juba kasutavad ChatGPT-d või Claude'i ja tahavad, et see ka tööd teeks, mitte ainult vestleks.", "People who already use ChatGPT or Claude and want it to do work, not just chat."],
+  ["Neile, kes pole AI-assistenti veel kasutanud. Näitame rahulikult, kuidas alustada.", "People who have never used an AI assistant. We show the way, calmly."],
+  ["Hiljem ka raamatupidajatele, kes hoiavad korras mitme väikeettevõtte asju.", "Later, accountants who look after many small companies."],
+]))}
+${section("Kuidas see töötab", "How it works", items([
+  ["Sinu assistent on ainus kasutajaliides. AI-hüppelaud on üks ühendus, mille sa sellele lisad.", "Your assistant is the only interface. AI Launchpad is one connector you add to it."],
+  ["Ettevõtte andmed tulevad avalikest registritest. Küsime ainult seda, mida keegi teine ei tea.", "Company data comes from public registers. We ask only what nobody else knows."],
+  ["Tähtajad ja maksud arvutab reeglistik, igaühel ametlik allikas. Tehisaru loeb ja kirjutab mustandeid.", "Deadlines and taxes are calculated by rules, each with an official source. AI reads and drafts."],
+  ["Midagi ei saadeta ega maksta ilma sinu kinnituseta just sellele toimingule. Iga tegevus jätab kviitungi.", "Nothing is sent or paid without your approval of that exact action. Every action leaves a receipt."],
+  ["Smart-ID PIN-koodi, allkirja ja deklaratsiooni esitamise teed sina ise ametlikus kanalis. Meie seda sinu eest ei tee.", "Smart-ID PINs, signatures and filings stay with you, in the official channel. We never do them for you."],
+]))}
+${section("Meta mudelid", "Meta's models", `<p>${t("Meta avatud mudel Muse Spark Open liigitab anonüümselt, mida ettevõtjad veel vajavad.", "Meta's open model Muse Spark Open anonymously classifies what businesses still need.")} <a href="/demand">${t("Vaata avatud soove", "See open demand")}</a></p>`)}
+${section("Avatud lähtekood", "Open source", `<p>${t("Kood on avalik GitHubis MIT-litsentsiga.", "The code is public on GitHub under the MIT licence.")} <a href="https://github.com/paat/ai-launchpad" rel="noopener noreferrer">github.com/paat/ai-launchpad</a></p>
+<p>${t("Leidsid vea või on sul soov? Kirjuta GitHubi.", "Found a bug or have an idea? Tell us on GitHub.")} <a href="https://github.com/paat/ai-launchpad/issues" rel="noopener noreferrer">${t("Ava teema GitHubis", "Open an issue on GitHub")}</a></p>`)}
+${section("Taust", "Background", `<p>${t("Ehitatud Meta Global AI Developer Hackathoni ajal, 27. oktoobrist 4. novembrini 2026. See on piloot ja võib veel muutuda.", "Built during the Meta Global AI Developer Hackathon, 27 October – 4 November 2026. It is a pilot and may still change.")}</p>
+<p>${t("AI-hüppelaud on eraldi projekt. Registriandmed tulevad ", "AI Launchpad is a separate project. Register data comes through ")}<a href="https://arikratt.ee" rel="noopener noreferrer">${t("Ärikrati", "Ärikratt")}</a>${t(" avaliku teenuse kaudu.", "'s public service.")}</p>`)}
+<div class="landing-actions"><a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a><a class="tap-link" href="/naidis">${t("Vaata näidist", "See a sample")}</a></div>`;
 }
 
 // --- Deadlines (#19) with handoffs (ux2 change 2): date first, rule label, source, who does what. ---

@@ -15,7 +15,7 @@ import { REASONS, chooseAssistant, offerDownload, parseBusiness, parseUses } fro
 import type { FetchFn } from "./model-quality.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
-import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, chooserBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
+import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, chooserBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, aboutBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
 import { NAIDIS, naidisApproval, naidisBody } from "./naidis.js";
 
@@ -635,6 +635,20 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     // Shared caches may keep it briefly, per language cookie; never a response that sets the cookie.
     if (!parseLang(req.query.lang)) res.set({ "cache-control": "public, max-age=60", vary: "Cookie" });
     res.type("html").send(publicPage(req, res, tr(langOf(res))("Avatud soovid", "Open demand"), demandBody(aggregateDemand(db), langOf(res))));
+  });
+
+  // Public, login-free About page. Never reads a session or owner data.
+  // A ?lang= response stays private: the language middleware sets the cookie.
+  app.get("/meist", (req, res) => {
+    if (!parseLang(req.query.lang)) res.set({ "cache-control": "public, max-age=300", vary: "Cookie" });
+    const l = langOf(res);
+    res.type("html").send(publicPage(req, res, tr(l)("Meist", "About"), aboutBody(l)));
+  });
+  app.get("/about", (req, res) => {
+    const p = new URLSearchParams();
+    const v = req.query.lang;
+    if (typeof v === "string" && parseLang(v)) p.set("lang", v);
+    res.redirect(302, p.size ? `/meist?${p}` : "/meist");
   });
 
   app.get("/activity", requireOwner, (req, res) => {
