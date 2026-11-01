@@ -53,6 +53,7 @@ describe("executable job playbooks (#26)", () => {
     const all = p.steps.join(" ");
     expect(all).toContain("22 Swedbank, 10 SEB, 77 LHV, 42 Coop Pank, 17 or 96 Luminor");
     expect(all).toContain("For any other code or a foreign account, say you cannot tell the bank and ask once whose account it is.");
+    expect(all).toContain("in plain words: the statement they download from their internet bank. Do not name a file format (such as CAMT or XML) unless the owner does first. Use the file only if it lists each payment and the balance at the end of the period; if it does not, or you cannot read it, say what is missing and ask once more.");
     expect(all).toContain("If it can only read");
     expect(all).toContain("never ask for a key with more rights");
     expect(all).toContain("Use the public register totals in get_obligations only to cross-check it, never as the entry itself. Enter it only under its own post_entries approval");
