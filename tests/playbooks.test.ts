@@ -360,6 +360,38 @@ describe("agent-facing copy over MCP", () => {
     expect(r.first_step).toContain("even if the accounting software's month-end check shows nothing unconfirmed");
     expect(r.first_step).toContain(OWNER_VOICE);
   });
+  test("record_statement_read: a statement read in one chat is not asked for again in the next (phone retest 1 Nov)", async () => {
+    const db = openDb(":memory:");
+    const c = await connect(["progress:read", "progress:report"], db);
+    const call = async (name: string, args: Record<string, unknown>) => (await c.callTool({ name, arguments: args })) as { isError?: boolean; content: { text: string }[] };
+    const books = async () => JSON.parse((await call("check_my_books", {})).content[0].text) as { statements_read: Record<string, unknown>[]; first_step: string };
+    expect((await books()).statements_read).toEqual([]);
+    expect((await books()).first_step).toContain("never ask for it again. Each time you read a statement file, call record_statement_read.");
+    const ok = await call("record_statement_read", { bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 0 });
+    expect(ok.isError).toBeFalsy();
+    // Same account and period again replaces the balance instead of adding a row.
+    await call("record_statement_read", { bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 125 });
+    const rows = (await books()).statements_read;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 125 });
+    for (const bad of [{ last4: "EE63" }, { last4: "41884" }, { period_from: "2026-02-30" }, { period_from: "2026-11-01" }, { period_to: "2999-12-31" }]) {
+      const r = await call("record_statement_read", { bank: "Swedbank", last4: "1884", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 0, ...bad });
+      expect(r.isError, JSON.stringify(bad)).toBe(true);
+    }
+    expect(db.prepare("SELECT COUNT(*) n FROM statements_read").get()).toEqual({ n: 1 });
+    expect(byId("books-catch-up").steps.join(" ")).toContain("not in check_my_books statements_read for the period");
+  });
+  test("record_statement_read needs progress:report; check_my_books shows statements only with progress:read", async () => {
+    const db = openDb(":memory:");
+    const ro = await connect(["progress:read"], db);
+    const r = (await ro.callTool({ name: "record_statement_read", arguments: { bank: "LHV", last4: "5618", period_from: "2026-01-01", period_to: "2026-10-31", closing_balance_cents: 67710 } })) as { isError?: boolean };
+    expect(r.isError).toBe(true);
+    expect(db.prepare("SELECT COUNT(*) n FROM statements_read").get()).toEqual({ n: 0 });
+    const db2 = openDb(":memory:");
+    const none = await connect([], db2);
+    db2.prepare("INSERT INTO statements_read VALUES('o','LHV','5618','2026-01-01','2026-10-31',67710,'2026-11-01T10:00:00Z')").run();
+    expect(JSON.parse(((await none.callTool({ name: "check_my_books", arguments: {} })) as { content: { text: string }[] }).content[0].text).statements_read).toEqual([]);
+  });
 
   test("check_my_customers: owner phrasing finds it, read-only, returns the customer-follow-ups playbook for any scope", async () => {
     const db = openDb(":memory:");

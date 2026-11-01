@@ -742,7 +742,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       oauth.revokeOwner(oid(req));
       db.prepare("DELETE FROM oauth_pending WHERE id=?").run(sha256(connectCookie(req)));
       db.prepare("UPDATE owners SET reporting_enabled=0 WHERE id=?").run(oid(req));
-      for (const t of ["assessments", "reports", "progress", "activity", "approvals", "candidates", "unmet_needs", "calendar_feeds", "standing_approvals"]) db.prepare(`DELETE FROM ${t} WHERE owner_id=?`).run(oid(req));
+      for (const t of ["assessments", "reports", "progress", "activity", "approvals", "candidates", "unmet_needs", "calendar_feeds", "standing_approvals", "statements_read"]) db.prepare(`DELETE FROM ${t} WHERE owner_id=?`).run(oid(req));
       db.prepare("UPDATE mcp_tokens SET revoked=1,last_used_at=NULL WHERE owner_id=?").run(oid(req));
       db.prepare("UPDATE owners SET epoch=epoch+1 WHERE id=?").run(oid(req));
       db.prepare("UPDATE workspaces SET version=0 WHERE owner_id=?").run(oid(req));

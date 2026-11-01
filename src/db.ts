@@ -63,6 +63,9 @@ export function openDb(path: string) {
   CREATE TABLE IF NOT EXISTS standing_approvals(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, kind TEXT NOT NULL, recipients_json TEXT, max_amount_cents INTEGER NOT NULL, max_per_day INTEGER NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT);
   CREATE INDEX IF NOT EXISTS idx_standing_approvals_owner ON standing_approvals(owner_id);
   `);
+  // Bank statements the assistant already read for the books (phone retest 1 Nov: a new chat asked for the
+  // same Swedbank statement again). Bank name and last four digits only, never the account number.
+  db.exec("CREATE TABLE IF NOT EXISTS statements_read(owner_id TEXT NOT NULL, bank TEXT NOT NULL, last4 TEXT NOT NULL, period_from TEXT NOT NULL, period_to TEXT NOT NULL, closing_balance_cents INTEGER NOT NULL, read_at TEXT NOT NULL, PRIMARY KEY(owner_id, bank, last4, period_from, period_to))");
   return db;
 }
 export type Db = ReturnType<typeof openDb>;

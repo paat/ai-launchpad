@@ -61,7 +61,7 @@ async function grant(scopes: string, updates: boolean, actor = "alpha", browser?
   expect(policy).toContain("All connected assistants can search the public service catalogue");
   expect(policy).toContain("progress:report");
   expect(policy).toContain("saves concise assessments, task updates and private service nominations");
-  expect(policy).toContain("saves concise assessments, task updates and private service nominations. It can also ask you to approve a specific message, invoice, payment or filing; nothing happens unless you approve that exact content.");
+  expect(policy).toContain("saves concise assessments, task updates and private service nominations, and which bank statements your assistant read (bank, the account's last four digits, period and closing balance). It can also ask you to approve a specific message, invoice, payment or filing; nothing happens unless you approve that exact content.");
   expect(policy).toContain("Launchpad stores the exact text of each approval request (up to 4,000 characters; it can include a customer's e-mail address, amounts and figures) until you delete your progress. No conversations, files or Google tokens are shared.");
   expect(policy).not.toMatch(/source documents|no documents/i);
   expect(policy).toContain("never authorizes payments, filings or signatures");
@@ -187,9 +187,9 @@ async function consentPage(scopes: string) {
   await b.login();
   return { b, html: await (await b.request("/oauth/consent")).text() };
 }
-const STORED_EN = "If you allow preparing work, we store work status, your assistant's assessment, texts sent for your approval, private service nominations and anonymised requests until you delete them.";
+const STORED_EN = "If you allow preparing work, we store work status, your assistant's assessment, texts sent for your approval, private service nominations, anonymised requests and a summary of each bank statement your assistant read (bank, the account's last four digits, period and closing balance) until you delete them.";
 const reject = async (c: { b: Browser; html: string }) => { await c.b.request("/oauth/consent", { csrf: field(c.html, "csrf"), flow: field(c.html, "flow"), decision: "reject" }); return c.html; };
-const STORED_ET = "Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, kinnitamiseks esitatud tekstid, privaatsed teenusesoovitused ja anonüümseks muudetud soovid, kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.";
+const STORED_ET = "Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, kinnitamiseks esitatud tekstid, privaatsed teenusesoovitused, anonüümseks muudetud soovid ja loetud pangaväljavõtete kokkuvõtte (pank, konto neli viimast numbrit, periood ja lõppsaldo), kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.";
 
 test("consent storage sentence lists private service nominations in both languages for read+report and report-only (#21)", async () => {
   for (const scopes of ["progress:read progress:report", "progress:report"]) {
