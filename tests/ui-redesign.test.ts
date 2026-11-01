@@ -977,13 +977,12 @@ describe("„Käest ära” (#61)", () => {
   const consumed = approval({ id: "appr_done", state: "consumed", decided_at: "2026-11-02T09:00:00Z", consumed_at: "2026-11-02T10:00:00Z", outcome_json: JSON.stringify({ outcome: "sent", history: [] }) });
   const h = computeHandover({ assessment, obligations: mari.obligations, approvals: [consumed, approval()], rules: [], now: NOW });
 
-  test("Täna: one strip under the pills with the count, linking to Ühendus, before the primary action; no percentage", () => {
+  test("Täna: one strip under the pills with what needs the owner, linking to Ühendus, before the primary action; no percentage", () => {
     const html = tana({ handover: h, approvals: [approval()] });
     const strip = html.match(/<a class="ho-strip"[^]*?<\/a>/)![0];
     expect(strip).toContain('href="/uhenda#kaest-ara"');
-    expect(strip).toContain(`<b>Käest ära: <span class="num">1</span> töö ${h.total}-st</b>`);
+    expect(strip).toContain("<b>Kontoritöö: 1 ootab sinu kinnitust</b>");
     expect(strip).not.toContain("%");
-    expect(strip.match(/<li class="ho-seg/g)).toHaveLength(h.total);
     expect(html.indexOf('class="today-sum"')).toBeLessThan(html.indexOf('class="ho-strip"'));
     expect(html.indexOf('class="ho-strip"')).toBeLessThan(html.indexOf('class="btn" href="/approvals/'));
     expect(tana()).not.toContain("ho-strip");
@@ -1000,7 +999,8 @@ describe("„Käest ära” (#61)", () => {
     expect(section).toContain("Kuidas see arvutatakse");
     expect(section).toContain("Assistendi hinnang");
     const en = await connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: "csrf-x", rules: [] }, handover: h });
-    expect(en).toContain(`of ${h.total} jobs are off your plate`);
+    expect(en).toContain('<h2 id="ho-h">Back office</h2>');
+    expect(en).toContain("What your assistant can reach");
     expect(await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "anon" }, owner: false, handover: h })).not.toContain("kaest-ara");
   });
 });
