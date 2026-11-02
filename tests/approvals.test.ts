@@ -839,6 +839,20 @@ describe("whats_waiting_for_me: what the owner's Needs you lists, for a new chat
     expect(failed.did_not_work).toEqual([expect.objectContaining({ approval_id: yes.approval_id, outcome: expect.objectContaining({ outcome: "failed" }) })]);
   });
 
+  test("with linked books, this year's turnover is the assistant's to read, and no all-clear before it", async () => {
+    const c = await client(owner("waiting-turnover").token);
+    const assessment = {
+      assessed_domains: ["money"], company_registry_ref: "19990002", gaps: [], conclusion: "Synthetic.", connections: [{ kind: "accounting", state: "linked" }],
+      responsibilities: [{ id: "invoicing", domain: "money", label: "Invoices", applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: "Assistant", access: "Owner-granted access", success_criterion: "Invoices drafted", next_checkpoint: "Next run", reason: "Synthetic.", evidence_refs: [] }],
+      next_action: { title: "Next", rationale: "Synthetic.", uncertainty: "Synthetic.", needs_owner: false },
+    };
+    expect(parsed(await c.callTool({ name: "report_assessment", arguments: { report_id: "wt-1", expected_version: 0, assessment } })).version).toBe(1);
+    const r = parsed(await c.callTool({ name: "whats_waiting_for_me", arguments: {} }));
+    expect(r.read_from_books.map((n: { fact: string }) => n.fact)).toEqual(["ytd_turnover_this_year"]);
+    expect(r.questions.map((n: { fact: string }) => n.fact)).not.toContain("ytd_turnover_this_year");
+    expect(r.assistant_instruction).toMatch(/^First read each read_from_books fact .* Never say nothing is waiting until that is done and get_obligations asks the owner nothing new\. /);
+  });
+
   test("the link opens ChatGPT for an owner who last used it", async () => {
     const o = owner("waiting-chatgpt");
     const now = new Date().toISOString();
