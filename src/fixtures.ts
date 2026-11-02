@@ -24,7 +24,7 @@ const alpha: Assessment = assessmentSchema.parse({
   gaps: [],
   assumptions: ["Näidis: päris ettevõtte andmeid ei kasutatud."],
   conclusion: "Näidis: KMD numbrid teeb raamatupidaja, arved ja maksemeeldetuletused teeb Mari veel käsitsi.",
-  next_action: { title: "Lase assistendil tasumata arvetele meeldetuletused koostada", rationale: "Kaotab arvete käsitsi jälgimise; sina ainult kinnitad iga kirja.", savings_basis: "unknown", uncertainty: "Näidise mahud on välja mõeldud; aega pole mõõdetud.", needs_owner: true },
+  next_action: { title: "Lase assistendil tasumata arvetele meeldetuletused koostada", rationale: "Assistent jälgib tasumata arveid, saadab meeldetuletused ja salvestab tulemused.", savings_basis: "unknown", uncertainty: "Näidise mahud on välja mõeldud; aega pole mõõdetud.", needs_owner: true },
 });
 
 // The second demo company matches its synthetic register facts (19990002):

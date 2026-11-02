@@ -1,9 +1,11 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { byOpenPlaybookOrder, computeHandover, handoverObligations, jobOfApproval, type Handover } from "../src/handover.js";
 import { arikratt } from "../src/arikratt.js";
 import { openDb } from "../src/db.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
-import { computeObligations, type Obligation } from "../src/obligations.js";
+import { computeObligations, HANDOFF, type Obligation } from "../src/obligations.js";
 import { companyObligations, type ApprovalRow } from "../src/mcp.js";
 import { handoverSection, handoverStrip } from "../src/views.js";
 
@@ -207,7 +209,7 @@ describe("„Käest ära” honesty rules", () => {
     // KMD ettevalmistus is assessed to accountant (rung: other), so it carries „Assistendi hinnang”.
     expect(rows.find((r) => r.includes("KMD ettevalmistus"))).toContain("Assistendi hinnang");
     // Arvete koostamine is now backed by a playbook, so it shows the assistant can prepare it rather than raw assessment text.
-    expect(rows.find((r) => r.includes("Arvete koostamine"))).toContain("Assistent saab arve ette valmistada");
+    expect(rows.find((r) => r.includes("Arvete koostamine"))).toContain("Assistent koostab ja saadab arve ning salvestab tulemuse.");
     // Non-playbook assessment rows (e.g. from beta) still carry „Assistendi hinnang”.
     const betaPage = handoverSection(computeHandover({ assessment: DEMO_FIXTURES.beta, obligations, approvals: [], now: NOW }), "et", NOW);
     expect(betaPage).toContain("Assistendi hinnang");
@@ -461,4 +463,17 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     const hAppr = computeHandover({ assessment: null, obligations, approvals: [invoiceAppr], now: NOW });
     expect(hAppr.jobs.some((j) => j.id === "invoicing")).toBe(true);
   });
+});
+
+test("owner copy has no blanket send-approval prompts and filings stay with the owner", () => {
+  const src = join(import.meta.dirname, "..", "src");
+  const files = readdirSync(src, { recursive: true }).filter((file) => String(file).endsWith(".ts"));
+  expect(files.length).toBeGreaterThan(0);
+  for (const file of files) {
+    expect(readFileSync(join(src, String(file)), "utf8"), String(file)).not.toMatch(/kinnitust enne|ask me before|after you approve|only after approval|approve each letter|once you approve|kinnitad iga kirja|kinnitusel saata/i);
+  }
+  for (const key of ["vat-return-kmd", "tsd-monthly-return:yes", "tor-registration"]) {
+    expect(HANDOFF[key].prompt_et).toContain("ise e-MTA-s; salvesta tulemus, kui ütlen");
+    expect(HANDOFF[key].prompt_en).toContain("in e-MTA myself; record the outcome when I say");
+  }
 });

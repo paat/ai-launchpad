@@ -75,7 +75,7 @@ describe("#63 m13: English Täna on a sample workspace", () => {
     expect(a).toContain("Also handled by the accountant: VAT return (KMD)");
     expect(a).toContain("Next step: Let your assistant draft reminders for unpaid invoices");
     expect(a).toContain("<dt>The accountant</dt>");
-    expect(a).toContain('<span lang="et">Kaotab arvete käsitsi jälgimise; sina ainult kinnitad iga kirja.</span>');
+    expect(a).toContain('<span lang="et">Assistent jälgib tasumata arveid, saadab meeldetuletused ja salvestab tulemused.</span>');
     expect(a).toContain('<span lang="et">Omaniku põhitöö; see jääb talle. (Näidis.)</span>');
     expect(b).toContain("Next step: Restore the accounting connection");
     expect(b).toContain("Also handled by the accountant: Payroll and TSD data");

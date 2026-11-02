@@ -299,7 +299,7 @@ describe("Täna", () => {
     expect(tul).toContain("Arvutatud reeglist");
     expect(tul).toContain('<dt class="me">Sina</dt><dd>esitad KMD e-MTA-s oma Smart-ID-ga</dd>');
     expect(tul).toContain("Summad arvutab sinu raamatupidamisprogramm, mitte tehisaru.");
-    expect(tul).toContain("Valmista oktoobri KMD jaoks arved ette ja küsi minult kinnitust enne, kui midagi saadad.");
+    expect(tul).toContain("Valmista oktoobri KMD jaoks arved ette. Esitan KMD ise e-MTA-s; salvesta tulemus, kui ütlen, et esitasin.");
     expect(tul).toContain("Kes mida teeb");
     // The sample bar already says Näidis; without it (a non-demo owner) the synthetic company carries its own chip.
     expect(tul).not.toContain("label-chip--sample");

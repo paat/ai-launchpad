@@ -243,7 +243,7 @@ describe("rules engine (memo § 3, pure)", () => {
     // The scenarios reach every rule, so no HANDOFF entry is dead and no emitted rule lacks one.
     expect([...seen].sort()).toEqual(Object.keys(HANDOFF).sort());
     const kmd = computeObligations({ vat_registered: said(true) }, { today: at("2026-11-01"), months: 1 }).obligations.find((o) => o.rule_id === "vat-return-kmd")!;
-    expect(kmd.handoff).toMatchObject({ assistant_et: "kogub oktoobri arved kokku ja kontrollib, et ükski pole puudu", owner_et: "esitad KMD e-MTA-s oma Smart-ID-ga", prompt_et: "Valmista oktoobri KMD jaoks arved ette ja küsi minult kinnitust enne, kui midagi saadad.", assistant_en: "gathers October's invoices and checks none are missing" });
+    expect(kmd.handoff).toMatchObject({ assistant_et: "kogub oktoobri arved kokku ja kontrollib, et ükski pole puudu", owner_et: "esitad KMD e-MTA-s oma Smart-ID-ga", prompt_et: "Valmista oktoobri KMD jaoks arved ette. Esitan KMD ise e-MTA-s; salvesta tulemus, kui ütlen, et esitasin.", assistant_en: "gathers October's invoices and checks none are missing" });
   });
 });
 
