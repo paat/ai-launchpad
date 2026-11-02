@@ -380,6 +380,19 @@ describe("/alusta", () => {
     expect(planScreenHtml(paidEn, { text: "Sample plan", mock: true }, "en")).toContain("You can start for free:");
   });
 
+  test("Microsoft 365 Copilot Business recommends Claude and links the same assistant", async () => {
+    const programs = await skipToAssistant("10.4.1.1");
+    const asked = await post(programs, { ...hidden(programs.html), go: "assistant", choose: "copilot" }, { ip: "10.4.1.1" });
+    expect(asked.html).toContain(">Microsoft 365 Copilot Business</button>");
+    const done = await post(asked, { ...hidden(asked.html), go: "plan", chooseplan: "m365_business" }, { ip: "10.4.1.1" });
+    expect(done.html).toContain("<h1>Soovitame: Claude Free</h1>");
+    expect(done.html).not.toContain("<h1>Soovitame: Microsoft 365 Copilot Business</h1>");
+    expect(done.html).toContain('href="/uhenda?a=claude"');
+    expect(done.html).not.toContain("a=copilot");
+    expect(done.html).toContain("Laadi alla Claude");
+    expect(done.html).toContain("AI-hüppelaual pole veel Copilot-i jaoks seadistamise samme.");
+  });
+
   test("Merit with no assistant can need a paid plan, and the prompt never contains the free text", async () => {
     const start = await getPage("/alusta", "10.5.0.1");
     const company = await post(start, { ...hidden(start.html), go: "nocompany" }, { ip: "10.5.0.1" });

@@ -430,9 +430,9 @@ function currentPlan(args: IntakePlanArgs, sheet: readonly PlanRow[]): { assista
 }
 
 function asAssistantId(row: PlanRow): AssistantId {
-  if (row.assistant === "chatgpt") return "chatgpt";
-  if (row.assistant === "grok") return "grok";
-  return "claude";
+  if (row.assistant === "claude" || row.assistant === "chatgpt" || row.assistant === "grok") return row.assistant;
+  // recommendAssistant only keeps a connect-path assistant, so this is unreachable.
+  throw new Error("unreachable assistant");
 }
 
 function intakeRecommendation(args: IntakePlanArgs): Recommendation {

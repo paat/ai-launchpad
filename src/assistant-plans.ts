@@ -3,7 +3,8 @@
  * Unknown stays null. A null connector count is not eligible, and a null phone
  * or training flag is not claimed. A plan we have not run is recommended only
  * when it is the customer's current plan, or when it is the same assistant as
- * a plan we have already run. When no plan is allowed, recommended is null. */
+ * a plan we have already run. When no plan is allowed, recommended is null.
+ * Only an assistant with an AI Launchpad connect path may be kept or recommended. */
 import type { ServiceRecord } from "./catalog.js";
 
 export const CHECKED = "2026-11-01" as const;
@@ -202,8 +203,13 @@ export function rowFits(row: PlanRow, customer: Customer): boolean {
   return eligible(row) && slotsOk(row, customer.customConnectorsNeeded) && coversEmail(row, customer.emailSuite);
 }
 
-/** A published 0 cannot connect. Null is unknown, so the rule does not treat it as eligible. */
+/** Ids `/uhenda` opens. Only these assistants may be kept or recommended. */
+export const LAUNCHPAD_CONNECT_ASSISTANTS = ["claude", "chatgpt", "grok"] as const;
+
+/** A published 0 cannot connect. Null is unknown, so the rule does not treat it as eligible.
+ * An assistant without a connect path is not eligible, so it is never kept or recommended. */
 function eligible(row: PlanRow): boolean {
+  if (!(LAUNCHPAD_CONNECT_ASSISTANTS as readonly string[]).includes(row.assistant)) return false;
   if (row.custom_connectors === 0 || row.custom_connectors === null) return false;
   return row.write_tools === true;
 }
@@ -371,8 +377,20 @@ function factText(row: PlanRow, lang: "et" | "en"): string {
 
 const BRAND: Record<string, string> = {
   claude: "Claude", chatgpt: "ChatGPT", gemini: "Gemini", google: "Google",
-  copilot: "Copilot", meta: "Meta", grok: "Grok",
+  copilot: "Copilot", meta: "Meta AI", grok: "Grok",
 };
+
+/** The visitor's assistant has no `/uhenda` steps, so the recommendation comes from one that does. */
+function noSetupSteps(customer: Customer): Reason | null {
+  const id = customer.current?.assistant;
+  if (!id || (LAUNCHPAD_CONNECT_ASSISTANTS as readonly string[]).includes(id)) return null;
+  const name = BRAND[id] ?? id;
+  return {
+    text_et: `AI-hüppelaual pole veel ${name}-i jaoks seadistamise samme.`,
+    text_en: `AI Launchpad has no setup steps for ${name} yet.`,
+    sources: [],
+  };
+}
 
 function ownConnectionPhrase(n: PlanRow["custom_connectors"], lang: "et" | "en"): string {
   if (n === 1) return lang === "et" ? "üks oma ühendus" : "one own connection";
@@ -415,6 +433,8 @@ function buildReasons(customer: Customer, rec: Recommendation, sheet: readonly P
     }];
   }
   const reasons: Reason[] = [];
+  const missing = noSetupSteps(customer);
+  if (missing) reasons.push(missing);
   const free = sheet.find((r) => r.assistant === "claude" && r.plan === "free");
   if (!rec.keep && free && typeof free.custom_connectors === "number" && customer.customConnectorsNeeded > free.custom_connectors) {
     const names = customer.connectionNames ?? [];

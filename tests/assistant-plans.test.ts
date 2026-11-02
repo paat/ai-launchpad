@@ -203,7 +203,7 @@ describe("recommendAssistant", () => {
       launchpad_tested: "2026-10-30",
       price: { amount: 100, currency: "USD", tax: "excluded", per: "month", min_seats: 1 },
     });
-    const eur = clone(row("gemini", "ai_pro"), {
+    const eur = clone(row("chatgpt", "business"), {
       custom_connectors: "no_cap",
       write_tools: true,
       launchpad_tested: "2026-10-30",
@@ -306,15 +306,6 @@ describe("recommendAssistant", () => {
   });
 
   test("Copilot Business price states yearly billing and the Microsoft 365 requirement", () => {
-    const rec = recommendAssistant(base({ current: { assistant: "copilot", plan: "free" } }));
-    expect(rec.stayAlternative).toBe(row("copilot", "m365_business"));
-    const stay = rec.reasons.find((r) => r.text_en.includes("Microsoft 365 Copilot Business"));
-    expect(stay?.text_en).toMatch(/billed yearly/);
-    expect(stay?.text_en).toMatch(/requires an eligible Microsoft 365 plan/);
-    expect(stay?.text_en).not.toMatch(/web only/);
-    expect(stay?.text_et).toMatch(/tasutakse kord aastas/);
-    expect(stay?.text_et).toMatch(/vajab sobivat Microsoft 365 paketti/);
-    expect(stay?.text_et).not.toMatch(/ainult veebis/);
     const en = whyRows([row("copilot", "m365_business")], "en")[0]!;
     const et = whyRows([row("copilot", "m365_business")], "et")[0]!;
     expect(en.cost).toContain("billed yearly");
@@ -323,6 +314,34 @@ describe("recommendAssistant", () => {
     expect(et.cost).toContain("tasutakse kord aastas");
     expect(et.cost).toContain("vajab sobivat Microsoft 365 paketti");
     expect(et.phone).toBe("teadmata");
+  });
+
+  test("Copilot, Gemini and Meta AI are never kept; Claude is recommended by need", () => {
+    for (const current of [
+      { assistant: "copilot", plan: "m365_business", name: "Copilot" },
+      { assistant: "copilot", plan: "free", name: "Copilot" },
+      { assistant: "gemini", plan: "ai_pro", name: "Gemini" },
+      { assistant: "meta", plan: "free", name: "Meta AI" },
+    ]) {
+      const rec = recommendAssistant(base({ current }));
+      expect(rec.keep, current.plan).toBeUndefined();
+      expect(rec.recommended, current.plan).toBe(row("claude", "free"));
+      expect(rec.stayAlternative?.assistant, current.plan).not.toBe(current.assistant);
+      expect(rec.reasons.map((r) => r.text_et).join(" "), current.plan).toContain(
+        `AI-hüppelaual pole veel ${current.name}-i jaoks seadistamise samme.`,
+      );
+      expect(rec.reasons.map((r) => r.text_en).join(" "), current.plan).toContain(
+        `AI Launchpad has no setup steps for ${current.name} yet.`,
+      );
+    }
+    const merit = recommendAssistant(base({
+      current: { assistant: "copilot", plan: "m365_business" },
+      customConnectorsNeeded: 2,
+      connectionNames: ["Merit"],
+    }));
+    expect(merit.keep).toBeUndefined();
+    expect(merit.recommended).toBe(row("claude", "pro"));
+    expect(merit.paidNote).toBe(true);
   });
 
   test("no published connector cap is not rendered as no limit", () => {

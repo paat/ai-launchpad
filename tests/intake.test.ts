@@ -266,6 +266,35 @@ describe("buildIntakePlan", () => {
     expect(et.slice(etDetails)).toContain("<summary>Miks just see?</summary>");
   });
 
+  test("Copilot Business is not kept; the headline and the steps are the same Claude", () => {
+    const et = buildIntakePlan({
+      uses: "other", current: { assistant: "copilot", plan: "m365_business" }, lang: "et",
+    });
+    expect(et.assistant).toBe("claude");
+    expect(et.recommendation.keep).toBeUndefined();
+    expect(et.recommendation.recommended).toMatchObject({ assistant: "claude", plan: "free" });
+    expect(et.steps.map((s) => s.href).filter(Boolean)).toEqual(["https://claude.ai/download", "/uhenda?a=claude"]);
+    expect(et.reason).toContain("AI-hüppelaual pole veel Copilot-i jaoks seadistamise samme.");
+    const html = planScreenHtml(et, null, "et");
+    expect(html).toContain("<h1>Soovitame: Claude Free</h1>");
+    expect(html).toContain('href="/uhenda?a=claude"');
+    expect(html).not.toContain("a=copilot");
+    expect(html).not.toContain("<h1>Soovitame: Microsoft 365 Copilot Business</h1>");
+
+    const merit = buildIntakePlan({
+      uses: "other", current: { assistant: "copilot", plan: "m365_business" },
+      services: matchCatalog(["Merit Aktiva"]).matched, lang: "en",
+    });
+    expect(merit.assistant).toBe("claude");
+    expect(merit.recommendation.keep).toBeUndefined();
+    expect(merit.recommendation.recommended).toMatchObject({ assistant: "claude", plan: "pro" });
+    expect(merit.steps.some((s) => s.href === "/uhenda?a=claude&lang=en")).toBe(true);
+    const en = planScreenHtml(merit, null, "en");
+    expect(en).toContain("<h1>We recommend: Claude Pro</h1>");
+    expect(en).toContain('href="/uhenda?a=claude&amp;lang=en"');
+    expect(en).toContain("AI Launchpad has no setup steps for Copilot yet.");
+  });
+
   test("a stated fact-sheet plan is kept, and an unknown plan id still offers that assistant", () => {
     const grok = buildIntakePlan({
       uses: "grok", current: { assistant: "grok", plan: "free" }, lang: "en",
