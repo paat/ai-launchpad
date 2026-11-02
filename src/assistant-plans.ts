@@ -342,17 +342,24 @@ function priceText(row: PlanRow, seats: number, lang: "et" | "en"): string | nul
   const unit = p.per === "seat_month"
     ? (lang === "et" ? "kasutaja kohta kuus" : "per user a month")
     : (lang === "et" ? "kuus" : "a month");
+  const total = monthlyCost(row, seats)!;
+  const totalAmount = `${formatAmount(total, lang)} ${cur}`;
+  // Below the published minimum, the total is the plan's floor, not this visitor's seat count.
+  const belowMin = p.min_seats != null && seats < p.min_seats;
   const min = p.min_seats != null && p.min_seats > 1
-    ? (lang === "et" ? `, vähemalt ${p.min_seats} kasutajat` : `, at least ${p.min_seats} users`)
+    ? belowMin
+      ? (lang === "et"
+        ? `, vähemalt ${p.min_seats} kasutajat — kokku vähemalt ${totalAmount} kuus`
+        : `, at least ${p.min_seats} users — at least ${totalAmount} a month in total`)
+      : (lang === "et" ? `, vähemalt ${p.min_seats} kasutajat` : `, at least ${p.min_seats} users`)
     : "";
   const tax = p.tax === "excluded"
     ? (lang === "et" ? "maksud ei ole hinna sees" : "tax is not included")
     : (lang === "et" ? "lehel ei ole öeldud, kas maks on hinna sees" : "the page does not say whether tax is included");
-  const total = monthlyCost(row, seats)!;
-  const extra = total !== p.amount
+  const extra = total !== p.amount && !belowMin
     ? (lang === "et"
-      ? ` ${seats} kasutajaga on see ${formatAmount(total, "et")} ${cur} kuus.`
-      : ` For ${seats} ${seats === 1 ? "user" : "users"} that is ${formatAmount(total, "en")} ${cur} a month.`)
+      ? ` ${seats} kasutajaga on see ${totalAmount} kuus.`
+      : ` For ${seats} ${seats === 1 ? "user" : "users"} that is ${totalAmount} a month.`)
     : "";
   const checkedOn = lang === "et" ? `Kontrollitud ${fmtDate(row.checked)}.` : `Checked ${fmtDate(row.checked)}.`;
   const verb = lang === "et" ? "maksab" : "costs";

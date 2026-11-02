@@ -198,6 +198,19 @@ describe("recommendAssistant", () => {
     expect(monthlyCost(row("chatgpt", "pro"), 1)).toBeNull();
   });
 
+  test("a seat count under the minimum is not billed as that many users", () => {
+    const one = recommendAssistant(base({ current: { assistant: "chatgpt", plan: "business" }, customConnectorsNeeded: 2, seats: 1 }));
+    const et = one.reasons.map((r) => r.text_et).join(" ");
+    const en = one.reasons.map((r) => r.text_en).join(" ");
+    expect(et).toContain("25 dollarit kasutaja kohta kuus, vähemalt 2 kasutajat — kokku vähemalt 50 dollarit kuus");
+    expect(et).not.toMatch(/1 kasutajaga/);
+    expect(en).toContain("25 US dollars per user a month, at least 2 users — at least 50 US dollars a month in total");
+    expect(en).not.toMatch(/For 1 user/);
+    const three = recommendAssistant(base({ current: { assistant: "chatgpt", plan: "business" }, customConnectorsNeeded: 2, seats: 3 }));
+    expect(three.reasons.map((r) => r.text_et).join(" ")).toContain("3 kasutajaga on see 75 dollarit kuus.");
+    expect(three.reasons.map((r) => r.text_en).join(" ")).toContain("For 3 users that is 75 US dollars a month.");
+  });
+
   test("prices in different currencies are not compared", () => {
     const usd = clone(row("claude", "pro"), {
       launchpad_tested: "2026-10-30",
