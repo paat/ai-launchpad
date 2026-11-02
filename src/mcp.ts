@@ -655,10 +655,12 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     if (!need("progress:read")) return err("Missing scope progress:read. Nothing was read.");
     const st = getState(db, ctx.ownerId);
     const ref = st.assessment?.company_registry_ref?.trim();
-    const r = ref && /^\d{8}$/.test(ref) ? await companyObligations(ar, { registryCode: ref, months: 2 }) : null;
+    const code = ref && /^\d{8}$/.test(ref) ? ref : null;
+    const r = code ? await companyObligations(ar, { registryCode: code, months: 2 }) : null;
     // Approvals are read under the same gate as get_approval.
     const gate = sharingGate("Approvals were not read.");
     const items = openItems(gate ? [] : ownerApprovals(db, ctx.ownerId), r?.ok && !r.result.company.unavailable ? r.result : null, st.assessment);
+    const deadlinesGap = !code ? "Deadlines and their questions need the company's registry code: call get_obligations." : r && (!r.ok || r.result.company.unavailable) ? "The register lookup failed, so deadline questions are missing: call get_obligations." : null;
     logActivity(db, ctx.ownerId, "assistant", "whats_waiting_for_me", "ok", `Assistant read what waits for the owner: ${items.count} item(s).`);
     return json({
       count: items.count,
@@ -667,8 +669,9 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
       questions: items.questions,
       next_step: items.next && { title: items.next.title, rationale: items.next.rationale },
       ...(gate ? { approvals_unavailable: gate } : {}),
-      ...(!ref ? { registry_code_unknown: "Deadlines and their questions need the company's registry code: call get_obligations." } : r && (!r.ok || r.result.company.unavailable) ? { deadlines_unavailable: "The register lookup failed, so deadline questions are missing: call get_obligations." } : {}),
-      assistant_instruction: items.count === 0 ? "Tell the owner in one line that nothing is waiting for them." : "Tell the owner in one line how many things wait for them, then handle them one at a time in this order, one question per message. approvals_waiting: show the exact action (recipient, amount, text) and ask once; when they say yes, call request_approval with the same action, a new report_id and owner_confirmation set to their words; that approves the waiting request. Then act under it as request_approval says. did_not_work: say in one line what did not work and offer to try again; trying again needs a new approval. questions: before a TSD question, look in the connected books and bank as get_obligations says; ask the rest with the answer left open, then call get_obligations with the answer as a fact. next_step: offer to do it. Never act before an approval is approved.",
+      ...(deadlinesGap ? { [code ? "deadlines_unavailable" : "registry_code_unknown"]: deadlinesGap } : {}),
+      // An empty list is an all-clear only when every source was read.
+      assistant_instruction: items.count === 0 && !gate && !deadlinesGap ? "Tell the owner in one line that nothing is waiting for them." : items.count === 0 ? "Nothing is listed, but not everything could be checked (see approvals_unavailable, deadlines_unavailable or registry_code_unknown): never tell the owner nothing is waiting. Say in one line what could not be checked and do what that field says." : "Tell the owner in one line how many things wait for them, then handle them one at a time in this order, one question per message. approvals_waiting: show the exact action (recipient, amount, text) and ask once; when they say yes, call request_approval with the same action, a new report_id and owner_confirmation set to their words; that approves the waiting request. Then act under it as request_approval says. did_not_work: say in one line what did not work and offer to try again; trying again needs a new approval. questions: before a TSD question, look in the connected books and bank as get_obligations says; ask the rest with the answer left open, then call get_obligations with the answer as a fact. next_step: offer to do it. Never act before an approval is approved.",
     });
   });
 

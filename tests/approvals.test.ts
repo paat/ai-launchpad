@@ -913,8 +913,9 @@ describe("whats_waiting_for_me: what the owner's Needs you lists, for a new chat
     const c = await client(o.token);
     const empty = parsed(await c.callTool({ name: "whats_waiting_for_me", arguments: {} }));
     expect(empty).toMatchObject({ count: 0, approvals_waiting: [], did_not_work: [], questions: [], next_step: null });
-    expect(empty.assistant_instruction).toContain("nothing is waiting");
+    // Without a registry code the deadline questions are unknown: never an all-clear.
     expect(empty.registry_code_unknown).toContain("get_obligations");
+    expect(empty.assistant_instruction).toContain("never tell the owner nothing is waiting");
 
     const waiting = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "wl-1", action: reminder() } }));
     const list = parsed(await c.callTool({ name: "whats_waiting_for_me", arguments: {} }));
@@ -956,6 +957,8 @@ describe("whats_waiting_for_me: what the owner's Needs you lists, for a new chat
     const off = owner("waiting-off", "progress:read,progress:report", 0);
     const r = parsed(await (await client(off.token)).callTool({ name: "whats_waiting_for_me", arguments: {} }));
     expect(r.approvals_unavailable).toContain("Approvals were not read");
+    expect(r.count).toBe(0);
+    expect(r.assistant_instruction).toContain("never tell the owner nothing is waiting");
     const reportOnly = owner("waiting-report-only", "progress:report");
     expect(errText(await (await client(reportOnly.token)).callTool({ name: "whats_waiting_for_me", arguments: {} }))).toContain("progress:read");
   });
