@@ -112,7 +112,7 @@ const OUTPUT_NOT_RETAINED: ReadonlySet<ModelJob> = new Set(["check_approval", "i
 const REQUEST_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 const COMMON =
-  "Give bounded help only. Take no actions and claim no actions were taken. " +
+  "Give bounded help only. Take no actions and do not claim any were taken. " +
   "Do not claim any service, connector, filing, payment or fact is verified. " +
   "Do not invent URLs, credentials, prices or deadlines. Keep the answer short.";
 export const FIXED_INSTRUCTIONS: Record<ModelJob, string> = {

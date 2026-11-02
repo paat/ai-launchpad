@@ -513,7 +513,7 @@ describe("model quality harness (Baseten)", () => {
     expect(FIXED_INSTRUCTIONS.intake_extract).toContain('{"products":[{"name":string,"kind":"accounting"|"bank"|"email"|"customers"|"other"}]}');
     const planWords = FIXED_INSTRUCTIONS.intake_plan;
     expect(planWords).toContain("Give bounded help only");
-    expect(planWords).toContain("Take no actions and claim no actions were taken");
+    expect(planWords).toContain("Take no actions and do not claim any were taken");
     expect(planWords).toContain("Do not invent URLs, credentials, prices or deadlines");
     expect(planWords).toContain("best result needs a paid AI plan");
     expect(planWords).toContain("Do not state a price");
