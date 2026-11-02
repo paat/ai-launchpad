@@ -138,6 +138,7 @@ describe("actions recorded without approval", () => {
     const outcomeDescription = (await c.listTools()).tools.find((tool) => tool.name === "record_action_outcome")!.description!;
     expect(outcomeDescription).toContain("record paid or submitted only after the owner says they paid in the bank or filed in e-MTA / e-Business Register");
     expect(outcomeDescription).toContain("No approval is required to record their report");
+    expect(outcomeDescription.startsWith("Call right after you send an e-mail, invoice or payment reminder for the business (Gmail, Outlook")).toBe(true);
     expect(started.first_step).toContain("the owner only answers what nobody else knows");
   });
 });
