@@ -80,8 +80,10 @@ function catalogIndex() {
   return indexed;
 }
 
-/** One owner product, routed the way the connect-service playbook routes it. */
+/** One owner product, routed the way the connect-service playbook routes it.
+ * `key` is the canonical id stored in the hidden field. `product` is the name from code. */
 export interface ProductHit {
+  key: string;
   product: string;
   kind: ProductKind;
   record: ServiceRecord | null;
@@ -90,6 +92,7 @@ export interface ProductHit {
 }
 
 interface Phrase {
+  key: string;
   needles: string[];
   kind: ProductKind;
   label: string;
@@ -103,25 +106,25 @@ interface Phrase {
  * the assistant's built-in connector. Other banks, Proton and unnamed tools in those
  * branches are not offered as catalogue steps. */
 const PHRASES: Phrase[] = [
-  { needles: ["merit aktiva", "merit activa"], kind: "accounting", label: "Merit Aktiva", id: "werkzeug", via: "Werkzeug" },
-  { needles: ["merit palk"], kind: "other", label: "Merit Palk" },
-  { needles: ["merit"], kind: "accounting", label: "Merit Aktiva", id: "werkzeug", via: "Werkzeug" },
-  { needles: ["e arveldaja", "earveldaja", "e financials", "arveldaja"], kind: "accounting", label: "e-arveldaja", id: "werkzeug", via: "Werkzeug" },
-  { needles: ["erply books", "erply"], kind: "accounting", label: "Erply Books", id: "werkzeug", via: "Werkzeug" },
-  { needles: ["werkzeug"], kind: "accounting", label: "Werkzeug", id: "werkzeug" },
-  { needles: ["proton mail", "protonmail", "proton"], kind: "email", label: "Proton Mail" },
-  { needles: ["microsoft 365"], kind: "email", label: "Microsoft 365", id: "microsoft-workiq-mcp", builtin: "microsoft" },
-  { needles: ["outlook"], kind: "email", label: "Outlook", id: "microsoft-workiq-mcp", builtin: "microsoft" },
-  { needles: ["gmail"], kind: "email", label: "Gmail", id: "google-gmail-mcp", builtin: "google" },
-  { needles: ["swedbank"], kind: "bank", label: "Swedbank" },
-  { needles: ["luminor"], kind: "bank", label: "Luminor" },
-  { needles: ["coop pank", "coop"], kind: "bank", label: "Coop Pank" },
-  { needles: ["seb"], kind: "bank", label: "SEB" },
-  { needles: ["lhv"], kind: "bank", label: "LHV", id: "lhv-ai" },
-  { needles: ["pipedrive"], kind: "customers", label: "Pipedrive", id: "pipedrive" },
-  { needles: ["hubspot"], kind: "customers", label: "HubSpot", id: "hubspot" },
-  { needles: ["scoro"], kind: "customers", label: "Scoro", id: "scoro" },
-  { needles: ["trivis"], kind: "customers", label: "Trivis", id: "trivis" },
+  { key: "merit-aktiva", needles: ["merit aktiva", "merit activa"], kind: "accounting", label: "Merit Aktiva", id: "werkzeug", via: "Werkzeug" },
+  { key: "merit-palk", needles: ["merit palk"], kind: "other", label: "Merit Palk" },
+  { key: "merit-aktiva", needles: ["merit"], kind: "accounting", label: "Merit Aktiva", id: "werkzeug", via: "Werkzeug" },
+  { key: "e-arveldaja", needles: ["e arveldaja", "earveldaja", "e financials", "arveldaja"], kind: "accounting", label: "e-arveldaja", id: "werkzeug", via: "Werkzeug" },
+  { key: "erply-books", needles: ["erply books", "erply"], kind: "accounting", label: "Erply Books", id: "werkzeug", via: "Werkzeug" },
+  { key: "werkzeug", needles: ["werkzeug"], kind: "accounting", label: "Werkzeug", id: "werkzeug" },
+  { key: "proton-mail", needles: ["proton mail", "protonmail", "proton"], kind: "email", label: "Proton Mail" },
+  { key: "microsoft-365", needles: ["microsoft 365"], kind: "email", label: "Microsoft 365", id: "microsoft-workiq-mcp", builtin: "microsoft" },
+  { key: "outlook", needles: ["outlook"], kind: "email", label: "Outlook", id: "microsoft-workiq-mcp", builtin: "microsoft" },
+  { key: "gmail", needles: ["gmail"], kind: "email", label: "Gmail", id: "google-gmail-mcp", builtin: "google" },
+  { key: "swedbank", needles: ["swedbank"], kind: "bank", label: "Swedbank" },
+  { key: "luminor", needles: ["luminor"], kind: "bank", label: "Luminor" },
+  { key: "coop-pank", needles: ["coop pank", "coop"], kind: "bank", label: "Coop Pank" },
+  { key: "seb", needles: ["seb"], kind: "bank", label: "SEB" },
+  { key: "lhv", needles: ["lhv"], kind: "bank", label: "LHV", id: "lhv-ai" },
+  { key: "pipedrive", needles: ["pipedrive"], kind: "customers", label: "Pipedrive", id: "pipedrive" },
+  { key: "hubspot", needles: ["hubspot"], kind: "customers", label: "HubSpot", id: "hubspot" },
+  { key: "scoro", needles: ["scoro"], kind: "customers", label: "Scoro", id: "scoro" },
+  { key: "trivis", needles: ["trivis"], kind: "customers", label: "Trivis", id: "trivis" },
 ];
 
 let idMap: Map<string, ServiceRecord> | null = null;
@@ -130,22 +133,77 @@ function recordById(id: string): ServiceRecord | null {
   return idMap.get(id) ?? null;
 }
 
-function ownerLabel(raw: string, canonical: string, mentions: number): string {
-  const t = raw.trim().replace(/\s+/g, " ");
-  if (mentions !== 1 || t.length > 60 || t.length < 1) return canonical;
-  if (/\b(mcp|api|github|cli|plugin)\b/i.test(t)) return canonical;
-  if (/\b(and|ja)\b/i.test(t)) return canonical;
-  return t;
-}
-
 function phraseHit(phrase: Phrase, product: string): ProductHit {
   const record = phrase.id ? recordById(phrase.id) : null;
   const via = phrase.via && norm(phrase.via) !== norm(product) ? phrase.via : undefined;
   return {
-    product, kind: phrase.kind, record,
+    key: phrase.key, product, kind: phrase.kind, record,
     ...(via ? { via } : {}),
     ...(phrase.builtin ? { builtin: phrase.builtin } : {}),
   };
+}
+
+function hostedPhrase(rec: ServiceRecord): Phrase {
+  return { key: `cat:${rec.id}`, needles: [], kind: kindOf(rec), label: cleanHostedName(rec), id: rec.id };
+}
+
+let keyIndex: Map<string, Phrase> | null = null;
+function phraseByKey(key: string): Phrase | null {
+  if (!keyIndex) {
+    keyIndex = new Map();
+    for (const phrase of PHRASES) if (!keyIndex.has(phrase.key)) keyIndex.set(phrase.key, phrase);
+    for (const { rec } of catalogIndex()) {
+      if (rec.interface_class !== "hosted_mcp") continue;
+      const phrase = hostedPhrase(rec);
+      if (!keyIndex.has(phrase.key)) keyIndex.set(phrase.key, phrase);
+    }
+  }
+  return keyIndex.get(key) ?? null;
+}
+
+/** Canonical ids only. Unknown ids and any display string are dropped. */
+export function productsFromKeys(keys: readonly unknown[]): ProductHit[] {
+  const out: ProductHit[] = [];
+  const seen = new Set<string>();
+  for (const raw of keys) {
+    if (typeof raw !== "string") continue;
+    const phrase = phraseByKey(raw.trim());
+    if (!phrase || seen.has(phrase.key)) continue;
+    seen.add(phrase.key);
+    out.push(phraseHit(phrase, phrase.label));
+    if (out.length === 8) break;
+  }
+  return out;
+}
+
+let allowedNames: Set<string> | null = null;
+function allowedProductNames(): Set<string> {
+  if (!allowedNames) {
+    const names = new Set<string>(["Gmail", "Outlook"]);
+    for (const phrase of PHRASES) names.add(phrase.label);
+    for (const rec of loadCatalog()) {
+      const row = rec.name.trim().replace(/\s+/g, " ");
+      if (row) names.add(row);
+      const cleaned = cleanHostedName(rec).trim().replace(/\s+/g, " ");
+      if (cleaned) names.add(cleaned);
+    }
+    allowedNames = names;
+  }
+  return allowedNames;
+}
+
+/** Names the paste prompt, the steps and the plan model may repeat. Anything else is dropped. */
+function canonicalProductNames(names: readonly string[]): string[] {
+  const allow = allowedProductNames();
+  const out: string[] = [];
+  for (const raw of names) {
+    if (typeof raw !== "string") continue;
+    const t = raw.trim().replace(/\s+/g, " ");
+    if (!t || !allow.has(t) || out.includes(t)) continue;
+    out.push(t);
+    if (out.length === 8) break;
+  }
+  return out;
 }
 
 function cleanHostedName(rec: ServiceRecord): string {
@@ -197,10 +255,7 @@ function mentionsIn(hay: string): Span[] {
   for (const h of hosted) {
     if (overlaps(h.pos, h.end)) continue;
     taken.push({ pos: h.pos, end: h.end });
-    out.push({
-      pos: h.pos, end: h.end,
-      phrase: { needles: [], kind: kindOf(h.rec), label: cleanHostedName(h.rec), id: h.rec.id },
-    });
+    out.push({ pos: h.pos, end: h.end, phrase: hostedPhrase(h.rec) });
   }
   out.sort((a, b) => a.pos - b.pos);
   return out;
@@ -218,8 +273,8 @@ export function routeProducts(names: string[], kinds?: ProductKind[]): { hits: P
     const found = mentionsIn(q);
     if (found.length) {
       for (const span of found) {
-        const product = ownerLabel(name, span.phrase.label, found.length);
-        const key = `${norm(product)}|${span.phrase.id ?? ""}|${span.phrase.builtin ?? ""}`;
+        const product = span.phrase.label;
+        const key = `${span.phrase.key}|${norm(product)}|${span.phrase.builtin ?? ""}`;
         if (seen.has(key)) continue;
         seen.add(key);
         hits.push(phraseHit(span.phrase, product));
@@ -227,19 +282,18 @@ export function routeProducts(names: string[], kinds?: ProductKind[]): { hits: P
       return;
     }
     const kind = kinds?.[i];
+    // A kind without a playbook or catalogue hit is not a product name we may repeat.
     if (kind === "accounting" || kind === "bank" || kind === "email" || kind === "customers") {
-      const product = name.trim().slice(0, 60);
-      const key = `${norm(product)}||`;
-      if (!seen.has(key)) { seen.add(key); hits.push({ product, kind, record: null }); }
+      unmatched.push(raw);
       return;
     }
     const best = bestHosted(q);
     if (!best) { unmatched.push(raw); return; }
-    const product = ownerLabel(name, cleanHostedName(best), 1);
-    const key = `${norm(product)}|${best.id}|`;
+    const phrase = hostedPhrase(best);
+    const key = `${phrase.key}|${norm(phrase.label)}|`;
     if (seen.has(key)) return;
     seen.add(key);
-    hits.push({ product, kind: kindOf(best), record: best });
+    hits.push(phraseHit(phrase, phrase.label));
   });
   return { hits, unmatched };
 }
@@ -386,10 +440,10 @@ function intakeRecommendation(args: IntakePlanArgs): Recommendation {
   return recommendAssistant(customerFromServices(args.services ?? [], currentPlan(args, sheet)), sheet);
 }
 
-/** Prompt sentences use the register name, the registry code and the owner's product names. */
+/** Prompt sentences use the register name, the registry code and canonical product names. */
 function intakePrompt(lang: "et" | "en", company: IntakeCompany | null | undefined, services: ServiceRecord[], productNames?: string[]): string {
-  const named = (productNames ?? []).map((n) => n.trim()).filter((n) => n.length > 0);
-  const names = named.length ? named : services.map((s) => s.name).filter((n) => typeof n === "string" && n.length > 0);
+  const named = canonicalProductNames(productNames ?? []);
+  const names = named.length ? named : canonicalProductNames(services.map((s) => s.name).filter((n) => typeof n === "string"));
   const parts: string[] = [];
   const code = company?.registry_code?.trim();
   const name = company?.name?.trim();
@@ -448,7 +502,7 @@ export function buildIntakePlan(args: IntakePlanArgs): IntakePlan {
     const url = safeHttps(service.connection);
     if (!url || !service.name) continue;
     const label = connectLabel(service);
-    const products = routedFor.get(service.id) ?? [];
+    const products = canonicalProductNames(routedFor.get(service.id) ?? []);
     const listed = products.length
       ? (lang === "et" ? ` (${joinProducts(products, " ja ")} jaoks)` : ` (for ${joinProducts(products, " and ")})`)
       : "";
@@ -489,7 +543,8 @@ function productsRoutedThrough(names: string[]): Map<string, string[]> {
   for (const hit of routeProducts(names).hits) {
     if (!hit.record || !hit.via) continue;
     const list = map.get(hit.record.id) ?? [];
-    if (!list.includes(hit.product)) list.push(hit.product);
+    const product = canonicalProductNames([hit.product])[0];
+    if (product && !list.includes(product)) list.push(product);
     map.set(hit.record.id, list);
   }
   return map;
@@ -501,20 +556,16 @@ function joinProducts(items: string[], and: string): string {
   return `${items.slice(0, -1).join(", ")}${and}${items[items.length - 1]}`;
 }
 
-/** Compact JSON for intake_plan. Obligations, then services, then unmatched names drop until it fits. */
+/** Compact JSON for intake_plan. Obligations, then service names, drop until it fits.
+ * Unmatched program text is never included: the visitor sees it only in the understood bubble. */
 export function planModelInput(args: IntakePlanArgs): string {
   const lang = args.lang === "en" ? "en" : "et";
   const obligations = (args.obligations ?? [])
     .filter((o) => typeof o.effective_due === "string" && o.effective_due.length > 0)
     .slice(0, 3)
     .map((o) => ({ title: lang === "en" ? o.title_en : o.title_et, effective_due: o.effective_due as string }));
-  let services = (args.services ?? []).map((s) => s.name).filter((n) => typeof n === "string" && n.length > 0);
-  let unmatched = (args.unmatched ?? [])
-    .filter((n): n is string => typeof n === "string")
-    .map((n) => n.trim())
-    .filter((n) => n.length > 0)
-    .slice(0, 8)
-    .map((n) => n.slice(0, 60));
+  const allow = allowedProductNames();
+  let services = (args.services ?? []).map((s) => s.name).filter((n): n is string => typeof n === "string" && allow.has(n.trim().replace(/\s+/g, " ")));
   let companyName = args.company?.name?.trim() || "";
   let businessArea = args.company?.emtak_label?.trim() || "";
   const rec = intakeRecommendation(args);
@@ -530,12 +581,10 @@ export function planModelInput(args: IntakePlanArgs): string {
     if (businessArea) body.business_area = businessArea;
     body.obligations = obligations;
     body.services = services;
-    if (unmatched.length) body.unmatched = unmatched;
     return JSON.stringify({ ...body, ...fixed });
   };
   const tooBig = (s: string) => s.length > MAX_INPUT_CHARS || new TextEncoder().encode(s).byteLength > MAX_INPUT_BYTES;
   let s = build();
-  while (tooBig(s) && unmatched.length) { unmatched = unmatched.slice(0, -1); s = build(); }
   while (tooBig(s) && obligations.length) { obligations.pop(); s = build(); }
   while (tooBig(s) && services.length) { services = services.slice(0, -1); s = build(); }
   while (tooBig(s) && companyName.length > 20) { companyName = companyName.slice(0, Math.floor(companyName.length / 2)); s = build(); }

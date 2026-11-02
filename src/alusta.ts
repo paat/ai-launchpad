@@ -7,7 +7,7 @@ import { parseBusiness, parseTier, parseUses, type Business, type Tier, type Use
 import type { Arikratt, CompanyCard } from "./arikratt.js";
 import { loadCatalog, type ServiceRecord } from "./catalog.js";
 import {
-  buildIntakePlan, intakeRateOk, parseExtract, planModelInput, productsInText, routeProducts,
+  buildIntakePlan, intakeRateOk, parseExtract, planModelInput, productsFromKeys, productsInText, routeProducts,
   type IntakeClient, type IntakeCompany, type IntakeObligation, type IntakePlan, type ProductHit,
 } from "./intake.js";
 import { computeObligations, validRegistryCode, type CompanyFacts, type Obligation } from "./obligations.js";
@@ -108,7 +108,7 @@ const EN_MONTH = ["January", "February", "March", "April", "May", "June", "July"
 const clip = (v: string, n: number) => v.slice(0, n);
 const field = (body: Record<string, string>, key: string) => (typeof body[key] === "string" ? body[key] : "");
 
-interface NamedProduct { product: string; id: string; via: string; }
+interface NamedProduct { key: string; product: string; id: string; via: string; }
 
 interface Flow {
   asked: string;
@@ -151,23 +151,21 @@ function readSvc(raw: string, ids: Map<string, ServiceRecord>): string[] {
   return out;
 }
 
-function readProducts(raw: string, ids: Map<string, ServiceRecord>): NamedProduct[] {
+/** Hidden field is a list of canonical ids. A display string, including a forged `p`, is ignored. */
+function readProducts(raw: string): NamedProduct[] {
   if (!raw) return [];
   try {
     const v = JSON.parse(raw) as unknown;
     if (!Array.isArray(v)) return [];
-    const out: NamedProduct[] = [];
+    const keys: unknown[] = [];
     for (const item of v) {
-      if (!item || typeof item !== "object") continue;
-      const row = item as Record<string, unknown>;
-      const product = typeof row.p === "string" ? row.p.trim().slice(0, 60) : "";
-      const id = typeof row.id === "string" ? row.id.trim() : "";
-      const via = typeof row.v === "string" ? row.v.trim().slice(0, 40) : "";
-      if (!product) continue;
-      out.push({ product, id: id && ids.has(id) ? id : "", via: id && ids.has(id) ? via : "" });
-      if (out.length === 8) break;
+      if (typeof item === "string") keys.push(item);
+      else if (item && typeof item === "object" && !Array.isArray(item)) {
+        const id = (item as Record<string, unknown>).id;
+        if (typeof id === "string") keys.push(id);
+      }
     }
-    return out;
+    return namedFrom(productsFromKeys(keys));
   } catch { return []; }
 }
 
@@ -255,7 +253,7 @@ function hiddenOf(flow: Flow): Record<string, string> {
     got: flow.got,
     shown: flow.shown,
     svc: flow.svc.join(","),
-    products: flow.products.length ? JSON.stringify(flow.products.map((p) => ({ p: p.product, id: p.id, v: p.via }))) : "",
+    products: flow.products.length ? JSON.stringify(flow.products.map((p) => p.key)) : "",
     unmatched: flow.unmatched.length ? JSON.stringify(flow.unmatched) : "",
     uses: flow.uses ?? "",
     tier: flow.tier ?? "",
@@ -337,9 +335,9 @@ ${obs ? `<h2>${esc(t("Järgmised kohustused", "Next obligations"))}</h2><ul clas
 <p class="small muted">${esc(company.attribution)}</p>`;
 }
 
-function understood(products: NamedProduct[], viaModel: boolean, lang: Lang): string {
+function understood(products: NamedProduct[], unmatched: string[], viaModel: boolean, lang: Lang): string {
   const t = tr(lang);
-  const names = products.map((p) => p.via ? `${p.product} → via ${p.via}` : p.product).filter(Boolean).join(", ");
+  const names = [...products.map((p) => p.via ? `${p.product} → via ${p.via}` : p.product), ...unmatched].filter(Boolean).join(", ");
   if (viaModel) return names ? t(`Sain aru: ${names}.`, `I understood: ${names}.`) : t("Sain aru: programme nime järgi ei tundnud.", "I understood: I could not name a program.");
   return names ? t(`Leitud nime järgi (mitte Muse): ${names}.`, `Matched by name (not Muse): ${names}.`) : t("Leitud nime järgi (mitte Muse).", "Matched by name (not Muse).");
 }
@@ -543,7 +541,7 @@ function readFlow(body: Record<string, string>, ids: Map<string, ServiceRecord>)
   flow.got = got === "model" || got === "fallback" || got === "skip" ? got : "";
   flow.shown = clip(field(body, "shown"), 800);
   flow.svc = readSvc(field(body, "svc"), ids);
-  flow.products = readProducts(field(body, "products"), ids);
+  flow.products = readProducts(field(body, "products"));
   flow.unmatched = readUnmatched(field(body, "unmatched"));
   flow.csum = clip(field(body, "csum"), 1500);
   const usesRaw = field(body, "uses");
@@ -638,7 +636,7 @@ async function applyGo(flow: Flow, go: string, opts: { ipKey: string; now: numbe
 }
 
 function namedFrom(hits: ProductHit[]): NamedProduct[] {
-  return hits.slice(0, 8).map((hit) => ({ product: hit.product, id: hit.record?.id ?? "", via: hit.via ?? "" }));
+  return hits.slice(0, 8).map((hit) => ({ key: hit.key, product: hit.product, id: hit.record?.id ?? "", via: hit.via ?? "" }));
 }
 
 async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeClient | null; ipKey: string; now: number; cookie: string | null }, lang: Lang): Promise<void> {
@@ -671,7 +669,9 @@ async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeC
   }
   flow.svc = ids;
   flow.got = viaModel ? "model" : "fallback";
-  flow.shown = understood(flow.products, viaModel, lang);
+  flow.shown = understood(flow.products, flow.unmatched, viaModel, lang);
+  // Unmatched text lives only in the understood bubble. It is not a product and is not sent on.
+  flow.unmatched = [];
 }
 
 async function screen(flow: Flow, lang: Lang, opts: { ipKey: string; now: number; intake: IntakeClient | null; register: Pick<Arikratt, "lookup" | "search">; cookie: string | null; preauth: string }, honeypot: boolean): Promise<AlustaOutcome> {
@@ -735,20 +735,27 @@ async function renderPlan(flow: Flow, lang: Lang, opts: { ipKey: string; now: nu
   const services = flow.svc.map((id) => loadCatalog().find((rec) => rec.id === id)).filter((rec): rec is ServiceRecord => !!rec);
   let company: IntakeCompany | null = null;
   let obligations: IntakeObligation[] = [];
-  if (!honeypot && flow.code && registerLookupOk(opts.ipKey, opts.now)) {
-    const looked = await opts.register.lookup(flow.code);
-    if (looked.ok) {
+  let registerNote = "";
+  if (!honeypot && flow.code) {
+    const applyLooked = (looked: { company: { name: string | null; legal_form: string | null; emtak_code: string | null; emtak_label: string | null }; facts: CompanyFacts }) => {
       company = {
         name: looked.company.name, registry_code: flow.code,
         legal_form: looked.company.legal_form, emtak_code: looked.company.emtak_code, emtak_label: looked.company.emtak_label,
       };
       obligations = upcoming(looked.facts, opts.now).map((o) => ({ title_et: o.title_et, title_en: o.title_en, effective_due: o.effective_due }));
-    }
+    };
+    // The confirmed company is already in the local cache. Reading it does not call the register and does not count.
+    const cached = await opts.register.lookup(flow.code, { cacheOnly: true });
+    if (cached.ok) applyLooked(cached);
+    else if (registerLookupOk(opts.ipKey, opts.now)) {
+      const looked = await opts.register.lookup(flow.code);
+      if (looked.ok) applyLooked(looked);
+    } else registerNote = `<p role="status">${esc(LIMIT_MSG[lang])}</p>`;
   }
   const uses = flow.uses ?? "none";
   const productNames = flow.products.map((p) => p.product).filter((name) => name.length > 0);
   const args = {
-    company, obligations, services, unmatched: flow.unmatched, uses,
+    company, obligations, services, uses,
     tier: flow.tier, business: flow.business,
     ...(productNames.length ? { productNames } : {}),
     ...(flow.assistant ? { current: { assistant: flow.assistant, plan: flow.plan } } : {}),
@@ -764,5 +771,5 @@ async function renderPlan(flow: Flow, lang: Lang, opts: { ipKey: string; now: nu
   const titles: [string, string] = plan.recommendation.recommended
     ? [planLabel(plan.recommendation.recommended), planLabel(plan.recommendation.recommended)]
     : ["Ühtegi sobivat paketti ei leitud — vaata tabelit", "No plan fits — see the table"];
-  return page(lang, opts.preauth, titles, flow, "", planScreenHtml(plan, muse, lang), false);
+  return page(lang, opts.preauth, titles, flow, "", registerNote + planScreenHtml(plan, muse, lang), false);
 }

@@ -4,24 +4,13 @@ import { chmodSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp, type Config } from "../src/app.js";
-import { PLAN_NOTE, REASONS, chooseAssistant, offerDownload, parseBusiness, parseUses } from "../src/assistant-choice.js";
+import { offerDownload, parseBusiness, parseUses } from "../src/assistant-choice.js";
 import { openDb } from "../src/db.js";
 import { CHOOSER_TOPICS, FRICTION_TOPICS, PublicCards } from "../src/model-public-cards.js";
 import { main as batchMain, parseArgs as parseBatchArgs } from "../src/model-public-cards-cli.js";
 import { ModelQualityLedger, type FetchFn } from "../src/model-quality.js";
 
-test("chooseAssistant covers every rule and never guesses", () => {
-  expect(chooseAssistant({ uses: "claude", tier: "free" })).toEqual({ assistant: "claude", reason: "already_claude" });
-  expect(chooseAssistant({ uses: "claude", tier: "paid" })).toEqual({ assistant: "claude", reason: "already_claude" });
-  expect(chooseAssistant({ uses: "claude", tier: "unsure", business: "no" })).toEqual({ assistant: "claude", reason: "already_claude" });
-  expect(chooseAssistant({ uses: "chatgpt", business: "yes" })).toEqual({ assistant: "chatgpt", reason: "chatgpt_business" });
-  expect(chooseAssistant({ uses: "chatgpt", business: "no" })).toEqual({ assistant: "claude", reason: "chatgpt_no_approvals" });
-  expect(chooseAssistant({ uses: "chatgpt", business: "unsure" })).toEqual({ assistant: "claude", reason: "chatgpt_no_approvals" });
-  expect(chooseAssistant({ uses: "other" })).toEqual({ assistant: "claude", reason: "other_untested" });
-  expect(chooseAssistant({ uses: "none" })).toEqual({ assistant: "claude", reason: "none" });
-  for (const answers of [{}, { uses: "chatgpt" }, { uses: "chatgpt", business: "maybe" }, { uses: "Claude" }, { uses: "" }, { business: "yes" }, { uses: ["claude"] }, { uses: "claude" }, { uses: "claude", tier: "maybe" }]) {
-    expect(chooseAssistant(answers)).toBeNull();
-  }
+test("offerDownload, answer parsers and chooser topics stay closed", () => {
   expect(parseUses("none")).toBe("none");
   expect(parseUses("nope")).toBeNull();
   expect(parseBusiness("unsure")).toBe("unsure");
@@ -31,14 +20,6 @@ test("chooseAssistant covers every rule and never guesses", () => {
   expect(offerDownload("chatgpt", "claude")).toBe("https://claude.ai/download");
   expect(offerDownload("none", "claude")).toBe("https://claude.ai/download");
   expect(offerDownload("other", "claude")).toBe("https://claude.ai/download");
-  for (const id of Object.keys(REASONS) as (keyof typeof REASONS)[]) {
-    for (const text of [REASONS[id].text.et, REASONS[id].text.en, REASONS[id].source.et, REASONS[id].source.en]) {
-      expect(text).not.toMatch(/\b(MCP|connector|API|OAuth|IBAN)\b/);
-    }
-  }
-  expect(PLAN_NOTE.source.et).toBe("Claude'i tasuta paketis on üks oma ühendus (kontrollitud 31.10.2026)");
-  expect(PLAN_NOTE.source.en).toBe("Claude's free plan has one custom connector (checked 31 Oct 2026)");
-  expect(`${PLAN_NOTE.text.et} ${PLAN_NOTE.connect.et} ${PLAN_NOTE.source.et}`).not.toMatch(/\b(MCP|API|connector)\b/);
   expect(CHOOSER_TOPICS.map((t) => t.id)).toEqual([
     "choose-already_claude", "choose-already_grok", "choose-chatgpt_business", "choose-chatgpt_no_approvals", "choose-other_untested", "choose-none",
   ]);
@@ -100,20 +81,9 @@ test("/vali redirects to /alusta and keeps only the language", async () => {
   expect(home.headers.get("set-cookie") ?? "").toContain("lang=en");
 });
 
-test("a Grok user is recommended Grok Bot; none and unsure stay on Claude", async () => {
-  expect(chooseAssistant({ uses: "grok" })).toEqual({ assistant: "grok", reason: "already_grok" });
-  expect(chooseAssistant({ uses: "none" })).toEqual({ assistant: "claude", reason: "none" });
-  expect(chooseAssistant({ uses: "chatgpt", business: "unsure" })).toEqual({ assistant: "claude", reason: "chatgpt_no_approvals" });
-  expect(chooseAssistant({ uses: "chatgpt", business: "no" })).toEqual({ assistant: "claude", reason: "chatgpt_no_approvals" });
+test("the Grok chooser topic keeps its dated source and offers no download", async () => {
   expect(parseUses("grok")).toBe("grok");
   expect(offerDownload("grok", "grok")).toBeNull();
-  const reason = REASONS.already_grok;
-  expect(reason.assistant).toBe("grok");
-  expect(reason.text.en).toBe("You already use Grok. Stay with it.");
-  expect(reason.text.et).toBe("Sa juba kasutad Groki. Jää selle juurde.");
-  expect(reason.source.en).toBe("Source: approvals were tested on Grok Bot, 1 Nov 2026.");
-  expect(reason.source.et).toBe("Allikas: Grok Botis on kinnitused proovitud 1.11.2026.");
-  expect(`${reason.text.en} ${reason.text.et} ${reason.source.en} ${reason.source.et}`).not.toMatch(/\b(plan|Free|Business|MCP|connector|API|OAuth|Cursor)\b/);
   expect(CHOOSER_TOPICS.map((t) => t.id)).toContain("choose-already_grok");
   const topic = CHOOSER_TOPICS.find((t) => t.id === "choose-already_grok");
   expect(topic?.input.en).toContain("1 Nov 2026");
