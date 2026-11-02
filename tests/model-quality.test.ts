@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  ABSOLUTE_CAP_MICRO_USD, ABSOLUTE_MAX_ATTEMPTS, BASETEN_CHAT_URL, BASETEN_MODEL, FIXED_INSTRUCTIONS, JOB_MAX_OUTPUT_TOKENS, MAX_CONTEXT_TOKENS, MAX_INPUT_BYTES, ModelQualityLedger,
+  ABSOLUTE_CAP_MICRO_USD, ABSOLUTE_MAX_ATTEMPTS, BASETEN_CHAT_URL, BASETEN_MODEL, FIXED_INSTRUCTIONS, JOB_MAX_OUTPUT_TOKENS, MAX_CONTEXT_TOKENS, MAX_INPUT_BYTES, MAX_OUTPUT_TOKENS, ModelQualityLedger,
   PROMPT_VERSION, calculateCostMicroUsd, inputTokenBound, payloadHash, reservationMicroUsd, runModelQualityAttempt, validateInput, validateJob, type FetchFn,
 } from "../src/model-quality.js";
 import { openExistingPublicLedger } from "../src/model-public-cards.js";
@@ -508,7 +508,7 @@ describe("model quality harness (Baseten)", () => {
     expect(validateJob("intake_extract")).toBe("intake_extract");
     expect(validateJob("intake_plan")).toBe("intake_plan");
     expect(JOB_MAX_OUTPUT_TOKENS.intake_extract).toBe(2048);
-    expect(JOB_MAX_OUTPUT_TOKENS.intake_plan).toBe(2048);
+    expect(JOB_MAX_OUTPUT_TOKENS.intake_plan).toBe(MAX_OUTPUT_TOKENS);
     expect(FIXED_INSTRUCTIONS.intake_extract).toContain("Give bounded help only");
     expect(FIXED_INSTRUCTIONS.intake_extract).toContain('{"products":[{"name":string,"kind":"accounting"|"bank"|"email"|"customers"|"other"}]}');
     expect(FIXED_INSTRUCTIONS.intake_plan).toContain("Give bounded help only");
@@ -520,7 +520,7 @@ describe("model quality harness (Baseten)", () => {
     expect(extract.calls[0].body.max_tokens).toBe(2048);
     const plan = fakeFetch(() => jsonRes(okChat()));
     await runModelQualityAttempt(base(ledger, plan.fetchFn, { job: "intake_plan", input: "{\"lang\":\"et\"}", requestId: "in-plan-1" }));
-    expect(plan.calls[0].body.max_tokens).toBe(2048);
+    expect(plan.calls[0].body.max_tokens).toBe(MAX_OUTPUT_TOKENS);
     ledger.close();
   });
 });

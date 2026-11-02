@@ -52,7 +52,8 @@ export const JOB_MAX_OUTPUT_TOKENS: Record<ModelJob, number> = {
   // refuses every existing ledger and breaks replay of saved cards. No prior
   // row exists for these jobs, and their instructions are not the old ones.
   intake_extract: 2048,
-  intake_plan: 2048,
+  // Reasoning counts against max_tokens. 2048 truncated live /alusta plans (issue #165).
+  intake_plan: MAX_OUTPUT_TOKENS,
   // Muse reasons before answering; 1,024 truncated the first live check.
   check_approval: MAX_OUTPUT_TOKENS,
 };
