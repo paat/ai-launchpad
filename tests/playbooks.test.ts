@@ -5,7 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { openDb } from "../src/db.js";
 import { arikratt } from "../src/arikratt.js";
 import { APPROVAL_KINDS, OWNER_VOICE, PLAYBOOKS, SEND_INVOICE_ACT, STATEMENT_READ_RULE, searchServices } from "../src/catalog.js";
-import { buildMcpServer, companyObligations, monthsCovered, TOOL_ARG_KEYS, type Ctx } from "../src/mcp.js";
+import { buildMcpServer, companyObligations, monthsCovered, SEND_GATE, TOOL_ARG_KEYS, type Ctx } from "../src/mcp.js";
 import { computeObligations, type CompanyFacts, type Fact } from "../src/obligations.js";
 import { DEMO_FIXTURES } from "../src/fixtures.js";
 
@@ -348,7 +348,7 @@ describe("executable job playbooks (#26)", () => {
 
   test("payment-reminder: amount_cents is required, in euro cents with an example, and the text states the same amount (tribunal T-001)", () => {
     const steps = byId("payment-reminder").steps;
-    const approval = steps.find((x) => x.includes("request_approval"))!;
+    const approval = steps.find((x) => x.includes("request_approval with action kind"))!;
     expect(approval).toContain("amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000)");
     expect(steps.find((x) => x.startsWith("Draft"))).toContain("the amount in the text is the same amount you put in amount_cents");
   });
@@ -493,6 +493,37 @@ describe("agent-facing copy over MCP", () => {
     expect(hidden.statements_read_hidden).toContain("statements read in earlier chats are not shown");
   });
 
+  test("send gate: a plain send request asks in chat, then request_approval with owner_confirmation, then the own send tool (phone test 2 Nov)", async () => {
+    const c = await connect(["progress:read"]);
+    // Claude asked "Do you approve?" and sent through Gmail without Launchpad: the gate leads the tool description and the server instructions.
+    const tool = (await c.listTools()).tools.find((x) => x.name === "request_approval")!;
+    expect(tool.description!.startsWith(SEND_GATE)).toBe(true);
+    for (const w of ["any e-mail or message", "payment reminder", "the owner's own address", "any tool or connector, Gmail, Outlook", "ask for their approval first", "owner_confirmation set to their words", "send or post exactly that content with your own tool only while the approval is approved and usable is not false", "follow its assistant_instruction", "Muse's concerns in one line and go on only if they still want it", "otherwise send nothing", "then call record_action_outcome"]) expect(SEND_GATE, w).toContain(w);
+    expect(c.getInstructions()).toContain(SEND_GATE);
+    const started = JSON.parse(((await c.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { approvals_note: string };
+    expect(started.approvals_note.startsWith(SEND_GATE)).toBe(true);
+    // Grok r4: in chat the owner's yes is the approval; a standing approval covers only sends made while the owner is away.
+    expect(SEND_GATE).toContain("Only in a scheduled or background run without the owner, call request_approval without owner_confirmation and send only if the reply is auto_approved by their standing approval (never a customer follow-up)");
+    expect(SEND_GATE).toContain("While the owner is in this chat, their yes is the approval: never send them to the Launchpad link.");
+    expect(started).not.toHaveProperty("standing_approvals");
+    // The owner was sent to the dashboard: every send playbook asks in this chat before it requests the approval.
+    for (const id of ["payment-reminder", "customer-follow-ups", "invoicing"]) {
+      const steps = byId(id).steps;
+      const ask = steps.findIndex((x) => x.includes("in this chat and ask once whether they want it sent"));
+      const req = steps.findIndex((x) => x.includes("request_approval with action kind"));
+      expect(ask, id).toBeGreaterThanOrEqual(0);
+      expect(req, id).toBe(ask + 1);
+      expect(steps[ask], id).toContain("only after they say yes, with owner_confirmation: their words, verbatim");
+      expect(steps.join(" "), id).not.toContain("If the reply is pending, show the owner");
+      // Grok r2–r5: one request step passes the yes; the away-only standing path is a condition on that same step, never its own call.
+      expect(steps[req], id).toContain("owner_confirmation: the yes they just gave in this chat, verbatim.");
+      expect(steps.filter((x) => x.includes("request_approval with action kind")), id).toHaveLength(1);
+      expect(steps[req].includes("In a scheduled or background run without the owner, omit owner_confirmation."), id).toBe(id !== "customer-follow-ups");
+      // Grok r6: a follow-up never goes out without the owner's own yes.
+      expect(steps[ask].includes("send nothing and do not call request_approval"), id).toBe(id === "customer-follow-ups");
+    }
+  });
+
   test("check_my_customers: owner phrasing finds it, read-only, returns the customer-follow-ups playbook for any scope", async () => {
     const db = openDb(":memory:");
     const c = await connect([], db);
@@ -529,7 +560,7 @@ describe("agent-facing copy over MCP", () => {
     expect(steps).toContain("If there is no customer tool and you read their Google Drive and it has no Kliendid sheet, offer once to create");
     expect(steps).toContain("Show the exact change, write it only after they say yes, and never write a different value");
     expect(steps).toContain("Never invent or compute a follow-up date yourself");
-    expect(steps).toContain("call request_approval again with a NEW report_id, the same action and owner_confirmation: their words, verbatim");
+    expect(steps).toContain("Ask for the approval in the next step only after they say yes, with owner_confirmation: their words, verbatim.");
     expect(steps).toMatch(/get_approval[\s\S]*usable is not false[\s\S]*record_action_outcome with outcome sent/);
     const send = p.steps.find((x) => x.includes("request_approval with action kind send_message"))!;
     expect(send).toContain("always omit amount_cents (a follow-up message has no amount)");
@@ -557,7 +588,7 @@ describe("agent-facing copy over MCP", () => {
     expect(p.needs[0]).toContain("folder named AI-hüppelaud in the owner's own Google Drive (My Drive)");
     expect(p.summary).not.toMatch(/CRM|MCP|API/);
     const reminder = byId("payment-reminder").steps;
-    expect(reminder[reminder.findIndex((x) => x.startsWith("Right before sending"))]).toBe("Right before sending, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged reminder first. Approvals are valid for 24 hours.");
+    expect(reminder[reminder.findIndex((x) => x.startsWith("Right before sending"))]).toBe("Right before sending, call get_approval. If it is expired, ask the owner once more in this chat and request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) and their new yes as owner_confirmation for the unchanged reminder first. Approvals are valid for 24 hours.");
     expect(reminder).toContain("Call record_action_outcome with outcome sent (or failed).");
     expect(reminder.join(" ")).toContain("amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000)");
   });
@@ -721,7 +752,7 @@ describe("agent-facing copy over MCP", () => {
   test("payment-reminder: re-check expiry and renew before sending; paid only after a sent outcome (#36 items 2–3)", () => {
     const steps = byId("payment-reminder").steps;
     const recheck = steps.findIndex((x) => x.startsWith("Right before sending, call get_approval."));
-    expect(steps[recheck]).toBe("Right before sending, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged reminder first. Approvals are valid for 24 hours.");
+    expect(steps[recheck]).toBe("Right before sending, call get_approval. If it is expired, ask the owner once more in this chat and request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) and their new yes as owner_confirmation for the unchanged reminder first. Approvals are valid for 24 hours.");
     const send = steps.findIndex((x) => x.startsWith("Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved (including auto_approved under the owner's standing approval) and usable is not false"));
     const sent = steps.indexOf("Call record_action_outcome with outcome sent (or failed).");
     const paid = steps.findIndex((x) => x.startsWith("Record paid only after a sent outcome, with a NEW report_id"));
