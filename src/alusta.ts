@@ -650,9 +650,12 @@ async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeC
       const parsed = parseExtract(result.output);
       if (parsed) {
         const routed = routeProducts(parsed.products.map((p) => p.name), parsed.products.map((p) => p.kind));
-        hits = routed.hits;
-        flow.unmatched = routed.unmatched.map((n) => n.slice(0, 60)).slice(0, 8);
-        viaModel = true;
+        // A parsed note with no routed product still gets the catalogue name match.
+        if (routed.hits.length) {
+          hits = routed.hits;
+          flow.unmatched = routed.unmatched.map((n) => n.slice(0, 60)).slice(0, 8);
+          viaModel = true;
+        }
       }
     }
   }
