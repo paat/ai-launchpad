@@ -5,7 +5,7 @@ import { isIP } from "node:net";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
 import { arikratt } from "./arikratt.js";
-import { approvalAddressMissing, startApprovalCheck, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, liveStandingRules, logActivity, normAddress, recordActionOutcome, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, TOOL_ARG_KEYS, type ApprovalRow, type StandingRule } from "./mcp.js";
+import { approvalAddressMissing, startApprovalCheck, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, liveStandingRules, ownerApprovals, logActivity, normAddress, recordActionOutcome, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, TOOL_ARG_KEYS, type ApprovalRow, type StandingRule } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { computeHandover, handoverObligations, isDone, largestAmount, offerCapCents, standingBasis } from "./handover.js";
 import type { Assessment } from "./core.js";
@@ -16,7 +16,7 @@ import { liveIntake, mockIntake, type IntakeClient } from "./intake.js";
 import { alustaMaxAge, handleAlusta, intakeHealth } from "./alusta.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
-import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, aboutBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
+import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, assistantPrefillUrl, landingBody, connectBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, aboutBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
 import { liveChecker, mockChecker, type ApprovalChecker } from "./approval-check.js";
 import { NAIDIS, naidisApproval, naidisBody } from "./naidis.js";
@@ -592,15 +592,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     // A remembered failed fill shows its reason, not "loading".
     const failure = unavailable === "not_cached" ? fillFailure(ref!) : undefined;
     if (unavailable === "not_cached") fillInBackground(ref!);
-    expireApprovals(db, oid(req));
-    // Every pending approval (request_approval caps them at 20), then the recent approved/consumed slice,
-    // then older failed or rejected outcomes (bounded) so they stay in "Ootab sinult".
-    const approvals = [...new Map(([
-      ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state='pending' ORDER BY created_at DESC LIMIT 20").all(oid(req)),
-      ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state IN ('approved','consumed') ORDER BY created_at DESC LIMIT 50").all(oid(req)),
-      ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state='consumed' AND json_extract(outcome_json,'$.outcome') IN ('failed','rejected') ORDER BY created_at DESC LIMIT 20").all(oid(req)),
-    ] as ApprovalRow[]).map((a) => [a.id, a])).values()];
+    const approvals = ownerApprovals(db, oid(req));
     const reportCount = (db.prepare("SELECT count(*) n FROM reports WHERE owner_id=?").get(oid(req)) as { n: number }).n;
+    const lastAssistant = db.prepare("SELECT json_extract(c.metadata,'$.client_name') name FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? AND g.revoked=0 AND g.last_used_at IS NOT NULL ORDER BY g.last_used_at DESC LIMIT 1").get(oid(req)) as { name: string | null } | undefined;
     const l = langOf(res);
     res.type("html").send(page(req, res, tr(l)("Täna", "Today"), "tana", tanaBody({
       lang: l, csrf: (req as Authed).csrf, sample: isSampleKind((req as Authed).ownerKind), label: st.ws.label,
@@ -609,6 +603,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       // A checksum-invalid ref is the only lookup that computes nothing: say so instead of dropping the section.
       deadlines: !deadlines ? null : !deadlines.ok ? "invalid_code" : failure?.unavailable === "not_found" ? "not_found" : failure ? { unavailable_reason: failure.reason } : unavailable === "not_cached" ? "not_cached" : unavailable ? { unavailable_reason: deadlines.result.company.unavailable_reason ?? unavailable } : deadlines.result as DeadlinesView,
       needs: ownerNeeds(db, oid(req)), reportCount, rules: ownerRules(oid(req)), handover: ownerHandover(oid(req), st, deadlines),
+      assistant: /chatgpt|openai/i.test(lastAssistant?.name ?? "") ? "chatgpt" : "claude",
     })));
   } catch (e) { next(e); } });
   app.post("/unmet-needs/decide", requireOwner, refuseSandbox, csrfOk, (req, res) => {
@@ -933,7 +928,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const l = langOf(res);
     const endpoint = `${String(cfg.baseUrl ?? "").replace(/\/+$/, "")}/mcp`;
     const prompt = assistantGuidePrompt(l, assistant, endpoint);
-    const target = `${assistant === "chatgpt" ? "https://chatgpt.com/?q=" : "https://claude.ai/new?q="}${encodeURIComponent(prompt)}`;
+    const target = assistantPrefillUrl(assistant, prompt);
     const name = assistant === "claude" ? "Claude" : "ChatGPT";
     // Estonian object case is not a suffix: Claude'i (apostrophe, same as Claude'iga); ChatGPT takes none.
     const openedEt: Record<typeof assistant, string> = { claude: "Claude'i", chatgpt: "ChatGPT" };
