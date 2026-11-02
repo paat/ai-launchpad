@@ -12,6 +12,20 @@ Eesmärk: tehisaru-agendid võtavad väikeettevõtja ja tema töötajate õlult 
 
 > **Status:** owner-only HTTPS pilot at https://huppelaud.arikratt.ee. One owner ChatGPT plus Meta/Baseten path tested; Claude tested once on the Free plan with synthetic data (30 Oct 2026), so this is not broad compatibility or production ready. See [docs/live-pilot.md](docs/live-pilot.md) for dated evidence, cost, and recovery limits. Local demo and tests remain mock ($0); see [docs/local-demo.md](docs/local-demo.md).
 
+## For hackathon judges
+
+- **Built during the event:** all product code in this repository was written during the Meta Global AI Developer Hackathon (27 Oct – 4 Nov 2026). The only pre-existing piece is the [Ärikratt MCP](https://arikratt.ee/mcp), a public Estonian company-data service used as an external dependency through its public interface.
+- **Meta's models:** Muse Spark Open (`meta-models/muse-spark-open-1026`) via Baseten; see [Where Meta's models fit](#where-metas-models-fit). No other AI model is called at runtime.
+- **Try it without an account or keys:** https://huppelaud.arikratt.ee/naidis?lang=en (walkthrough) and https://huppelaud.arikratt.ee/proovi?lang=en (your own sample workspace, nothing really sent). Guide: [docs/demo/judge-guide.md](docs/demo/judge-guide.md).
+- **Run it locally** (Node 22, synthetic data, no paid calls):
+
+  ```bash
+  npm ci
+  npm run dev   # http://localhost:3000
+  ```
+
+  Keys are optional and come from environment variables; [.env.example](.env.example) lists them with placeholders. Set `BASETEN_API_KEY` (and `MODEL_MODE`, see [docs/model-quality.md](docs/model-quality.md)) to call Muse Spark Open with your own key, and `ARIKRATT_API_KEY` for live register lookups. More in [docs/local-demo.md](docs/local-demo.md).
+
 ## The problem
 
 - An Estonian micro-entrepreneur carries the whole back office: payroll and VAT filings, the annual report, invoices, bookkeeping, contracts, permits and sector rules. The [research](docs/research/README.md) maps **354 such jobs**.
