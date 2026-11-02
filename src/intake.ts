@@ -384,7 +384,7 @@ export interface IntakeCompany {
   emtak_code?: string | null;
   emtak_label?: string | null;
 }
-export interface IntakeObligation { title_et: string; title_en: string; effective_due: string | null; }
+export interface IntakeObligation { title_et: string; title_en: string; effective_due: string | null; applies: "yes" | "if"; }
 export interface IntakePlanArgs {
   company?: IntakeCompany | null;
   obligations?: IntakeObligation[];
@@ -546,16 +546,20 @@ function joinProducts(items: string[], and: string): string {
   return `${items.slice(0, -1).join(", ")}${and}${items[items.length - 1]}`;
 }
 
-/** Compact JSON for intake_plan. Obligations, then service names, drop until it fits.
- * Unmatched program text is never included: the visitor sees it only in the understood bubble. */
+/** Compact JSON for intake_plan. Obligations, then program names, drop until it fits.
+ * Unmatched program text is never included: the visitor sees it only in the understood bubble.
+ * Catalogue service names are sent only when the visitor named no product. */
 export function planModelInput(args: IntakePlanArgs): string {
   const lang = args.lang === "en" ? "en" : "et";
   const obligations = (args.obligations ?? [])
     .filter((o) => typeof o.effective_due === "string" && o.effective_due.length > 0)
     .slice(0, 3)
-    .map((o) => ({ title: lang === "en" ? o.title_en : o.title_et, effective_due: o.effective_due as string }));
+    .map((o) => ({ title: lang === "en" ? o.title_en : o.title_et, effective_due: o.effective_due as string, applies: o.applies }));
   const allow = allowedProductNames();
-  let services = (args.services ?? []).map((s) => s.name).filter((n): n is string => typeof n === "string" && allow.has(n.trim().replace(/\s+/g, " ")));
+  const supplied = args.productNames ?? [];
+  let programs = supplied.length
+    ? canonicalProductNames(supplied)
+    : (args.services ?? []).map((s) => s.name).filter((n): n is string => typeof n === "string" && allow.has(n.trim().replace(/\s+/g, " ")));
   let companyName = args.company?.name?.trim() || "";
   let businessArea = args.company?.emtak_label?.trim() || "";
   const rec = intakeRecommendation(args);
@@ -570,13 +574,13 @@ export function planModelInput(args: IntakePlanArgs): string {
     if (companyName) body.company_name = companyName;
     if (businessArea) body.business_area = businessArea;
     body.obligations = obligations;
-    body.services = services;
+    body.programs = programs;
     return JSON.stringify({ ...body, ...fixed });
   };
   const tooBig = (s: string) => s.length > MAX_INPUT_CHARS || new TextEncoder().encode(s).byteLength > MAX_INPUT_BYTES;
   let s = build();
   while (tooBig(s) && obligations.length) { obligations.pop(); s = build(); }
-  while (tooBig(s) && services.length) { services = services.slice(0, -1); s = build(); }
+  while (tooBig(s) && programs.length) { programs = programs.slice(0, -1); s = build(); }
   while (tooBig(s) && companyName.length > 20) { companyName = companyName.slice(0, Math.floor(companyName.length / 2)); s = build(); }
   while (tooBig(s) && businessArea.length > 20) { businessArea = businessArea.slice(0, Math.floor(businessArea.length / 2)); s = build(); }
   if (tooBig(s)) { companyName = ""; businessArea = ""; s = build(); }

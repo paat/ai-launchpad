@@ -147,8 +147,15 @@ export const FIXED_INSTRUCTIONS: Record<ModelJob, string> = {
     "At most 8 items. Copy each name only as the owner wrote it, at most 60 characters. Do not add a program they did not name. " +
     COMMON,
   intake_plan:
-    "You write one short bottom line for a small-business owner setting up an assistant. The user message is JSON with the company name, business area, next obligations, service names, assistant, tier, paid_note and lang (\"et\" or \"en\"). " +
-    "Reply with plain text only, in the requested language, at most 600 characters, in short sentences. " +
+    "You speak to the owner as \"you\", the way their own accountant would. " +
+    "The user message is JSON with company_name, business_area, obligations, programs, assistant, tier, paid_note and lang (\"et\" or \"en\"). " +
+    "Each obligation has a title, effective_due and applies, which is \"yes\" or \"if\". programs lists the program names. " +
+    "Start with what their assistant can take off their hands for this company, using the programs and the obligations. " +
+    "Reply with plain text only, in the requested language, at most 4 short sentences and at most 600 characters. " +
+    "Name each program exactly as it is given. " +
+    "When an obligation has applies \"if\", say it may apply. Never say that it is due. " +
+    "Do not repeat field names or labels from the input. Do not say \"bottom line\", \"listed\" or \"services\". " +
+    "Do not mention that no actions were taken. " +
     "Do not add dates, amounts, prices, URLs, services or steps that are not in the input. " +
     "Use no jargon: do not say MCP, API or connector. " +
     "When paid_note is true, include one honest sentence that the best result needs a paid AI plan. Do not state a price. " +
