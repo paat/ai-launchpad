@@ -242,11 +242,12 @@ describe("Täna", () => {
     expect(html).toContain('<a class="needs" href="#ootab"><b>1</b>');
   });
 
-  test("Tulekul rows: date first, rule label, source, handoff with Sina; synthetic is Näidis, never official", () => {
+  test("Tulekul rows: date first, source (the rule note is one list caption, not a chip per row), handoff with Sina; synthetic is Näidis, never official", () => {
     const html = tana({ deadlines: mariDeadlines });
     const tul = html.slice(html.indexOf('id="tulekul"'));
     expect(tul).toContain('<time class="deadline-date" datetime="2026-11-10">');
-    expect(tul).toContain("Arvutatud reeglist");
+    expect(tul).not.toContain("Arvutatud reeglist");
+    expect(tul).toContain("Tähtajad arvutab reeglistik, mitte tehisaru.");
     expect(tul).toContain('<dt class="me">Sina</dt><dd>esitad KMD e-MTA-s oma Smart-ID-ga</dd>');
     expect(tul).toContain("Summad arvutab sinu raamatupidamisprogramm, mitte tehisaru.");
     expect(tul).toContain("Valmista oktoobri KMD jaoks arved ette ja küsi minult kinnitust enne, kui midagi saadad.");
