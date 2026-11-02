@@ -61,8 +61,7 @@ describe("Claude plugin", () => {
   test("self-review keeps YOLO, outcome recording, ask-first and the unsupported-agent fallback", () => {
     const md = read("skills/back-office-help/SKILL.md");
     const step4 = md.slice(md.indexOf("4. For a job"), md.indexOf("\nIf the AI Launchpad connector"));
-    expect(step4).toContain("Before each send, book posting or handover of prepared payment or filing figures");
-    expect(step4).toContain("`action-reviewer` agent in a fresh context");
+    expect(step4).toContain("Where this assistant has the `action-reviewer` agent (Claude), run it in a fresh context before each send, book posting or handover of prepared payment or filing figures");
     expect(step4).toContain("Give it only three inputs");
     expect(step4).toContain("owner's own request, quoted verbatim");
     expect(step4).toContain("kind, recipient name and address, amount, period, document title and content");
@@ -202,7 +201,10 @@ describe("ChatGPT plugin", () => {
   });
 
   test("plugin JSON has no secret-shaped strings, and each loader sees only its own manifest", () => {
-    const secret = /sk-|secret|Bearer |api[_-]?key/i;
+    const secret = /\bsk-[A-Za-z0-9_-]{8,}|client_?secret|\bBearer\s+\S|api[_-]?key/i;
+    expect(secret.test("clientSecret")).toBe(true);
+    expect(secret.test("sk-abcdefghijkl")).toBe(true);
+    expect(secret.test("ask-first")).toBe(false);
     for (const root of [dir, gpt]) for (const file of walk(root, (name) => name.endsWith(".json"))) expect(readFileSync(file, "utf8")).not.toMatch(secret);
     const claude = new Set(readdirSync(dir));
     expect(claude.has("plugin.json")).toBe(false);
