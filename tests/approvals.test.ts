@@ -596,8 +596,8 @@ test("Täna shows a pending approval behind 60 newer consumed ones; counts and p
   }
   const html = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
   expect(html).toContain("Oldest pending reminder");
-  expect(html).toContain('<h2 id="ootab-h">Ootab sinult (1)</h2>');
-  expect(html).toContain('<a class="needs" href="#ootab"><b>1</b>');
+  expect(html).toContain('<h2 id="ootab-h">Assistent vajab sinult</h2>');
+  expect(html).toContain("Sinult on täna vaja üht asja");
   expect(html).toContain('<a class="btn" href="/approvals/appr_old_pending">Vaata kinnitust</a>');
 });
 
@@ -637,7 +637,8 @@ test("Täna keeps an old failed or rejected approval in Ootab sinult behind 60 n
     ins.run(`appr_newer_${i}`, "old-failed", JSON.stringify(reminder({ document: { title: `Newer ${i}`, content: "Tere!" } })), `${i}`.padStart(64, "1"), later, at, at, at, JSON.stringify({ outcome: "sent", observed_at: at }));
   }
   const html = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
-  expect(html).toContain('<h2 id="ootab-h">Ootab sinult (2)</h2>');
+  expect(html).toContain('<h2 id="ootab-h">Assistent vajab sinult</h2>');
+  expect(html).toContain("Sinult on täna vaja 2 asja");
   expect(html).toContain('href="/approvals/appr_old_failed"');
   expect(html).toContain('href="/approvals/appr_old_rejected"');
   expect(html.match(/Ei õnnestunud — vaata üle/g)).toHaveLength(2);
@@ -715,8 +716,8 @@ describe("playbook_id on approvals („Käest ära”, #61)", () => {
     const req = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "fill-1", action: msg(), playbook_id: "payment-reminder" } }));
     expect(await count()).toBe("Ootab sinu kinnitust");
     const tana = await page(o, "/");
-    expect(tana).toContain('class="ho-strip" href="/uhenda#kaest-ara"');
-    expect(tana).toContain("<b>Kontoritöö: 1 ootab sinu kinnitust</b>");
+    expect(tana).toContain('<section class="section ho" id="kaest-ara"');
+    expect(tana).toContain('<p class="ho-sum">1 ootab sinu kinnitust');
     await decide(o, req.approval_id, { decision: "approve", digest: req.digest });
     expect(await count()).toBe("Kontrollimata");
     await c.callTool({ name: "record_action_outcome", arguments: { report_id: "fill-o", approval_id: req.approval_id, digest: req.digest, outcome: "sent", observed_at: new Date().toISOString() } });
@@ -819,7 +820,8 @@ describe("whats_waiting_for_me: what the owner's Needs you lists, for a new chat
     expect(list.assistant_instruction).toContain("owner_confirmation");
     // The page counts the same item and offers the assistant with fixed words only.
     const page = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
-    expect(page).toContain("Ootab sinult (1)</h2>");
+    expect(page).toContain("Assistent vajab sinult</h2>");
+    expect(page).toContain("Sinult on täna vaja üht asja");
     const href = page.match(/<div class="handle"><a class="btn" href="([^"]+)"/)?.[1]?.replace(/&amp;/g, "&");
     expect(href).toBe(`https://claude.ai/new?q=${encodeURIComponent("Vaata AI-hüppelaualt, mis mind ootab, ja aita mul need ükshaaval ära lahendada.")}`);
 

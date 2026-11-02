@@ -152,9 +152,9 @@ describe("shell, locale and login", () => {
 });
 
 describe("Täna", () => {
-  test("three cards in order: Ootab sinult · Assistent tegi · Tulekul, then Kuidas see kokku pandi", () => {
+  test("in order: Assistent vajab sinult · Assistent tegi · Kõik tähtajad, then Kuidas see kokku pandi", () => {
     const html = tana({ deadlines: mariDeadlines });
-    const order = ["Ootab sinult", "Assistent tegi", "Tulekul", "Kuidas see kokku pandi"].map((h) => html.indexOf(h));
+    const order = ["Assistent vajab sinult", "Assistent tegi", "Kõik tähtajad", "Kuidas see kokku pandi"].map((h) => html.indexOf(h));
     expect(order.every((i) => i > 0)).toBe(true);
     expect([...order].sort((x, y) => x - y)).toEqual(order);
     expect(html).toContain("Säästetud aega ei ole mõõdetud, seega me seda ei näita.");
@@ -281,15 +281,13 @@ describe("Täna", () => {
     const html = tana({ assessment: quiet, coverage: computeCoverage(quiet), approvals: [sent, failed, waiting], progress: [{ task_id: "invoicing", milestone: "draft_prepared", observed_at: "2026-11-03T09:15:00Z" }] });
     const ootab = html.slice(html.indexOf('id="ootab"'), html.indexOf('id="tegi"'));
     const tegi = html.slice(html.indexOf('id="tegi"'), html.indexOf('id="tulekul"'));
-    expect(html).toContain('<a href="#tegi"><b>2</b><span>assistent tegi</span></a>');
     expect(tegi).toContain("Assistent tegi (2)");
     expect(tegi).toContain("Pooleli · ootab assistendi teadet");
     expect(tegi).not.toContain("Ei õnnestunud");
-    expect(ootab).toContain("Ootab sinult (1)");
+    expect(ootab).toContain("Assistent vajab sinult");
     expect(ootab).toContain('<span class="state-chip state-chip--rejected">Ei õnnestunud — vaata üle</span>');
     expect(ootab).toContain('href="/approvals/appr_f"');
     expect(html).toContain("Sinult on täna vaja üht asja");
-    expect(html).toContain('<a class="needs" href="#ootab"><b>1</b>');
   });
 
   test("Tulekul rows: date first, source (the rule note is one list caption, not a chip per row), handoff with Sina; synthetic is Näidis, never official", () => {
@@ -1124,15 +1122,34 @@ describe("„Käest ära” (#61)", () => {
   });
   const h = computeHandover({ assessment: handoverAssessment, obligations: mari.obligations, approvals: [consumed, approval()], now: NOW });
 
-  test("Täna: one strip under the pills with what needs the owner, linking to Ühendus, before the primary action; no percentage", () => {
+  test("Täna leads with what the assistant needs, then the full back-office section; one next step, no strip, no pills, no percentage", () => {
     const html = tana({ handover: h, approvals: [approval()] });
-    const strip = html.match(/<a class="ho-strip"[^]*?<\/a>/)![0];
-    expect(strip).toContain('href="/uhenda#kaest-ara"');
-    expect(strip).toContain("<b>Kontoritöö: 1 ootab sinu kinnitust</b>");
-    expect(strip).not.toContain("%");
-    expect(html.indexOf('class="today-sum"')).toBeLessThan(html.indexOf('class="ho-strip"'));
-    expect(html.indexOf('class="ho-strip"')).toBeLessThan(html.indexOf('class="btn" href="/approvals/'));
-    expect(tana()).not.toContain("ho-strip");
+    expect(html).not.toContain("ho-strip");
+    expect(html).not.toContain("today-sum");
+    expect(html.indexOf('id="ootab"')).toBeLessThan(html.indexOf('id="kaest-ara"'));
+    expect(html.indexOf('id="kaest-ara"')).toBeLessThan(html.indexOf('id="tegi"'));
+    expect(html).toContain('<p class="ho-sum">1 ootab sinu kinnitust');
+    const section = html.match(/<section class="section ho" id="kaest-ara"[^]*?<\/section>/)![0];
+    expect(section).not.toContain("%");
+    // The assistant's own next step stands in for the back-office one: one „Järgmine samm:” on the page.
+    expect(html.match(/Järgmine samm:/g)).toHaveLength(1);
+    expect(tana()).not.toContain("kaest-ara");
+    // Without an owner step from the assistant, the back-office card is the page's next step.
+    const quiet = { ...assessment, next_action: { ...assessment.next_action, needs_owner: false } };
+    expect(tana({ handover: h, assessment: quiet, coverage: computeCoverage(quiet) })).toMatch(/Järgmine samm: (anna üks töö ära|ühenda raamatupidamine)/);
+  });
+
+  test("Täna: a connection an open job needs and the assistant cannot reach is listed with the jobs it unlocks", () => {
+    const gap = { ...h, assessedAt: "2026-10-28T10:00:00Z", connections: [...h.connections.filter((c) => c.kind !== "bank"), { kind: "bank" as const, state: "not_linked" as const }], jobs: h.jobs.map((j) => ({ ...j, needs: [...j.needs, "bank" as const] })) };
+    const html = tana({ handover: gap });
+    const needs = html.slice(html.indexOf('id="ootab"'), html.indexOf('id="kaest-ara"'));
+    expect(needs).toContain("Ühenda, et assistent saaks rohkem teha");
+    expect(needs).toContain("Pank · ühendamata");
+    expect(needs).toContain('href="/kataloog?g=pank"');
+    // Before the assistant has said what it reaches: one ask instead of a row per unknown kind.
+    const fresh = tana({ handover: { ...gap, assessedAt: null } });
+    expect(fresh).toContain("Assistent pole veel öelnud, kuhu ta ulatub");
+    expect(fresh).not.toContain("Pank · ");
   });
 
   test("Ühendus: #kaest-ara has one next step, no forms, the computation explained; owner-only", async () => {

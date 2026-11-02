@@ -535,7 +535,7 @@ describe("get_obligations tool and status card", () => {
       for (const b of ob.applies_because) expect(b).toMatchObject({ provenance: "synthetic", source: "synthetic_fixture" });
     }
     const html = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
-    for (const s of ["Tulekul", '<ul class="deadlines">', "Mari Disain OÜ", '<span class="label-chip label-chip--sample">Näidis</span>', "https://www.riigiteataja.ee/akt/", "KMD ja käibemaks", "Tähtajad arvutab reeglistik, mitte tehisaru.", '<dt class="me">Sina</dt>']) expect(html, s).toContain(s);
+    for (const s of ["Kõik tähtajad", '<ul class="deadlines">', "Mari Disain OÜ", '<span class="label-chip label-chip--sample">Näidis</span>', "https://www.riigiteataja.ee/akt/", "KMD ja käibemaks", "Tähtajad arvutab reeglistik, mitte tehisaru.", '<dt class="me">Sina</dt>']) expect(html, s).toContain(s);
     expect(html).not.toContain("Ametlik allikas");
     // Date first: a dated tile per row, with the Estonian weekday.
     expect(html).toMatch(/<time class="deadline-date" datetime="\d{4}-\d{2}-\d{2}"><span class="deadline-day">\d{1,2}<\/span><span class="deadline-mon">[a-zõäöü]+\.?<\/span><span class="deadline-wd">(esmaspäev|teisipäev|kolmapäev|neljapäev|reede)<\/span><\/time>/);

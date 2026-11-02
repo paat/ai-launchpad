@@ -102,7 +102,7 @@ describe("#21 public synthetic walkthrough", () => {
     expect(today).toContain("Saadetud: demo");
     expect(today).toContain("Makstud: demo");
     expect(today).toContain("Valmistas ette: KMD ettevalmistus");
-    expect(today).toContain("Kontoritöö:");
+    expect(today).toContain('<h2 id="ho-h">Kontoritöö</h2>');
     const approval = await (await fetch(`${base}/naidis/kinnitus`)).text();
     expect(approval).toContain(NAIDIS.week2[0].id);
     expect(approval).not.toContain('action="/approvals/');
@@ -181,9 +181,9 @@ describe("#21 public synthetic walkthrough", () => {
     expect(paid).not.toContain("Assistent küsib kinnitust täpselt sellele saajale, summale ja perioodile. Muudatus vajab uut kinnitust.");
   });
 
-  test("the handover strip links to the detailed section on Tehtud", async () => {
+  test("Täna and Tehtud both show the back-office section", async () => {
     const today = await (await fetch(`${base}/naidis`)).text();
-    expect(today).toContain('<a class="ho-strip" href="/naidis/tehtud#kaest-ara"');
+    expect(today).toContain('<section class="section ho" id="kaest-ara"');
     const done = await (await fetch(`${base}/naidis/tehtud`)).text();
     expect(done).toContain('<section class="section ho" id="kaest-ara"');
   });

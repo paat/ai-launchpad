@@ -19,7 +19,7 @@ for (const width of [390, 1280]) test(`interactive sandbox: sample to simulated 
   await expect(page.locator("#tegi")).toContainText("Valmistas ette: KMD ettevalmistus");
   await noOverflow(page);
 
-  await page.getByRole("link", { name: "Vaata kinnitust", exact: true }).click();
+  await page.locator(".hero").getByRole("link", { name: "Vaata kinnitust", exact: true }).click();
   await expect(page.getByRole("button", { name: "Kinnita täpselt see", exact: true })).toBeVisible();
   await noOverflow(page);
   await page.getByRole("button", { name: "Kinnita täpselt see", exact: true }).click();

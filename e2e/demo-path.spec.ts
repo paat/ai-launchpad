@@ -115,9 +115,10 @@ test("Täna, approval card, stale digest, receipt, unmet need and open demand (i
     await page.goto(cfg.baseUrl);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Sinult on täna vaja/);
     const h2 = page.locator("main h2");
-    await expect(h2.nth(0)).toHaveText(/^Ootab sinult/);
-    await expect(h2.nth(1)).toHaveText(/^Assistent tegi/);
-    await expect(h2.nth(2)).toHaveText(/^Tulekul/);
+    await expect(h2.nth(0)).toHaveText(/^Assistent vajab sinult/);
+    await expect(h2.nth(1)).toHaveText(/^Kontoritöö/);
+    await expect(h2.nth(2)).toHaveText(/^Assistent tegi/);
+    await expect(h2.nth(3)).toHaveText(/^Kõik tähtajad/);
     await noOverflow(page);
     await page.screenshot({ path: `${SHOTS}/tana-pending-390.png`, fullPage: true });
 

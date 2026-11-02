@@ -306,7 +306,7 @@ h1,h2,h3,.link-row-title,.receipt-head{overflow-wrap:anywhere}
 
 /* --- .deadline-row (date first) --- */
 .deadlines{list-style:none;margin:0;padding:0}
-.deadline-row{display:grid;grid-template-columns:4.75rem minmax(0,1fr);gap:var(--s-3);padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider)}
+.deadline-row{display:grid;grid-template-columns:4.75rem minmax(0,1fr);overflow-wrap:break-word;gap:var(--s-3);padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider)}
 .deadline-row:last-child{border-bottom:0}
 .deadline-date{display:flex;flex-direction:column;align-items:center;align-self:start;padding:8px 4px 10px;border-radius:var(--r-lg);background:var(--c-surface-3);text-align:center;line-height:1.15}
 .deadline-day{font-size:var(--fs-2xl);font-weight:800;letter-spacing:-.03em;color:var(--c-primary);font-variant-numeric:tabular-nums}
@@ -448,12 +448,7 @@ details.tech-details{margin:var(--s-2) 0 0;padding:0;border:0;background:none}
 .ai-block>.labels:first-child{margin-top:0}
 .receipt-head{margin:2px 0 4px;font-size:var(--fs-xl);font-weight:800;line-height:1.2;color:var(--c-primary)}
 /* ===== Proposed v2 additions (ux-revisit.md). Two components only. ===== */
-/* .today-sum: the three counts on the Täna hero as pills, each a ≥44px anchor; amber only when something needs the owner */
-.today-sum{display:flex;flex-wrap:wrap;gap:6px;margin:var(--s-4) 0 var(--s-2)}
-.today-sum a{display:inline-flex;align-items:center;gap:5px;min-height:var(--tap);padding:4px 12px 4px 10px;border:1px solid var(--c-border);border-radius:999px;background:var(--c-surface);color:var(--c-text);font-size:var(--fs-sm);font-weight:650;line-height:1.2;text-decoration:none;transition:background var(--t-fast) var(--ease)}
-.today-sum a:hover{background:var(--c-surface-2)}
-.today-sum b{font-size:var(--fs-md);font-weight:800;font-variant-numeric:tabular-nums}
-.today-sum a.needs{border-color:var(--st-waiting-bd);background:var(--st-waiting-bg);color:var(--st-waiting-fg)}
+.section.needs{border-left:3px solid var(--st-waiting-bd);padding-left:var(--s-4)}
 /* .handoff: who does what for one job (deadline row, unmet need, receipt) */
 .handoff{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 10px;margin:var(--s-2) 0 var(--s-1);padding:10px 12px;border:1px solid var(--c-divider);border-radius:var(--r-md);background:var(--c-surface-2);font-size:.9375rem;line-height:1.4}
 .handoff dt{font-size:var(--fs-sm);font-weight:700;color:var(--c-muted)}
@@ -462,18 +457,15 @@ details.tech-details{margin:var(--s-2) 0 0;padding:0;border:0;background:none}
 .ask-row{padding:var(--s-3) 0;border-bottom:1px solid var(--c-divider)}
 .ask-row:last-child{border-bottom:0}
 /* --- T3 Täna: one page, sections not cards, one elevated object (.ask) --- */
-@media (min-width:960px){.wrap:has(.tana-grid){max-width:1040px}}
+@media (min-width:960px){.wrap:has(#t-h){max-width:1040px}}
 .hero:not(.card){padding:var(--s-2) 0 var(--s-4)}
 .hero:not(.card) h1{margin:var(--s-1) 0 var(--s-2)}
 @media (min-width:600px){.hero:not(.card) .btn{width:auto;padding:12px 32px}}
 .section{padding:var(--s-6) 0;border-top:1px solid var(--c-divider)}
 .section>h2:first-child{margin-top:0}
-.tana-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:0 var(--s-12)}
 /* T4: the three sections enter in turn (from direction C); the global reduced-motion rule turns it off and leaves the final state. */
 #ootab,#tegi,#tulekul{animation:lp-enter var(--t-med) var(--ease) both}#tegi{animation-delay:60ms}#tulekul{animation-delay:120ms}
 @keyframes lp-enter{from{opacity:0;transform:translateY(8px)}}
-.tana-grid>.col:first-child>.section:first-child{padding-top:var(--s-2);border-top:0}
-@media (min-width:960px){.tana-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.tana-grid>.col>.section:first-child{padding-top:var(--s-2);border-top:0}}
 .ask{position:relative;display:flex;align-items:center;gap:var(--s-3);min-height:var(--tap);margin:0 0 var(--s-3);padding:var(--s-4) var(--s-4) var(--s-4) var(--s-6);border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface);color:inherit;text-decoration:none;box-shadow:0 1px 2px rgba(20,32,26,.04),0 8px 24px -16px rgba(20,32,26,.25);transition:box-shadow var(--t-fast) var(--ease),transform var(--t-fast) var(--ease)}
 .ask::before{content:"";position:absolute;left:0;top:var(--s-3);bottom:var(--s-3);width:4px;border-radius:0 4px 4px 0;background:var(--c-att-bd)}
 .ask--note::before{background:var(--c-border)}
@@ -489,7 +481,6 @@ details.plain>summary{color:var(--c-muted)}
 .deadline-row details>summary{color:var(--c-primary)}
 details.plain>summary::after,.deadline-row details>summary::after{margin:0 4px 0 2px}
 details.plain>summary>h2{margin:0;font:inherit;color:inherit}
-.tana-grid~details.plain{margin-top:var(--s-4)}
 /* ===== Issue #21 implementation additions ===== */
 pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(--c-surface-2);border-color:var(--c-divider);font:inherit;font-size:var(--fs-md);white-space:pre-wrap;overflow-wrap:anywhere}
 .connect-hero .btn{margin-top:0;font-size:var(--fs-lg)}
@@ -1079,7 +1070,7 @@ function handoverRow(j: Job, h: Handover, l: Lang, now: Date, sample: boolean): 
   if (j.needs.length && j.status !== "in_order") lines.push(`${t("Vajab:", "Needs:")} ${j.needs.map((k) => { const c = h.connections.find((x) => x.kind === k), [et, en] = HO_CONN_STATE[c?.state ?? "unknown"]; return `${esc(t(...HO_CONN[k]).toLowerCase())} (${esc(t(et, en))})`; }).join(", ")}`);
   // A waiting job says how many approvals wait; every other status is one word.
   const chip = j.status === "waiting" && e.pending > 1 ? t(`${e.pending} ootab sinu kinnitust`, `${e.pending} waiting for your approval`) : t(st.et, st.en);
-  return `<li class="ho-job"><div class="ho-head"><span class="ho-title">${esc(hoJobTitle(j, l))}</span>${stateChip(st.chip, chip)}</div><p class="ho-who">${who}</p>${lines.length ? `<p class="ho-ev">${lines.join("<br>")}</p>` : ""}</li>`;
+  return `<li class="ho-job"><div class="ho-head"><span class="ho-title">${fx.html(hoJobTitle(j, l))}</span>${stateChip(st.chip, chip)}</div><p class="ho-who">${who}</p>${lines.length ? `<p class="ho-ev">${lines.join("<br>")}</p>` : ""}</li>`;
 }
 const HO_CONNECTOR = (l: Lang) => `<a class="tap-link" href="/kataloog?g=raamatupidamine">${tr(l)("Raamatupidamise ühendused → Kataloog", "Accounting connectors → Catalogue")}</a>`;
 const HO_REMINDER_PROMPT: [string, string] = ["Vaata, millised minu arved on tasumata, ja saada esimesele meeldetuletus. Salvesta tulemus.", "Check which of my invoices are unpaid and send a reminder for the first one. Record the outcome."];
@@ -1103,7 +1094,21 @@ ${quote(t("Aita mul ühendada minu raamatupidamisprogramm.", "Help me connect my
 ${HO_CONNECTOR(l)}`);
 }
 /** Ühendus → Käest ära: what needs the owner, what the assistant can reach, the jobs by status, one next step, and the expired-unused finding. */
-export function handoverSection(h: Handover, l: Lang, now = new Date(), sample = false): string {
+/** Catalogue group per connection kind; kinds without their own group open the whole catalogue. */
+const HO_CONN_GROUP: Partial<Record<ConnectionKind, string>> = { accounting: "raamatupidamine", email: "epost", bank: "pank", customers: "kliendid", browser: "brauser" };
+/** Täna's „Assistent vajab sinult”: each connection an open job needs that the assistant cannot reach, with the jobs it would unlock.
+ *  Before the assistant has said what it can reach, one ask to do that instead of a row of „not reported”. */
+function missingConnections(h: Handover, l: Lang, fx: ReturnType<typeof fixtureText>): string[] {
+  const t = tr(l), open = h.jobs.filter((j) => j.status !== "in_order" && j.rung !== "other");
+  if (!h.assessedAt) return open.some((j) => j.needs.length) ? [`<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Assistent pole veel öelnud, kuhu ta ulatub", "Your assistant has not said yet what it can reach")}</span><p class="small"><span class="muted">${t("Ütle oma assistendile:", "Tell your assistant:")}</span> „${esc(t(...TRY_PROMPT))}”</p></div></div>`] : [];
+  return h.connections.filter((c) => c.state === "not_linked" || c.state === "unknown").flatMap((c) => {
+    const jobs = open.filter((j) => j.needs.includes(c.kind));
+    if (!jobs.length) return [];
+    const g = HO_CONN_GROUP[c.kind];
+    return [`<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${esc(t(...HO_CONN[c.kind]))} · ${esc(c.state === "unknown" ? t("assistent pole teatanud", "not reported") : t("ühendamata", "not linked"))}</span><p class="small">${t("Vaja töödeks:", "Needed for:")} ${jobs.map((j) => fx.html(t(j.title_et, j.title_en))).join(", ")}</p><a class="tap-link" href="/kataloog${g ? `?g=${g}` : ""}">${t("Leia ühendus → Kataloog", "Find a connection → Catalogue")}</a></div></div>`];
+  });
+}
+export function handoverSection(h: Handover, l: Lang, now = new Date(), sample = false, showNext = true): string {
   const t = tr(l), ex = h.findings.expiredUnused, rest = hoRest(h, l);
   const month = h.month.done ? `${esc(hoMonth(h.month.ym, l))}: ${t(`assistent lõpetas <b>${h.month.done}</b> ${h.month.done === 1 ? "töö" : "tööd"}.`, `your assistant finished <b>${h.month.done}</b> ${h.month.done === 1 ? "job" : "jobs"}.`)}` : `${esc(hoMonth(h.month.ym, l))}: ${t("assistent pole veel ühtegi tööd lõpetanud.", "your assistant has not finished a job yet.")}`;
   const finding = ex.count && ex.last ? `<p class="ho-finding"><span aria-hidden="true">!</span><span><b>${esc(t(`${ex.count} ${ex.count === 1 ? "kinnitus aegus" : "kinnitust aegusid"} kasutamata`, `${ex.count} ${ex.count === 1 ? "approval" : "approvals"} expired unused`))}</b> (${esc(DAY[l].format(new Date(ex.last.expires_at)))}). ${t("Palu assistendil töö ära teha ja tulemus kirja panna. Kui soovid enne kinnitada, ütle seda assistendile.", "Ask your assistant to do the job and record the outcome. If you want to approve it first, tell your assistant.")} <a class="tap-link" href="/approvals/${esc(encodeURIComponent(ex.last.id))}">${t("Vaata kinnitust", "See the approval")}</a></span></p>` : "";
@@ -1114,7 +1119,7 @@ export function handoverSection(h: Handover, l: Lang, now = new Date(), sample =
 <p class="ho-sum">${esc(hoHead(h, l))}${rest ? `<small>${esc(rest)}</small>` : ""}</p>
 <p class="ho-month">${month}</p>
 <div class="ho-grid"><div><ul class="ho-jobs">${h.jobs.map((j) => handoverRow(j, h, l, now, sample)).join("")}</ul>${finding}${reach}</div>
-${handoverNext(h, l)}</div>
+${showNext ? handoverNext(h, l) : ""}</div>
 <details class="plain"><summary>${t("Kuidas see arvutatakse", "How this is calculated")}</summary><div class="boxed small"><p>${t("Tööd on järjestatud selle järgi, mis vajab sind praegu: ootel kinnitus, möödunud või lähenev tähtaeg (14 päeva), siis assistendi viimane hinnang. „Korras” tähendab, et töö tehti sel kuul (assistendi salvestatud tulemus) või assistent vaatas viimase kuu jooksul ja ootel tööd polnud. Tähtajad arvutab reeglistik. Ühendused on assistendi teade; AI-hüppelaud neid ei kontrolli. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.", "Jobs are ordered by what needs you now: a waiting approval, a missed or near deadline (14 days), then your assistant's latest assessment. „In order” means the job was done this month (your assistant's recorded outcome), or your assistant looked within the last month and found nothing waiting. Deadlines are calculated by rules. Connections are what your assistant reports; AI Launchpad does not check them. No percentage and no hours saved, because we don't measure them.")}</p></div></details>
 </section>`;
 }
@@ -1788,7 +1793,6 @@ export function tanaBody(o: TanaOpts): string {
     : a || o.approvals.length || deadlines ? t("Ülejäänu valmistab ette sinu assistent. Kui midagi vajab sinu kinnitust, näed seda siin.", "Your assistant prepares the rest. When something needs your approval, you see it here.")
       : t(`Ühenda oma assistent ja küsi temalt: „${TRY_PROMPT[0]}”`, `Connect your assistant and ask it: “${TRY_PROMPT[1]}”`);
   const primary = top ? `<a class="btn" href="/approvals/${esc(encodeURIComponent(top.id))}">${t("Vaata kinnitust", "Review approval")}</a>`
-    : n ? `<a class="btn" href="#ootab">${t("Vaata, mida sinult vaja on", "See what needs you")}</a>`
     : !a && !o.approvals.length ? `<a class="btn" href="/uhenda">${t("Ühenda oma assistent", "Connect your assistant")}</a>` : "";
   const h1 = n === 0 ? (open ? t("Täna ei oota sinult ükski kinnitus", "No approval is waiting for you today") : t("Täna pole sinult midagi vaja", "Nothing needs you today")) : n === 1 ? t("Sinult on täna vaja üht asja", "You're needed for 1 thing today") : t(`Sinult on täna vaja ${n} asja`, `You're needed for ${n} things today`);
 
@@ -1814,29 +1818,28 @@ ${a ? `<p class="small">${esc(t(`Assistendi hinnangul on ${c.covered} kohustust 
 ${o.exclusions.length ? `<p class="small muted">${t("Varasematest hinnangutest eemaldatud:", "Removed since earlier assessments:")} ${o.exclusions.map((x) => fx.html(x.label)).join(", ")}</p>` : ""}
 </div></details>`;
 
-  // T5 (#61) puts its progress strip directly under the pills, before the primary action.
+  // Back office leads Täna: what the assistant needs from the owner first, then the jobs and what it can reach.
+  // Done work and the full deadline list fold away; each job already shows its next deadline.
+  const linkRows = o.handover ? missingConnections(o.handover, l, fx) : [];
+  const needsRows = [...askRows, ...linkRows];
   return `<section class="hero" aria-labelledby="t-h">
 <p class="company">${fx.html(a?.company_label ?? deadlines?.company.name ?? o.label)}</p>
 <h1 id="t-h">${esc(h1)}</h1>
 <p class="lede">${esc(lede)} <span class="small muted">${timeEl(tallinnYmd(now), TODAY[l].format(now))}</span></p>
-<nav class="today-sum" aria-label="${t("Kokkuvõte", "Summary")}"><a${n ? ' class="needs"' : ""} href="#ootab"><b>${n}</b><span>${t("ootab sinult", "need you")}</span></a><a href="#tegi"><b>${doneCount}</b><span>${t("assistent tegi", "done for you")}</span></a><a href="#tulekul"><b>${upcoming}</b><span>${t("tulekul", "coming up")}</span></a></nav>
-${o.handover ? handoverStrip(o.handover, l) : ""}
 ${primary}
 </section>
-<div class="tana-grid"><div class="col">
-<section class="section" id="ootab" aria-labelledby="ootab-h"><h2 id="ootab-h">${t("Ootab sinult", "Needs you")} (${n})</h2>
+${needsRows.length ? `<section class="section needs" id="ootab" aria-labelledby="ootab-h"><h2 id="ootab-h">${t("Assistent vajab sinult", "What your assistant needs from you")}</h2>
 ${n && !o.sample ? handleInAssistant(l, o.assistant ?? "claude") : ""}
-${askRows.join("") || `<p class="muted">${t("Praegu ei oota sinult midagi.", "Nothing is waiting for you right now.")}</p>`}</section>
-<section class="section timeline" id="tegi" aria-labelledby="tegi-h"><h2 id="tegi-h">${t("Assistent tegi", "Done for you")} (${doneCount})</h2>
+${askRows.join("")}${linkRows.length ? `<h3 class="ho-h3">${t("Ühenda, et assistent saaks rohkem teha", "Link these so your assistant can do more")}</h3>${linkRows.join("")}` : ""}</section>` : ""}
+${o.handover ? handoverSection(o.handover, l, now, o.sample, !next) /* the assistant's own next step, when it gave one, is the page's only one */ : ""}
+<details class="plain" id="tegi"><summary><h2 id="tegi-h">${t("Assistent tegi", "Done for you")} (${doneCount})</h2></summary>
 ${doneRows.join("") || `<p class="muted">${t(`Veel pole midagi tehtud. Proovi assistendile öelda: „${TRY_PROMPT[0]}”`, `Nothing done yet. Try telling your assistant: “${TRY_PROMPT[1]}”`)}</p>`}
 ${handledLine}
-<a class="tap-link" href="/activity">${t("Kõik tehtud tööd", "Everything done")}</a></section>
-</div><div class="col">
-<section class="section" id="tulekul" aria-labelledby="tulekul-h"><h2 id="tulekul-h">${t("Tulekul", "Coming up")} (${upcoming})</h2>
+<a class="tap-link" href="/activity">${t("Kõik tehtud tööd", "Everything done")}</a></details>
+<details class="plain" id="tulekul"${o.handover ? "" : " open"}><summary><h2 id="tulekul-h">${t("Kõik tähtajad", "All deadlines")} (${upcoming})</h2></summary>
 ${deadlines ? `<div class="labels">${sourceChip}<span class="small muted">${esc([deadlines.company.name, deadlines.company.registry_code].filter(Boolean).join(" · "))}</span></div>` : ""}
 ${tulekul}
-${deadlines ? `<p class="small muted">${t("Tähtajad arvutab reeglistik, mitte tehisaru. Kuupäevad on arvutatud, mitte esitatud ega makstud.", "Deadlines are calculated by rules, not AI. Dates are computed, not filed or paid.")}${deadlines.company.attribution && !deadlines.company.synthetic ? ` ${esc(deadlines.company.attribution)}` : ""}</p>` : ""}</section>
-</div></div>
+${deadlines ? `<p class="small muted">${t("Tähtajad arvutab reeglistik, mitte tehisaru. Kuupäevad on arvutatud, mitte esitatud ega makstud.", "Deadlines are calculated by rules, not AI. Dates are computed, not filed or paid.")}${deadlines.company.attribution && !deadlines.company.synthetic ? ` ${esc(deadlines.company.attribution)}` : ""}</p>` : ""}</details>
 ${unmetNeedsBody({ csrf: o.csrf, needs: o.needs, lang: l })}
 ${how}`;
 }
