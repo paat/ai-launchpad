@@ -153,7 +153,7 @@ export const FIXED_INSTRUCTIONS: Record<ModelJob, string> = {
     "Start with what their assistant can take off their hands for this company, using the programs and the obligations. " +
     "Reply with plain text only, in the requested language, at most 4 short sentences and at most 600 characters. " +
     "Name each program exactly as it is given. " +
-    "When an obligation has applies \"if\", say it may apply. Never say that it is due. " +
+    "When an obligation has applies \"if\", say it may apply and never call that obligation due. " +
     "Do not repeat field names or labels from the input. Do not say \"bottom line\", \"listed\" or \"services\". " +
     "Do not mention that no actions were taken. " +
     "Do not add dates, amounts, prices, URLs, services or steps that are not in the input. " +
