@@ -26,6 +26,9 @@ export type Lookup = { ok: true; company: CompanyCard; facts: CompanyFacts; conf
 export interface ArikrattConfig { apiKey?: string; url?: string; timeoutMs?: number; }
 export interface CompanyMatch { name: string; registry_code: string; }
 const SOLE_TRADER = "füüsilisest isikust ettevõtja";
+/** Ask for more than the page shows, so dropping sole traders can still fill five companies. */
+const SEARCH_LIMIT = 15;
+const SEARCH_MATCHES = 5;
 /** Drop a row only when this result names the sole-trader form. Absent form keeps today's mapping. */
 const isSoleTrader = (c: Record<string, unknown>) => { const form = str(c.legal_form); return form !== null && form.toLocaleLowerCase("et") === SOLE_TRADER; };
 
@@ -116,19 +119,20 @@ export function arikratt(db: Db, cfg: ArikrattConfig) {
       return { ok: true, ...mapped };
     },
     /** Name lookup: company name and registry code only, never people. */
-    async search(name: string): Promise<{ ok: true; matches: CompanyMatch[] } | { ok: false; unavailable: Unavailable; reason: string }> {
+    async search(name: string): Promise<{ ok: true; matches: CompanyMatch[]; onlySoleTraders?: boolean } | { ok: false; unavailable: Unavailable; reason: string }> {
       if (!cfg.apiKey) return { ok: false, unavailable: "not_configured", reason: "Public-register lookup is not configured on this server." };
-      const r = await call("search_companies", { query: name, limit: 5 });
+      const r = await call("search_companies", { query: name, limit: SEARCH_LIMIT });
       if (!r.ok) return r;
       const list = Array.isArray(rec(r.data).companies) ? rec(r.data).companies as unknown[] : [];
       const matches: CompanyMatch[] = [];
+      let soleTraders = 0;
       for (const c of list.map(rec)) {
-        if (isSoleTrader(c)) continue;
+        if (isSoleTrader(c)) { soleTraders += 1; continue; }
         const name = str(c.name), registry_code = str(c.registry_code);
         if (name && registry_code && validRegistryCode(registry_code)) matches.push({ name, registry_code });
-        if (matches.length === 5) break;
+        if (matches.length === SEARCH_MATCHES) break;
       }
-      return { ok: true, matches };
+      return { ok: true, matches, ...(matches.length === 0 && soleTraders > 0 ? { onlySoleTraders: true } : {}) };
     },
   };
 }

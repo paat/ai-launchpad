@@ -128,7 +128,7 @@ interface Flow {
   business: Business | null;
   csum: string;
   limited?: boolean;
-  gap?: "invalid" | "code" | "name" | "down";
+  gap?: "invalid" | "code" | "name" | "sole" | "down";
   pendingMatches?: { name: string; registry_code: string }[];
   pendingFound?: { company: CompanyCard; facts: CompanyFacts };
 }
@@ -586,7 +586,7 @@ async function applyGo(flow: Flow, go: string, opts: { ipKey: string; now: numbe
     }
     const r = await opts.register.search(q);
     if (!r.ok) { flow.gap = "down"; return; }
-    if (!r.matches.length) { flow.gap = "name"; return; }
+    if (!r.matches.length) { flow.gap = r.onlySoleTraders ? "sole" : "name"; return; }
     flow.pendingMatches = r.matches.slice(0, 5);
     return;
   }
@@ -695,13 +695,15 @@ async function screen(flow: Flow, lang: Lang, opts: { ipKey: string; now: number
     return page(lang, pre, [qEt, qEn], hold, t(qEt, qEn), main, true, skip);
   }
   if (flow.gap) {
-    const msg = flow.gap === "name"
-      ? t("Nime järgi ettevõtet ei leidnud. Võid jätkata ilma ettevõtteta.", "No company was found under that name. You can continue without one.")
-      : flow.gap === "code"
-        ? t("Selle koodiga ettevõtet ei leidnud. Võid jätkata ilma ettevõtteta.", "No company was found with this code. You can continue without one.")
-        : flow.gap === "invalid"
-          ? t("See registrikood ei sobi. Võid jätkata ilma ettevõtteta.", "This registry code does not fit. You can continue without one.")
-          : t("Register ei vasta praegu. Võid jätkata ilma ettevõtteta.", "The register is not answering right now. You can continue without a company.");
+    const msg = flow.gap === "sole"
+      ? t("Leidsin ainult füüsilisest isikust ettevõtjaid — sisesta palun registrikood.", "I only found sole traders — please enter the registry code.")
+      : flow.gap === "name"
+        ? t("Nime järgi ettevõtet ei leidnud. Võid jätkata ilma ettevõtteta.", "No company was found under that name. You can continue without one.")
+        : flow.gap === "code"
+          ? t("Selle koodiga ettevõtet ei leidnud. Võid jätkata ilma ettevõtteta.", "No company was found with this code. You can continue without one.")
+          : flow.gap === "invalid"
+            ? t("See registrikood ei sobi. Võid jätkata ilma ettevõtteta.", "This registry code does not fit. You can continue without one.")
+            : t("Register ei vasta praegu. Võid jätkata ilma ettevõtteta.", "The register is not answering right now. You can continue without a company.");
     const main = `<button type="submit" name="go" value="nocompany">${esc(t("Jätkan ilma ettevõtteta", "Continue without a company"))}</button>`;
     return page(lang, pre, [msg, msg], flow, msg, main, true);
   }

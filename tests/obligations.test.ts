@@ -249,9 +249,18 @@ describe("rules engine (memo § 3, pure)", () => {
 
 // --- Fake Ärikratt MCP: in-process SDK server, synthetic values, real field names ---
 const PERSON = "Synthetic Person Name", PERSON_CODE = "38001010000";
-let fake: Server; let fakeUrl = ""; let toolCalls = 0;
+let fake: Server; let fakeUrl = ""; let toolCalls = 0; let lastSearchLimit: number | undefined;
 function fakeSearch(query: string) {
   if (query === "Nobody Matches") return [];
+  if (query === "Only Sole") return [
+    { name: "Synthetic Sole Trader", registry_code: SLOW, legal_form: "füüsilisest isikust ettevõtja" },
+    { name: "Synthetic Sole Trader Upper", registry_code: "10000018", legal_form: "FÜÜSILISEST ISIKUST ETTEVÕTJA" },
+  ];
+  if (query === "Backfill") {
+    const soles = ["10000001", "10000024", "10000030", "10000047", "10000053", "10000076"].map((registry_code, i) => ({ name: `Synthetic Sole ${i}`, registry_code, legal_form: "füüsilisest isikust ettevõtja" }));
+    const companies = ["10000062", "10000082", "10000099", "10000107", "10000113", "10000018"].map((registry_code, i) => ({ name: `Synthetic Company ${i}`, registry_code, legal_form: "Osaühing" }));
+    return [...soles, ...companies];
+  }
   if (query === "Sole Trader") return [
     { name: "Synthetic Register OÜ", registry_code: FAKE_VALID, legal_form: "Osaühing" },
     { name: "Synthetic Sole Trader", registry_code: SLOW, legal_form: "Füüsilisest isikust ettevõtja" },
@@ -284,7 +293,7 @@ beforeAll(async () => {
       expect(sections).toEqual(["report_status", "tax"]);
       return { content: [{ type: "text", text: JSON.stringify(fakeCompany(registry_code)) }] };
     });
-    s.registerTool("search_companies", { inputSchema: { query: z.string(), limit: z.number().optional() } }, async ({ query }) => ({ content: [{ type: "text", text: JSON.stringify({ companies: fakeSearch(query) }) }] }));
+    s.registerTool("search_companies", { inputSchema: { query: z.string(), limit: z.number().optional() } }, async ({ query, limit }) => { lastSearchLimit = limit; return { content: [{ type: "text", text: JSON.stringify({ companies: fakeSearch(query) }) }] }; });
     const t = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => { void t.close(); void s.close(); });
     await s.connect(t); await t.handleRequest(req, res, req.body);
@@ -336,6 +345,20 @@ describe("Ärikratt adapter", () => {
   test("search drops sole traders when the row names that legal form", async () => {
     const found = await arikratt(openDb(":memory:"), { apiKey: "test-key", url: fakeUrl }).search("Sole Trader");
     expect(found).toEqual({ ok: true, matches: [{ name: "Synthetic Register OÜ", registry_code: FAKE_VALID }] });
+  });
+  test("search asks for 15 rows, drops sole traders, and returns the first 5 companies", async () => {
+    const found = await arikratt(openDb(":memory:"), { apiKey: "test-key", url: fakeUrl }).search("Backfill");
+    expect(lastSearchLimit).toBe(15);
+    expect(found).toEqual({
+      ok: true,
+      matches: ["10000062", "10000082", "10000099", "10000107", "10000113"].map((registry_code, i) => ({ name: `Synthetic Company ${i}`, registry_code })),
+    });
+  });
+  test("a page of only sole traders is not an empty miss", async () => {
+    const found = await arikratt(openDb(":memory:"), { apiKey: "test-key", url: fakeUrl }).search("Only Sole");
+    expect(found).toEqual({ ok: true, matches: [], onlySoleTraders: true });
+    const miss = await arikratt(openDb(":memory:"), { apiKey: "test-key", url: fakeUrl }).search("Nobody Matches");
+    expect(miss).toEqual({ ok: true, matches: [] });
   });
   test("maps the live financials object to latest annual revenue with the report year, and profile.founded (#43)", () => {
     const { facts } = mapCompany(FAKE_VALID, { as_of: "2026-10-29", profile: { vat_number: null }, financials: { year: 2025, report_basis: "annual_report", revenue: 45000, revenue_reason: null, employees_avg: 1 } });

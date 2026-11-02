@@ -78,6 +78,7 @@ describe("/alusta", () => {
   let fake: Server;
   let base = "";
   let toolCalls = 0;
+  let searchLimit: number | undefined;
   const assistants = [...new Set(PLANS.map((row) => row.assistant))];
 
   beforeAll(async () => {
@@ -100,8 +101,18 @@ describe("/alusta", () => {
           registry_code,
         }) }] };
       });
-      s.registerTool("search_companies", { inputSchema: { query: z.string(), limit: z.number().optional() } }, async ({ query }) => {
+      s.registerTool("search_companies", { inputSchema: { query: z.string(), limit: z.number().optional() } }, async ({ query, limit }) => {
+        searchLimit = limit;
         if (query === "Nobody") return { content: [{ type: "text", text: JSON.stringify({ companies: [] }) }] };
+        if (query === "Ainult") return { content: [{ type: "text", text: JSON.stringify({ companies: [
+          { name: "Synthetic Sole", registry_code: "10000107", legal_form: "füüsilisest isikust ettevõtja" },
+          { name: "Synthetic Sole Upper", registry_code: "10000018", legal_form: "FÜÜSILISEST ISIKUST ETTEVÕTJA" },
+        ] }) }] };
+        if (query === "Backfill") {
+          const soles = ["10000001", "10000024", "10000030", "10000047", "10000053", "10000076"].map((registry_code, i) => ({ name: `Synthetic Sole ${i}`, registry_code, legal_form: "füüsilisest isikust ettevõtja" }));
+          const companies = ["10000062", "10000082", "10000099", "10000107", "10000113", "10000018"].map((registry_code, i) => ({ name: `Synthetic Company ${i}`, registry_code, legal_form: "Osaühing" }));
+          return { content: [{ type: "text", text: JSON.stringify({ companies: [...soles, ...companies] }) }] };
+        }
         const companies = [
           { name: "Synthetic Register OÜ", registry_code: CODE, legal_form: "Osaühing" },
           { name: "Synthetic Second OÜ", registry_code: MISSING, legal_form: "Osaühing" },
@@ -265,6 +276,22 @@ describe("/alusta", () => {
     const gone = await getPage();
     const notFound = await post(gone, { ...hidden(gone.html), go: "company", q: MISSING });
     expect(notFound.html).toContain("Selle koodiga ettevõtet ei leidnud.");
+
+    const soleStart = await getPage("/alusta", "10.13.0.1");
+    const sole = await post(soleStart, { ...hidden(soleStart.html), go: "company", q: "Ainult" }, { ip: "10.13.0.1" });
+    expect(sole.html).toContain("Leidsin ainult füüsilisest isikust ettevõtjaid — sisesta palun registrikood.");
+    expect(sole.html).not.toContain("Nime järgi ettevõtet ei leidnud.");
+    const soleEnStart = await getPage("/alusta?lang=en", "10.13.0.2");
+    const soleEn = await post(soleEnStart, { ...hidden(soleEnStart.html), go: "company", q: "Ainult" }, { ip: "10.13.0.2" });
+    expect(soleEn.html).toContain("I only found sole traders — please enter the registry code.");
+
+    const fillStart = await getPage("/alusta", "10.13.0.3");
+    const filled = await post(fillStart, { ...hidden(fillStart.html), go: "company", q: "Backfill" }, { ip: "10.13.0.3" });
+    expect(searchLimit).toBe(15);
+    expect(filled.html).toContain("Synthetic Company 0");
+    expect(filled.html).toContain("Synthetic Company 4");
+    expect(filled.html).not.toContain("Synthetic Company 5");
+    expect(filled.html).not.toContain("Synthetic Sole");
   });
 
   test("register flood is one sentence and does not look the company up", async () => {
