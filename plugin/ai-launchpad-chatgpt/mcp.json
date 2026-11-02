@@ -3,17 +3,7 @@
   "mcpServers": {
     "ai-launchpad": {
       "type": "streamable-http",
-      "url": "https://huppelaud.arikratt.ee/mcp",
-      "extensions": {
-        "com.openai": {
-          "auth": {
-            "type": "oauth",
-            "client": {
-              "mode": "dcr"
-            }
-          }
-        }
-      }
+      "url": "https://huppelaud.arikratt.ee/mcp"
     }
   }
 }

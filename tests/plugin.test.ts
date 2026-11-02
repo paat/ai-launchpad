@@ -169,15 +169,14 @@ describe("ChatGPT plugin", () => {
     for (const banned of ["apps", "hooks", "screenshots", "agents"]) expect(keysDeep(plugin).has(banned)).toBe(false);
   });
 
-  test("mcp.json matches the Claude connector and uses DCR, with no client credentials", () => {
+  test("mcp.json matches the Claude connector, with no client credentials", () => {
     const claudeUrl = JSON.parse(read(".mcp.json")).mcpServers["ai-launchpad"].url;
     const raw = readFileSync(join(gpt, "mcp.json"), "utf8");
     const mcp = JSON.parse(raw);
     expect(mcp.$schema).toBe("https://agent-plugins.org/schemas/1.0.0/mcp.schema.json");
-    expect(mcp.mcpServers["ai-launchpad"]).toMatchObject({
+    expect(mcp.mcpServers["ai-launchpad"]).toEqual({
       type: "streamable-http",
       url: claudeUrl,
-      extensions: { "com.openai": { auth: { type: "oauth", client: { mode: "dcr" } } } },
     });
     expect(raw).not.toMatch(/clientSecret|clientId/);
   });
