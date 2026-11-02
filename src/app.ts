@@ -5,9 +5,9 @@ import { isIP } from "node:net";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
 import { arikratt } from "./arikratt.js";
-import { approvalAddressMissing, startApprovalCheck, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, liveStandingRules, ownerApprovals, logActivity, normAddress, recordActionOutcome, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, TOOL_ARG_KEYS, type ApprovalRow, type StandingRule } from "./mcp.js";
+import { approvalAddressMissing, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, ownerApprovals, logActivity, recordActionOutcome, TOOL_ARG_KEYS, type ApprovalRow } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
-import { computeHandover, handoverObligations, isDone, largestAmount, offerCapCents, standingBasis } from "./handover.js";
+import { computeHandover, handoverObligations, isDone } from "./handover.js";
 import type { Assessment } from "./core.js";
 import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
@@ -18,7 +18,6 @@ import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
 import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, assistantPrefillUrl, landingBody, connectBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, aboutBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
-import { liveChecker, mockChecker, type ApprovalChecker } from "./approval-check.js";
 import { NAIDIS, naidisApproval, naidisBody } from "./naidis.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; intakeClient?: IntakeClient; }
@@ -221,7 +220,6 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // on the SAME ledger handle; mock in test mode; none when disabled.
   let needClassifier: NeedClassifier | null = cfg.modelMode === "disabled" ? null : mockClassifier;
   let intakeClient: IntakeClient | null = null;
-  let approvalChecker: ApprovalChecker | null = cfg.modelMode === "disabled" ? null : mockChecker;
   if (cfg.modelMode === "public_cards") {
     if (!allowedSubjects) throw new Error("MODEL_MODE=public_cards requires a nonempty Google subject allowlist (LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS); refusing to start.");
     if (cfg.modelPricingConfirmed !== true) throw new Error("MODEL_MODE=public_cards requires LAUNCHPAD_MODEL_PRICING_CONFIRMED=1 (operator confirms current published pricing/credits); refusing to start.");
@@ -232,7 +230,6 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     publicCards = new PublicCards({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
     needClassifier = liveClassifier({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
     intakeClient = liveIntake({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
-    approvalChecker = liveChecker({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
   } else if (cfg.modelMode !== "disabled") {
     intakeClient = cfg.intakeClient ?? mockIntake();
   }
@@ -342,7 +339,6 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
         const id = newId("appr");
         const outcomeJson = shiftOutcome(template.outcome_json);
         insertApproval.run(id, ownerId, template.kind, template.report_id, template.payload_json, template.digest, template.state, shift(template.expires_at), shift(template.created_at), shiftOpt(template.decided_at), shiftOpt(template.consumed_at), outcomeJson);
-        void startApprovalCheck(db, ownerId, id, approvalChecker);
         if (template.state === "consumed" && outcomeJson) {
           // One receipt per recorded outcome, the same columns record_action_outcome writes. A paid row's history is sent, then paid.
           const outcome = JSON.parse(outcomeJson) as { outcome: string; observed_at: string; history?: { outcome: string; observed_at: string }[] };
@@ -419,14 +415,12 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const message = t("See toiming on väljalülitatud ajutises näidistööruumis. Midagi ei muudetud.", "This action is disabled in a temporary sample workspace. Nothing was changed.");
     return res.status(403).type("html").send(publicPage(req, res, title, errorBody(langOf(res), title, message), { sample: true }));
   };
-  /** Every standing approval of the owner (live, ended and expired), to name the rule behind an approval. */
-  const ownerRules = (ownerId: string) => db.prepare("SELECT * FROM standing_approvals WHERE owner_id=? ORDER BY created_at DESC").all(ownerId) as StandingRule[];
   // Deadlines: only for a known registry code (assessment ref or synthetic demo company).
   const ownerDeadlines = (assessment: Assessment | null) => { const ref = assessment?.company_registry_ref?.trim(); return ref && /^\d{8}$/.test(ref) ? companyObligations(register, { registryCode: ref, months: 2, cacheOnly: true }) : Promise.resolve(null); };
-  // „Käest ära” (#61): once per request, from the stored approvals and rules plus the rule-computed deadlines.
+  // „Käest ära” (#61): once per request, from the stored approvals plus the rule-computed deadlines.
   const ownerHandover = (ownerId: string, st: { assessment: Assessment | null; assessed_at: string | null }, deadlines: Awaited<ReturnType<typeof ownerDeadlines>>) => {
     expireApprovals(db, ownerId);
-    return computeHandover({ assessment: st.assessment, assessedAt: st.assessed_at, obligations: deadlines?.ok ? handoverObligations(deadlines) : [], approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(ownerId) as ApprovalRow[], rules: ownerRules(ownerId), now: new Date() });
+    return computeHandover({ assessment: st.assessment, assessedAt: st.assessed_at, obligations: deadlines?.ok ? handoverObligations(deadlines) : [], approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(ownerId) as ApprovalRow[], now: new Date() });
   };
 
   const oauth = new LaunchpadOAuth(db, cfg, session, ownerAllowed);
@@ -602,7 +596,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       approvals, progress: st.progress as unknown as { task_id: string; milestone: string; observed_at: string }[],
       // A checksum-invalid ref is the only lookup that computes nothing: say so instead of dropping the section.
       deadlines: !deadlines ? null : !deadlines.ok ? "invalid_code" : failure?.unavailable === "not_found" ? "not_found" : failure ? { unavailable_reason: failure.reason } : unavailable === "not_cached" ? "not_cached" : unavailable ? { unavailable_reason: deadlines.result.company.unavailable_reason ?? unavailable } : deadlines.result as DeadlinesView,
-      needs: ownerNeeds(db, oid(req)), reportCount, rules: ownerRules(oid(req)), handover: ownerHandover(oid(req), st, deadlines),
+      needs: ownerNeeds(db, oid(req)), reportCount, handover: ownerHandover(oid(req), st, deadlines),
       assistant: /chatgpt|openai/i.test(lastAssistant?.name ?? "") ? "chatgpt" : "claude",
     })));
   } catch (e) { next(e); } });
@@ -666,7 +660,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const rows = db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=? ORDER BY id DESC LIMIT 100").all(oid(req)) as Record<string, string>[];
     const receipts = db.prepare("SELECT kind,report_id,payload_json,receipt_json,created_at FROM reports WHERE owner_id=? ORDER BY created_at DESC LIMIT 20").all(oid(req)) as Record<string, string>[];
     const st = getState(db, oid(req));
-    res.type("html").send(page(req, res, tr(langOf(res))("Tehtud", "Done"), "tehtud", activityBody({ rows, receipts, exclusions: st.exclusions, assessment: st.assessment, sample: isSampleKind((req as Authed).ownerKind), lang: langOf(res), approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(oid(req)) as ApprovalRow[], rules: ownerRules(oid(req)) })));
+    res.type("html").send(page(req, res, tr(langOf(res))("Tehtud", "Done"), "tehtud", activityBody({ rows, receipts, exclusions: st.exclusions, assessment: st.assessment, sample: isSampleKind((req as Authed).ownerKind), lang: langOf(res), approvals: db.prepare("SELECT * FROM approvals WHERE owner_id=?").all(oid(req)) as ApprovalRow[] })));
   });
 
   app.get("/playbooks", requireOwner, refuseSandbox, (req, res) => {
@@ -817,9 +811,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     // Once the assistant has recorded a done outcome, the receipt shows the owner's „Käest ära” strip (#63).
     const st = isDone(a) ? getState(db, oid(req)) : null;
     const handover = st ? ownerHandover(oid(req), st, await ownerDeadlines(st.assessment)) : undefined;
-    res.type("html").send(page(req, res, t("Kinnitus", "Approval"), "none", approvalCardBody({ csrf: (req as Authed).csrf, a, lang: langOf(res), sample: isSampleKind((req as Authed).ownerKind), rules: ownerRules(oid(req)), handover,
-      // The same default cap as the Ühendus offer, from this send and the owner's past approvals of its job (QA m4).
-      capCents: offerCapCents(largestAmount([a, ...standingBasis(db.prepare("SELECT * FROM approvals WHERE owner_id=? AND kind=?").all(oid(req), a.kind ?? "") as ApprovalRow[], a.kind ?? "")])) })));
+    res.type("html").send(page(req, res, t("Kinnitus", "Approval"), "none", approvalCardBody({ csrf: (req as Authed).csrf, a, lang: langOf(res), sample: isSampleKind((req as Authed).ownerKind), handover })));
   } catch (e) { next(e); } });
   app.post("/approvals/:id/decide", requireOwner, csrfOk, (req, res) => {
     const t = tr(langOf(res));
@@ -844,52 +836,6 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       if ("error" in result) return ownerError(req, res, 500, t("Näidistulemust ei salvestatud", "Sample outcome was not saved"), t("Kinnitus salvestati, kuid näidistulemust ei salvestatud. Päriselt ei saadetud midagi.", "Your approval was saved, but the sample outcome was not. Nothing was really sent."));
     }
     res.redirect(`/approvals/${encodeURIComponent(a.id)}`);
-  });
-
-  // Standing approvals (#45): created from an owner-approved send (its recipient
-  // comes from that approval, never the form) or on Ühendus; sends only.
-  app.post("/standing-approvals", requireOwner, csrfOk, (req, res) => {
-    const t = tr(langOf(res)), body = bodyOf(req);
-    const bad = (status: number, message: string) => ownerError(req, res, status, t("Püsiluba ei loodud", "No standing approval was created"), `${message} ${t("Midagi ei muudetud.", "Nothing was changed.")}`);
-    const extra = Object.keys(body).filter((k) => !["csrf", "approval_id", "kind", "scope", "max_eur"].includes(k));
-    const cents = Math.round(Number(String(body.max_eur ?? "").replace(/[\s\u00a0€]/g, "").replace(",", ".")) * 100);
-    if (extra.length || !Number.isSafeInteger(cents) || cents < 100 || cents > 100_000_000) return bad(400, t("Sisesta summa ülempiir eurodes (1 kuni 1 000 000 €).", "Enter an amount cap in euros (€1 to €1,000,000)."));
-    let kind: string, recipients: string[] | null, back: string;
-    if (body.approval_id !== undefined) {
-      const a = getApproval(db, oid(req), String(body.approval_id));
-      if (!a || !STANDING_KINDS.includes(a.kind ?? "") || !a.decided_at || a.state === "declined" || a.approved_by_rule || approvalAddressMissing(a)) return bad(404, t("Püsiloa saab luua ainult saatmisest, mille sina kinnitasid.", "A standing approval can only start from a send you approved."));
-      if (body.scope !== "recipient" && body.scope !== "any") return bad(400, t("Vali, kellele püsiluba kehtib.", "Choose who the standing approval covers."));
-      kind = a.kind!;
-      recipients = body.scope === "any" ? null : [normAddress(String((JSON.parse(a.payload_json) as { recipient: { address: string } }).recipient.address))];
-      back = `/approvals/${encodeURIComponent(a.id)}#pusiluba`;
-    } else {
-      if (!STANDING_KINDS.includes(String(body.kind ?? ""))) return bad(400, t("Püsiluba saab anda ainult sõnumitele ja arvetele. Deklaratsioone ja makseid kinnitad alati ise.", "Standing approvals cover only messages and invoices. You always confirm filings and payments yourself."));
-      kind = String(body.kind);
-      if (body.scope === "any") recipients = null;
-      else if (body.scope === "approved") {
-        // The recipients the owner has already approved once for this kind.
-        const rows = standingBasis(db.prepare("SELECT * FROM approvals WHERE owner_id=? AND kind=?").all(oid(req), kind) as ApprovalRow[], kind);
-        recipients = [...new Set(rows.flatMap((r) => { try { const x = (JSON.parse(r.payload_json) as { recipient?: { address?: unknown } }).recipient?.address; return typeof x === "string" && x.trim() ? [normAddress(x)] : []; } catch { return []; } }))];
-        if (!recipients.length) return bad(409, t("Sa pole sellist saatmist veel kinnitanud. Vali „Kõik saajad (ka uued)” või kinnita enne üks saatmine.", "You have not approved such a send yet. Choose “Any recipient (including new ones)” or approve one send first."));
-      } else return bad(400, t("Vali, kellele püsiluba kehtib.", "Choose who the standing approval covers."));
-      back = "/uhenda#pusiload";
-    }
-    if (liveStandingRules(db, oid(req)).length >= 20 || ownerRules(oid(req)).length >= 100) return bad(409, t("Püsilubasid on liiga palju. Lõpeta mõni, enne kui uue lisad.", "Too many standing approvals. End one before adding another."));
-    const rule = { id: newId("rule"), kind, recipients_json: recipients === null ? null : JSON.stringify(recipients), max_amount_cents: cents };
-    db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?)")
-      .run(rule.id, oid(req), kind, rule.recipients_json, cents, STANDING_DEFAULTS.maxPerDay, new Date(Date.now() + STANDING_DEFAULTS.days * 86_400_000).toISOString(), nowIso());
-    logActivity(db, oid(req), "owner", "standing_rule_created", "ok", `Standing approval ${rule.id} set: ${standingRuleName(rule, "en")}, up to ${STANDING_DEFAULTS.maxPerDay} a day, ${STANDING_DEFAULTS.days} days.`);
-    res.redirect(back);
-  });
-  app.post("/standing-approvals/revoke", requireOwner, csrfOk, (req, res) => {
-    const id = String(bodyOf(req).rule_id ?? "");
-    // Ending a rule also cancels what it approved but the assistant has not yet acted on (state approved = no outcome recorded).
-    const ended = db.transaction(() => {
-      const r = db.prepare("UPDATE standing_approvals SET revoked_at=? WHERE id=? AND owner_id=? AND revoked_at IS NULL").run(nowIso(), id, oid(req));
-      return r.changes ? db.prepare("UPDATE approvals SET state='expired' WHERE owner_id=? AND approved_by_rule=? AND state='approved'").run(oid(req), id).changes : null;
-    })();
-    if (ended !== null) logActivity(db, oid(req), "owner", "standing_rule_revoked", "ok", `Standing approval ${id} ended; it approves nothing from now on. ${ended} approved, unused approval expired.`);
-    res.redirect("/uhenda#pusiload");
   });
 
   // One rule: the old chooser is the onboarding chat. Other query parameters are not forwarded.
@@ -961,7 +907,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     const sandboxOwner = kind === "sandbox";
     const st = s ? getState(db, s.owner_id) : null, assessment = st?.assessment ?? null;
     const feed = s && !sandboxOwner ? db.prepare("SELECT created_at FROM calendar_feeds WHERE owner_id=?").get(s.owner_id) as { created_at: string } | undefined : undefined;
-    const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : req.query.a === "grok" ? "grok" : "claude", state, owner: !!s && !sandboxOwner, sandbox: sandboxOwner, expanded: req.query.naita === "1", ...(s ? { ...(sandboxOwner ? {} : { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null } }), standing: { csrf: s.csrf, rules: liveStandingRules(db, s.owner_id) }, handover: ownerHandover(s.owner_id, st!, await ownerDeadlines(assessment)) } : {}) });
+    const body = await connectBody({ lang: l, baseUrl: cfg.baseUrl, assistant: req.query.a === "chatgpt" ? "chatgpt" : req.query.a === "grok" ? "grok" : "claude", state, owner: !!s && !sandboxOwner, sandbox: sandboxOwner, expanded: req.query.naita === "1", ...(s ? { ...(sandboxOwner ? {} : { calendar: { csrf: s.csrf, createdAt: feed?.created_at ?? null } }), handover: ownerHandover(s.owner_id, st!, await ownerDeadlines(assessment)) } : {}) });
     res.type("html").send(shell({ title: tr(l)("Ühenda", "Connect"), active: s ? "uhendus" : "none", csrf: s?.csrf ?? "", lang: l, sample: isSampleKind(kind), toggle: toggleHref(req, l), body,
       // Zero JS: while an owner waits for the first assistant contact, the page reloads itself.
       head: state.kind === "waiting" ? '<meta http-equiv="refresh" content="5">' : "", ...sandboxGuides(kind) }));
@@ -1027,7 +973,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       if (!oauthGrant) touchLastUsed(db, "mcp_tokens", token.id);
       // Manual tokens never count: only an OAuth grant can have another assistant connection.
       const anotherAssistant = oauthGrant && otherAssistantConnected(db, token.owner_id, owner.epoch, token.id);
-      const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl, anotherAssistant }, register, { onUnmetNeed: () => unmetNeeds.kick(), approvalChecker });
+      const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl, anotherAssistant }, register, { onUnmetNeed: () => unmetNeeds.kick() });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => { void transport.close(); void server.close(); });
       await server.connect(transport);

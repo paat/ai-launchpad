@@ -41,8 +41,6 @@ export function openDb(path: string) {
   // Backward-safe: approval card columns are added to an existing table in place.
   const approvalCols = new Set((db.prepare("PRAGMA table_info(approvals)").all() as { name: string }[]).map((c) => c.name));
   for (const col of ["kind", "report_id", "decided_at", "outcome_json", "approved_by_rule", "playbook_id", "owner_confirmation", "check_state", "check_json", "check_by", "check_at"]) if (!approvalCols.has(col)) db.exec(`ALTER TABLE approvals ADD COLUMN ${col} TEXT`);
-  // A process restart cannot resume an inference; never leave a stale pass or spinner.
-  db.exec(`UPDATE approvals SET check_state='unavailable',check_json='{"reason":"interrupted"}' WHERE check_state='running'`);
   // #35: a legacy send approval stored without a recipient address can never be
   // used, so an actionable one (pending or approved) is expired once at startup.
   // Consumed rows record what was already sent and are left as they are.
@@ -59,7 +57,7 @@ export function openDb(path: string) {
   `);
   // Calendar feed (#29): one secret feed per owner; only the token's sha256 is stored.
   db.exec("CREATE TABLE IF NOT EXISTS calendar_feeds(owner_id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL)");
-  // Standing approvals (#45): an owner rule that approves matching sends at once.
+  // Retain legacy standing approvals for export and deletion of existing owner data.
   // recipients_json NULL means any recipient.
   db.exec(`
   CREATE TABLE IF NOT EXISTS standing_approvals(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, kind TEXT NOT NULL, recipients_json TEXT, max_amount_cents INTEGER NOT NULL, max_per_day INTEGER NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT);

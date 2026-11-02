@@ -3,20 +3,20 @@
 // dates, the assistant's latest assessment); who does it is a plain line, not the ranking.
 import { PLAYBOOKS } from "./catalog.js";
 import { CONNECTION_KINDS, isHandled, type Assessment, type ConnectionKind } from "./core.js";
-import { normAddress, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type StandingRule } from "./mcp.js";
+import type { ApprovalRow } from "./mcp.js";
 import { tallinnDate, type Obligation, type Source } from "./obligations.js";
 
-export type Rung = "mine" | "other" | "prep" | "done";
+export type Rung = "mine" | "other" | "done";
 /** What the owner should know about the job now, most urgent first. */
 export const STATUSES = ["waiting", "overdue", "due_soon", "open", "not_checked", "later", "in_order"] as const;
 export type Status = (typeof STATUSES)[number];
 export type ConnectionState = "linked" | "file" | "not_linked" | "unknown";
 export interface Job {
   id: string; title_et: string; title_en: string; kind: string | null;
-  rung: Rung; ceiling: "rule" | "law"; status: Status;
+  rung: Rung; ceiling: "law" | null; status: Status;
   /** The kinds of connection the job needs; the owner's assistant reports which it can reach. */
   needs: ConnectionKind[];
-  evidence: { done: number; auto: number; paid: number; last: string | null; pending: number; rule?: StandingRule };
+  evidence: { done: number; paid: number; last: string | null; pending: number };
   source: "playbook" | "assessment" | "approvals";
   /** The assistant's assessment behind the row: its reason, and who handles the job if handled. */
   assessed?: { reason: string; executor?: string; current?: "in_order" | "open" };
@@ -24,7 +24,6 @@ export interface Job {
   due: string | null; dueSource: Source | null;
 }
 export type NextStep =
-  | { type: "standing"; job: Job; kind: string; recipients: { name: string; address: string }[]; capCents: number; basis: { count: number; maxCents: number } }
   | { type: "playbook"; job: Job; playbookId: string; obligation: Obligation | null }
   | { type: "connector" };
 export interface Handover {
@@ -35,8 +34,8 @@ export interface Handover {
   connections: { kind: ConnectionKind; state: ConnectionState; service?: string }[];
   /** When the assistant last assessed: the time behind „in order” and the connections. */
   assessedAt: string | null;
-  /** Done outcomes this Tallinn month; auto = approved by a standing rule. */
-  month: { ym: string; done: number; auto: number };
+  /** Done outcomes this Tallinn month. */
+  month: { ym: string; done: number };
   next: NextStep;
   findings: { expiredUnused: { count: number; last: ApprovalRow | null } };
   /** Jobs that came from the assistant's assessment (said out loud so a growing list never reads as regression). */
@@ -93,10 +92,9 @@ export function jobOfApproval(a: ApprovalRow): string | null {
 /** Only a definite (applies "yes") past risk row may become a job's date or next step; a cold cache's conditional one may not (review-polish-grok high). */
 const definitelyOverdue = (x: Obligation, today: string) => x.kind === "risk" && x.applies === "yes" && !!x.effective_due && x.effective_due < today;
 
-export function computeHandover(o: { assessment: Assessment | null; assessedAt?: string | null; obligations: Obligation[]; approvals: ApprovalRow[]; rules: StandingRule[]; now: Date }): Handover {
+export function computeHandover(o: { assessment: Assessment | null; assessedAt?: string | null; obligations: Obligation[]; approvals: ApprovalRow[]; now: Date }): Handover {
   const today = tallinnDate(o.now), ym = today.slice(0, 7), soon = addDays(today, SOON_DAYS);
   const assessedAt = o.assessment ? o.assessedAt ?? null : null, fresh = !!assessedAt && o.now.getTime() - Date.parse(assessedAt) <= FRESH_MS;
-  const live = o.rules.filter((r) => !r.revoked_at && Date.parse(r.expires_at) > o.now.getTime());
   const rows = (o.assessment?.responsibilities ?? []).filter((r) => r.applicability === "applicable" && !r.is_core);
   const byJob = new Map<string, ApprovalRow[]>();
   for (const a of o.approvals) { const j = jobOfApproval(a); if (j) byJob.set(j, [...(byJob.get(j) ?? []), a]); }
@@ -104,11 +102,8 @@ export function computeHandover(o: { assessment: Assessment | null; assessedAt?:
   const build = (id: string, kind: string | null, source: Job["source"], assessed: Job["assessed"], dueRow: Obligation | null, titles: [string, string]): Job => {
     // A pending row past its expiry waits for nobody (the app expires it on the next read).
     const mine = byJob.get(id) ?? [], done = mine.filter(isDone), pending = mine.filter((a) => a.state === "pending" && Date.parse(a.expires_at) > o.now.getTime()).length;
-    const ceiling = kind && STANDING_KINDS.includes(kind) ? "rule" as const : "law" as const;
-    // Deep green under a rule only once a live rule of this kind has approved a done outcome.
-    const rule = ceiling === "rule" ? live.find((r) => r.kind === kind && done.some((a) => a.approved_by_rule === r.id)) : undefined;
-    // Book entries need the owner's yes for every month, and each customer follow-up is approved one by one, so both stay at prep and never reach done under a rule (#96).
-    const rung: Rung = done.length && kind !== "post_entries" && id !== "customer-follow-ups" && (rule || ceiling === "law") ? "done" : done.length ? "prep" : assessed?.executor ? "other" : "mine";
+    const ceiling = kind === "prepare_filing" || kind === "prepare_payment" ? "law" as const : null;
+    const rung: Rung = done.length ? "done" : assessed?.executor ? "other" : "mine";
     const last = done.map((a) => a.consumed_at ?? "").sort().pop() || null, due = dueRow?.effective_due ?? null;
     // The assistant's look counts only while fresh and newer than the last recorded outcome.
     const look = fresh && assessed?.current && (!last || assessedAt! > last) ? assessed.current : undefined;
@@ -120,7 +115,7 @@ export function computeHandover(o: { assessment: Assessment | null; assessedAt?:
       : doneThisMonth || look === "in_order" ? "in_order" : due ? "later" : "not_checked";
     const { current: _seen, ...said } = assessed ?? { reason: "" };
     return { id, title_et: titles[0], title_en: titles[1], kind, rung, ceiling, status, needs: NEEDS[id] ?? [], source, due, dueSource: dueRow?.source ?? null, ...(assessed ? { assessed: { ...said, ...(look ? { current: look } : {}) } } : {}),
-      evidence: { done: done.length, auto: done.filter((a) => a.approved_by_rule).length, paid: done.filter((a) => outcomeOf(a) === "paid").length, last, pending, ...(rule ? { rule } : {}) } };
+      evidence: { done: done.length, paid: done.filter((a) => outcomeOf(a) === "paid").length, last, pending } };
   };
   const assessedOf = (r: (typeof rows)[number]) => ({ reason: r.reason, ...(isHandled(r) ? { executor: r.executor } : {}), ...(r.current_state ? { current: r.current_state } : {}) });
 
@@ -149,42 +144,20 @@ export function computeHandover(o: { assessment: Assessment | null; assessedAt?:
     jobs, count: Object.fromEntries(STATUSES.map((st) => [st, jobs.filter((j) => j.status === st).length])) as Record<Status, number>,
     connections: kinds.map((kind) => { const c = reported.get(kind); return c ? { kind, state: c.state, ...(c.service ? { service: c.service } : {}) } : { kind, state: "unknown" as const }; }),
     assessedAt,
-    month: { ym, done: monthDone.length, auto: monthDone.filter((a) => a.approved_by_rule).length },
-    next: nextStep(jobs, live, o.approvals, o.obligations.filter((x) => x.kind !== "risk" || definitelyOverdue(x, today))),
+    month: { ym, done: monthDone.length },
+    next: nextStep(jobs, o.obligations.filter((x) => x.kind !== "risk" || definitelyOverdue(x, today))),
     findings: { expiredUnused: { count: expired.length, last: expired[0] ?? null } },
     fromAssessment: jobs.filter((j) => j.source === "assessment").length,
   };
 }
-
-/** The sends a standing offer for this kind is built from, and POST /standing-approvals (scope "approved") draws its recipients from:
- * owner-decided, not declined, not by a rule, and attributed to the kind's job (tribunal T-003).
- * send_message is shared with customer-follow-ups, which is never standing-approved: only payment-reminder rows count (tribunal T-001, #96). */
-export function standingBasis(approvals: ApprovalRow[], kind: string): ApprovalRow[] {
-  const job = kind === "send_message" ? "payment-reminder" : KNOWN.find((k) => k.kind === kind)?.id;
-  return approvals.filter((a) => a.kind === kind && a.decided_at && a.state !== "declined" && !a.approved_by_rule && jobOfApproval(a) === job);
-}
-
-export const largestAmount = (rows: ApprovalRow[]) => Math.max(0, ...rows.map((a) => payloadOf(a).amount_cents ?? 0));
-/** A standing offer's default cap, on the approval card and on Ühendus alike (QA m4): the largest approved amount rounded up to the next 100 €, else the default. */
-export const offerCapCents = (maxCents: number) => maxCents ? Math.ceil(maxCents / 10_000) * 10_000 : STANDING_DEFAULTS.maxAmountCents;
 
 /** Open playbook next-step order: payment reminders first, then the soonest due. Equal dues compare equal so the status order is kept (#153). */
 export function byOpenPlaybookOrder(a: { id: string; due: string | null }, b: { id: string; due: string | null }): number {
   return a.id === "payment-reminder" ? -1 : b.id === "payment-reminder" ? 1 : (a.due ?? "9999") < (b.due ?? "9999") ? -1 : (a.due ?? "9999") > (b.due ?? "9999") ? 1 : 0;
 }
 
-/** One next step, first match wins: standing offer → playbook prompt → connector. */
-function nextStep(jobs: Job[], live: StandingRule[], approvals: ApprovalRow[], obligations: Obligation[]): NextStep {
-  for (const j of jobs) {
-    // A follow-up stays one approval at a time: reminder rows of the same kind must not build its standing card (#96).
-    if (j.id === "customer-follow-ups" || j.rung !== "prep" || !j.kind || !STANDING_KINDS.includes(j.kind) || live.some((r) => r.kind === j.kind)) continue;
-    const basis = standingBasis(approvals, j.kind);
-    const recipients = new Map<string, string>();
-    for (const a of basis) { const r = payloadOf(a).recipient; if (r?.address?.trim()) recipients.set(normAddress(r.address), r.name ?? r.address); }
-    if (!recipients.size) continue;
-    const maxCents = largestAmount(basis), capCents = offerCapCents(maxCents);
-    return { type: "standing", job: j, kind: j.kind, recipients: [...recipients].map(([address, name]) => ({ name, address })), capCents, basis: { count: basis.length, maxCents } };
-  }
+/** One next step, first match wins: playbook prompt → connector. */
+function nextStep(jobs: Job[], obligations: Obligation[]): NextStep {
   // Reminders first (they can reach the top rung), then the soonest rule-computed date. Equal dues keep the status order (#153). A job already in order waits.
   const open = jobs.filter((j) => j.rung === "mine" && j.source === "playbook" && j.status !== "in_order").sort(byOpenPlaybookOrder)[0];
   if (open) {

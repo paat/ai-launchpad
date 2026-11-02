@@ -104,7 +104,7 @@ describe("executable job playbooks (#26)", () => {
     expect(read).toContain("If two files share a title, ask the owner once which is current");
     expect(p.steps[0]).toContain("which services the owner linked to their assistant (accounting software, bank, the mailbox where receipts arrive, customer list), names only");
     expect(all).toContain("account numbers, IBANs or payment destinations, including the company's");
-    expect(all).toContain("A remembered fact never fills a recipient address, account number or amount in any approval request unless the owner sees it there and says yes; standing approvals do not cover a value taken from the folder.");
+    expect(all).toContain("A remembered fact never fills a recipient address, account number or amount in any approval request unless the owner sees it there and says yes.");
     expect(p.done_when).toContain("Launchpad does not see or verify the files");
   });
 
@@ -515,14 +515,11 @@ describe("agent-facing copy over MCP", () => {
     // Claude asked "Do you approve?" and sent through Gmail without Launchpad: the gate leads the tool description and the server instructions.
     const tool = (await c.listTools()).tools.find((x) => x.name === "request_approval")!;
     expect(tool.description!.startsWith(SEND_GATE)).toBe(true);
-    for (const w of ["any e-mail or message", "payment reminder", "the owner's own address", "any tool or connector, Gmail, Outlook", "ask for their approval first", "owner_confirmation set to their words", "send or post exactly that content with your own tool only while the approval is approved and usable is not false", "follow its assistant_instruction", "Muse's concerns in one line and go on only if they still want it", "otherwise send nothing", "then call record_action_outcome"]) expect(SEND_GATE, w).toContain(w);
+    for (const w of ["any e-mail or message", "payment reminder", "the owner's own address", "any tool or connector, Gmail, Outlook", "ask for their approval first", "owner_confirmation set to their words", "send or post exactly that content with your own tool only while the approval is approved and usable is not false", "follow its assistant_instruction", "otherwise send nothing", "then call record_action_outcome"]) expect(SEND_GATE, w).toContain(w);
     expect(c.getInstructions()).toContain(SEND_GATE);
     const started = JSON.parse(((await c.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { approvals_note: string };
     expect(started.approvals_note.startsWith(SEND_GATE)).toBe(true);
-    // Grok r4: in chat the owner's yes is the approval; a standing approval covers only sends made while the owner is away.
-    expect(SEND_GATE).toContain("Only in a scheduled or background run without the owner, call request_approval without owner_confirmation and send only if the reply is auto_approved by their standing approval (never a customer follow-up)");
     expect(SEND_GATE).toContain("While the owner is in this chat, their yes is the approval: never send them to the Launchpad link.");
-    expect(started).not.toHaveProperty("standing_approvals");
     // The owner was sent to the dashboard: every send playbook asks in this chat before it requests the approval.
     for (const id of ["payment-reminder", "customer-follow-ups", "invoicing"]) {
       const steps = byId(id).steps;
@@ -532,7 +529,7 @@ describe("agent-facing copy over MCP", () => {
       expect(req, id).toBe(ask + 1);
       expect(steps[ask], id).toContain("only after they say yes, with owner_confirmation: their words, verbatim");
       expect(steps.join(" "), id).not.toContain("If the reply is pending, show the owner");
-      // Grok r2–r5: one request step passes the yes; the away-only standing path is a condition on that same step, never its own call.
+      // One request step passes the owner’s yes, without a second approval call.
       expect(steps[req], id).toContain("owner_confirmation: the yes they just gave in this chat, verbatim.");
       expect(steps.filter((x) => x.includes("request_approval with action kind")), id).toHaveLength(1);
       expect(steps[req].includes("In a scheduled or background run without the owner, omit owner_confirmation."), id).toBe(id !== "customer-follow-ups");
@@ -582,21 +579,19 @@ describe("agent-facing copy over MCP", () => {
     const send = p.steps.find((x) => x.includes("request_approval with action kind send_message"))!;
     expect(send).toContain("always omit amount_cents (a follow-up message has no amount)");
     expect(send).toContain('playbook_id: REQUIRED, "customer-follow-ups"');
-    expect(send).toContain("Each follow-up message is approved one by one, never by a standing approval.");
+    expect(send).toContain("Each follow-up message is approved one by one.");
     const callAt = p.steps.findIndex((x) => x.startsWith("For a call, the owner calls."));
     const messageAt = p.steps.findIndex((x) => x.startsWith("For a message, draft it"));
     expect(callAt).toBeGreaterThan(p.steps.findIndex((x) => x.includes("Ask the owner which ones to act on")));
     expect(messageAt).toBe(callAt + 1);
     expect(p.steps.filter((x) => x.startsWith("For a message: ")).map((x) => x.slice("For a message: ".length))).toEqual([
-      "Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved (including auto_approved under the owner's standing approval) and usable is not false, send exactly that text to exactly that address with your own tools without asking the owner again; otherwise do not send. Launchpad sends nothing.",
+      "Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved and usable is not false, send exactly that text to exactly that address with your own tools without asking the owner again; otherwise do not send. Launchpad sends nothing.",
       "Call record_action_outcome with outcome sent (or failed).",
     ]);
     expect(byId("payment-reminder").steps.some((x) => x.startsWith("For a message:"))).toBe(false);
     expect(send).not.toContain("auto_approved");
     expect(send).not.toContain("If the reply is auto_approved");
-    expect(steps).not.toContain("If the reply is auto_approved (the owner's standing approval), go on without asking the owner.");
     expect(steps).toContain("approved one by one");
-    expect(byId("payment-reminder").steps.join("\n")).toContain("If the reply is auto_approved (the owner's standing approval), go on without asking the owner.");
     expect(steps).toContain("without their consent");
     expect(steps).toContain("existing-customer exception only with an opt-out in that message");
     expect(steps).toContain("Launchpad never stores the customer list or customer messages");
@@ -770,7 +765,7 @@ describe("agent-facing copy over MCP", () => {
     const steps = byId("payment-reminder").steps;
     const recheck = steps.findIndex((x) => x.startsWith("Right before sending, call get_approval."));
     expect(steps[recheck]).toBe("Right before sending, call get_approval. If it is expired, ask the owner once more in this chat and request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) and their new yes as owner_confirmation for the unchanged reminder first. Approvals are valid for 24 hours.");
-    const send = steps.findIndex((x) => x.startsWith("Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved (including auto_approved under the owner's standing approval) and usable is not false"));
+    const send = steps.findIndex((x) => x.startsWith("Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved and usable is not false"));
     const sent = steps.indexOf("Call record_action_outcome with outcome sent (or failed).");
     const paid = steps.findIndex((x) => x.startsWith("Record paid only after a sent outcome, with a NEW report_id"));
     expect(steps.findIndex((x) => x.includes("request_approval"))).toBeLessThan(recheck);

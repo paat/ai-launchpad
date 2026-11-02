@@ -94,7 +94,7 @@ function titled(a: ApprovalRow, title: string) {
   return JSON.stringify(payload);
 }
 
-test("public Try it links create an isolated seeded sandbox; approve simulates sent, decline and standing approvals work", async () => withServer(async (s) => {
+test("public Try it links create an isolated seeded sandbox; approve simulates sent and decline works", async () => withServer(async (s) => {
   for (const path of ["/", "/naidis", "/naidis/kinnitus", "/naidis/tehtud"]) {
     const html = await (await fetch(s.base + path)).text();
     expect(html).toContain('href="/proovi"'); expect(html).toContain("Proovi ise");
@@ -136,9 +136,6 @@ test("public Try it links create an isolated seeded sandbox; approve simulates s
   expect(simulated.summary).toContain("Näidis: assistent saatis — päriselt ei saadetud");
   const receipt = await browser.request(s, "GET", `/approvals/${pending.id}`);
   expect(receipt.body).toContain("Saadetud: demo"); expect(receipt.body).toContain("päriselt ei saadetud"); expect(receipt.body).toContain("Kontoritöö:");
-
-  const rule = await browser.request(s, "POST", "/standing-approvals", { csrf, approval_id: pending.id, scope: "recipient", max_eur: "500" });
-  expect(rule.status).toBe(302); expect(count(s.db, "standing_approvals", owner.id)).toBe(1);
 
   const second = await sandbox(s);
   const declined = await second.browser.request(s, "POST", `/approvals/${second.pending.id}/decide`, { csrf: await second.browser.csrf(s), digest: second.pending.digest, decision: "decline" });
@@ -246,6 +243,22 @@ test("the global active-sandbox cap renders the plain-language 503 page and crea
   const full = await browser.request(s, "POST", "/proovi", { preauth: field(form.body, "preauth") });
   expect(full.status).toBe(503); expect(full.body).toContain("Näidistööruume on praegu liiga palju, proovi hiljem.");
   expect(count(s.db, "owners")).toBe(1000); expect(count(s.db, "sessions")).toBe(sessions);
+}));
+
+test("legacy rule rows remain exportable and Delete my progress clears only this owner's rows", async () => withServer(async (s) => {
+  const first = await sandbox(s), second = await sandbox(s);
+  const now = new Date().toISOString(), later = new Date(Date.now() + 86_400_000).toISOString();
+  for (const { owner } of [first, second]) {
+    s.db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,'send_message',50000,10,?,?)")
+      .run(`legacy-${owner.id}`, owner.id, later, now);
+  }
+  const exported = await first.browser.request(s, "GET", "/export");
+  expect(exported.status).toBe(200);
+  expect(JSON.parse(exported.body).standing_approvals).toEqual([{ id: `legacy-${first.owner.id}`, kind: "send_message", recipients_json: null, max_amount_cents: 50000, max_per_day: 10, expires_at: later, created_at: now, revoked_at: null }]);
+  const deleted = await first.browser.request(s, "POST", "/delete", { csrf: await first.browser.csrf(s) });
+  expect(deleted.status).toBe(302);
+  expect(count(s.db, "standing_approvals", first.owner.id)).toBe(0);
+  expect(count(s.db, "standing_approvals", second.owner.id)).toBe(1);
 }));
 
 test("POST /delete reissues a sandbox session for two hours", async () => withServer(async (s) => {

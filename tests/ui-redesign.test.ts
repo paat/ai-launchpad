@@ -5,7 +5,7 @@ import { openDb } from "../src/db.js";
 import { esc, shell, loginBody, tanaBody, deadlinesList, approvalsListBody, activityBody, connectionBody, setupBody, landingBody, connectBody, assistantGuidePrompt, grokPasteSentence, approvalCardBody, fmtEur, fmtDeadline, deadlineParts, fmtPeriod, fmtWhen, type TanaOpts } from "../src/views.js";
 import { computeObligations } from "../src/obligations.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
-import type { ApprovalRow, StandingRule } from "../src/mcp.js";
+import type { ApprovalRow } from "../src/mcp.js";
 import { assessmentSchema, computeCoverage } from "../src/core.js";
 import { computeHandover } from "../src/handover.js";
 
@@ -361,9 +361,9 @@ describe("landing and connect", () => {
     const css = shell({ title: "x", active: "none", csrf: "", body: "" });
     const ids = ["unpaid", "kmd", "annual", "calendar", "invoice", "payments", "customer", "purchases"];
     for (const id of ids) {
-      const beats = ["me1", "t1", "ai1", ...(id === "unpaid" || id === "invoice" ? ["card"] : []), ...(id === "unpaid" ? ["allow", "t2", "ai2"] : [])];
+      const beats = ["me1", "t1", "ai1", ...(id === "unpaid" || id === "invoice" ? ["card"] : [])];
       for (const beat of beats) expect(css, `${id}-${beat}`).toContain(`@keyframes lp-${id}-${beat}{`);
-      for (const tap of id === "unpaid" ? ["approve", "allow"] : id === "invoice" ? ["approve"] : []) {
+      for (const tap of id === "unpaid" ? ["approve"] : id === "invoice" ? ["approve"] : []) {
         for (const part of ["out", "in", "tap"]) expect(css, `${id}-${tap}-${part}`).toContain(`@keyframes lp-${id}-${tap}-${part}{`);
       }
     }
@@ -385,12 +385,12 @@ describe("landing and connect", () => {
     const et = landingBody({ lang: "et", demo: false, rand: () => 0 }), en = landingBody({ lang: "en", demo: false, rand: () => 0 });
     for (const s of ["Tegele sellega, milles oled hea. <span>Kontoritöö teeb sinu AI-assistent.</span>", "Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud aitab: ütleb, milliseid ühendusi vaja, küsib enne iga saatmist sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude&#39;iga.",
       '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "ühendatud: raamatupidamine, e-post, AI-hüppelaud", "Kes mulle võlgu on?", `Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${fmtEur(72000, "et")}. Koostasin igale viisaka meeldetuletuse.`,
-      "Maksemeeldetuletus · 1/3", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud sinu e-postist: demo", `<span class="mock-allow">Luba sarnased automaatselt</span><span class="mock-rule">Püsiluba: meeldetuletused kuni ${fmtEur(50000, "et")}</span>`,
-      "Järgmised saadan ise.", "Raamatupidamise järgi on oktoobris 14 müügi- ja 9 ostuarvet.", "Mõned tööd, mida assistent saab sinult üle võtta", '<p class="job-more">Ja palju muud. Küsi oma assistendilt: <strong>„Mida veel saad minu eest ära teha?”</strong> Ta vaatab üle sinu ettevõtte tähtajad ja ütleb, milliseid töid ta saab sinu eest teha. <a href="/kataloog">Kataloogist</a> leiad ühendused oma programmidele.</p>', '<a href="/kataloog">Kataloogist</a>', "Näited. Raamatupidamise, panga ja e-posti ühendused on nende pakkujate omad. Ärikratti soovitame tungivalt: sellest tulevad sinu ettevõtte registriandmed.",
-      "Kuidas alustada", "Ühenda oma ChatGPT või Claude", "Ühenda ka oma raamatupidamine ja e-post — assistent ütleb, milline ühendus sobib", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega — või luba edaspidi automaatselt", 'href="/demand"']) expect(et, s).toContain(s);
+      "Maksemeeldetuletus · 1/3", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud sinu e-postist: demo",
+      "Raamatupidamise järgi on oktoobris 14 müügi- ja 9 ostuarvet.", "Mõned tööd, mida assistent saab sinult üle võtta", '<p class="job-more">Ja palju muud. Küsi oma assistendilt: <strong>„Mida veel saad minu eest ära teha?”</strong> Ta vaatab üle sinu ettevõtte tähtajad ja ütleb, milliseid töid ta saab sinu eest teha. <a href="/kataloog">Kataloogist</a> leiad ühendused oma programmidele.</p>', '<a href="/kataloog">Kataloogist</a>', "Näited. Raamatupidamise, panga ja e-posti ühendused on nende pakkujate omad. Ärikratti soovitame tungivalt: sellest tulevad sinu ettevõtte registriandmed.",
+      "Kuidas alustada", "Ühenda oma ChatGPT või Claude", "Ühenda ka oma raamatupidamine ja e-post — assistent ütleb, milline ühendus sobib", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega", 'href="/demand"']) expect(et, s).toContain(s);
     for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Your assistant does the office work through your accounting, bank and e-mail connections. AI Launchpad helps: it tells you which connections you need, asks for your approval before anything is sent, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude.", "Connect your assistant", ">Sample<", "connected: accounting, e-mail, AI Launchpad",
-      "Who owes me money?", `Your accounting software shows three invoices overdue, ${fmtEur(72000, "en")} in total. I drafted a polite reminder for each.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "✓ Approved · Sent from your e-mail: demo", "Allow similar ones automatically", `Standing approval: reminders up to ${fmtEur(50000, "en")}`,
-      "I&#39;ll send the next ones myself.", "Your books show 14 sales and 9 purchase invoices for October.", "A few jobs your assistant can take off you", '<p class="job-more">And much more. Ask your assistant: <strong>“What else can you take off me?”</strong> It checks your company&#39;s deadlines and tells you which jobs it can do for you. The <a href="/kataloog">catalogue</a> lists connectors for your software.</p>', '<a href="/kataloog">catalogue</a>', "Examples. Accounting, bank and e-mail connectors belong to their providers. We strongly recommend Ärikratt: it supplies your company&#39;s register data.", "How to start", "Connect your accounting software and e-mail too — your assistant tells you which connector fits", "Ask: “What office work can you take off me?”", "Approve with one tap — or let it run automatically"]) expect(en, s).toContain(s);
+      "Who owes me money?", `Your accounting software shows three invoices overdue, ${fmtEur(72000, "en")} in total. I drafted a polite reminder for each.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "✓ Approved · Sent from your e-mail: demo",
+      "Your books show 14 sales and 9 purchase invoices for October.", "A few jobs your assistant can take off you", '<p class="job-more">And much more. Ask your assistant: <strong>“What else can you take off me?”</strong> It checks your company&#39;s deadlines and tells you which jobs it can do for you. The <a href="/kataloog">catalogue</a> lists connectors for your software.</p>', '<a href="/kataloog">catalogue</a>', "Examples. Accounting, bank and e-mail connectors belong to their providers. We strongly recommend Ärikratt: it supplies your company&#39;s register data.", "How to start", "Connect your accounting software and e-mail too — your assistant tells you which connector fits", "Ask: “What office work can you take off me?”", "Approve with one tap"]) expect(en, s).toContain(s);
     expect(et.match(/<ol class="how">.*?<\/ol>/s)![0].match(/<li>/g)).toHaveLength(4);
     expect(shell({ title: "x", active: "none", csrf: "", body: "" })).toContain(".how li>span{min-width:0;overflow-wrap:break-word}");
     expect(et).toContain("<li>Midagi ei saadeta ilma sinu loata</li><li>Smart-ID ja allkiri jäävad sinu kätte</li><li>Maksud ja tähtajad arvutab reeglistik, mitte tehisaru</li>");
@@ -564,8 +564,8 @@ describe("landing and connect", () => {
   });
 
   test("landing transcript: the owner approves and allows, the assistant sends (tribunal T-003)", () => {
-    expect(landingBody({ lang: "et", demo: false })).toContain(`<li>Sina: Kinnitatud</li><li>Assistent: Saadetud sinu e-postist (näidis)</li><li>Sina: Luba sarnased automaatselt</li><li>Assistent: Püsiluba: meeldetuletused kuni ${fmtEur(50000, "et")}. Järgmised saadan ise.`);
-    expect(landingBody({ lang: "en", demo: false })).toContain(`<li>You: Approved</li><li>Assistant: Sent from your e-mail (sample)</li><li>You: Allow similar ones automatically</li><li>Assistant: Standing approval: reminders up to ${fmtEur(50000, "en")}. I&#39;ll send the next ones myself.`);
+    expect(landingBody({ lang: "et", demo: false })).toContain(`<li>Sina: Kinnitatud</li><li>Assistent: Saadetud sinu e-postist (näidis)</li>`);
+    expect(landingBody({ lang: "en", demo: false })).toContain(`<li>You: Approved</li><li>Assistant: Sent from your e-mail (sample)</li>`);
   });
 
   test("landing teaser: the KMD date is the engine's for November 2026 (20.11)", () => {
@@ -596,10 +596,9 @@ describe("landing and connect", () => {
     expect(css).toContain("@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important");
     expect(css).toMatch(/\.beat--typing\{max-height:0;opacity:0\}/);
     expect(css).toMatch(/\.mock-wait,\.mock-approve\{[^}]*opacity:0;animation-duration:18s;animation-iteration-count:infinite\}/);
-    expect(css).toMatch(/\.mock-allow\{[^}]*opacity:0;animation-duration:18s;animation-iteration-count:infinite\}/);
-    expect(css).toContain(".mock-ok,.mock-done,.mock-rule{animation-duration:18s;animation-iteration-count:infinite}");
-    for (const k of ["me1", "t1", "ai1", "card", "allow", "t2", "ai2"]) expect(css, k).toContain(`.b-unpaid-${k}{animation-name:lp-unpaid-${k}}@keyframes lp-unpaid-${k}{`);
-    for (const k of ["approve", "allow"]) for (const p of ["out", "in", "tap"]) expect(css, `${k}-${p}`).toContain(`@keyframes lp-unpaid-${k}-${p}{`);
+    expect(css).toContain(".mock-ok,.mock-done{animation-duration:18s;animation-iteration-count:infinite}");
+    for (const k of ["me1", "t1", "ai1", "card"]) expect(css, k).toContain(`.b-unpaid-${k}{animation-name:lp-unpaid-${k}}@keyframes lp-unpaid-${k}{`);
+    for (const k of ["approve"]) for (const p of ["out", "in", "tap"]) expect(css, `${k}-${p}`).toContain(`@keyframes lp-unpaid-${k}-${p}{`);
   });
 
   test("connect: one open button, shared guide prompt, QR on public HTTPS, old steps inside #ise when expanded", async () => {
@@ -811,10 +810,6 @@ describe("landing and connect", () => {
     expect(approved).toContain('<div class="strip strip--ok"><span class="stamp" aria-hidden="true"><svg');
     expect(approved).toContain('<h1 class="receipt-head" id="a-h">Kinnitatud 14:36</h1>');
     expect(approved).toContain('<p class="turn" role="status"><strong>Nüüd on assistendi kord.</strong>');
-    // Standing offer: one sentence + one primary; the scope radios and cap sit under „Muuda piire”, same fields and endpoint.
-    // The cap sits in .cap-now, hidden while „Muuda piire” is open; the inner button after the field submits an edited cap (QA M1).
-    expect(approved).toContain('<h2 id="so-h">Luba edaspidi sarnased automaatselt: ainult Demo Klient OÜ<span class="cap-now">, kuni 300\u00a0€</span></h2>');
-    expect(approved).toMatch(/<form method="post" action="\/standing-approvals">[^]*<button type="submit">Luba automaatselt<\/button>\n<details><summary>Muuda piire<\/summary>[^]*name="scope" value="recipient" checked[^]*name="max_eur"[^]*>\n<button type="submit">Luba automaatselt<\/button>\n<\/details><\/form>/);
     expect(approved).toContain("Nüüd on assistendi kord.");
     expect(approved).toContain("Kinnitasin");
     expect(approved).toContain("Saadetud: ootab assistendi teadet");
@@ -822,26 +817,7 @@ describe("landing and connect", () => {
     expect(approvalCardBody({ csrf: "c", a: approval({ state: "declined", decided_at: "2026-11-03T12:36:00Z" }), lang: "et", sample: false, now: NOW })).toContain("Keeldusid. Midagi ei saadetud. Ütle assistendile, mida muuta.");
   });
 
-  test("a customer follow-up send shows no standing offer or coverage; a payment reminder still does (#96)", () => {
-    const covering: StandingRule = { id: "rule_1", owner_id: "o", kind: "send_message", recipients_json: null, max_amount_cents: 30_000, max_per_day: 10, expires_at: "2027-02-10T00:00:00Z", created_at: "2026-11-01T00:00:00Z", revoked_at: null };
-    const follow = (payload: Record<string, unknown>, playbook: string | null = "customer-follow-ups") => approval({
-      state: "approved", decided_at: "2026-11-03T12:36:00Z", playbook_id: playbook,
-      payload_json: JSON.stringify({ kind: "send_message", recipient: { name: "Pakkumine OÜ", address: "info@pakkumine.example" }, period: "2026-11-12", document: { title: "Järgmine kõne", content: "Tere!" }, summary: "Follow up on the quote", ...payload }),
-    });
-    const card = (a: ApprovalRow, rules: StandingRule[] = [covering]) => approvalCardBody({ csrf: "c", a, lang: "et", sample: false, now: NOW, rules });
-    for (const a of [follow({}), follow({ amount_cents: 24_000 }), follow({}, null)]) {
-      const html = card(a);
-      expect(html).not.toContain("Luba edaspidi");
-      expect(html).not.toContain("Püsiluba on olemas");
-      expect(html).not.toContain('action="/standing-approvals"');
-      expect(html).not.toContain('class="standing-offer"');
-    }
-    const reminder = card(approval({ state: "approved", decided_at: "2026-11-03T12:36:00Z", playbook_id: "payment-reminder" }));
-    expect(reminder).toContain("Püsiluba on olemas");
-    expect(reminder).not.toContain("Luba edaspidi sarnased automaatselt");
-    const offered = approvalCardBody({ csrf: "c", a: approval({ state: "approved", decided_at: "2026-11-03T12:36:00Z", playbook_id: "payment-reminder" }), lang: "et", sample: false, now: NOW });
-    expect(offered).toContain("Luba edaspidi sarnased automaatselt");
-  });
+
 });
 
 describe("/uhenda/ava", () => {
@@ -1098,7 +1074,7 @@ describe("„Käest ära” (#61)", () => {
       DEMO_FIXTURES.beta.responsibilities[1],
     ],
   });
-  const h = computeHandover({ assessment: handoverAssessment, obligations: mari.obligations, approvals: [consumed, approval()], rules: [], now: NOW });
+  const h = computeHandover({ assessment: handoverAssessment, obligations: mari.obligations, approvals: [consumed, approval()], now: NOW });
 
   test("Täna: one strip under the pills with what needs the owner, linking to Ühendus, before the primary action; no percentage", () => {
     const html = tana({ handover: h, approvals: [approval()] });
@@ -1111,17 +1087,15 @@ describe("„Käest ära” (#61)", () => {
     expect(tana()).not.toContain("ho-strip");
   });
 
-  test("Ühendus: #kaest-ara above Püsiload, one .ask, at most one filled button, the rule explained; owner-only", async () => {
-    const html = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: "csrf-x", rules: [] }, handover: h });
+  test("Ühendus: #kaest-ara has one next step, no forms, the computation explained; owner-only", async () => {
+    const html = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "sample" }, owner: true, now: NOW, handover: h });
     const section = html.match(/<section class="section ho" id="kaest-ara"[^]*?<\/section>/)![0];
-    expect(html.indexOf('id="kaest-ara"')).toBeLessThan(html.indexOf('id="pusiload"'));
     expect(section.match(/class="ask"/g)).toHaveLength(1);
-    // One filled button outside „Muuda piire”; its twin inside submits an edited cap (QA M1).
-    expect((section.replace(/<details>[\s\S]*?<\/details>/g, "").match(/<button type="submit">/g) ?? []).length).toBeLessThanOrEqual(1);
+    expect(section).not.toContain("<form");
     expect(section).not.toContain("%");
     expect(section).toContain("Kuidas see arvutatakse");
     expect(section).toMatch(/<span class="label-chip label-chip--assistant">Assistendi hinnang<\/span>/);
-    const en = await connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: "csrf-x", rules: [] }, handover: h });
+    const en = await connectBody({ lang: "en", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "sample" }, owner: true, now: NOW, handover: h });
     expect(en).toContain('<h2 id="ho-h">Back office</h2>');
     expect(en).toContain("What your assistant can reach");
     expect(await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "anon" }, owner: false, handover: h })).not.toContain("kaest-ara");

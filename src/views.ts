@@ -1,11 +1,10 @@
 import type { Assessment, ConnectionKind, Coverage } from "./core.js";
 import { isHandled } from "./core.js";
-import { isDone, offerCapCents, type ConnectionState, type Handover, type Job, type Status } from "./handover.js";
-import { approvalAddressMissing, normAddress, openItems, standingRecipients, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type AssistantMilestones, type Exclusion, type StandingRule } from "./mcp.js";
+import { isDone, type ConnectionState, type Handover, type Job, type Status } from "./handover.js";
+import { approvalAddressMissing, openItems, type ApprovalRow, type AssistantMilestones, type Exclusion } from "./mcp.js";
 import type { CompanyCard } from "./arikratt.js";
 import { ET_OF, SRC, tallinnDate, type FactNeeded, type Obligation, type Source } from "./obligations.js";
 import { BASETEN_MODEL } from "./model-quality.js";
-import { parseApprovalCheck } from "./approval-check.js";
 import { DEMO_LABELS_EN } from "./fixtures.js";
 import { PLAYBOOKS, safeHttps, type ServiceRecord } from "./catalog.js";
 import { BLOCKER_HANDOFF, BLOCKER_LABELS, BLOCKER_LABELS_ET, CATEGORY_LABELS, CATEGORY_LABELS_ET, classifiedByLabel, type Blocker, type Category, type DemandItem, type OwnerNeed } from "./unmet-needs.js";
@@ -19,11 +18,11 @@ type LandingText = { et: string; en: string };
 type LandingConnection = LandingText & { g?: CatalogueGroup; href?: string; launchpad?: false; subtitleEt?: string; subtitleEn?: string };
 type LandingConnector = LandingConnection | { launchpad: true; helpEt: string; helpEn: string };
 type LandingChip = { kind: "rule" } | { kind: "official"; source: "kmd" | "annual" } | { kind: "official"; et: string; en: string };
-type LandingApproval = { title: LandingText; client: string; amountCents: number; allow?: LandingText & { standingEt: string; standingEn: string } };
+type LandingApproval = { title: LandingText; client: string; amountCents: number };
 type LandingCase = LandingText & {
   id: string; bodyEt: string; bodyEn: string; connectors: readonly LandingConnector[]; registerData?: boolean;
   ask: LandingText; answer: LandingText & { boldEt?: string; boldEn?: string }; chips?: readonly LandingChip[];
-  approval?: LandingApproval; next?: LandingText;
+  approval?: LandingApproval;
 };
 const ACCOUNTING: LandingConnector = { et: "Raamatupidamine", en: "Accounting", g: "raamatupidamine" };
 const EMAIL: LandingConnector = { et: "E-post", en: "E-mail", g: "epost" };
@@ -49,9 +48,7 @@ const LANDING_CARDS: readonly LandingCase[] = [
     },
     approval: {
       title: { et: "Maksemeeldetuletus · 1/3", en: "Payment reminder · 1/3" }, client: "Demo Klient OÜ", amountCents: 24000,
-      allow: { et: "Luba sarnased automaatselt", en: "Allow similar ones automatically", standingEt: "Püsiluba: meeldetuletused kuni {cap}", standingEn: "Standing approval: reminders up to {cap}" },
     },
-    next: { et: "Järgmised saadan ise.", en: "I'll send the next ones myself." },
   },
   {
     id: "kmd", et: "KMD", en: "VAT return",
@@ -147,12 +144,7 @@ const TEASER_CSS = LANDING_CARDS.map((c) => {
   if (c.approval) {
     css.push(teaserBeat(id, "card", 26, "48rem"), teaserTap(id, "approve", 38));
     css.push(`.b-${id}-card .mock-wait,.b-${id}-card .mock-approve{animation-name:lp-${id}-approve-out}.b-${id}-card .mock-ok,.b-${id}-card .mock-done{animation-name:lp-${id}-approve-in}.b-${id}-card .mock-btn>.mock-tap{animation-name:lp-${id}-approve-tap}`);
-    if (c.approval.allow) {
-      css.push(teaserBeat(id, "allow", 43), teaserTap(id, "allow", 54));
-      css.push(`.b-${id}-allow .mock-allow{animation-name:lp-${id}-allow-out}.b-${id}-allow .mock-rule{animation-name:lp-${id}-allow-in}.b-${id}-allow .mock-btn>.mock-tap{animation-name:lp-${id}-allow-tap}`);
-    }
   }
-  if (c.next) css.push(teaserTyping(id, "t2", 59, 69), teaserBeat(id, "ai2", 69));
   return css.join("\n");
 }).join("\n");
 
@@ -371,10 +363,6 @@ article.card.ticket{margin:0 0 var(--s-6);padding:0;border-radius:var(--r-xl);bo
 .stamp path{stroke-dasharray:24;stroke-dashoffset:0;animation:lp-draw .3s var(--ease) both}
 @keyframes lp-draw{from{stroke-dashoffset:24}to{stroke-dashoffset:0}}
 .ticket-body{padding:var(--s-4) var(--s-4) 0}
-.approval-check{margin:var(--s-3) 0;padding:var(--s-3);border:1px solid var(--c-divider);border-radius:var(--r-md);background:var(--c-surface-2);min-width:0;overflow-wrap:anywhere}
-.approval-check p{margin:0 0 var(--s-2)}
-.approval-check p:last-child{margin-bottom:0}
-.approval-check ul{padding-left:var(--s-4);margin:0 0 var(--s-2)}
 .link-row>div{min-width:0;flex:1}
 .ticket-foot{padding:var(--s-2) var(--s-4) var(--s-4)}
 @media (min-width:600px){.ticket-body{padding:var(--s-6) var(--s-6) 0}.ticket-foot{padding:var(--s-2) var(--s-6) var(--s-6)}}
@@ -411,15 +399,6 @@ html:has(.decide){scroll-padding-bottom:calc(77 * var(--px) + max(12 * var(--px)
 .callout{margin:0 0 var(--s-4);padding:var(--s-3) var(--s-4);border:1px solid var(--c-att-bd);border-radius:var(--r-md);background:var(--c-att-bg)}
 .callout p{margin:var(--s-1) 0}
 .callout code{padding:0 4px;border:1px solid var(--c-att-bd);border-radius:4px;background:#fff;font:inherit;font-weight:800}
-.standing-offer{margin:0 0 var(--s-4);padding:var(--s-4);border:2px solid var(--c-primary);border-radius:var(--r-lg);background:var(--c-surface)}
-.standing-offer h2{margin:0 0 var(--s-2)}
-.standing-offer .limits{margin:0 0 var(--s-2)}
-.standing-offer details{margin:var(--s-1) 0 0;padding:0;border:0;background:none}
-.standing-offer summary{color:var(--c-primary)}
-.standing-offer summary::after{margin-left:2px}
-/* QA M1: with „Muuda piire” open, the field is the cap and its own button submits; the sentence's cap and the outer button step aside. */
-:is(.standing-offer,.ho-next):has(details[open]) .cap-now,:is(.standing-offer,.ho-next) form:has(>details[open])>button{display:none}
-:is(.standing-offer,.ho-next) details>button{margin-top:var(--s-3)}
 
 /* --- .status-chip (connect, aria-live) --- */
 .status-chip{display:flex;align-items:center;gap:var(--s-3);min-height:52px;margin:var(--s-3) 0;padding:var(--s-3) var(--s-4);border:1px solid var(--st-waiting-bd);border-radius:14px;background:var(--st-waiting-bg);color:var(--st-waiting-fg);font-weight:700}
@@ -605,14 +584,10 @@ table.why caption{display:block;width:100%;font-weight:750;text-align:left;margi
 .mock-btn>span{grid-area:1/1;display:flex;align-items:center;justify-content:center;min-height:var(--tap);padding:0 10px;border-radius:var(--r-lg);font-weight:750;text-align:center}
 .mock-state{display:grid}.mock-state>span{grid-area:1/1;justify-self:start}
 .mock-wait,.mock-approve{opacity:0;animation-duration:18s;animation-iteration-count:infinite}
-.mock-ok,.mock-done,.mock-rule{animation-duration:18s;animation-iteration-count:infinite}
-.mock-allow{opacity:0;animation-duration:18s;animation-iteration-count:infinite}
+.mock-ok,.mock-done{animation-duration:18s;animation-iteration-count:infinite}
 .mock-approve{background:var(--c-primary);color:#fff}
-.mock-allow{border:1px solid var(--c-primary);background:#fff;color:var(--c-primary)}
 .mock-done{border:1px dashed var(--st-accepted-fg);background:var(--st-accepted-bg);color:var(--st-accepted-fg)}
-.mock-btn>.mock-rule{border-radius:999px;background:var(--lbl-owner-bg);color:var(--lbl-owner-fg);font-size:var(--fs-xs)}
 .mock-btn>.mock-tap{position:absolute;top:50%;left:50%;width:46px;height:46px;min-height:0;margin:-23px 0 0 -23px;padding:0;border-radius:50%;background:rgba(255,255,255,.6);box-shadow:0 0 0 3px rgba(255,255,255,.35);opacity:0;animation-duration:18s;animation-iteration-count:infinite}
-.beat--allow .mock-btn>.mock-tap{background:rgba(26,77,46,.25);box-shadow:0 0 0 3px rgba(26,77,46,.15)}
 ${TEASER_CSS}
 .landing h2{margin:0 0 var(--s-4);font-size:var(--fs-xl);letter-spacing:-.02em}
 .job-switcher{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s-3);margin:0;padding:0;list-style:none}
@@ -1012,7 +987,7 @@ function stateLine(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, 
     { cls: "done", mark: "✓", text: t("Koostatud", "Drafted"), note: `${t("Assistent", "Your assistant")} · ${fmtWhen(a.created_at, l)}` },
   ];
   const decided = !!a.decided_at && a.state !== "declined";
-  steps.push(decided ? { cls: "done", mark: "✓", text: t("Kinnitatud", "Approved"), note: `${a.approved_by_rule ? t("Püsiluba", "Standing approval") : a.owner_confirmation ? t("Sina, assistendis", "You, in your assistant") : t("Sina", "You")} · ${fmtWhen(a.decided_at, l)}` } : { cls: "todo", mark: "", text: t("Kinnitatud: ootab sind", "Approved: waiting for you") });
+  steps.push(decided ? { cls: "done", mark: "✓", text: t("Kinnitatud", "Approved"), note: `${a.owner_confirmation ? t("Sina, assistendis", "You, in your assistant") : t("Sina", "You")} · ${fmtWhen(a.decided_at, l)}` } : { cls: "todo", mark: "", text: t("Kinnitatud: ootab sind", "Approved: waiting for you") });
   const done = seen(act[0]), failed = seen("failed");
   if (failed) steps.push({ cls: "stop", mark: "✕", text: t("Ei õnnestunud", "Failed"), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(failed.observed_at, l)}` });
   else if (done) steps.push({ cls: sample ? "demo" : "done", mark: sample ? "–" : "✓", text: sample ? t(`${act[1]}: demo`, `${act[2]}: demo`) : t(act[1], act[2]), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(done.observed_at, l)}${sample ? t(" · päriselt ei saadetud", " · nothing really sent") : ""}` });
@@ -1057,52 +1032,6 @@ const STAMP = '<span class="stamp" aria-hidden="true"><svg viewBox="0 0 16 16" f
 /** The owner approved in their own assistant chat: quote their words, as the assistant reported them. */
 const confirmedInAssistant = (a: ApprovalRow, l: Lang) => `<p class="small"><strong>${tr(l)("Kinnitasid assistendis", "You approved in your assistant")}: „${esc(a.owner_confirmation ?? "")}”.</strong> ${tr(l)("Siin pole vaja uuesti kinnitada. Sinu sõnad on assistendi teade.", "No need to approve again here. Your words are as your assistant reported them.")}</p>`;
 
-// --- Standing approvals (#45): the owner sets a rule once; matching sends need no new tap. ---
-const ruleChip = (l: Lang) => labelChip("owner", tr(l)("Püsiloaga", "Standing approval"));
-const ruleOf = (a: ApprovalRow, rules: StandingRule[] = []) => a.approved_by_rule ? rules.find((r) => r.id === a.approved_by_rule) ?? null : null;
-const ruleTitle = (a: ApprovalRow, rules: StandingRule[] | undefined, l: Lang) => { const r = ruleOf(a, rules); return r ? standingRuleName(r, l) : tr(l)("püsiluba", "standing approval"); };
-const ruleLive = (r: StandingRule, now: Date) => !r.revoked_at && Date.parse(r.expires_at) > now.getTime();
-const csrfInput = (csrf: string) => `<input type="hidden" name="csrf" value="${esc(csrf)}">`;
-const capEur = (cents: number) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
-const ruleLimits = (l: Lang) => tr(l)(`Kuni ${STANDING_DEFAULTS.maxPerDay} päevas · kehtib ${STANDING_DEFAULTS.days} päeva · saad igal ajal lõpetada`, `Up to ${STANDING_DEFAULTS.maxPerDay} a day · valid ${STANDING_DEFAULTS.days} days · end it any time`);
-/** Offer on an approved send: approve similar ones automatically from now on (or say a rule already does). */
-function standingOffer(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, csrf: string, rules: StandingRule[], now: Date, capCents?: number): string {
-  if (a.approved_by_rule || !STANDING_KINDS.includes(v.kindKey) || v.noAddress || !v.recipient.address) return "";
-  // Follow-ups are approved one by one. A message with no amount cannot be checked against a cap, so it is neither covered nor offered (#96).
-  if (a.playbook_id === "customer-follow-ups" || (v.kindKey === "send_message" && typeof v.p.amount_cents !== "number")) return "";
-  const t = tr(l), address = normAddress(v.recipient.address), amount = typeof v.p.amount_cents === "number" ? v.p.amount_cents : 0;
-  const covering = rules.find((r) => ruleLive(r, now) && r.kind === v.kindKey && r.max_amount_cents >= amount && (standingRecipients(r)?.includes(address) ?? true));
-  if (covering) return `<div class="note" id="pusiluba" role="status"><p><strong><span aria-hidden="true">✓ </span>${t("Püsiluba on olemas", "Standing approval is on")}: ${esc(standingRuleName(covering, l))}.</strong></p><p class="small">${t("Järgmised sarnased saadab assistent ilma sinult küsimata.", "Your assistant sends similar ones without asking you.")} <a href="/uhenda#pusiload">${t("Püsiload", "Standing approvals")}</a></p></div>`;
-  const cap = capCents ?? offerCapCents(amount), who = v.recipient.name ?? address;
-  return `<section class="standing-offer" id="pusiluba" aria-labelledby="so-h"><h2 id="so-h">${esc(t(`Luba edaspidi sarnased automaatselt: ainult ${who}`, `Allow similar ones automatically from now on: only ${who}`))}<span class="cap-now">${esc(t(`, kuni ${capEur(cap)}\u00a0€`, `, up to ${capEur(cap)}\u00a0€`))}</span></h2>
-<p class="limits">${esc(ruleLimits(l))}</p>
-<p class="small muted">${t("Siis ei pea assistent sinult iga kord küsima. Deklaratsioone ja makseid kinnitad alati ise.", "Then your assistant does not have to ask you every time. You always confirm filings and payments yourself.")}</p>
-<form method="post" action="/standing-approvals">${csrfInput(csrf)}<input type="hidden" name="approval_id" value="${esc(a.id)}">
-<button type="submit">${t("Luba automaatselt", "Allow automatically")}</button>
-<details><summary>${t("Muuda piire", "Change the limits")}</summary>
-<div role="radiogroup" aria-label="${t("Kellele", "To whom")}"><label class="check"><input type="radio" name="scope" value="recipient" checked> <span>${esc(t(`Ainult ${who}`, `Only ${who}`))} <span class="small muted">${esc(v.recipient.address)}</span></span></label>
-<label class="check"><input type="radio" name="scope" value="any"> <span>${t("Kõik saajad (ka uued)", "Any recipient (including new ones)")}</span></label></div>
-<label for="so-max">${t("Summa ülempiir (€)", "Amount cap (€)")}</label><input id="so-max" name="max_eur" inputmode="decimal" autocomplete="off" value="${esc(capEur(cap))}">
-<button type="submit">${t("Luba automaatselt", "Allow automatically")}</button>
-</details></form></section>`;
-}
-/** Ühendus → Püsiload: live rules with Lõpeta, and one short form to add a rule. */
-function standingSection(l: Lang, o: { csrf: string; rules: StandingRule[] }, now: Date): string {
-  const t = tr(l), live = o.rules.filter((r) => ruleLive(r, now));
-  const rows = live.map((r) => `<div class="row"><strong>${esc(standingRuleName(r, l))}</strong><br><span class="small muted">${esc(t(`Kuni ${r.max_per_day} päevas · kehtib kuni ${DAY.et.format(new Date(r.expires_at))}`, `Up to ${r.max_per_day} a day · valid until ${DAY.en.format(new Date(r.expires_at))}`))}</span>
-<form method="post" action="/standing-approvals/revoke">${csrfInput(o.csrf)}<input type="hidden" name="rule_id" value="${esc(r.id)}"><button type="submit" class="secondary">${t("Lõpeta", "End")}</button></form></div>`).join("");
-  return `<section class="card" id="pusiload" aria-labelledby="pl-h"><h2 id="pl-h">${t("Püsiload", "Standing approvals")} (${live.length})</h2>
-<p class="small">${t("Püsiluba lubab assistendil sarnaseid kirju ja arveid saata ilma iga kord küsimata, kindlates piirides. Deklaratsioone ja makseid kinnitad alati ise.", "A standing approval lets your assistant send similar messages and invoices without asking every time, within fixed limits. You always confirm filings and payments yourself.")}</p>
-${rows || `<p class="muted">${t("Püsiload puuduvad: iga saatmine ootab sinu kinnitust.", "No standing approvals: every send waits for your approval.")}</p>`}
-<details><summary>${t("Lisa püsiluba", "Add a standing approval")}</summary><form method="post" action="/standing-approvals">${csrfInput(o.csrf)}
-<label for="pl-kind">${t("Mida", "What")}</label><select id="pl-kind" name="kind"><option value="send_message">${t("Sõnumid (nt maksemeeldetuletused)", "Messages (e.g. payment reminders)")}</option><option value="send_invoice">${t("Arved", "Invoices")}</option></select>
-<div role="radiogroup" aria-label="${t("Kellele", "To whom")}"><label class="check"><input type="radio" name="scope" value="approved" checked> <span>${t("Ainult saajad, kellele oled juba kinnitanud", "Only recipients you have already approved")}</span></label>
-<label class="check"><input type="radio" name="scope" value="any"> <span>${t("Kõik saajad (ka uued)", "Any recipient (including new ones)")}</span></label></div>
-<label for="pl-max">${t("Summa ülempiir (€)", "Amount cap (€)")}</label><input id="pl-max" name="max_eur" inputmode="decimal" autocomplete="off" value="${esc(capEur(STANDING_DEFAULTS.maxAmountCents))}">
-<p class="small muted">${esc(ruleLimits(l))}</p>
-<button type="submit">${t("Lisa püsiluba", "Add standing approval")}</button></form></details></section>`;
-}
-
 // --- „Käest ära” (#61): the jobs by what needs the owner now; who does each is a plain line under it. ---
 const HO_MONTH_IN = ["jaanuaris", "veebruaris", "märtsis", "aprillis", "mais", "juunis", "juulis", "augustis", "septembris", "oktoobris", "novembris", "detsembris"];
 const hoMonth = (ym: string, l: Lang) => { const m = Number(ym.slice(5, 7)) - 1; return l === "en" ? `In ${C_PERIOD.en.format(civil(`${ym}-01`)).split(" ")[0]}` : cap(HO_MONTH_IN[m] ?? ""); };
@@ -1143,16 +1072,14 @@ const HO_CAN: Record<string, [string, string]> = {
 };
 function handoverRow(j: Job, h: Handover, l: Lang, now: Date, sample: boolean): string {
   const t = tr(l), fx = fixtureText(l, sample), e = j.evidence, assessedChip = labelChip("assistant", t("Assistendi hinnang", "Your assistant's assessment")), st = HO_STATUS[j.status];
-  const who = j.rung === "done" ? (j.ceiling === "rule" ? `${t("Assistent teeb ise", "Your assistant does it")} ${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}` : `${t("Assistent valmistab ette, sina esitad", "Your assistant prepares, you file")} ${labelChip("official", t("Lagi: seadus", "Ceiling: the law"))}`)
-    : j.rung === "prep" ? t("Assistent valmistab ette, sina kinnitad", "Your assistant prepares, you approve")
+  const who = j.rung === "done" ? (j.ceiling === null ? t("Assistent teeb ise", "Your assistant does it") : `${t("Assistent valmistab ette, sina esitad", "Your assistant prepares, you file")} ${labelChip("official", t("Lagi: seadus", "Ceiling: the law"))}`)
     : j.rung === "other" ? `${esc(t(`Teeb ${j.assessed?.executor}`, `Done by ${fx.plain(j.assessed?.executor ?? "")}`))} ${assessedChip}` : t("Teed praegu ise", "You do it for now");
   const verb = j.kind === "post_entries" ? t("kirjendatud", "posted") : j.ceiling === "law" ? t("esitatud", "filed") : t("saadetud", "sent");
   const lines: string[] = [];
   if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${C_DAY_MON_YEAR.et.format(civil(j.due))}`, `Was due ${C_DAY_MON_YEAR.en.format(civil(j.due))}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}${j.dueSource ? ` ${sourceLink(j.dueSource, l)}` : ""}`);
   // The assistant's reason shows on its own rows and on any job whose status its look set, so a green „Korras” always says who said so.
   if ((j.source === "assessment" || j.assessed?.current) && j.rung !== "other" && j.assessed) lines.push(`„${esc(j.assessed.reason)}”${j.assessed.current && h.assessedAt ? esc(t(` · vaadatud ${fmtWhen(h.assessedAt, l, now)}`, ` · checked ${fmtWhen(h.assessedAt, l, now)}`)) : ""} ${assessedChip}`);
-  if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.auto ? t(`, neist <span class="num">${e.auto}</span> ilma sinuta`, `, <span class="num">${e.auto}</span> without you`) : ""}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
-  if (e.rule) lines.push(esc(t(`Püsiluba: ${standingRuleName(e.rule, l)} · aegub ${DAY.et.format(new Date(e.rule.expires_at))}`, `Standing approval: ${standingRuleName(e.rule, l)} · ends ${DAY.en.format(new Date(e.rule.expires_at))}`)));
+  if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
   if (j.rung === "mine" && j.status !== "in_order" && HO_CAN[j.id]) lines.push(esc(t(...HO_CAN[j.id])));
   // The connections it needs, each with what the assistant reported: what stands between the job and the assistant.
   if (j.needs.length && j.status !== "in_order") lines.push(`${t("Vajab:", "Needs:")} ${j.needs.map((k) => { const c = h.connections.find((x) => x.kind === k), [et, en] = HO_CONN_STATE[c?.state ?? "unknown"]; return `${esc(t(...HO_CONN[k]).toLowerCase())} (${esc(t(et, en))})`; }).join(", ")}`);
@@ -1162,33 +1089,17 @@ function handoverRow(j: Job, h: Handover, l: Lang, now: Date, sample: boolean): 
 }
 const HO_CONNECTOR = (l: Lang) => `<a class="tap-link" href="/kataloog?g=raamatupidamine">${tr(l)("Raamatupidamise ühendused → Kataloog", "Accounting connectors → Catalogue")}</a>`;
 const HO_REMINDER_PROMPT: [string, string] = ["Vaata, millised minu arved on tasumata, ja koosta esimesele meeldetuletus. Küsi minult kinnitust enne saatmist.", "Check which of my invoices are unpaid and draft a reminder for the first one. Ask me to approve it before sending."];
-/** The one next step, as the section's only elevated object. A standing offer posts to the existing /standing-approvals form. */
-function handoverNext(h: Handover, l: Lang, csrf: string): string {
+/** The one next step, as the section's only elevated object. */
+function handoverNext(h: Handover, l: Lang): string {
   const t = tr(l), n = h.next;
   const card = (head: string, inner: string) => `<div class="ho-next"><h3>${esc(head)}</h3><div class="ask">${inner}</div></div>`;
   const quote = (text: string) => `<p class="quote"><span>${t("Palu assistendilt:", "Ask your assistant:")}</span>„${esc(text)}”</p>`;
-  if (n.type === "standing") {
-    const what = hoJobTitle(n.job, l).toLowerCase(), per = n.kind === "send_invoice" ? t("arve kohta", "per invoice") : t("kirja kohta", "per letter");
-    const who = n.recipients.length <= 2 ? n.recipients.map((r) => `<b>${esc(r.name)}</b>`).join(t(" ja ", " and ")) : `<b>${esc(t(`${n.recipients.length} senist saajat`, `${n.recipients.length} past recipients`))}</b>`;
-    return card(t(`Järgmine samm: anna ${what} täiesti käest ära`, `Next step: take ${what} off your plate completely`), `<span class="labels">${labelChip("owner", t("Sinu püsiluba", "Your standing approval"))}</span>
-<span class="ask-title">${esc(t(`Luba edaspidi ${what} automaatselt`, `Allow ${what} automatically from now on`))}</span>
-<p class="limits">${t("Ainult", "Only")} ${who}${n.recipients.length <= 2 ? t(" (senised saajad)", " (past recipients)") : ""}<span class="cap-now">, ${t("kuni", "up to")} <b>${esc(capEur(n.capCents))} €</b> ${per}</span>, ${t(`kuni <b>${STANDING_DEFAULTS.maxPerDay}</b> päevas, <b>${STANDING_DEFAULTS.days} päeva</b>. Lõpetad millal tahes.`, `up to <b>${STANDING_DEFAULTS.maxPerDay}</b> a day, <b>${STANDING_DEFAULTS.days} days</b>. End it any time.`)}</p>
-<p class="muted small${n.basis.maxCents ? "" : " cap-now"}">${esc(n.basis.maxCents ? t(`Piirid on võetud sinu ${n.basis.count} senisest kinnitusest (suurim ${fmtEur(n.basis.maxCents, l)}). Assistent saadab ise ja annab iga saatmise kohta siia teada.`, `The limits come from your ${n.basis.count} past approvals (largest ${fmtEur(n.basis.maxCents, l)}). Your assistant sends and reports each one here.`) : t(`Senistel kinnitustel summat polnud, seega ülempiir on vaikimisi ${capEur(n.capCents)} €.`, `Your past approvals had no amount, so the cap is the default ${capEur(n.capCents)} €.`))}</p>
-<form method="post" action="/standing-approvals">${csrfInput(csrf)}<input type="hidden" name="kind" value="${esc(n.kind)}">
-<button type="submit">${t("Luba automaatselt", "Allow automatically")}</button>
-<details><summary>${t("Muuda piire", "Change the limits")}</summary>
-<div role="radiogroup" aria-label="${t("Kellele", "To whom")}"><label class="check"><input type="radio" name="scope" value="approved" checked> <span>${t("Ainult senised saajad", "Only past recipients")} <span class="small muted">${esc(n.recipients.map((r) => r.address).join(", "))}</span></span></label>
-<label class="check"><input type="radio" name="scope" value="any"> <span>${t("Kõik saajad (ka uued)", "Any recipient (including new ones)")}</span></label></div>
-<label for="ho-max">${t("Summa ülempiir (€)", "Amount cap (€)")}</label><input id="ho-max" name="max_eur" inputmode="decimal" autocomplete="off" value="${esc(capEur(n.capCents))}">
-<button type="submit">${t("Luba automaatselt", "Allow automatically")}</button>
-</details></form>`);
-  }
   if (n.type === "playbook") {
     const reminder = n.playbookId === "payment-reminder", follow = n.playbookId === "customer-follow-ups", title = hoJobTitle(n.job, l);
     const prompt = follow ? t("Kellele peaksin sel nädalal helistama või kirjutama?", "Who should I call or message this week?") : reminder ? t(...HO_REMINDER_PROMPT) : n.obligation ? t(n.obligation.handoff.prompt_et, n.obligation.handoff.prompt_en) : n.job.kind === "post_entries" ? t(`Valmista ette: ${title}. Küsi minult iga kuu kannete kohta kinnitust enne kirjendamist.`, `Prepare: ${title}. Ask me to approve each month's entries before you post them.`) : n.job.kind === "send_invoice" ? t("Valmista järgmine arve ette. Näita mulle täpset arvet ja küsi kinnitust enne saatmist.", "Prepare the next invoice. Show me the exact invoice and ask me to approve before you send it.") : t(`Valmista ette: ${title}. Küsi minult kinnitust enne, kui midagi esitan.`, `Prepare: ${title}. Ask me to approve before I file anything.`);
     return card(t("Järgmine samm: anna üks töö ära", "Next step: hand over one job"), `<span class="labels">${labelChip("rule", t("Mängukava", "Playbook"))}</span>
 <span class="ask-title">${esc(follow ? t("Lase assistendil öelda, kellele sel nädalal helistada või kirjutada", "Let your assistant tell you who to call or message this week") : reminder ? t("Lase assistendil koostada esimene maksemeeldetuletus", "Let your assistant draft the first payment reminder") : t(`Lase assistendil ette valmistada: ${title}`, `Let your assistant prepare: ${title}`))}</span>
-<p class="muted">${esc(follow ? t("Loeb sinu kliendinimekirja või Kliendid lehte ja iga sõnum kinnitatakse ükshaaval.", "It reads your customer list or the Kliendid sheet, and every message is approved one by one.") : reminder ? t("Kõige kiirem võit: püsiloaga saab selle hiljem täiesti käest ära anda. Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.", "The quickest win: a standing approval can later take it off your plate completely. It needs your unpaid invoices: your accounting connector or a file you share with your assistant.") : n.job.kind === "post_entries" ? t("Vajab iga kuu pangaliikumisi (LHV ühendus või pangast alla laaditud väljavõte) ja sinu raamatupidamisprogrammi ühendust. Iga kuu kirjendatakse alles pärast sinu kinnitust.", "It needs each month's bank movements (your LHV connector or a statement you download from your bank) and your accounting connector. Each month is posted only after you approve it.") : n.job.kind === "send_invoice" ? t("Vajab sinu raamatupidamisprogrammi ühendust (arve ja PDF) ja sinu e-posti. Arve saadetakse alles pärast sinu kinnitust.", "It needs your accounting connector (the invoice and its PDF) and your e-mail. The invoice is sent only after you approve it.") : t("Vajab kuu arveid: sinu raamatupidamisprogrammi ühendust või faile, mille assistendile jagad.", "It needs the period's invoices: your accounting connector or files you share with your assistant."))}</p>
+<p class="muted">${esc(follow ? t("Loeb sinu kliendinimekirja või Kliendid lehte ja iga sõnum kinnitatakse ükshaaval.", "It reads your customer list or the Kliendid sheet, and every message is approved one by one.") : reminder ? t("Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.", "It needs your unpaid invoices: your accounting connector or a file you share with your assistant.") : n.job.kind === "post_entries" ? t("Vajab iga kuu pangaliikumisi (LHV ühendus või pangast alla laaditud väljavõte) ja sinu raamatupidamisprogrammi ühendust. Iga kuu kirjendatakse alles pärast sinu kinnitust.", "It needs each month's bank movements (your LHV connector or a statement you download from your bank) and your accounting connector. Each month is posted only after you approve it.") : n.job.kind === "send_invoice" ? t("Vajab sinu raamatupidamisprogrammi ühendust (arve ja PDF) ja sinu e-posti. Arve saadetakse alles pärast sinu kinnitust.", "It needs your accounting connector (the invoice and its PDF) and your e-mail. The invoice is sent only after you approve it.") : t("Vajab kuu arveid: sinu raamatupidamisprogrammi ühendust või faile, mille assistendile jagad.", "It needs the period's invoices: your accounting connector or files you share with your assistant."))}</p>
 ${quote(prompt)}
 ${follow ? `<a class="tap-link" href="/kataloog?g=kliendid">${t("Ühenda oma kliendinimekiri → Kataloog", "Link your customer list → Catalogue")}</a>` : HO_CONNECTOR(l)}`);
   }
@@ -1198,9 +1109,9 @@ ${quote(t("Aita mul ühendada minu raamatupidamisprogramm.", "Help me connect my
 ${HO_CONNECTOR(l)}`);
 }
 /** Ühendus → Käest ära: what needs the owner, what the assistant can reach, the jobs by status, one next step, and the expired-unused finding. */
-export function handoverSection(h: Handover, l: Lang, csrf: string, now = new Date(), sample = false): string {
+export function handoverSection(h: Handover, l: Lang, now = new Date(), sample = false): string {
   const t = tr(l), ex = h.findings.expiredUnused, rest = hoRest(h, l);
-  const month = h.month.done ? `${esc(hoMonth(h.month.ym, l))}: ${t(`assistent lõpetas <b>${h.month.done}</b> ${h.month.done === 1 ? "töö" : "tööd"}, <b>${h.month.auto}</b> ilma sinuta.`, `your assistant finished <b>${h.month.done}</b> ${h.month.done === 1 ? "job" : "jobs"}, <b>${h.month.auto}</b> without you.`)}` : `${esc(hoMonth(h.month.ym, l))}: ${t("assistent pole veel ühtegi tööd lõpetanud.", "your assistant has not finished a job yet.")}`;
+  const month = h.month.done ? `${esc(hoMonth(h.month.ym, l))}: ${t(`assistent lõpetas <b>${h.month.done}</b> ${h.month.done === 1 ? "töö" : "tööd"}.`, `your assistant finished <b>${h.month.done}</b> ${h.month.done === 1 ? "job" : "jobs"}.`)}` : `${esc(hoMonth(h.month.ym, l))}: ${t("assistent pole veel ühtegi tööd lõpetanud.", "your assistant has not finished a job yet.")}`;
   const finding = ex.count && ex.last ? `<p class="ho-finding"><span aria-hidden="true">!</span><span><b>${esc(t(`${ex.count} ${ex.count === 1 ? "kinnitus aegus" : "kinnitust aegusid"} kasutamata`, `${ex.count} ${ex.count === 1 ? "approval" : "approvals"} expired unused`))}</b> (${esc(DAY[l].format(new Date(ex.last.expires_at)))}). ${t("Palu assistendil pärast sinu kinnitust kohe saata ja tulemus kirja panna.", "Ask your assistant to send right after you approve and record the outcome.")} <a class="tap-link" href="/approvals/${esc(encodeURIComponent(ex.last.id))}">${t("Vaata kinnitust", "See the approval")}</a></span></p>` : "";
   const conn = (name: string, state: keyof typeof HO_CONN_STATE, service?: string) => { const [et, en, chip] = HO_CONN_STATE[state]; return `<li><span>${esc(name)}${service ? `<small>${esc(service)}</small>` : ""}</span>${stateChip(chip, t(et, en))}</li>`; };
   const reach = `<h3 class="ho-h3">${t("Kuhu assistent ulatub", "What your assistant can reach")}</h3><ul class="ho-conn">${h.connections.map((c) => conn(t(...HO_CONN[c.kind]), c.state, c.service)).join("")}${conn(t(...HO_CONN.register), "public", "Ärikratt")}</ul>
@@ -1209,55 +1120,15 @@ export function handoverSection(h: Handover, l: Lang, csrf: string, now = new Da
 <p class="ho-sum">${esc(hoHead(h, l))}${rest ? `<small>${esc(rest)}</small>` : ""}</p>
 <p class="ho-month">${month}</p>
 <div class="ho-grid"><div><ul class="ho-jobs">${h.jobs.map((j) => handoverRow(j, h, l, now, sample)).join("")}</ul>${finding}${reach}</div>
-${handoverNext(h, l, csrf)}</div>
+${handoverNext(h, l)}</div>
 <details class="plain"><summary>${t("Kuidas see arvutatakse", "How this is calculated")}</summary><div class="boxed small"><p>${t("Tööd on järjestatud selle järgi, mis vajab sind praegu: ootel kinnitus, möödunud või lähenev tähtaeg (14 päeva), siis assistendi viimane hinnang. „Korras” tähendab, et töö tehti sel kuul (assistendi teade salvestatud kinnitusel) või assistent vaatas viimase kuu jooksul ja ootel tööd polnud. Tähtajad arvutab reeglistik. Ühendused on assistendi teade; AI-hüppelaud neid ei kontrolli. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.", "Jobs are ordered by what needs you now: a waiting approval, a missed or near deadline (14 days), then your assistant's latest assessment. „In order” means the job was done this month (your assistant's report on a stored approval), or your assistant looked within the last month and found nothing waiting. Deadlines are calculated by rules. Connections are what your assistant reports; AI Launchpad does not check them. No percentage and no hours saved, because we don't measure them.")}</p></div></details>
 </section>`;
 }
 
-/** Stored results are validated again before display; failures never look like a pass. */
-function approvalCheckBlock(a: ApprovalRow, l: Lang): string {
-  const t = tr(l), mock = a.check_by === "mock";
-  const reasons: Record<string, [string, string]> = {
-    disabled: ["kontroll on välja lülitatud", "checking is disabled"],
-    daily_limit: ["tänane kontrollide piir on täis", "the daily check limit was reached"],
-    budget_exhausted: ["kontrollide eelarve on kasutatud", "the check budget is used up"],
-    suppressed_after_breach: ["teenuse vastus ei vastanud kokkuleppele", "the provider did not meet its response contract"],
-    provider_contract_breach: ["teenuse vastus ei vastanud kokkuleppele", "the provider did not meet its response contract"],
-    provider_uncertain: ["teenus ei andnud õigel ajal kindlat vastust", "the provider did not return a reliable answer in time"],
-    timeout: ["teenus ei vastanud õigel ajal", "the provider did not answer in time"],
-    provider_failed: ["mudeliteenus ei vastanud", "the model service did not answer"],
-    invalid_output: ["vastus ei olnud loetav", "the answer was unreadable"],
-    truncated: ["vastus jäi pooleli", "the answer was cut off"],
-    attempt_in_flight: ["teine kontroll on pooleli", "another check is in progress"],
-    interrupted: ["kontroll katkes", "the check was interrupted"],
-    not_checked: ["seda kinnitust pole kontrollitud", "this approval has not been checked"],
-  };
-  const parsed = parseApprovalCheck(a.check_json ?? "");
-  let line: string, summary = "", concerns: string[] = [];
-  if (a.check_state === "running") line = t("Kontroll käib…", "Check in progress…");
-  else if ((a.check_state === "ok" || a.check_state === "review") && parsed.ok && parsed.value.verdict === a.check_state && (mock || a.check_by === BASETEN_MODEL)) {
-    const check = parsed.value;
-    line = check.verdict === "ok"
-      ? `✓ ${mock ? t("Näidiskontroll ei leidnud vastuolu", "The sample check found no inconsistency") : t("Muse ei leidnud vastuolu", "Muse found no inconsistency")}`
-      : `⚠ ${mock ? t("Näidiskontroll soovitab üle vaadata", "The sample check suggests a review") : t("Muse soovitab üle vaadata", "Muse suggests a review")}`;
-    summary = l === "et" ? check.summary_et : check.summary_en;
-    concerns = l === "et" ? check.concerns_et : check.concerns_en;
-  } else {
-    let reason = a.check_state ? "invalid_output" : "not_checked";
-    if (a.check_state === "unavailable") {
-      try { reason = JSON.parse(a.check_json ?? "{}").reason; } catch { /* Show an unreadable answer. */ }
-    }
-    line = `${t("Kontrolli ei tehtud", "Not checked")}: ${t(...(reasons[reason] ?? ["kontroll ei olnud saadaval", "the check was unavailable"]))}`;
-  }
-  const provenance = mock ? t("Näidis, mitte mudel", "Sample, not a model") : a.check_by === BASETEN_MODEL && ["running", "ok", "review"].includes(a.check_state ?? "") ? t("Meta muse-spark-open-1026 · Baseten · nõuanne, mitte garantii", "Meta muse-spark-open-1026 · Baseten · advice, not a guarantee") : "";
-  return `<div class="approval-check small"><p><strong>${t("Meta Muse kontroll", "Meta Muse check")}</strong></p><p>${esc(line)}</p>${concerns.length ? `<ul>${concerns.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}${summary ? `<p>${esc(summary)}</p>` : ""}${provenance ? `<p class="small muted">${esc(provenance)}</p>` : ""}</div>`;
-}
-
 const approvalTech = (a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang) => techDetails(l, `${techList([[tr(l)("Räsi (SHA-256)", "Digest (SHA-256)"), a.digest], [tr(l)("Liik", "Kind"), v.kindKey || "—"], ["ID", a.id], [tr(l)("Koostatud", "Created"), a.created_at], [tr(l)("Kehtib kuni", "Valid until"), a.expires_at], ...(a.decided_at ? [[tr(l)("Otsustatud", "Decided"), a.decided_at]] as [string, string][] : [])])}<pre class="tech-pre">${esc(JSON.stringify({ action: v.p, outcome: v.outcome }, null, 1))}</pre>`);
 
-export function approvalCardBody(opts: { csrf: string; a: ApprovalRow; lang: Lang; sample: boolean; now?: Date; rules?: StandingRule[]; capCents?: number; handover?: Handover }): string {
-  const { a, lang: l, sample } = opts, t = tr(l), v = approvalView(a, l), now = opts.now ?? new Date(), rules = opts.rules ?? [];
-  const check = approvalCheckBlock(a, l);
+export function approvalCardBody(opts: { csrf: string; a: ApprovalRow; lang: Lang; sample: boolean; now?: Date; handover?: Handover }): string {
+  const { a, lang: l, sample } = opts, t = tr(l), v = approvalView(a, l), now = opts.now ?? new Date();
   const content = v.p.document?.content ? `<h2>${esc(t(...(CONTENT_HEAD[v.kindKey] ?? CONTENT_HEAD.send_message)))}</h2><pre class="letter" tabindex="0">${esc(v.p.document.content)}</pre>` : "";
   const what = `${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}${v.amount ? ` · <b>${esc(v.amount)}</b>` : ""}`;
   const decidedAt = () => esc(fmtWhen(a.decided_at, l, now).replace(/^(täna|today), /, ""));
@@ -1271,7 +1142,6 @@ ${v.p.summary ? `<p class="why"><strong>${t("Miks:", "Why:")}</strong> ${esc(v.p
 ${amountHero(v, l)}
 ${approvalFacts(v, l, !!v.amount)}
 ${content}
-${check}
 ${handLine(v.kindKey, l)}
 ${v.noAddress ? `<div class="notice" role="alert"><p><strong>${esc(NO_ADDRESS(l))}.</strong> ${t("Assistent ei märkinud, kuhu see läheb. Keeldu ja palu assistendil küsida uus kinnitus koos saaja aadressiga.", "Your assistant did not say where this goes. Decline it and ask your assistant for a new approval with the recipient's address.")}</p></div>` : ""}
 <form class="decide" method="post" action="/approvals/${esc(encodeURIComponent(a.id))}/decide"><input type="hidden" name="csrf" value="${esc(opts.csrf)}"><input type="hidden" name="digest" value="${esc(a.digest)}">${v.noAddress ? "" : `<button name="decision" value="approve">${t("Kinnita täpselt see", "Approve exactly this")}</button>`}<button class="text danger" name="decision" value="decline">${t("Keeldu", "Decline")}</button></form>
@@ -1282,28 +1152,12 @@ ${foot(false)}
 </article>
 <p><a class="tap-link" href="/approvals">${t("Kõik kinnitused", "All approvals")}</a></p>`;
   }
-  if (a.state === "approved" && a.approved_by_rule) {
-    return `<article class="card ticket" aria-labelledby="a-h">
-<div class="strip strip--ok">${STAMP}<h1 class="receipt-head" id="a-h">${t("Kinnitatud püsiloaga", "Approved by standing approval")} ${decidedAt()}</h1>${ruleChip(l)}</div>
-<div class="ticket-body">
-<p class="why" role="status"><strong>${t("Kinnitatud püsiloaga", "Approved by your standing approval")} „${esc(ruleTitle(a, rules, l))}”.</strong> ${what}</p>
-<p class="small">${t("Assistent ei pidanud sinult küsima: ta saadab selle ise ja annab siia tulemuse teada.", "Your assistant did not have to ask you: it sends this itself and reports the result here.")} <a href="/uhenda#pusiload">${t("Püsiload", "Standing approvals")}</a></p>
-${stateLine(a, v, l, sample)}
-${approvalFacts(v, l)}
-${content}
-${check}
-</div>
-${foot()}
-</article>`;
-  }
   if (a.state === "approved") {
     return `<article class="card ticket" aria-labelledby="a-h">
 <div class="strip strip--ok">${STAMP}<h1 class="receipt-head" id="a-h">${t("Kinnitatud", "Approved")} ${decidedAt()}</h1>${labelChip("owner", t("Sinu kinnitus", "You approved"))}</div>
 <div class="ticket-body">
 <p class="turn" role="status"><strong>${t("Nüüd on assistendi kord.", "Now it's your assistant's turn.")}</strong> ${what}</p>
 ${a.owner_confirmation ? confirmedInAssistant(a, l) : `<div class="callout"><p><strong>${t("Mine tagasi ChatGPT-sse või Claude'i ja kirjuta <code>Kinnitasin</code>.", "Go back to ChatGPT or Claude and write <code>Approved</code> (“Kinnitasin” works too).")}</strong></p><p class="small">${t("Assistent näeb sinu kinnitust alles siis, kui talle kirjutad.", "Your assistant only sees your approval when you write to it.")}</p></div>`}
-${check}
-${standingOffer(a, v, l, opts.csrf, rules, now, opts.capCents)}
 ${stateLine(a, v, l, sample)}
 <p class="fine">${esc(t(`Kui assistent ei teata tulemusest ${fmtUntil(a.expires_at, l, now)}, kinnitus aegub ja ta peab uuesti küsima.`, `If your assistant does not report an outcome by ${fmtUntil(a.expires_at, l, now)}, the approval expires and it must ask again.`))}</p>
 </div>
@@ -1314,13 +1168,12 @@ ${foot()}
     const last = v.outcome.outcome, ok = last !== "failed" && last !== "rejected";
     const head = ok ? `<span aria-hidden="true">✓ </span>${esc(t(OUTCOME[last]?.[1] ?? last, OUTCOME[last]?.[2] ?? last))}${sample ? ": demo" : ""}` : esc(t(OUTCOME[last]?.[1] ?? last, OUTCOME[last]?.[2] ?? last));
     return `<article class="card ticket" aria-labelledby="a-h">
-<div class="strip"><div class="labels">${outcomeChip(last, l, sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}${a.approved_by_rule ? ruleChip(l) : ""}</div></div>
+<div class="strip"><div class="labels">${outcomeChip(last, l, sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div></div>
 <div class="ticket-body">
 <h1 class="receipt-head" id="a-h">${head}</h1>
 <p class="why">${[v.recipient.name, v.amount].filter(Boolean).map(esc).join(" · ")}${v.recipient.name || v.amount ? " · " : ""}${esc(v.title)}</p>
-${a.approved_by_rule ? `<p class="small"><strong>${t("Kinnitatud püsiloaga", "Approved by your standing approval")} „${esc(ruleTitle(a, rules, l))}”.</strong></p>` : a.owner_confirmation ? confirmedInAssistant(a, l) : ""}
+${a.owner_confirmation ? confirmedInAssistant(a, l) : ""}
 <p class="small"><strong>${esc(t(`Sinu kinnitusi selles töös: ${a.decided_at && !a.approved_by_rule ? 1 : 0}.`, `Your approvals in this job: ${a.decided_at && !a.approved_by_rule ? 1 : 0}.`))}</strong> ${t("Töö tegi assistent; tulemus on tema teade, AI-hüppelaud seda ei kontrollinud.", "Your assistant did the work; the result is its report, not checked by AI Launchpad.")}</p>
-${check}
 ${isDone(a) && opts.handover ? handoverStrip(opts.handover, l) : ""}
 ${stateLine(a, v, l, sample)}
 ${content ? `<details><summary>${t("Mida sa kinnitasid", "What you approved")}</summary>${approvalFacts(v, l)}${content}</details>` : ""}
@@ -1343,7 +1196,6 @@ ${ticketHead(v)}
 <p class="why" role="status">${esc(line)}</p>
 ${approvalFacts(v, l)}
 ${content}
-${check}
 </div>
 ${foot()}
 </article>`;
@@ -1361,8 +1213,8 @@ function approvalLinkRow(a: ApprovalRow, l: Lang, now: Date, sample: boolean, as
     : a.state === "approved" ? stateChip("approved", t("Kinnitatud", "Approved"))
     : a.state === "declined" ? stateChip("rejected", t("Keeldusid", "Declined"))
     : stateChip("void", t("Aegunud", "Expired"));
-  const href = `/approvals/${esc(encodeURIComponent(a.id))}`, labels = `${chip}${a.approved_by_rule ? ruleChip(l) : ""}`, title = `${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}`;
-  return ask ? askLink(href, labels, title, esc(sub)) : `<a class="link-row" href="${href}"><div><span class="labels">${labels}</span><span class="link-row-title">${title}</span><span class="small muted">${esc(sub)}</span>${approvalCheckBlock(a, l)}</div></a>`;
+  const href = `/approvals/${esc(encodeURIComponent(a.id))}`, labels = chip, title = `${esc(v.title)}${v.recipient.name ? ` · ${esc(v.recipient.name)}` : ""}`;
+  return ask ? askLink(href, labels, title, esc(sub)) : `<a class="link-row" href="${href}"><div><span class="labels">${labels}</span><span class="link-row-title">${title}</span><span class="small muted">${esc(sub)}</span></div></a>`;
 }
 
 export function approvalsListBody(rows: ApprovalRow[], l: Lang, sample: boolean, now = new Date()): string {
@@ -1740,7 +1592,7 @@ export function alustaBody(o: {
 
 export function landingBody(o: { lang: Lang; demo: boolean; rand?: () => number }): string {
   const l = o.lang, t = tr(l);
-  const amounts: Record<string, string> = { total: fmtEur(72000, l), cap: fmtEur(50000, l), unpaid: fmtEur(31000, l), purchases: fmtEur(118420, l) };
+  const amounts: Record<string, string> = { total: fmtEur(72000, l), unpaid: fmtEur(31000, l), purchases: fmtEur(118420, l) };
   const format = (s: string) => s.replace(/\{(\w+)\}/g, (_, k: string) => amounts[k] ?? "");
   const text = (v: LandingText) => format(t(v.et, v.en));
   const rich = (v: LandingCase["answer"]) => {
@@ -1785,19 +1637,13 @@ export function landingBody(o: { lang: Lang; demo: boolean; rand?: () => number 
       chat.push(`<div class="beat b-${id}-card"><div class="mock-card"><div class="labels mock-state"><span class="mock-wait">${stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))}</span><span class="mock-ok">${stateChip("approved", t("Kinnitatud", "Approved"))}</span></div>
 <p class="mock-title">${esc(title)}</p><p class="mock-facts"><span>${esc(approval.client)}</span><b>${esc(amount)}</b></p>
 <div class="mock-btn"><span class="mock-approve">${esc(approve)}</span><span class="mock-done">${esc(done)}</span><span class="mock-tap"></span></div>
-${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock-btn"><span class="mock-allow">${esc(text(approval.allow))}</span><span class="mock-rule">${esc(format(t(approval.allow.standingEt, approval.allow.standingEn)))}</span><span class="mock-tap"></span></div></div>` : ""}</div></div>`);
+</div></div>`);
       transcript.push(
         [t("Assistent", "Assistant"), `${t("Kinnitus", "Approval")}: ${title} · ${approval.client} · ${amount}. „${approve}”`],
         [t("Sina", "You"), t("Kinnitatud", "Approved")],
         [t("Assistent", "Assistant"), t("Saadetud sinu e-postist (näidis)", "Sent from your e-mail (sample)")],
       );
-      if (approval.allow) {
-        const standing = format(t(approval.allow.standingEt, approval.allow.standingEn)), next = job.next ? text(job.next) : "";
-        transcript.push([t("Sina", "You"), text(approval.allow)], [t("Assistent", "Assistant"), `${standing}${next ? `. ${next}` : ""}`]);
-      }
     }
-    if (job.next) chat.push(typing(id, "t2"), ai(id, "ai2", esc(text(job.next))));
-    if (job.next && !approval?.allow) transcript.push([t("Assistent", "Assistant"), text(job.next)]);
     return `<div class="teaser-conversation" data-job-conversation="${esc(id)}"${index === 0 ? "" : " hidden"}>
 <div class="vh"><p>${t("Näidisvestlus:", "Sample conversation:")}</p><ol>${transcript.map(([who, value]) => `<li>${esc(who)}: ${esc(value)}</li>`).join("")}</ol></div>
 <div class="phone" aria-hidden="true"><div class="phone-screen"><div class="phone-bar"><span class="phone-ava"></span><span class="phone-who"><b>${t("Sinu assistent", "Your assistant")}</b><small>${esc(subtitle(job))}</small></span></div>
@@ -1815,7 +1661,7 @@ ${approval.allow ? `<div class="beat beat--allow b-${id}-allow"><div class="mock
     t("Ühenda oma ChatGPT või Claude", "Connect your ChatGPT or Claude"),
     t("Ühenda ka oma raamatupidamine ja e-post — assistent ütleb, milline ühendus sobib", "Connect your accounting software and e-mail too — your assistant tells you which connector fits"),
     t("Küsi: „Mida saad minu kontoritööst ära teha?”", "Ask: “What office work can you take off me?”"),
-    t("Kinnita ühe puudutusega — või luba edaspidi automaatselt", "Approve with one tap — or let it run automatically"),
+    t("Kinnita ühe puudutusega", "Approve with one tap"),
   ];
   const trust = [
     t("Midagi ei saadeta ilma sinu loata", "Nothing is sent without your permission"),
@@ -1859,8 +1705,6 @@ export interface TanaOpts {
   needs: OwnerNeed[];
   /** Count of the assistant's saved reports (real records). */
   reportCount: number;
-  /** The owner's standing approvals, to name the rule behind an auto-approved row. */
-  rules?: StandingRule[];
   /** „Käest ära” (#61): the strip under the pills. */
   handover?: Handover;
   /** The assistant the owner last used, for the „Lahenda …” link; Claude when unknown. */
@@ -1916,9 +1760,9 @@ export function tanaBody(o: TanaOpts): string {
     const who = v.recipient.name ? ` · ${esc(v.recipient.name)}` : "";
     if (x.state === "consumed" && v.outcome && ["sent", "paid", "submitted", "accepted", "posted"].includes(v.outcome.outcome)) {
       doneCount++;
-      doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${outcomeChip(v.outcome.outcome, l, o.sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}${x.approved_by_rule ? ruleChip(l) : ""}</div><span class="small muted">${x.approved_by_rule ? esc(t(`Püsiloaga: ${ruleTitle(x, o.rules, l)}`, `Standing approval: ${ruleTitle(x, o.rules, l)}`)) : t("1 sinu kinnitus", "1 approval from you")} · ${timeEl(v.outcome.observed_at ?? x.consumed_at ?? x.created_at, fmtWhen(v.outcome.observed_at ?? x.consumed_at, l, now))}${v.amount ? ` · ${esc(v.amount)}` : ""}</span></div>`);
+      doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${outcomeChip(v.outcome.outcome, l, o.sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${t("1 sinu kinnitus", "1 approval from you")} · ${timeEl(v.outcome.observed_at ?? x.consumed_at ?? x.created_at, fmtWhen(v.outcome.observed_at ?? x.consumed_at, l, now))}${v.amount ? ` · ${esc(v.amount)}` : ""}</span></div>`);
     } else if (x.state === "approved") {
-      doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${x.approved_by_rule ? ruleChip(l) : ""}${stateChip("approved", t("Pooleli · ootab assistendi teadet", "In progress · waiting for your assistant's report"))}</div><span class="small muted">${x.approved_by_rule ? esc(t(`Püsiloaga: ${ruleTitle(x, o.rules, l)}`, `Standing approval: ${ruleTitle(x, o.rules, l)}`)) : t("Sinu kinnitus", "You approved")} · ${esc(fmtWhen(x.decided_at, l, now))}</span></div>`);
+      doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${stateChip("approved", t("Pooleli · ootab assistendi teadet", "In progress · waiting for your assistant's report"))}</div><span class="small muted">${t("Sinu kinnitus", "You approved")} · ${esc(fmtWhen(x.decided_at, l, now))}</span></div>`);
     }
   }
   // Work on a row the assistant now marks not applicable stays on Tehtud, not Täna.
@@ -2047,7 +1891,7 @@ export function assistantGuidePrompt(lang: Lang, assistant: "chatgpt" | "claude"
   return `Tere! Aita mul ühendada AI-hüppelaud oma ChatGPT-ga. Juhenda mind lihtsate sõnadega, üks samm korraga, ja oota, kuni ütlen „tehtud”.\n1. Ava seadetes ühendused (Apps) ja lisa uus ühendus.\n2. Nimi: AI-hüppelaud. Aadress: ${endpoint}.\n3. Logi sisse ja kinnita.\nKui ühendus töötab, kasuta AI-hüppelaua tööriista get_started.`;
 }
 
-export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude" | "grok"; state: ConnectState; owner: boolean; sandbox?: boolean; now?: Date; expanded?: boolean; calendar?: { csrf: string; createdAt: string | null }; standing?: { csrf: string; rules: StandingRule[] }; handover?: Handover }): Promise<string> {
+export async function connectBody(o: { lang: Lang; baseUrl: string; assistant: "chatgpt" | "claude" | "grok"; state: ConnectState; owner: boolean; sandbox?: boolean; now?: Date; expanded?: boolean; calendar?: { csrf: string; createdAt: string | null }; handover?: Handover }): Promise<string> {
   const l = o.lang, t = tr(l), now = o.now ?? new Date();
   const base = String(o.baseUrl ?? "").replace(/\/+$/, ""), endpoint = `${base}/mcp`;
   const grok = o.assistant === "grok";
@@ -2103,7 +1947,7 @@ ${COPY_SCRIPT}`;
     ? (() => { const d = new Date(s.at), time = TIME[l].format(d), sameDay = tallinnYmd(d) === tallinnYmd(now); const who = s.who ?? t("Sinu assistent", "Your assistant"); return `<div class="status-chip" id="connect-status" data-state="connected" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${esc(t(`Ühendatud · ${who} jõudis kohale ${sameDay ? "" : `${DAY.et.format(d)} `}kell ${time}`, `Connected · ${who} reached AI Launchpad ${sameDay ? "" : `on ${DAY.en.format(d)} `}at ${time}`))}</span></div>`; })()
     : `<div class="status-chip" id="connect-status" data-state="${s.kind === "sample" ? "sample" : "waiting"}" role="status"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${s.kind === "anon" ? `${t("Logi sisse, et näha, kas sinu assistent on ühendatud.", "Sign in to see whether your assistant is connected.")} <a href="/login">${t("Logi sisse", "Sign in")}</a>` : s.kind === "sample" ? t("Näidistööruumis ühenduse olekut ei jälgita.", "Connection status is not tracked in a sample workspace.") : esc(t(`Ootan, et ${name} ühenduks…`, `Waiting for ${name} to connect…`))}</span></div>`;
   // A sample workspace has nothing to set up, so „Käest ära” comes first (QA M2).
-  const handover = o.standing && o.handover ? handoverSection(o.handover, l, o.standing.csrf, now, s.kind === "sample") : "", sampleFirst = s.kind === "sample";
+  const handover = (o.owner || o.sandbox) && o.handover ? handoverSection(o.handover, l, now, s.kind === "sample") : "", sampleFirst = s.kind === "sample";
   return `<h1>${t("Ühenda oma assistent", "Connect your assistant")}</h1>
 <p class="lede">${t("Sinu ChatGPT, Claude või Grok Bot näeb sinu tähtaegu ja valmistab töid ette. Sina kinnitad ainult selle, mis sind seob.", "Your ChatGPT, Claude or Grok Bot sees your deadlines and prepares work for you. You approve only what binds you.")}</p>
 ${sampleFirst ? handover : ""}
@@ -2123,10 +1967,9 @@ ${grok ? "" : o.expanded ? `<section class="card" id="ise"><h2>${t("Tee ise, ilm
     : `<li><h3 class="step-title">${t("Kopeeri aadress", "Copy the address")}</h3>${address}</li>
 <li><h3 class="step-title">${t("Ava ChatGPT seadetes ühendused, lisa uus ühendus ja kleebi sinna aadress.", "In ChatGPT settings, open connectors, add a new connector and paste the address.")}</h3></li>
 <li><h3 class="step-title">${t("Logi sisse ja vali, mida assistent tohib", "Sign in and choose what your assistant may do")}</h3><p class="small muted">`}${esc(t(`Märgi „Jah: ${name} valmistab ette …”, kui tahad, et ta valmistaks sulle kinnitamiseks kirju, arveid ja deklaratsioone.`, `Tick “Yes: ${name} prepares …” if you want it to prepare messages, invoices and returns for your approval.`))}</p></li></ol>
-<p class="small">${t("Kui assistent küsib tööriista luba, vali ‚Always allow' — AI-hüppelaud ise ei saada midagi; sind seob ainult kinnitus või sinu püsiluba.", "If your assistant asks for tool permission, choose ‘Always allow’ — AI Launchpad itself sends nothing; only an approval or your standing approval binds you.")}</p></section>` : `<p><a class="tap-link" href="${reveal}#ise">${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</a></p>`}
+<p class="small">${t("Kui assistent küsib tööriista luba, vali ‚Always allow' — AI-hüppelaud ise ei saada midagi; sind seob ainult kinnitus.", "If your assistant asks for tool permission, choose ‘Always allow’ — AI Launchpad itself sends nothing; only an approval binds you.")}</p></section>` : `<p><a class="tap-link" href="${reveal}#ise">${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</a></p>`}
 ${o.calendar ? calendarSection(l, o.calendar) : ""}
 ${sampleFirst ? "" : handover}
-${o.standing ? standingSection(l, o.standing, now) : ""}
 ${techDetails(l, `${techList([[t("MCP-aadress", "MCP address"), endpoint], [t("Sisselogimine", "Sign-in"), "OAuth 2.1 + PKCE"], [t("Õigused", "Scopes"), "progress:read · progress:report (Jah-linnukesega)"], [t("Kliendi nimi", "Client name"), t("kliendi enda antud, kontrollimata", "supplied by the client, not verified")]])}
 <p class="small"><a class="tap-link" href="${CHATGPT_GUIDE}" rel="noopener noreferrer">${t("OpenAI juhend", "OpenAI guide")}</a> · <a class="tap-link" href="${CLAUDE_GUIDE}" rel="noopener noreferrer">${t("Claude'i juhend", "Claude guide")}</a>${o.owner ? ` · <a class="tap-link" href="/connection">${t("Käsitsi võtmed", "Manual tokens")}</a>` : ""}</p>`)}
 ${o.owner ? `<p><a class="tap-link" href="/connection">${t("Andmed ja õigused", "Data and permissions")}</a></p>` : ""}`;
@@ -2151,30 +1994,24 @@ const DONE_VERBS: Record<string, [string, string]> = {
   demo_fixture_seeded: ["Näidisandmed laaditi", "Sample data loaded"],
   calendar_feed_created: ["Sina lisasid tähtajad oma kalendrisse", "You added the deadlines to your calendar"],
   calendar_feed_revoked: ["Sina lõpetasid kalendri jagamise", "You stopped sharing the calendar"],
-  standing_rule_created: ["Sina andsid püsiloa", "You set a standing approval"],
-  standing_rule_revoked: ["Sina lõpetasid püsiloa", "You ended a standing approval"],
-  standing_auto_approved: ["Püsiluba kinnitas assistendi töö", "Your standing approval approved your assistant's work"],
   approved_in_assistant: ["Sina kinnitasid assistendis", "You approved in your assistant"],
 };
-export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date; approvals?: ApprovalRow[]; rules?: StandingRule[]; assessment?: Assessment | null; sample?: boolean }): string {
+export function activityBody(opts: { rows: Record<string, string>[]; receipts: Record<string, string>[]; exclusions: Exclusion[]; lang: Lang; now?: Date; approvals?: ApprovalRow[]; assessment?: Assessment | null; sample?: boolean }): string {
   const l = opts.lang, t = tr(l), now = opts.now ?? new Date(), fx = fixtureText(l, !!opts.sample);
   // Approval rows name their object (title · recipient): the log summary carries the approval id or digest prefix.
   const approvalOf = (summary: string) => (opts.approvals ?? []).find((x) => summary.includes(x.id) || summary.includes(`digest ${x.digest.slice(0, 12)}`));
   const objectOf = (summary: string) => {
     const a = approvalOf(summary);
-    if (!a) { const rule = (opts.rules ?? []).find((x) => summary.includes(x.id)); return rule ? standingRuleName(rule, l) : ""; }
+    if (!a) return "";
     const v = approvalView(a, l);
     return [v.title, v.recipient.name].filter(Boolean).join(" · ");
   };
   const done = opts.rows.flatMap((r) => {
-    // A send under a standing approval reads as such (#45).
-    const byRule = r.action === "standing_auto_approved" || (r.action === "record_action_outcome" && !!approvalOf(r.summary ?? "")?.approved_by_rule);
-    const ruleSent = r.action === "record_action_outcome" && byRule && /^Outcome sent /.test(r.summary ?? "");
     // A progress row names its job by the assessment's label, as Täna does.
     const progress = r.action === "report_progress" ? PROGRESS_SUMMARY.exec(r.summary ?? "") : null;
-    const verb = progress ? `${t(...PROGRESS_VERB[progress[2]])} ${fx.plain(opts.assessment?.responsibilities.find((x) => x.id === progress[1])?.label ?? progress[1])}` : ruleSent ? t("Assistent saatis püsiloa alusel:", "Your assistant sent under a standing approval:") : r.action === "approval_decided" ? (r.outcome === "approved" ? t("Sina kinnitasid", "You approved") : r.outcome === "declined" ? t("Sina keeldusid", "You declined") : null) : DONE_VERBS[r.action] ? t(...DONE_VERBS[r.action]) : null;
+    const verb = progress ? `${t(...PROGRESS_VERB[progress[2]])} ${fx.plain(opts.assessment?.responsibilities.find((x) => x.id === progress[1])?.label ?? progress[1])}` : r.action === "approval_decided" ? (r.outcome === "approved" ? t("Sina kinnitasid", "You approved") : r.outcome === "declined" ? t("Sina keeldusid", "You declined") : null) : DONE_VERBS[r.action] ? t(...DONE_VERBS[r.action]) : null;
     if (!verb || (r.outcome !== "ok" && r.action !== "approval_decided")) return [];
-    const chip = `${r.actor === "assistant" ? labelChip("assistant", t("Assistent teatas", "Your assistant reports")) : r.action === "approval_decided" && r.outcome === "approved" ? labelChip("owner", t("Sinu kinnitus", "You approved")) : ""}${byRule ? ruleChip(l) : ""}`;
+    const chip = `${r.actor === "assistant" ? labelChip("assistant", t("Assistent teatas", "Your assistant reports")) : r.action === "approval_decided" && r.outcome === "approved" ? labelChip("owner", t("Sinu kinnitus", "You approved")) : ""}`;
     const object = objectOf(r.summary ?? "");
     return [`<div class="row"><strong>${esc(verb)}</strong>${object ? `<br><span>${esc(object)}</span>` : ""}${chip ? `<div class="labels">${chip}</div>` : "<br>"}<span class="small muted">${timeEl(r.created_at, fmtWhen(r.created_at, l, now))}</span></div>`];
   });
