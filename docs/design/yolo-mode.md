@@ -4,6 +4,8 @@ Product decision, 2026-11-02: asking an assistant to do a job should be enough t
 
 ## Behaviour
 
+The plugin checks each send, book posting and handover of prepared payment or filing figures with `action-reviewer` in a fresh context. The reviewer receives only the owner's verbatim request, the exact action and the facts used from the books or customer list, never source e-mails, files, web pages or conversation history. GO keeps the act-and-record flow and existing ask-first rules. ASK_OWNER gives the owner one line explaining why, the exact content and one question, then uses `request_approval` with `owner_confirmation`. This is the assistant's own check. If the assistant cannot run the agent, the existing flow still applies.
+
 - When the owner asks for a job, the assistant does it end-to-end with its own tools: sends the reminder, invoice or message, and creates and posts book entries. It then calls `record_action_outcome` with the exact action and its playbook. Launchpad records the outcome; it does not send mail itself.
 - Ask first in two cases:
   1. The owner asked to be asked, now or as a saved fact.
