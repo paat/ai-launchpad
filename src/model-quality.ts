@@ -54,7 +54,8 @@ export const JOB_MAX_OUTPUT_TOKENS: Record<ModelJob, number> = {
   intake_extract: 2048,
   // Reasoning counts against max_tokens. 2048 truncated live /alusta plans (issue #165).
   intake_plan: MAX_OUTPUT_TOKENS,
-  check_approval: 1024,
+  // Muse reasons before answering; 1,024 truncated the first live check.
+  check_approval: MAX_OUTPUT_TOKENS,
 };
 // Approval JSON includes up to 4,000 document characters plus bounded fields.
 // Allow worst-case JSON escaping; intake and the original jobs keep the

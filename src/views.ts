@@ -1225,6 +1225,7 @@ function approvalCheckBlock(a: ApprovalRow, l: Lang): string {
     timeout: ["teenus ei vastanud õigel ajal", "the provider did not answer in time"],
     provider_failed: ["mudeliteenus ei vastanud", "the model service did not answer"],
     invalid_output: ["vastus ei olnud loetav", "the answer was unreadable"],
+    truncated: ["vastus jäi pooleli", "the answer was cut off"],
     attempt_in_flight: ["teine kontroll on pooleli", "another check is in progress"],
     interrupted: ["kontroll katkes", "the check was interrupted"],
     not_checked: ["seda kinnitust pole kontrollitud", "this approval has not been checked"],
