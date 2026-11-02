@@ -73,6 +73,7 @@ test.each(cases)("resets $name once and preserves unrelated data", ({ standing, 
     expect(db.prepare("SELECT kind FROM reports ORDER BY kind").all()).toEqual([{ kind: "assessment" }, { kind: "progress" }]);
     expect(db.prepare("SELECT action FROM activity ORDER BY action").all()).toEqual([{ action: "report_assessment" }, { action: "report_progress" }, { action: "token_issue" }]);
     expect(snapshot(db, keptTables)).toEqual(kept);
+    expect(db.pragma("user_version", { simple: true })).toBe(1);
     // New action history must survive the next boot, including the same receipt kinds/actions.
     seedLog(db, "new");
     const beforeReopen = snapshot(db, [...keptTables, "approvals", "reports", "activity"]);
@@ -92,5 +93,26 @@ test("fresh databases have clean columns and never reset their action log", () =
     const beforeReopen = snapshot(db, ["approvals", "reports", "activity"]);
     db.close(); db = openDb(path);
     expect(snapshot(db, ["approvals", "reports", "activity"])).toEqual(beforeReopen);
+  } finally { db.close(); }
+});
+
+// Old binaries recreate these markers but never change PRAGMA user_version.
+test.each(["legacy", "clean", "fresh"])("%s database keeps new action history after rollback and roll-forward", (initial) => {
+  const { path } = fixture(initial === "legacy", initial === "legacy" ? dropped : []);
+  if (initial === "fresh") rmSync(path);
+  let db = openDb(path);
+  try {
+    expect(db.pragma("user_version", { simple: true })).toBe(1);
+    seedLog(db, "new-after-migration");
+    db.close();
+    db = new Database(path);
+    db.exec("CREATE TABLE standing_approvals(id TEXT PRIMARY KEY)");
+    for (const col of dropped) db.exec(`ALTER TABLE approvals ADD COLUMN ${col} TEXT`);
+    const before = snapshot(db, ["approvals", "reports", "activity"]);
+    db.close();
+    db = openDb(path);
+    expect(db.pragma("user_version", { simple: true })).toBe(1);
+    expect(snapshot(db, ["approvals", "reports", "activity"])).toEqual(before);
+    expect(db.prepare("SELECT id FROM approvals WHERE id='new-after-migration'").get()).toEqual({ id: "new-after-migration" });
   } finally { db.close(); }
 });

@@ -40,19 +40,22 @@ export function openDb(path: string) {
   CREATE INDEX IF NOT EXISTS idx_oauth_clients_expires ON oauth_clients(expires);
   `);
   // Owner decision (2026-11-02): all old approval history, including production,
-  // was test data. Reset it atomically once; fresh and already-clean DBs skip this.
+  // was test data. Persist the one-time reset so an old binary recreating legacy
+  // markers during rollback cannot wipe new history on the next roll-forward.
   db.transaction(() => {
+    if ((db.pragma("user_version", { simple: true }) as number) >= 1) return;
     const columns = (db.prepare("PRAGMA table_info(approvals)").all() as { name: string }[]).map((c) => c.name);
     const legacy = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='standing_approvals'").get()
       || ["approved_by_rule", "check_state", "check_json", "check_by", "check_at"].some((col) => columns.includes(col));
-    if (!legacy) return;
-    db.exec(`
+    if (legacy) db.exec(`
       DROP TABLE IF EXISTS standing_approvals;
       DROP TABLE approvals;
       DELETE FROM reports WHERE kind IN ('approval', 'outcome');
       DELETE FROM activity WHERE action IN ('request_approval', 'record_action_outcome', 'approval_decided', 'approved_in_assistant', 'standing_rule_created', 'standing_rule_revoked', 'standing_auto_approved');
       ${approvalsSchema}
     `);
+    // Fresh and already-clean databases must also be protected from a rollback.
+    db.pragma("user_version = 1");
   }).immediate();
   // Backward-safe: approval card columns are added to an existing table in place.
   const approvalCols = new Set((db.prepare("PRAGMA table_info(approvals)").all() as { name: string }[]).map((c) => c.name));
