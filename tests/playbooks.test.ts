@@ -670,8 +670,12 @@ describe("agent-facing copy over MCP", () => {
     expect(cleanup).toContain("still unconfirmed");
     expect(cleanup).toContain("delete it only after they say yes");
     expect(cleanup).toContain("Never delete or invalidate a confirmed invoice");
-    expect(cleanup).toContain("To retry, use that same confirmed invoice (same number, lines, total)");
-    expect(cleanup).toContain("never create a new draft for the same sale");
+    expect(cleanup).toContain("Stop if they cancel.");
+    expect(steps.indexOf(cleanup)).toBeLessThan(steps.indexOf(SEND_INVOICE_ACT));
+    const retry = steps.find((s) => s.startsWith("If the send fails"))!;
+    expect(steps.indexOf(retry)).toBeGreaterThan(steps.indexOf(SEND_INVOICE_ACT));
+    expect(retry).toContain("To retry, use that same confirmed invoice (same number, lines, total)");
+    expect(retry).toContain("never create a new draft for the same sale");
     expect(steps.at(-1)).toContain("outcome sent (or failed)");
     expect(steps.at(-1)).toContain("A failed invoice can never become paid");
   });
