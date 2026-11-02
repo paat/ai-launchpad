@@ -1096,16 +1096,15 @@ ${HO_CONNECTOR(l)}`);
 /** Ühendus → Käest ära: what needs the owner, what the assistant can reach, the jobs by status, one next step, and the expired-unused finding. */
 /** Catalogue group per connection kind; kinds without their own group open the whole catalogue. */
 const HO_CONN_GROUP: Partial<Record<ConnectionKind, string>> = { accounting: "raamatupidamine", email: "epost", bank: "pank", customers: "kliendid", browser: "brauser" };
-/** Täna's „Assistent vajab sinult”: each connection an open job needs that the assistant cannot reach, with the jobs it would unlock.
- *  Before the assistant has said what it can reach, one ask to do that instead of a row of „not reported”. */
+/** Täna's „Assistent vajab sinult”: each connection an open job needs that the assistant reported it cannot reach, with the jobs it would unlock.
+ *  A kind the assistant has not reported stays in Back office's reach list as „not reported”; it is not an ask. */
 function missingConnections(h: Handover, l: Lang, fx: ReturnType<typeof fixtureText>): string[] {
   const t = tr(l), open = h.jobs.filter((j) => j.status !== "in_order" && j.rung !== "other");
-  if (!h.assessedAt) return open.some((j) => j.needs.length) ? [`<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Assistent pole veel öelnud, kuhu ta ulatub", "Your assistant has not said yet what it can reach")}</span><p class="small"><span class="muted">${t("Ütle oma assistendile:", "Tell your assistant:")}</span> „${esc(t(...TRY_PROMPT))}”</p></div></div>`] : [];
-  return h.connections.filter((c) => c.state === "not_linked" || c.state === "unknown").flatMap((c) => {
+  return h.connections.filter((c) => c.state === "not_linked").flatMap((c) => {
     const jobs = open.filter((j) => j.needs.includes(c.kind));
     if (!jobs.length) return [];
     const g = HO_CONN_GROUP[c.kind];
-    return [`<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${esc(t(...HO_CONN[c.kind]))} · ${esc(c.state === "unknown" ? t("assistent pole teatanud", "not reported") : t("ühendamata", "not linked"))}</span><p class="small">${t("Vaja töödeks:", "Needed for:")} ${jobs.map((j) => fx.html(t(j.title_et, j.title_en))).join(", ")}</p><a class="tap-link" href="/kataloog${g ? `?g=${g}` : ""}">${t("Leia ühendus → Kataloog", "Find a connection → Catalogue")}</a></div></div>`];
+    return [`<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${esc(t(...HO_CONN[c.kind]))} · ${t("ühendamata", "not linked")}</span><p class="small">${t("Vaja töödeks:", "Needed for:")} ${jobs.map((j) => fx.html(t(j.title_et, j.title_en))).join(", ")}</p><a class="tap-link" href="/kataloog${g ? `?g=${g}` : ""}">${t("Leia ühendus → Kataloog", "Find a connection → Catalogue")}</a></div></div>`];
   });
 }
 export function handoverSection(h: Handover, l: Lang, now = new Date(), sample = false, showNext = true): string {
@@ -1740,7 +1739,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export function tanaBody(o: TanaOpts): string {
   const l = o.lang, t = tr(l), now = o.now ?? new Date(), a = o.assessment, fx = fixtureText(l, o.sample);
   const deadlines = o.deadlines && typeof o.deadlines === "object" && "obligations" in o.deadlines ? o.deadlines : null;
-  const { pending, failed, questions: asked, next, count: n } = openItems(o.approvals, deadlines, a);
+  const { pending, failed, questions: asked, next, count } = openItems(o.approvals, deadlines, a);
+  // A connection an open job needs is something the owner is asked for too, so the headline counts it (Codex review, #187).
+  const linkRows = o.handover ? missingConnections(o.handover, l, fx) : [], n = count + linkRows.length;
   const qs = deadlines ? questions(deadlines, asked, l) : [];
   const optional = o.needs.filter((n) => n.state === "classified");
 
@@ -1788,7 +1789,7 @@ export function tanaBody(o: TanaOpts): string {
   const upcoming = deadlines?.obligations.length ?? 0;
   const top = pending[0];
   const lede = n
-    ? `${[pending.length ? plural(pending.length, t("kinnitus", "approval"), t("kinnitust", "approvals")) : "", failed.length ? plural(failed.length, t("ebaõnnestunud töö", "failed job"), t("ebaõnnestunud tööd", "failed jobs")) : "", qs.length ? plural(qs.length, t("vastus", "answer"), t("vastust", "answers")) : "", next ? t("1 järgmine samm", "1 next step") : ""].filter(Boolean).join(", ").replace(/, ([^,]*)$/, t(" ja $1", " and $1"))}. ${t("Ülejäänu valmistab ette sinu assistent.", "Your assistant prepares the rest.")}`
+    ? `${[pending.length ? plural(pending.length, t("kinnitus", "approval"), t("kinnitust", "approvals")) : "", failed.length ? plural(failed.length, t("ebaõnnestunud töö", "failed job"), t("ebaõnnestunud tööd", "failed jobs")) : "", qs.length ? plural(qs.length, t("vastus", "answer"), t("vastust", "answers")) : "", linkRows.length ? plural(linkRows.length, t("ühendus", "connection"), t("ühendust", "connections")) : "", next ? t("1 järgmine samm", "1 next step") : ""].filter(Boolean).join(", ").replace(/, ([^,]*)$/, t(" ja $1", " and $1"))}. ${t("Ülejäänu valmistab ette sinu assistent.", "Your assistant prepares the rest.")}`
     : open ? t("Assistent pole veel kõike hinnanud; lahtised küsimused on allpool.", "Your assistant has not assessed everything yet; the open questions are below.")
     : a || o.approvals.length || deadlines ? t("Ülejäänu valmistab ette sinu assistent. Kui midagi vajab sinu kinnitust, näed seda siin.", "Your assistant prepares the rest. When something needs your approval, you see it here.")
       : t(`Ühenda oma assistent ja küsi temalt: „${TRY_PROMPT[0]}”`, `Connect your assistant and ask it: “${TRY_PROMPT[1]}”`);
@@ -1820,7 +1821,6 @@ ${o.exclusions.length ? `<p class="small muted">${t("Varasematest hinnangutest e
 
   // Back office leads Täna: what the assistant needs from the owner first, then the jobs and what it can reach.
   // Done work and the full deadline list fold away; each job already shows its next deadline.
-  const linkRows = o.handover ? missingConnections(o.handover, l, fx) : [];
   const needsRows = [...askRows, ...linkRows];
   return `<section class="hero" aria-labelledby="t-h">
 <p class="company">${fx.html(a?.company_label ?? deadlines?.company.name ?? o.label)}</p>

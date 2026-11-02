@@ -1146,10 +1146,15 @@ describe("„Käest ära” (#61)", () => {
     expect(needs).toContain("Ühenda, et assistent saaks rohkem teha");
     expect(needs).toContain("Pank · ühendamata");
     expect(needs).toContain('href="/kataloog?g=pank"');
-    // Before the assistant has said what it reaches: one ask instead of a row per unknown kind.
-    const fresh = tana({ handover: { ...gap, assessedAt: null } });
-    expect(fresh).toContain("Assistent pole veel öelnud, kuhu ta ulatub");
-    expect(fresh).not.toContain("Pank · ");
+    // With nothing else open, the missing link alone is what the headline counts (Codex review, #187).
+    const quiet = { ...assessment, gaps: [], responsibilities: assessment.responsibilities.filter((r) => r.applicability !== "unresolved"), next_action: { ...assessment.next_action, needs_owner: false } };
+    const only = tana({ handover: { ...gap, connections: gap.connections.map((c) => c.kind === "bank" ? c : { ...c, state: "linked" as const }) }, assessment: quiet, coverage: computeCoverage(quiet) });
+    expect(only).toContain("Sinult on täna vaja üht asja");
+    expect(only).toContain("1 ühendus.");
+    expect(only).not.toContain("Täna pole sinult midagi vaja");
+    // A kind the assistant has not reported is not an ask: it stays „not reported” in the reach list.
+    const unreported = tana({ handover: { ...gap, connections: gap.connections.map((c) => c.kind === "bank" ? { ...c, state: "unknown" as const } : c) } });
+    expect(unreported).not.toContain("Pank · ");
   });
 
   test("Ühendus: #kaest-ara has one next step, no forms, the computation explained; owner-only", async () => {
