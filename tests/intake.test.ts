@@ -471,9 +471,9 @@ describe("intake clients and limiter", () => {
       fetchFn: (async () => { fetches++; return chat("not-json"); }) as FetchFn,
     });
     await expect(again.extract("Werkzeug")).resolves.toMatchObject({ ok: false, reason: "invalid_output" });
-    expect(fetches).toBe(1);
+    expect(fetches).toBe(2);
     await expect(live.extract("   ")).resolves.toEqual({ ok: false, reason: "empty", mock: false });
-    expect(fetches).toBe(1);
+    expect(fetches).toBe(2);
 
     const good = ModelQualityLedger.open(":memory:");
     const products = '{"products":[{"name":"Werkzeug","kind":"accounting"}]}';
@@ -486,7 +486,11 @@ describe("intake clients and limiter", () => {
     const second = await okLive.extract("Werkzeug");
     expect(first).toEqual({ ok: true, output: products, mock: false });
     expect(second).toEqual(first);
-    expect(n).toBe(1);
+    expect(n).toBe(2);
+    const extractRows = good.db.prepare("SELECT request_id, output FROM mq_attempts WHERE job='intake_extract'").all() as { request_id: string; output: string | null }[];
+    expect(extractRows).toHaveLength(2);
+    expect(new Set(extractRows.map((row) => row.request_id)).size).toBe(2);
+    expect(extractRows.every((row) => row.output === null)).toBe(true);
     const long = "x".repeat(601);
     const summary = liveIntake({
       ledger: good, apiKey: "synthetic-key-not-real",
@@ -512,6 +516,12 @@ describe("intake clients and limiter", () => {
       fetchFn: (async () => chat("Lühike kokkuvõte.")) as FetchFn,
     });
     await expect(short.summarize('{"lang":"et"}')).resolves.toMatchObject({ ok: true, output: "Lühike kokkuvõte.", mock: false });
+    const plansBefore = (good.db.prepare("SELECT count(*) n FROM mq_attempts WHERE job='intake_plan'").get() as { n: number }).n;
+    await expect(short.summarize('{"lang":"et"}')).resolves.toMatchObject({ ok: true, output: "Lühike kokkuvõte.", mock: false });
+    expect((good.db.prepare("SELECT count(*) n FROM mq_attempts WHERE job='intake_plan'").get() as { n: number }).n).toBe(plansBefore + 1);
+    const stored = good.db.prepare("SELECT output FROM mq_attempts WHERE job IN ('intake_extract','intake_plan')").all() as { output: string | null }[];
+    expect(stored.length).toBeGreaterThan(0);
+    expect(stored.every((row) => row.output === null)).toBe(true);
     good.close();
     junk.close();
   });

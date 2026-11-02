@@ -103,6 +103,8 @@ export class ModelQualityError extends Error {
 }
 
 const JOBS: readonly ModelJob[] = ["setup_guidance", "classify_friction", "classify_unmet_need", "intake_extract", "intake_plan", "check_approval"];
+/** Completion text is not written for these jobs. This attempt still returns it to the caller. */
+const OUTPUT_NOT_RETAINED: ReadonlySet<ModelJob> = new Set(["check_approval", "intake_extract", "intake_plan"]);
 const REQUEST_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 const COMMON =
@@ -558,6 +560,6 @@ export async function runModelQualityAttempt(opts: ModelQualityOptions): Promise
   try { text = extractChatText(json); } catch (e) {
     return fail("failed", e instanceof ModelQualityError ? e.code : "invalid_response", extra);
   }
-  opts.ledger.finalize(requestId, { status: "completed", output: job === "check_approval" ? null : text, ...extra });
+  opts.ledger.finalize(requestId, { status: "completed", output: OUTPUT_NOT_RETAINED.has(job) ? null : text, ...extra });
   return { ...toResult(opts.ledger.get(requestId)!, false), output: text };
 }

@@ -3,7 +3,7 @@
  * write a short bottom line from facts the rules already computed. Nothing
  * here is stored: the rate limit is an in-memory map, and the ledger the
  * caller passes in is the existing model-quality ledger. */
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   offerDownload,
   type AssistantId, type Business, type Tier, type Uses,
@@ -602,9 +602,11 @@ export interface IntakeClient {
 
 const normalizeExtract = (text: string) => text.normalize("NFKC").replace(/\s+/g, " ").trim().slice(0, 500);
 
-/** Same input (job + normalized text) replays one ledger row. */
+/** A fresh id on every call, so the same note never replays a stored ledger row. */
 export function intakeRequestId(job: ModelJob, input: string): string {
-  return `in.${createHash("sha256").update(job).update("\0").update(input).digest("hex").slice(0, 40)}`;
+  const nonce = randomBytes(8).toString("hex");
+  const body = createHash("sha256").update(nonce).update("\0").update(job).update("\0").update(input).digest("hex").slice(0, 32);
+  return `in.${nonce}.${body}`;
 }
 
 function kindOf(rec: ServiceRecord): ProductKind {
