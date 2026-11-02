@@ -972,10 +972,6 @@ function approvalView(a: ApprovalRow, l: Lang) {
 const OUTCOME: Record<string, [string, string, string]> = { sent: ["sent", "Saadetud", "Sent"], submitted: ["sent", "Esitatud", "Submitted"], accepted: ["accepted", "Vastu võetud", "Accepted"], rejected: ["rejected", "Tagasi lükatud", "Rejected"], paid: ["paid", "Makstud", "Paid"], posted: ["sent", "Kirjendatud", "Posted"], failed: ["rejected", "Ei õnnestunud", "Failed"] };
 const outcomeChip = (o: string, l: Lang, sample: boolean) => { const [k, et, en] = OUTCOME[o] ?? ["drafted", o, o]; const demo = sample && o !== "failed"; return stateChip(k, demo ? tr(l)(`${et}: demo`, `${en}: demo`) : tr(l)(et, en), demo); };
 
-/** Legacy rule decisions used an earlier standing approval, not a new owner decision. */
-const isStandingApproval = (a: ApprovalRow): boolean => !!a.approved_by_rule;
-const STANDING_APPROVAL: [string, string] = ["Sinu varasem püsiluba", "Your earlier standing approval"];
-
 function stateLine(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, sample: boolean): string {
   const t = tr(l), seen = (o: string) => v.history.find((h) => h.outcome === o) ?? (v.outcome?.outcome === o ? v.outcome : undefined);
   const act: [string, string, string] = v.kindKey === "prepare_payment" ? ["paid", "Makstud", "Paid"] : v.kindKey === "prepare_filing" ? ["submitted", "Esitatud", "Submitted"] : v.kindKey === "post_entries" ? ["posted", "Kirjendatud", "Posted"] : ["sent", "Saadetud", "Sent"];
@@ -984,7 +980,7 @@ function stateLine(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, 
     { cls: "done", mark: "✓", text: t("Koostatud", "Drafted"), note: `${t("Assistent", "Your assistant")} · ${fmtWhen(a.created_at, l)}` },
   ];
   const decided = !!a.decided_at && a.state !== "declined";
-  if (a.state !== "consumed" || a.decided_at) steps.push(decided ? { cls: "done", mark: "✓", text: t("Kinnitatud", "Approved"), note: `${isStandingApproval(a) ? t(...STANDING_APPROVAL) : a.owner_confirmation ? t("Sina, assistendis", "You, in your assistant") : t("Sina", "You")} · ${fmtWhen(a.decided_at, l)}` } : { cls: "todo", mark: "", text: t("Kinnitatud: ootab sind", "Approved: waiting for you") });
+  if (a.state !== "consumed" || a.decided_at) steps.push(decided ? { cls: "done", mark: "✓", text: t("Kinnitatud", "Approved"), note: `${a.owner_confirmation ? t("Sina, assistendis", "You, in your assistant") : t("Sina", "You")} · ${fmtWhen(a.decided_at, l)}` } : { cls: "todo", mark: "", text: t("Kinnitatud: ootab sind", "Approved: waiting for you") });
   const done = seen(act[0]), failed = seen("failed");
   if (failed) steps.push({ cls: "stop", mark: "✕", text: t("Ei õnnestunud", "Failed"), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(failed.observed_at, l)}` });
   else if (done) steps.push({ cls: sample ? "demo" : "done", mark: sample ? "–" : "✓", text: sample ? t(`${act[1]}: demo`, `${act[2]}: demo`) : t(act[1], act[2]), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(done.observed_at, l)}${sample ? t(" · päriselt ei saadetud", " · nothing really sent") : ""}` });
@@ -1170,7 +1166,7 @@ ${foot()}
 <h1 class="receipt-head" id="a-h">${head}</h1>
 <p class="why">${[v.recipient.name, v.amount].filter(Boolean).map(esc).join(" · ")}${v.recipient.name || v.amount ? " · " : ""}${esc(v.title)}</p>
 ${a.owner_confirmation ? confirmedInAssistant(a, l) : ""}
-<p class="small"><strong>${a.decided_at ? esc(t(`Sinu kinnitusi selles töös: ${isStandingApproval(a) ? 0 : 1}.`, `Your approvals in this job: ${isStandingApproval(a) ? 0 : 1}.`)) : ok ? t("Assistent tegi ära", "Your assistant did it") : t("Assistent teatas töö tulemuse", "Your assistant reported the outcome")}</strong> ${t("Tulemus on assistendi teade, AI-hüppelaud seda ei kontrollinud.", "This outcome is your assistant’s report, not checked by AI Launchpad.")}</p>
+<p class="small"><strong>${a.decided_at ? esc(t(`Sinu kinnitusi selles töös: ${!a.approved_by_rule ? 1 : 0}.`, `Your approvals in this job: ${!a.approved_by_rule ? 1 : 0}.`)) : ok ? t("Assistent tegi ära", "Your assistant did it") : t("Assistent teatas töö tulemuse", "Your assistant reported the outcome")}</strong> ${t("Tulemus on assistendi teade, AI-hüppelaud seda ei kontrollinud.", "This outcome is your assistant’s report, not checked by AI Launchpad.")}</p>
 ${isDone(a) && opts.handover ? handoverStrip(opts.handover, l) : ""}
 ${stateLine(a, v, l, sample)}
 ${content ? `<details><summary>${a.decided_at ? t("Mida sa kinnitasid", "What you approved") : t("Mida assistent tegi", "What your assistant did")}</summary>${approvalFacts(v, l)}${content}</details>` : ""}
@@ -1756,9 +1752,9 @@ export function tanaBody(o: TanaOpts): string {
     const who = v.recipient.name ? ` · ${esc(v.recipient.name)}` : "";
     if (x.state === "consumed" && v.outcome && ["sent", "paid", "submitted", "accepted", "posted"].includes(v.outcome.outcome)) {
       doneCount++;
-      doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${outcomeChip(v.outcome.outcome, l, o.sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${isStandingApproval(x) ? t(...STANDING_APPROVAL) : x.decided_at ? t("1 sinu kinnitus", "1 approval from you") : t("Assistent tegi ära", "Your assistant did it")} · ${timeEl(v.outcome.observed_at ?? x.consumed_at ?? x.created_at, fmtWhen(v.outcome.observed_at ?? x.consumed_at, l, now))}${v.amount ? ` · ${esc(v.amount)}` : ""}</span></div>`);
+      doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${outcomeChip(v.outcome.outcome, l, o.sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${x.decided_at ? t("1 sinu kinnitus", "1 approval from you") : t("Assistent tegi ära", "Your assistant did it")} · ${timeEl(v.outcome.observed_at ?? x.consumed_at ?? x.created_at, fmtWhen(v.outcome.observed_at ?? x.consumed_at, l, now))}${v.amount ? ` · ${esc(v.amount)}` : ""}</span></div>`);
     } else if (x.state === "approved") {
-      doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${stateChip("approved", t("Pooleli · ootab assistendi teadet", "In progress · waiting for your assistant's report"))}</div><span class="small muted">${isStandingApproval(x) ? t(...STANDING_APPROVAL) : t("Sinu kinnitus", "You approved")} · ${esc(fmtWhen(x.decided_at, l, now))}</span></div>`);
+      doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${stateChip("approved", t("Pooleli · ootab assistendi teadet", "In progress · waiting for your assistant's report"))}</div><span class="small muted">${t("Sinu kinnitus", "You approved")} · ${esc(fmtWhen(x.decided_at, l, now))}</span></div>`);
     }
   }
   // Work on a row the assistant now marks not applicable stays on Tehtud, not Täna.

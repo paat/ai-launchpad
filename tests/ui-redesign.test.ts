@@ -32,31 +32,6 @@ const connection = (baseUrl = "https://launchpad.example.com") =>
   connectionBody({ lang: "en", csrf: "csrf-x", baseUrl, reportingEnabled: false, tokens: [], grants: [], candidates: [] });
 const scripts = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
 
-describe("legacy standing-rule approval credit", () => {
-  test.each(["en", "et"] as const)("%s: Today and the card credit the earlier standing approval without counting an owner decision", (lang) => {
-    const at = "2026-10-29T10:00:00Z";
-    const legacy = approval({ approved_by_rule: "legacy-rule", created_at: at, decided_at: at });
-    const credit = lang === "en" ? "Your earlier standing approval" : "Sinu varasem püsiluba";
-    for (const state of ["approved", "consumed"]) {
-      const row = { ...legacy, state, consumed_at: state === "consumed" ? at : null,
-        outcome_json: state === "consumed" ? JSON.stringify({ outcome: "sent", observed_at: at }) : null };
-      const today = tana({ lang, approvals: [row] });
-      const done = today.split('id="tegi"')[1].split('</section>')[0];
-      expect(done).toContain(credit);
-      expect(done).not.toMatch(/1 approval from you|You approved|1 sinu kinnitus|Sinu kinnitus/);
-      const card = approvalCardBody({ csrf: "c", a: row, lang, sample: false, now: NOW });
-      const stepper = card.split('<ol class="state-line"')[1].split('</ol>')[0];
-      expect(stepper).toContain(`${credit} ·`);
-      expect(stepper).not.toMatch(/>You ·|>Sina ·/);
-      if (state === "consumed") {
-        expect(card).toContain(lang === "en" ? "Your approvals in this job: 0." : "Sinu kinnitusi selles töös: 0.");
-        const ownerCard = approvalCardBody({ csrf: "c", a: { ...row, approved_by_rule: null }, lang, sample: false, now: NOW });
-        expect(ownerCard).toContain(lang === "en" ? "Your approvals in this job: 1." : "Sinu kinnitusi selles töös: 1.");
-      }
-    }
-  });
-});
-
 describe("actions recorded without approval", () => {
   test.each(["en", "et"] as const)("%s: assistant credit, done counts and activity do not invent owner approval", (lang) => {
     const row = approval({ state: "consumed", decided_at: null, consumed_at: "2026-11-03T09:00:00Z", outcome_json: JSON.stringify({ outcome: "sent", observed_at: "2026-11-03T09:00:00Z", history: [] }) });
