@@ -138,7 +138,7 @@ test("„Käest ära” (#61): the pre-filled offer on Ühendus creates the rule
     await expect(ho.locator(".ho-job")).toContainText("Assistent teeb ise");
     await expect(ho.locator(".ho-month")).toContainText("assistent lõpetas 2 tööd, 1 ilma sinuta");
     await page.goto(cfg.baseUrl);
-    await expect(page.locator(".ho-strip")).toContainText("Kontoritöö: Täna ei vaja miski sind");
+    await expect(page.locator(".ho-strip")).toContainText("Kontoritöö: Ükski töö pole kiire");
     await page.goto(`${cfg.baseUrl}/uhenda#kaest-ara`);
     await ho.screenshot({ path: `${SHOTS}/t5-handover-done-390.png` });
   } finally { await client.close(); await new Promise<void>(resolve => server.close(() => resolve())); db.close(); }
