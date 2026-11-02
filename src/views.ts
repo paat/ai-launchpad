@@ -326,6 +326,7 @@ h1,h2,h3,.link-row-title,.receipt-head{overflow-wrap:anywhere}
 .deadline-reason{margin:0;color:var(--c-muted);font-size:.9375rem}
 .deadline-cond{margin:2px 0;font-size:.9375rem}
 .deadline-meta{display:flex;flex-wrap:wrap;align-items:center;gap:0 var(--s-3);margin-top:2px}
+.deadline-meta .tap-link{font-weight:400;color:var(--c-muted)}
 .deadline-row--done .deadline-date{background:var(--lbl-official-bg)}
 .tap-link{display:inline-flex;align-items:center;min-height:var(--tap);font-size:var(--fs-sm);font-weight:650}
 
@@ -1148,7 +1149,7 @@ function handoverRow(j: Job, h: Handover, l: Lang, now: Date, sample: boolean): 
     : j.rung === "other" ? `${esc(t(`Teeb ${j.assessed?.executor}`, `Done by ${fx.plain(j.assessed?.executor ?? "")}`))} ${assessedChip}` : t("Teed praegu ise", "You do it for now");
   const verb = j.kind === "post_entries" ? t("kirjendatud", "posted") : j.ceiling === "law" ? t("esitatud", "filed") : t("saadetud", "sent");
   const lines: string[] = [];
-  if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${C_DAY_MON_YEAR.et.format(civil(j.due))}`, `Was due ${C_DAY_MON_YEAR.en.format(civil(j.due))}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))} ${labelChip("rule", t("Arvutatud reeglist", "Calculated by rules"))}${j.dueSource ? ` ${sourceLink(j.dueSource, l)}` : ""}`);
+  if (j.due) lines.push(`${esc(j.due < tallinnDate(now) ? t(`Tähtaeg oli ${C_DAY_MON_YEAR.et.format(civil(j.due))}`, `Was due ${C_DAY_MON_YEAR.en.format(civil(j.due))}`) : t(`Järgmine tähtaeg ${fmtDeadline(j.due, l)}`, `Next deadline ${fmtDeadline(j.due, l)}`))}${j.dueSource ? ` ${sourceLink(j.dueSource, l)}` : ""}`);
   // The assistant's reason shows on its own rows and on any job whose status its look set, so a green „Korras” always says who said so.
   if ((j.source === "assessment" || j.assessed?.current) && j.rung !== "other" && j.assessed) lines.push(`„${esc(j.assessed.reason)}”${j.assessed.current && h.assessedAt ? esc(t(` · vaadatud ${fmtWhen(h.assessedAt, l, now)}`, ` · checked ${fmtWhen(h.assessedAt, l, now)}`)) : ""} ${assessedChip}`);
   if (e.done) lines.push(`<span class="num">${e.done}</span> ${verb}${e.auto ? t(`, neist <span class="num">${e.auto}</span> ilma sinuta`, `, <span class="num">${e.auto}</span> without you`) : ""}${e.paid ? t(`, <span class="num">${e.paid}</span> makstud`, `, <span class="num">${e.paid}</span> paid`) : ""}${e.last ? ` · ${esc(t("viimati", "last"))} ${esc(fmtWhen(e.last, l, now))}` : ""} ${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}`);
@@ -1675,7 +1676,7 @@ function deadlineRow(o: Obligation, l: Lang, opts: { now: Date; prompts: boolean
   return `<li class="deadline-row">${tile}
 <div><h3 class="deadline-title">${o.kind === "risk" && cond ? t("Võimalik: ", "Possible: ") : ""}${esc(t(o.title_et, o.title_en))} · ${esc(t(o.period_label_et, o.period_label_en))}</h3>
 ${cond ? `<p class="deadline-cond"><strong>${esc(cond)}</strong></p>` : ""}<p class="deadline-reason">${lead ? `<strong>${esc(lead)}</strong> ` : ""}${reason !== cond ? esc(reason) : ""}${esc(shifted)}</p>
-<div class="deadline-meta">${labelChip("rule", t("Arvutatud reeglist", "Calculated by rule"))}${sourceLink(o.source, l)}</div>
+<div class="deadline-meta">${sourceLink(o.source, l)}</div>
 <details><summary>${t("Kes mida teeb", "Who does what")}</summary>${qualify ? `<p class="small"><strong>${qualify.slice(0, -2)}</strong></p>` : ""}<dl class="handoff">${doer}<dt class="me">${t("Sina", "You")}</dt><dd>${esc(t(h.owner_et, h.owner_en))}</dd></dl>
 ${o.rule_id === "vat-return-kmd" ? `<p class="small muted">${t("Summad arvutab sinu raamatupidamisprogramm, mitte tehisaru.", "Your accounting software calculates the amounts, not AI.")}</p>` : ""}
 ${opts.prompts && !other ? `<div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${esc(qualify + t(h.prompt_et, h.prompt_en))}”</p></div>` : ""}</details></div></li>`;
