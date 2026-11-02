@@ -816,7 +816,7 @@ async function renderPlan(flow: Flow, lang: Lang, opts: { ipKey: string; now: nu
         legal_form: looked.company.legal_form, emtak_code: looked.company.emtak_code, emtak_label: looked.company.emtak_label,
       };
       coming = upcoming(looked.facts, opts.now);
-      obligations = coming.map((o) => ({ title_et: o.title_et, title_en: o.title_en, effective_due: o.effective_due }));
+      obligations = coming.map((o) => ({ title_et: o.title_et, title_en: o.title_en, effective_due: o.effective_due, applies: o.applies }));
     };
     // The confirmed company is already in the local cache. Reading it does not call the register and does not count.
     const cached = await opts.register.lookup(flow.code, { cacheOnly: true });
