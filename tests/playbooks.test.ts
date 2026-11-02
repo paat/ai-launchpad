@@ -498,7 +498,7 @@ describe("agent-facing copy over MCP", () => {
     // Claude asked "Do you approve?" and sent through Gmail without Launchpad: the gate leads the tool description and the server instructions.
     const tool = (await c.listTools()).tools.find((x) => x.name === "request_approval")!;
     expect(tool.description!.startsWith(SEND_GATE)).toBe(true);
-    for (const w of ["any e-mail or message", "payment reminder", "the owner's own address", "any tool or connector, Gmail, Outlook", "ask for their approval first", "owner_confirmation set to their words", "Muse's point in one line", "then send or post with your own tool", "then call record_action_outcome"]) expect(SEND_GATE, w).toContain(w);
+    for (const w of ["any e-mail or message", "payment reminder", "the owner's own address", "any tool or connector, Gmail, Outlook", "ask for their approval first", "owner_confirmation set to their words", "Muse's concerns in one line and go on only if they still want it", "if it is running, call get_approval once", "then send or post with your own tool", "then call record_action_outcome"]) expect(SEND_GATE, w).toContain(w);
     expect(c.getInstructions()).toContain(SEND_GATE);
     const started = JSON.parse(((await c.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { approvals_note: string };
     expect(started.approvals_note.startsWith(SEND_GATE)).toBe(true);
