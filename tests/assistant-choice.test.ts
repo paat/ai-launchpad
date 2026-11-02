@@ -93,17 +93,17 @@ test("the Grok chooser topic keeps its dated source and offers no download", asy
 
 test("landing and /uhenda offer connect and /alusta as equal starts", async () => {
   const home = await (await get("/")).text();
-  expect(home).toContain('href="/uhenda">Ühenda oma ChatGPT või Claude');
+  expect(home).toContain('href="/uhenda">Ühenda AI-assistent');
   expect(home).toContain('href="/alusta">Aita mul alustada');
-  expect(home).toContain("Kasutan juba AI-assistenti");
+  expect(home).toContain("Kasutan ChatGPT-d, Claude&#39;i või Grok\u00a0Boti");
   expect(home).toContain("AI-assistenti veel pole või ei tea, mida valida");
   expect(home).not.toContain('href="/vali"');
   const en = await (await get("/?lang=en")).text();
   expect(en).toContain("Help me get started");
-  expect(en).toContain("Connect my ChatGPT or Claude");
+  expect(en).toContain("Connect my AI assistant");
   expect(en).toContain('href="/alusta?lang=en"');
   expect(en).toContain('href="/uhenda?lang=en"');
-  expect(en).toContain("I already use an AI assistant");
+  expect(en).toContain("I use ChatGPT, Claude or Grok\u00a0Bot");
   const uhenda = await (await get("/uhenda")).text();
   expect(uhenda).toContain('href="/alusta"');
   expect(uhenda).toContain("Aita mul alustada");

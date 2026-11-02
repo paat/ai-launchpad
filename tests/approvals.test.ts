@@ -906,3 +906,60 @@ describe("one approval: the owner's yes in their own assistant", () => {
     expect((db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='chat-yes-bad'").get() as { n: number }).n).toBe(0);
   });
 });
+
+describe("whats_waiting_for_me: what the owner's Needs you lists, for a new chat", () => {
+  test("lists a waiting approval, and the owner's yes for its exact action approves that same request", async () => {
+    const o = owner("waiting-list");
+    const c = await client(o.token);
+    const empty = parsed(await c.callTool({ name: "whats_waiting_for_me", arguments: {} }));
+    expect(empty).toMatchObject({ count: 0, approvals_waiting: [], did_not_work: [], questions: [], next_step: null });
+    // Without a registry code the deadline questions are unknown: never an all-clear.
+    expect(empty.registry_code_unknown).toContain("get_obligations");
+    expect(empty.assistant_instruction).toContain("never tell the owner nothing is waiting");
+
+    const waiting = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "wl-1", action: reminder() } }));
+    const list = parsed(await c.callTool({ name: "whats_waiting_for_me", arguments: {} }));
+    expect(list.count).toBe(1);
+    expect(list.approvals_waiting).toEqual([expect.objectContaining({ approval_id: waiting.approval_id, kind: "send_invoice", expires_at: waiting.expires_at })]);
+    expect(list.assistant_instruction).toContain("owner_confirmation");
+    // The page counts the same item and offers the assistant with fixed words only.
+    const page = await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text();
+    expect(page).toContain("Ootab sinult (1)</h2>");
+    const href = page.match(/<div class="handle"><a class="btn" href="([^"]+)"/)?.[1]?.replace(/&amp;/g, "&");
+    expect(href).toBe(`https://claude.ai/new?q=${encodeURIComponent("Vaata AI-hüppelaualt, mis mind ootab, ja aita mul need ükshaaval ära lahendada.")}`);
+
+    // The stored action, sent back with the owner's words, has the same digest: no second card.
+    const yes = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "wl-2", action: list.approvals_waiting[0].action, owner_confirmation: "jah, saada" } }));
+    expect(yes).toMatchObject({ approval_id: waiting.approval_id, state: "approved" });
+    expect(parsed(await c.callTool({ name: "whats_waiting_for_me", arguments: {} })).count).toBe(0);
+    expect(await (await fetch(`${base}/`, { headers: { cookie: o.cookie } })).text()).not.toContain('class="handle"');
+
+    // A failed outcome waits for the owner again.
+    await c.callTool({ name: "record_action_outcome", arguments: { report_id: "wl-3", approval_id: yes.approval_id, digest: yes.digest, outcome: "failed", observed_at: new Date().toISOString() } });
+    const failed = parsed(await c.callTool({ name: "whats_waiting_for_me", arguments: {} }));
+    expect(failed.count).toBe(1);
+    expect(failed.did_not_work).toEqual([expect.objectContaining({ approval_id: yes.approval_id, outcome: expect.objectContaining({ outcome: "failed" }) })]);
+  });
+
+  test("the link opens ChatGPT for an owner who last used it", async () => {
+    const o = owner("waiting-chatgpt");
+    const now = new Date().toISOString();
+    db.prepare("INSERT INTO oauth_clients(id,metadata,expires) VALUES('cl-gpt',?,?)").run(JSON.stringify({ client_name: "ChatGPT" }), Date.now() + 3600_000);
+    db.prepare("INSERT INTO oauth_grants(id,owner_id,epoch,client_id,scopes,resource,expires,redirect,last_used_at) VALUES('gr-gpt','waiting-chatgpt',1,'cl-gpt','progress:read,progress:report',?,?,'https://chatgpt.com/cb',?)").run(`${base}/mcp`, Date.now() + 3600_000, now);
+    const c = await client(o.token);
+    await c.callTool({ name: "request_approval", arguments: { report_id: "wc-1", action: reminder() } });
+    const page = await (await fetch(`${base}/?lang=en`, { headers: { cookie: o.cookie } })).text();
+    expect(page).toContain(`href="https://chatgpt.com/?q=${encodeURIComponent("Check AI Launchpad for what is waiting for me and help me sort it out, one at a time.")}"`);
+    expect(page).toContain("Handle it in ChatGPT");
+  });
+
+  test("approvals are read under the same gate as get_approval; no progress:read reads nothing", async () => {
+    const off = owner("waiting-off", "progress:read,progress:report", 0);
+    const r = parsed(await (await client(off.token)).callTool({ name: "whats_waiting_for_me", arguments: {} }));
+    expect(r.approvals_unavailable).toContain("Approvals were not read");
+    expect(r.count).toBe(0);
+    expect(r.assistant_instruction).toContain("never tell the owner nothing is waiting");
+    const reportOnly = owner("waiting-report-only", "progress:report");
+    expect(errText(await (await client(reportOnly.token)).callTool({ name: "whats_waiting_for_me", arguments: {} }))).toContain("progress:read");
+  });
+});

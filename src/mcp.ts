@@ -187,6 +187,28 @@ export interface ApprovalRow { id: string; kind: string | null; report_id: strin
 export function expireApprovals(db: Db, ownerId: string) {
   db.prepare("UPDATE approvals SET state='expired' WHERE owner_id=? AND state IN ('pending','approved') AND expires_at<=?").run(ownerId, nowIso());
 }
+/** Every pending approval (request_approval caps them at 20), then the recent approved/consumed slice,
+ *  then older failed or rejected outcomes (bounded) so they stay waiting for the owner. */
+export function ownerApprovals(db: Db, ownerId: string): ApprovalRow[] {
+  expireApprovals(db, ownerId);
+  return [...new Map(([
+    ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state='pending' ORDER BY created_at DESC LIMIT 20").all(ownerId),
+    ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state IN ('approved','consumed') ORDER BY created_at DESC LIMIT 50").all(ownerId),
+    ...db.prepare("SELECT * FROM approvals WHERE owner_id=? AND state='consumed' AND json_extract(outcome_json,'$.outcome') IN ('failed','rejected') ORDER BY created_at DESC LIMIT 20").all(ownerId),
+  ] as ApprovalRow[]).map((a) => [a.id, a])).values()];
+}
+const outcomeOf = (a: ApprovalRow): string | null => { try { return a.outcome_json ? (JSON.parse(a.outcome_json) as { outcome?: string }).outcome ?? null : null; } catch { return null; } };
+/** Which rule a missing fact can change: a question is asked only when it can change a listed row. */
+const FACT_RULE: Record<string, string> = { vat_registered: "vat-return-kmd", payouts_last_month: "tsd-monthly-return", other_tsd_triggers_last_month: "tsd-monthly-return", fy_end: "annual-report", annual_report: "annual-report", ytd_turnover_this_year: "vat-registration-threshold" };
+/** What waits for the owner: Täna's „Ootab sinult” and whats_waiting_for_me list the same items. */
+export function openItems(approvals: ApprovalRow[], deadlines: { obligations: Obligation[]; facts_needed: FactNeeded[] } | null, assessment: Assessment | null) {
+  const pending = approvals.filter((x) => x.state === "pending");
+  // A failed or rejected outcome is not done work: it needs the owner.
+  const failed = approvals.filter((x) => x.state === "consumed" && ["failed", "rejected"].includes(outcomeOf(x) ?? ""));
+  const questions = !deadlines ? [] : deadlines.facts_needed.filter((f) => deadlines.obligations.some((o) => o.rule_id.startsWith(FACT_RULE[f.fact] ?? "\u0000") && (!f.period_label_et || o.period_label_et === f.period_label_et)));
+  const next = assessment?.next_action.needs_owner ? assessment.next_action : null;
+  return { pending, failed, questions, next, count: pending.length + failed.length + questions.length + (next ? 1 : 0) };
+}
 const APPROVED_NOW = "The owner approved this exact content, so it is approved now. Do not ask them to approve it again on Launchpad: act with your own tools using exactly this content, then call record_action_outcome with this digest before expires_at.";
 const ADDRESS_MISSING = "Address missing: request a new approval that includes the recipient address";
 /** A stored send approval without a usable address (a legacy row) can never be approved or acted on. */
@@ -424,7 +446,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     logActivity(db, ctx.ownerId, "assistant", "get_started", "ok", "Assistant fetched getting-started guidance.");
     const first_step = started.first_step;
     const shared = { framework: FRAMEWORK, playbooks: PLAYBOOKS,
-      tools: ["get_obligations", "connect_my_services", "check_my_books", "record_statement_read", "remember_business_facts", "check_my_customers", "get_progress", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "request_approval", "get_approval", "record_action_outcome", "report_unmet_need"],
+      tools: ["get_obligations", "connect_my_services", "check_my_books", "record_statement_read", "remember_business_facts", "check_my_customers", "get_progress", "whats_waiting_for_me", "report_assessment", "report_progress", "search_services", "submit_service_candidate", "request_approval", "get_approval", "record_action_outcome", "report_unmet_need"],
       note: "Progress sharing is off until the owner grants it once on the Connection page. Launchpad stores concise task updates and assessments; private service nominations; the exact text of each approval request until the owner deletes their progress; the de-identified text of unmet needs; and, for each bank statement the assistant read, the bank, the account's last four digits, the period and the closing balance. It stores no conversations. Reporting never approves business actions.",
       approvals_note: `${SEND_GATE} With owner_confirmation it is approved at once, so act without asking them to approve again anywhere else. Act only when the approval is approved (and usable is not false). A standing approval the owner set covers sends made while they are not in a chat with you (for example a scheduled run, never a customer follow-up): then call request_approval without owner_confirmation; if the reply is not auto_approved, send nothing and the owner decides on Launchpad. When you follow a playbook, pass its id as playbook_id so the owner sees which job the approval belongs to. Launchpad never sends, pays or files.`,
       catalog_note: "search_services is a public research catalogue available to any authenticated connection; it never contains owner data." };
@@ -631,6 +653,30 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     return json({ approval_id: a.id, state: a.state, check: approvalCheckReceipt(a), assistant_instruction: approvalCheckInstruction(a), ...unusable, ...auto, digest: a.digest, action: JSON.parse(a.payload_json), playbook_id: a.playbook_id ?? null, created_at: a.created_at, decided_at: a.decided_at, expires_at: a.expires_at, outcome: a.outcome_json ? JSON.parse(a.outcome_json) : null });
   });
 
+  server.registerTool("whats_waiting_for_me", { description: "Use when the owner asks what needs them, what is waiting or open, what they still have to answer or approve, or to pick up where you left off (\"mis mind ootab\", \"mis on lahtine\"). Lists exactly what the owner's Launchpad page shows under Needs you: approvals waiting for them, jobs that did not work, the questions only they can answer, and the next step. Returns the order to handle them in. Read-only.", inputSchema: {}, annotations: { readOnlyHint: true, openWorldHint: true } }, async () => {
+    if (!need("progress:read")) return err("Missing scope progress:read. Nothing was read.");
+    const st = getState(db, ctx.ownerId);
+    const ref = st.assessment?.company_registry_ref?.trim();
+    const code = ref && /^\d{8}$/.test(ref) ? ref : null;
+    const r = code ? await companyObligations(ar, { registryCode: code, months: 2 }) : null;
+    // Approvals are read under the same gate as get_approval.
+    const gate = sharingGate("Approvals were not read.");
+    const items = openItems(gate ? [] : ownerApprovals(db, ctx.ownerId), r?.ok && !r.result.company.unavailable ? r.result : null, st.assessment);
+    const deadlinesGap = !code ? "Deadlines and their questions need the company's registry code: call get_obligations." : r && (!r.ok || r.result.company.unavailable) ? "The register lookup failed, so deadline questions are missing: call get_obligations." : null;
+    logActivity(db, ctx.ownerId, "assistant", "whats_waiting_for_me", "ok", `Assistant read what waits for the owner: ${items.count} item(s).`);
+    return json({
+      count: items.count,
+      approvals_waiting: items.pending.map((a) => ({ approval_id: a.id, kind: a.kind, action: JSON.parse(a.payload_json), playbook_id: a.playbook_id ?? null, created_at: a.created_at, expires_at: a.expires_at })),
+      did_not_work: items.failed.map((a) => ({ approval_id: a.id, kind: a.kind, action: JSON.parse(a.payload_json), outcome: a.outcome_json ? JSON.parse(a.outcome_json) : null })),
+      questions: items.questions,
+      next_step: items.next && { title: items.next.title, rationale: items.next.rationale },
+      ...(gate ? { approvals_unavailable: gate } : {}),
+      ...(deadlinesGap ? { [code ? "deadlines_unavailable" : "registry_code_unknown"]: deadlinesGap } : {}),
+      // An empty list is an all-clear only when every source was read.
+      assistant_instruction: items.count === 0 && !gate && !deadlinesGap ? "Tell the owner in one line that nothing is waiting for them." : items.count === 0 ? "Nothing is listed, but not everything could be checked (see approvals_unavailable, deadlines_unavailable or registry_code_unknown): never tell the owner nothing is waiting. Say in one line what could not be checked and do what that field says." : "Tell the owner in one line how many things wait for them, then handle them one at a time in this order, one question per message. approvals_waiting: show the exact action (recipient, amount, text) and ask once; when they say yes, call request_approval with the same action, a new report_id and owner_confirmation set to their words; that approves the waiting request. Then act under it as request_approval says. did_not_work: say in one line what did not work and offer to try again; trying again needs a new approval. questions: before a TSD question, look in the connected books and bank as get_obligations says; ask the rest with the answer left open, then call get_obligations with the answer as a fact. next_step: offer to do it. Never act before an approval is approved.",
+    });
+  });
+
   server.registerTool("record_action_outcome", { description: "Record what happened after you acted on an approved action with your own tools. Requires the approval's exact digest; a changed payload needs a new approval. The first outcome must be recorded before expires_at, must fit the kind (send_message/send_invoice: sent or failed; prepare_payment: paid or failed; prepare_filing: submitted or failed; post_entries: posted or failed) and consumes the approval (one use); later outcomes, also after expiry, may only advance it (sent → accepted/rejected/paid, submitted → accepted/rejected). Outcomes are labelled assistant_reported, never verified. Idempotent by report_id.", inputSchema: { report_id: s(80), approval_id: s(80), digest: s(64), outcome: z.enum(["sent", "submitted", "accepted", "rejected", "paid", "posted", "failed"]), observed_at: s(40), evidence_refs: evidenceRefs.optional() } }, async (args) => {
     const gate = sharingGate("Nothing was recorded."); if (gate) return err(gate);
     const result = recordActionOutcome(db, ctx.ownerId, args);
@@ -655,7 +701,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
  * fields before dispatch (the SDK strips unknown keys instead of rejecting). */
 export const TOOL_ARG_KEYS: Record<string, string[]> = {
   get_started: [], connect_my_services: [], check_my_books: [], remember_business_facts: [],
-  record_statement_read: ["bank", "last4", "period_from", "period_to", "closing_balance_cents", "books_balance_cents"], check_my_customers: [], get_progress: [],
+  record_statement_read: ["bank", "last4", "period_from", "period_to", "closing_balance_cents", "books_balance_cents"], check_my_customers: [], get_progress: [], whats_waiting_for_me: [],
   get_obligations: ["registry_code", "facts", "months"],
   report_assessment: ["report_id", "expected_version", "assessment"],
   report_progress: ["report_id", "task_id", "expected_version", "observed_at", "milestone", "evidence_refs"],

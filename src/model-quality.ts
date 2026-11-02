@@ -51,9 +51,11 @@ export const JOB_MAX_OUTPUT_TOKENS: Record<ModelJob, number> = {
   // job name, and that version is the ledger-wide identity pin: changing it
   // refuses every existing ledger and breaks replay of saved cards. No prior
   // row exists for these jobs, and their instructions are not the old ones.
-  intake_extract: 256,
-  intake_plan: 400,
-  check_approval: 1024,
+  intake_extract: 2048,
+  // Reasoning counts against max_tokens. 2048 truncated live /alusta plans (issue #165).
+  intake_plan: MAX_OUTPUT_TOKENS,
+  // Muse reasons before answering; 1,024 truncated the first live check.
+  check_approval: MAX_OUTPUT_TOKENS,
 };
 // Approval JSON includes up to 4,000 document characters plus bounded fields.
 // Allow worst-case JSON escaping; intake and the original jobs keep the
@@ -81,11 +83,11 @@ export const ABSOLUTE_CAP_MICRO_USD = 100_000_000;
 // unchanged, and a lower requested cap is still refused.
 const LEGACY_CAP_MICRO_USD = 10_000_000;
 const LEGACY_CAP_RAISED_ON = "2026-11-01";
-// Backstop only. 10,000 is the all-time attempt limit. The cheapest
-// reservation in this repo (intake_extract, one character) is 8,896
-// micro-USD, and 10,000 × that is 88,960,000 — still under the USD 100
-// ceiling — so this backstop can still bind first for that call.
-// Every other job's one-character reservation × 10,000 exceeds USD 100.
+// Backstop only. 10,000 is the all-time attempt limit. A one-character
+// intake_extract reservation is 24,128 micro-USD, and 10,000 × that is
+// 241,280,000 — over the USD 100 ceiling. Every job's one-character
+// reservation × 10,000 exceeds USD 100, so the dollar ceiling binds first
+// for every job.
 export const ABSOLUTE_MAX_ATTEMPTS = 10_000;
 
 export type AttemptStatus =

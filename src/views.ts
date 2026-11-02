@@ -1,7 +1,7 @@
 import type { Assessment, ConnectionKind, Coverage } from "./core.js";
 import { isHandled } from "./core.js";
 import { isDone, offerCapCents, type ConnectionState, type Handover, type Job, type Status } from "./handover.js";
-import { approvalAddressMissing, normAddress, standingRecipients, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type AssistantMilestones, type Exclusion, type StandingRule } from "./mcp.js";
+import { approvalAddressMissing, normAddress, openItems, standingRecipients, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, type ApprovalRow, type AssistantMilestones, type Exclusion, type StandingRule } from "./mcp.js";
 import type { CompanyCard } from "./arikratt.js";
 import { ET_OF, SRC, tallinnDate, type FactNeeded, type Obligation, type Source } from "./obligations.js";
 import { BASETEN_MODEL } from "./model-quality.js";
@@ -258,6 +258,7 @@ pre.doc{max-height:55vh;overflow:auto;font-size:.9rem}
 dl.facts{margin:8px 0}dl.facts dt{font-size:var(--fs-sm);color:var(--c-muted);margin-top:8px}dl.facts dd{margin:0;font-weight:650;overflow-wrap:anywhere}
 .endpoint{background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:var(--r-md);padding:12px;margin:8px 0;font-size:var(--fs-sm)}
 .endpoint code{font-weight:650}
+.handle{margin:8px 0 16px}.handle .small{margin:8px 0 0}
 .quote{background:var(--c-surface-2);border:1px solid var(--c-divider);border-radius:var(--r-md);padding:4px 12px;margin:8px 0}
 .notice{background:var(--c-att-bg);border:1px solid var(--c-att-bd);border-radius:var(--r-md);padding:12px 14px;margin:10px 0}
 .notice p{margin:4px 0}
@@ -1224,6 +1225,7 @@ function approvalCheckBlock(a: ApprovalRow, l: Lang): string {
     timeout: ["teenus ei vastanud õigel ajal", "the provider did not answer in time"],
     provider_failed: ["mudeliteenus ei vastanud", "the model service did not answer"],
     invalid_output: ["vastus ei olnud loetav", "the answer was unreadable"],
+    truncated: ["vastus jäi pooleli", "the answer was cut off"],
     attempt_in_flight: ["teine kontroll on pooleli", "another check is in progress"],
     interrupted: ["kontroll katkes", "the check was interrupted"],
     not_checked: ["seda kinnitust pole kontrollitud", "this approval has not been checked"],
@@ -1683,11 +1685,9 @@ export function deadlinesList(r: DeadlinesView, l: Lang, opts: { now?: Date; pro
   return `<ul class="deadlines">${r.obligations.map((o) => deadlineRow(o, l, { now, prompts: !!opts.prompts, others: opts.others })).join("")}</ul>`;
 }
 
-/** Which rule a missing fact can change: a question is shown only when it can change a row on screen. */
-const FACT_RULE: Record<string, string> = { vat_registered: "vat-return-kmd", payouts_last_month: "tsd-monthly-return", other_tsd_triggers_last_month: "tsd-monthly-return", fy_end: "annual-report", annual_report: "annual-report", ytd_turnover_this_year: "vat-registration-threshold" };
-function questions(r: DeadlinesView, l: Lang): { q: string; then: string }[] {
+function questions(r: DeadlinesView, asked: FactNeeded[], l: Lang): { q: string; then: string }[] {
   const t = tr(l);
-  return r.facts_needed.filter((f) => r.obligations.some((o) => o.rule_id.startsWith(FACT_RULE[f.fact] ?? "\u0000") && (!f.period_label_et || o.period_label_et === f.period_label_et))).map((f) => {
+  return asked.map((f) => {
     // The TSD row for the same payout period; it goes away only when payouts and other triggers are both "no".
     const tsd = f.period_label_et ? r.obligations.find((o) => o.rule_id === "tsd-monthly-return" && o.period_label_et === f.period_label_et && o.effective_due) : undefined;
     const d = tsd?.effective_due ? civil(tsd.effective_due) : null;
@@ -1713,7 +1713,7 @@ function startChoices(l: Lang): string {
   const t = tr(l);
   const q = l === "en" ? "?lang=en" : "";
   const choice = (href: string, label: string, hint: string) => `<div class="landing-choice"><a class="btn" href="${href}">${label}</a><p class="small">${esc(hint)}</p></div>`;
-  return `<div class="landing-choices">${choice(`/uhenda${q}`, t("Ühenda oma ChatGPT või Claude", "Connect my ChatGPT or Claude"), t("Kasutan juba AI-assistenti", "I already use an AI assistant"))}${choice(`/alusta${q}`, t("Aita mul alustada", "Help me get started"), t("AI-assistenti veel pole või ei tea, mida valida", "No AI assistant yet, or not sure which"))}</div>`;
+  return `<div class="landing-choices">${choice(`/uhenda${q}`, t("Ühenda AI-assistent", "Connect my AI assistant"), t("Kasutan ChatGPT-d, Claude'i või Grok\u00a0Boti", "I use ChatGPT, Claude or Grok\u00a0Bot"))}${choice(`/alusta${q}`, t("Aita mul alustada", "Help me get started"), t("AI-assistenti veel pole või ei tea, mida valida", "No AI assistant yet, or not sure which"))}</div>`;
 }
 
 /** Public /alusta. Bubbles and the question are escaped here. main and after are already escaped by the caller. */
@@ -1857,10 +1857,21 @@ export interface TanaOpts {
   rules?: StandingRule[];
   /** „Käest ära” (#61): the strip under the pills. */
   handover?: Handover;
+  /** The assistant the owner last used, for the „Lahenda …” link; Claude when unknown. */
+  assistant?: "chatgpt" | "claude";
   now?: Date;
 }
 /** The register lookup is unavailable: ask the assistant instead, with the plain reason. */
 export const deadlinesHint = (l: Lang, reason: string, reasonLang: Lang = "en") => `<p class="small">${tr(l)("Tähtajad: küsi oma assistendilt „Mis on minu tähtajad?”", "Deadlines: ask your assistant \"What are my deadlines?\"")} <span class="muted"${reasonLang !== l ? ` lang="${reasonLang}"` : ""}>${esc(reason)}</span></p>`;
+/** Opens Claude or ChatGPT with the words typed in, not sent. The host is fixed. */
+export const assistantPrefillUrl = (assistant: "chatgpt" | "claude", prompt: string) => `${assistant === "chatgpt" ? "https://chatgpt.com/?q=" : "https://claude.ai/new?q="}${encodeURIComponent(prompt)}`;
+/** Fixed words only: a link lands in browser history, so it never carries a question, amount or name. */
+const HANDLE_PROMPT: [string, string] = ["Vaata AI-hüppelaualt, mis mind ootab, ja aita mul need ükshaaval ära lahendada.", "Check AI Launchpad for what is waiting for me and help me sort it out, one at a time."];
+function handleInAssistant(l: Lang, assistant: "chatgpt" | "claude"): string {
+  const t = tr(l), prompt = t(...HANDLE_PROMPT);
+  return `<div class="handle"><a class="btn" href="${esc(assistantPrefillUrl(assistant, prompt))}" target="_blank" rel="noopener">${assistant === "chatgpt" ? t("Lahenda ChatGPT-ga", "Handle it in ChatGPT") : t("Lahenda Claude'iga", "Handle it in Claude")}</a>
+<p class="small"><span class="muted">${t("Või ütle oma assistendile:", "Or tell your assistant:")}</span> „${esc(prompt)}”</p></div>`;
+}
 const TRY_PROMPT: [string, string] = ["Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?", "What admin do I have this month, and what can you do yourself?"];
 /** English Täna on a sample workspace (#63 m13): the fixture labels we wrote show in English (plain);
  * the rest of the assistant's text stays as written and is marked Estonian (html). */
@@ -1873,13 +1884,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export function tanaBody(o: TanaOpts): string {
   const l = o.lang, t = tr(l), now = o.now ?? new Date(), a = o.assessment, fx = fixtureText(l, o.sample);
   const deadlines = o.deadlines && typeof o.deadlines === "object" && "obligations" in o.deadlines ? o.deadlines : null;
-  const pending = o.approvals.filter((x) => x.state === "pending");
-  // A failed or rejected outcome is not done work: it needs the owner.
-  const failed = o.approvals.filter((x) => x.state === "consumed" && ["failed", "rejected"].includes(approvalView(x, l).outcome?.outcome ?? ""));
-  const qs = deadlines ? questions(deadlines, l) : [];
-  const next = a?.next_action.needs_owner ? a.next_action : null;
+  const { pending, failed, questions: asked, next, count: n } = openItems(o.approvals, deadlines, a);
+  const qs = deadlines ? questions(deadlines, asked, l) : [];
   const optional = o.needs.filter((n) => n.state === "classified");
-  const n = pending.length + failed.length + qs.length + (next ? 1 : 0);
 
   // Ootab sinult
   const askRows = [
@@ -1967,6 +1974,7 @@ ${primary}
 </section>
 <div class="tana-grid"><div class="col">
 <section class="section" id="ootab" aria-labelledby="ootab-h"><h2 id="ootab-h">${t("Ootab sinult", "Needs you")} (${n})</h2>
+${n && !o.sample ? handleInAssistant(l, o.assistant ?? "claude") : ""}
 ${askRows.join("") || `<p class="muted">${t("Praegu ei oota sinult midagi.", "Nothing is waiting for you right now.")}</p>`}</section>
 <section class="section timeline" id="tegi" aria-labelledby="tegi-h"><h2 id="tegi-h">${t("Assistent tegi", "Done for you")} (${doneCount})</h2>
 ${doneRows.join("") || `<p class="muted">${t(`Veel pole midagi tehtud. Proovi assistendile öelda: „${TRY_PROMPT[0]}”`, `Nothing done yet. Try telling your assistant: “${TRY_PROMPT[1]}”`)}</p>`}
