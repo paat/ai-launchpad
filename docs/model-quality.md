@@ -124,10 +124,9 @@ model. Rules:
   `ceiling_raised_on=2026-11-01`. Any other existing ceiling still cannot
   be changed, and a ceiling cannot be lowered. A backstop of at most
   10,000 distinct attempts also applies (5 until 2026-10-29, then 1,000).
-  For every job except a one-character `intake_extract` (reservation
-  $0.008896; 10,000 × that is $88.96), 10,000 × a one-character reservation
-  exceeds $100, so the dollar ceiling binds first. The cheapest call can
-  still hit the attempt backstop first. The operator may create a ledger with a
+  A one-character `intake_extract` reserves $0.024128; 10,000 × that is
+  $241.28. Every job's 10,000 × one-character reservation exceeds $100,
+  so the dollar ceiling binds first for every job. The operator may create a ledger with a
   lower ceiling (including $0) but cannot raise it above $100 except for
   that one-time $10 → $100 raise.
 - No evasion: there is no daily reset, no deletion/reset flow, and no
