@@ -16,7 +16,8 @@ describe("Claude plugin", () => {
     const m = JSON.parse(read(".claude-plugin/plugin.json"));
     expect(m).toMatchObject({ name: "ai-launchpad", version: "0.2.0", license: "MIT" });
     expect(m.description).not.toMatch(/without your approval/i);
-    expect(m.description).toContain("checks each one in a separate review first");
+    expect(m.description).toContain("A separate review runs where the assistant supports it (Claude)");
+    expect(m.description).toContain("the ask-first rules apply everywhere");
     expect(JSON.parse(read(".mcp.json")).mcpServers["ai-launchpad"]).toEqual({ type: "http", url: "https://huppelaud.arikratt.ee/mcp" });
     const market = JSON.parse(readFileSync(join(import.meta.dirname, "..", ".claude-plugin", "marketplace.json"), "utf8"));
     expect(market.plugins).toEqual([expect.objectContaining({ name: m.name, source: "./plugin/ai-launchpad" })]);
