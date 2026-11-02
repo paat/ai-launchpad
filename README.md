@@ -12,6 +12,20 @@ Eesmärk: tehisaru-agendid võtavad väikeettevõtja ja tema töötajate õlult 
 
 > **Status:** owner-only HTTPS pilot at https://huppelaud.arikratt.ee. One owner ChatGPT plus Meta/Baseten path tested; Claude tested once on the Free plan with synthetic data (30 Oct 2026), so this is not broad compatibility or production ready. See [docs/live-pilot.md](docs/live-pilot.md) for dated evidence, cost, and recovery limits. Local demo and tests remain mock ($0); see [docs/local-demo.md](docs/local-demo.md).
 
+## For hackathon judges
+
+- **Built during the event:** all product code in this repository was written during the Meta Global AI Developer Hackathon (27 Oct – 4 Nov 2026; first commit 27 Oct). Third-party libraries and services are used through their public interfaces. The one service of the author's that existed before the event is the [Ärikratt MCP](https://arikratt.ee/mcp), a public Estonian company-data service used as an external dependency.
+- **Meta's models:** Muse Spark Open (`meta-models/muse-spark-open-1026`) via Baseten; see [Where Meta's models fit](#where-metas-models-fit). No other AI model is called at runtime. Live calls run on the hosted pilot (`/health` shows `live_inference: enabled`).
+- **Try it without an account or keys:** https://huppelaud.arikratt.ee/naidis?lang=en (walkthrough) and https://huppelaud.arikratt.ee/proovi?lang=en (your own sample workspace, nothing really sent). Guide: [docs/demo/judge-guide.md](docs/demo/judge-guide.md).
+- **Run it locally** (Node 22.12+, macOS or Linux shell, synthetic data, no paid calls):
+
+  ```bash
+  npm ci
+  npm run dev   # http://localhost:3000
+  ```
+
+  The local run uses `MODEL_MODE=test`: model outputs are saved fixtures labelled as not a live model, and no Meta call is made. Keys come from environment variables; [.env.example](.env.example) lists them with placeholders. Live Muse calls with your own `BASETEN_API_KEY` need the guarded operator mode `MODEL_MODE=public_cards`, which also requires `LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS`, `LAUNCHPAD_MODEL_PRICING_CONFIRMED=1` and an existing `LAUNCHPAD_MODEL_LEDGER_PATH`; see [docs/model-quality.md](docs/model-quality.md). `ARIKRATT_API_KEY` enables live register lookups. More in [docs/local-demo.md](docs/local-demo.md).
+
 ## The problem
 
 - An Estonian micro-entrepreneur carries the whole back office: payroll and VAT filings, the annual report, invoices, bookkeeping, contracts, permits and sector rules. The [research](docs/research/README.md) maps **354 such jobs**.
