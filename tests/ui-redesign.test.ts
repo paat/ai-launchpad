@@ -33,6 +33,29 @@ const connection = (baseUrl = "https://launchpad.example.com") =>
 const scripts = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
 
 describe("actions recorded without approval", () => {
+  test.each(["en", "et"] as const)("%s: payment and filing credit the owner; sends and postings credit the assistant", (lang) => {
+    for (const [kind, outcome, et, en] of [
+      ["prepare_payment", "paid", "Maksid ise — assistent teatas", "You paid — reported by your assistant"],
+      ["prepare_filing", "submitted", "Esitasid ise — assistent teatas", "You filed — reported by your assistant"],
+      ["prepare_filing", "accepted", "Esitasid ise — assistent teatas", "You filed — reported by your assistant"],
+      ["send_message", "sent", "Assistent tegi ära", "Your assistant did it"],
+      ["send_invoice", "sent", "Assistent tegi ära", "Your assistant did it"],
+      ["send_invoice", "paid", "Assistent tegi ära", "Your assistant did it"],
+      ["post_entries", "posted", "Assistent tegi ära", "Your assistant did it"],
+    ]) {
+      const row = approval({ kind, payload_json: JSON.stringify({ ...JSON.parse(approval().payload_json), kind }), state: "consumed", decided_at: null, consumed_at: NOW.toISOString(), outcome_json: JSON.stringify({ outcome, observed_at: NOW.toISOString() }) });
+      const pages = [
+        tana({ lang, approvals: [row] }),
+        activityBody({ rows: [{ action: "record_action_outcome", actor: "assistant", outcome: "ok", created_at: row.consumed_at!, summary: `Outcome ${outcome} for action ${row.id}.` }], receipts: [], exclusions: [], approvals: [row], lang, now: NOW }),
+        approvalCardBody({ csrf: "c", a: row, lang, sample: false, now: NOW }),
+      ];
+      for (const page of pages) {
+        expect(page).toContain(lang === "en" ? en : et);
+        expect(page).not.toMatch(/1 approval from you|1 sinu kinnitus/);
+        if (kind.startsWith("prepare_")) expect(page).not.toMatch(/Your assistant did it|Assistent tegi ära/);
+      }
+    }
+  });
   test.each(["en", "et"] as const)("%s: assistant credit, done counts and activity do not invent owner approval", (lang) => {
     const row = approval({ state: "consumed", decided_at: null, consumed_at: "2026-11-03T09:00:00Z", outcome_json: JSON.stringify({ outcome: "sent", observed_at: "2026-11-03T09:00:00Z", history: [] }) });
     const credit = lang === "en" ? "Your assistant did it" : "Assistent tegi ära";

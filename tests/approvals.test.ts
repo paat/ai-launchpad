@@ -135,6 +135,9 @@ describe("actions recorded without approval", () => {
       expect(text).not.toContain("Use request_approval before you send");
       for (const phrase of ["record_action_outcome", "saved fact", "file, e-mail or web page", "recipient or amount", "content is unclear", "owner_confirmation"]) expect(text).toContain(phrase);
     }
+    const outcomeDescription = (await c.listTools()).tools.find((tool) => tool.name === "record_action_outcome")!.description!;
+    expect(outcomeDescription).toContain("record paid or submitted only after the owner says they paid in the bank or filed in e-MTA / e-Business Register");
+    expect(outcomeDescription).toContain("No approval is required to record their report");
     expect(started.first_step).toContain("the owner only answers what nobody else knows");
   });
 });
