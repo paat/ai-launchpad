@@ -518,7 +518,7 @@ describe("get_obligations tool and status card", () => {
     expect(openItems([], r.result, linked).fromBooks.map((n) => n.fact)).toEqual(["ytd_turnover_this_year"]);
     // Without books only the owner knows it, so it still waits for them.
     expect(facts(null)).toContain("ytd_turnover_this_year");
-    expect(facts({ ...linked, connections: [{ kind: "accounting", state: "not_linked" }] })).toContain("ytd_turnover_this_year");
+    for (const state of ["file", "not_linked"] as const) expect(facts({ ...linked, connections: [{ kind: "accounting", state }] })).toContain("ytd_turnover_this_year");
   });
   test("not_configured: rules still compute, facts_needed asks, no network call", async () => {
     const spy = vi.spyOn(globalThis, "fetch");

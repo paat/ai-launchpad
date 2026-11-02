@@ -169,7 +169,7 @@ export function openItems(approvals: ApprovalRow[], deadlines: { obligations: Ob
   // A failed or rejected outcome is not done work: it needs the owner.
   const failed = approvals.filter((x) => x.state === "consumed" && ["failed", "rejected"].includes(outcomeOf(x) ?? ""));
   // With books connected the assistant reads this year's turnover from them (get_obligations), so it does not wait for the owner.
-  const books = assessment?.connections?.some((c) => c.kind === "accounting" && c.state !== "not_linked");
+  const books = assessment?.connections?.some((c) => c.kind === "accounting" && c.state === "linked");
   const asked = !deadlines ? [] : deadlines.facts_needed.filter((f) => deadlines.obligations.some((o) => o.rule_id.startsWith(FACT_RULE[f.fact] ?? "\u0000") && (!f.period_label_et || o.period_label_et === f.period_label_et)));
   const fromBooks = asked.filter((f) => books && f.fact === "ytd_turnover_this_year");
   const questions = asked.filter((f) => !fromBooks.includes(f));
