@@ -68,14 +68,14 @@ describe("#63 m13: English Täna on a sample workspace", () => {
   const kase = computeObligations(SYNTHETIC_COMPANIES["19990002"].facts, { today: NOW, months: 2 });
   const en = (a = alpha, over: Partial<TanaOpts> = {}) => tana({ lang: "en", assessment: a, coverage: computeCoverage(a), handover: computeHandover({ assessment: a, obligations: (a === alpha ? mari : kase).obligations, approvals: [], now: NOW }), deadlines: a === alpha ? mariDeadlines : { ...mariDeadlines, company: { ...mariDeadlines.company, name: "Kase Konsult OÜ", registry_code: "19990002" }, obligations: kase.obligations, facts_needed: kase.facts_needed }, ...over });
   const strip = (html: string) => html.replace(/<span lang="et">[^<]*<\/span>/g, "");
-  test("the fixture's labels show in English; its free text stays as written, marked lang=\"et\"", () => {
+  test("the fixture's labels and reminder rationale show in English; other free text stays as written, marked lang=\"et\"", () => {
     const a = en(alpha, { progress: [{ task_id: "vat-prep", milestone: "draft_prepared", observed_at: "2026-11-03T09:15:00Z" }] }), b = en(beta);
     expect(a).toContain('<p class="company">Mari Disain OÜ (sample)</p>');
     expect(a).toContain("Prepared: VAT return (KMD)");
     expect(a).toContain("Also handled by the accountant: VAT return (KMD)");
     expect(a).toContain("Next step: Let your assistant draft reminders for unpaid invoices");
     expect(a).toContain("<dt>The accountant</dt>");
-    expect(a).toContain('<span lang="et">Assistent jälgib tasumata arveid, saadab meeldetuletused ja salvestab tulemused.</span>');
+    expect(a).toContain("Your assistant sends reminders and records the outcomes.");
     expect(a).toContain('<span lang="et">Omaniku põhitöö; see jääb talle. (Näidis.)</span>');
     expect(b).toContain("Next step: Restore the accounting connection");
     expect(b).toContain("Also handled by the accountant: Payroll and TSD data");
