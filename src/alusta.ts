@@ -330,33 +330,16 @@ function summaryLine(company: CompanyCard): string {
   return [company.name, company.legal_form, company.emtak_label].filter((v): v is string => !!v && v.trim() !== "").join(" · ").slice(0, 500);
 }
 
-function annualText(facts: CompanyFacts, lang: Lang): string {
-  const t = tr(lang);
-  const ar = facts.annual_report?.value;
-  if (!ar || ar.latest_year == null) return t("teadmata", "unknown");
-  const filed = ar.filed === true ? t("esitatud", "filed") : ar.filed === false ? t("esitamata", "not filed") : t("staatus teadmata", "status unknown");
-  const late = ar.overdue_days != null && ar.overdue_days > 0 ? t(`, ${ar.overdue_days} päeva üle tähtaja`, `, ${ar.overdue_days} days overdue`) : "";
-  return `${ar.latest_year}, ${filed}${late}`;
-}
-
-function vatText(facts: CompanyFacts, lang: Lang): string {
-  const t = tr(lang);
-  const vat = facts.vat_registered;
-  if (!vat) return t("teadmata", "unknown");
-  return vat.value ? t("jah", "yes") : t("ei", "no");
-}
-
 function upcoming(facts: CompanyFacts, now: number): Obligation[] {
   return computeObligations(facts, { today: new Date(now), months: 3 }).obligations
     .filter((o) => o.effective_due)
     .slice(0, 3);
 }
 
-function foundCard(company: CompanyCard, facts: CompanyFacts, lang: Lang, now: number): string {
+function obligationList(rows: Obligation[], lang: Lang): string {
+  if (!rows.length) return "";
   const t = tr(lang);
-  const unknown = t("teadmata", "unknown");
-  const row = (dt: string, dd: string) => `<dt>${esc(dt)}</dt><dd>${esc(dd)}</dd>`;
-  const obs = upcoming(facts, now).map((o) => {
+  const items = rows.map((o) => {
     const due = o.effective_due ? showDate(o.effective_due, lang) : "";
     const title = t(o.title_et, o.title_en);
     // Same rule as Today: a conditional row shows its condition; a warning is already worded as one.
@@ -364,8 +347,14 @@ function foundCard(company: CompanyCard, facts: CompanyFacts, lang: Lang, now: n
     const src = `<a class="tap-link" href="${esc(o.source.url)}" rel="noopener noreferrer">${esc(t("Allikas", "Source"))}: <span lang="et">${esc(o.source.act_et)} ${esc(o.source.section)}</span></a>`;
     return `<li>${esc(title)}${due ? ` · <time datetime="${esc(o.effective_due!)}">${esc(due)}</time>` : ""}${cond ? `<p class="deadline-cond"><strong>${esc(cond)}</strong></p>` : ""} ${src}</li>`;
   }).join("");
-  return `<dl class="facts">${row(t("Nimi", "Name"), company.name || unknown)}${row(t("Õiguslik vorm", "Legal form"), company.legal_form || unknown)}${row(t("Tegevusala", "Business area"), company.emtak_label || unknown)}${row(t("Käibemaksukohustuslane", "VAT registered"), vatText(facts, lang))}${row(t("Viimane majandusaasta aruanne", "Last annual report"), annualText(facts, lang))}</dl>
-${obs ? `<h2>${esc(t("Järgmised kohustused", "Next obligations"))}</h2><ul class="steps">${obs}</ul>` : ""}
+  return `<h2>${esc(t("Mis sul tulemas on", "What is coming up"))}</h2><ul class="steps">${items}</ul>`;
+}
+
+function foundCard(company: CompanyCard, lang: Lang): string {
+  const t = tr(lang);
+  const unknown = t("teadmata", "unknown");
+  const row = (dt: string, dd: string) => `<dt>${esc(dt)}</dt><dd>${esc(dd)}</dd>`;
+  return `<dl class="facts">${row(t("Nimi", "Name"), company.name || unknown)}${row(t("Registrikood", "Registry code"), company.registry_code || unknown)}${row(t("Õiguslik vorm", "Legal form"), company.legal_form || unknown)}${row(t("Tegevusala", "Business area"), company.emtak_label || unknown)}</dl>
 <p class="small">${esc(lang === "en" ? company.label_en : company.label_et)}</p>
 <p class="small muted">${esc(company.attribution)}</p>`;
 }
@@ -405,7 +394,7 @@ function testedRank(sentence: string): number {
 }
 
 /** The rules plan, then at most one phrasing from the model. Model text is escaped and never enters the prompt. */
-export function planScreenHtml(plan: IntakePlan, muse: { text: string; mock: boolean } | null, lang: Lang): string {
+export function planScreenHtml(plan: IntakePlan, muse: { text: string; mock: boolean } | null, lang: Lang, coming: Obligation[] = []): string {
   const t = tr(lang);
   const rec = plan.recommendation;
   const noFit = !rec.recommended;
@@ -455,6 +444,7 @@ export function planScreenHtml(plan: IntakePlan, muse: { text: string; mock: boo
   }).join("");
   const table = `<table class="why"><caption>${esc(t("Miks?", "Why?"))}</caption><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
   const paid = plan.paidNote && rec.recommended ? `<p class="note">${esc(paidNote(rec.recommended.assistant, lang))}</p>` : "";
+  const comingHtml = obligationList(coming, lang);
   const steps = plan.steps.length ? `<ol class="steps">${plan.steps.map((s) => `<li>${s.href ? `<a href="${esc(s.href)}"${s.href.startsWith("http") ? ' rel="noopener noreferrer"' : ""}>${esc(s.text)}</a>` : esc(s.text)}</li>`).join("")}</ol>` : "";
   const prompt = `<label for="alusta-prompt">${esc(t("Tekst, mille kleebid assistenti", "Text to paste into your assistant"))}</label>
 <textarea id="alusta-prompt" readonly rows="4">${esc(plan.prompt)}</textarea>
@@ -465,7 +455,7 @@ export function planScreenHtml(plan: IntakePlan, muse: { text: string; mock: boo
     : `<p class="small muted">${esc(MUSE_DOWN[lang])}</p>`;
   const why = `<details class="why-more"><summary>${esc(t("Miks just see?", "Why this one?"))}</summary>${more}${stay}${table}</details>`;
   const again = `<p><a class="tap-link" href="${lang === "en" ? "/alusta?lang=en" : "/alusta"}">${esc(t("Alusta uuesti", "Start again"))}</a></p>`;
-  return `<h1>${esc(headline)}</h1>${live}${lead}${start}${paid}${steps}${prompt}${why}${again}`;
+  return `<h1>${esc(headline)}</h1>${live}${lead}${start}${paid}${comingHtml}${steps}${prompt}${why}${again}`;
 }
 
 function buttons(items: { value: string; label: string; name: string }[], go: string, secondary = false): string {
@@ -766,7 +756,7 @@ async function screen(flow: Flow, lang: Lang, opts: { ipKey: string; now: number
   }
   if (flow.pendingFound) {
     const qEt = "Kas see on sinu ettevõte?", qEn = "Is this your company?";
-    const main = foundCard(flow.pendingFound.company, flow.pendingFound.facts, lang, opts.now)
+    const main = foundCard(flow.pendingFound.company, lang)
       + `<button type="submit" name="go" value="found">${esc(t("Jah, see on minu ettevõte", "Yes, this is my company"))}</button>`;
     const hold: Flow = { ...flow, code: validRegistryCode(flow.pendingFound.company.registry_code) ? flow.pendingFound.company.registry_code : "", csum: summaryLine(flow.pendingFound.company), pendingFound: undefined };
     const skip = extraForm(lang, pre, { ...hold, code: "", csum: "" }, `<button type="submit" class="secondary" name="go" value="nocompany">${esc(t("Jätkan ilma ettevõtteta", "Continue without a company"))}</button>`);
@@ -817,6 +807,7 @@ async function renderPlan(flow: Flow, lang: Lang, opts: { ipKey: string; now: nu
   const services = flow.svc.map((id) => loadCatalog().find((rec) => rec.id === id)).filter((rec): rec is ServiceRecord => !!rec);
   let company: IntakeCompany | null = null;
   let obligations: IntakeObligation[] = [];
+  let coming: Obligation[] = [];
   let registerNote = "";
   if (!honeypot && flow.code) {
     const applyLooked = (looked: { company: { name: string | null; legal_form: string | null; emtak_code: string | null; emtak_label: string | null }; facts: CompanyFacts }) => {
@@ -824,7 +815,8 @@ async function renderPlan(flow: Flow, lang: Lang, opts: { ipKey: string; now: nu
         name: looked.company.name, registry_code: flow.code,
         legal_form: looked.company.legal_form, emtak_code: looked.company.emtak_code, emtak_label: looked.company.emtak_label,
       };
-      obligations = upcoming(looked.facts, opts.now).map((o) => ({ title_et: o.title_et, title_en: o.title_en, effective_due: o.effective_due }));
+      coming = upcoming(looked.facts, opts.now);
+      obligations = coming.map((o) => ({ title_et: o.title_et, title_en: o.title_en, effective_due: o.effective_due }));
     };
     // The confirmed company is already in the local cache. Reading it does not call the register and does not count.
     const cached = await opts.register.lookup(flow.code, { cacheOnly: true });
@@ -862,5 +854,5 @@ async function renderPlan(flow: Flow, lang: Lang, opts: { ipKey: string; now: nu
   const titles: [string, string] = plan.recommendation.recommended
     ? [planLabel(plan.recommendation.recommended), planLabel(plan.recommendation.recommended)]
     : ["Ühtegi sobivat paketti ei leitud — vaata tabelit", "No plan fits — see the table"];
-  return page(lang, opts.preauth, titles, flow, "", registerNote + planScreenHtml(plan, muse, lang), false);
+  return page(lang, opts.preauth, titles, flow, "", registerNote + planScreenHtml(plan, muse, lang, coming), false);
 }
