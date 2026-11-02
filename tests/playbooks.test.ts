@@ -645,7 +645,11 @@ describe("agent-facing copy over MCP", () => {
     expect(SEND_INVOICE_ACT).toContain("e-mail its PDF to recipient.address");
     expect(SEND_INVOICE_ACT).not.toContain("if that is the buyer's e-invoice address");
     expect(SEND_INVOICE_ACT).not.toContain("e-invoice address");
-    expect(SEND_INVOICE_ACT).toContain("already confirmed (a retry after a failed send), do not confirm again");
+    expect(SEND_INVOICE_ACT).toContain("If anything differs, stop and tell the owner the difference.");
+    expect(SEND_INVOICE_ACT).toContain("Continue only with the version they confirm; stop if they cancel.");
+    expect(SEND_INVOICE_ACT).toContain("When everything matches or the owner has confirmed the corrected draft, confirm the draft");
+    expect(SEND_INVOICE_ACT).toContain("unless it is already confirmed (a retry after a failed send)");
+    expect(SEND_INVOICE_ACT).toContain("Then send by the channel from document.title:");
     for (const step of p.steps) {
       expect(step).not.toMatch(/\b(paying|filing|signing)\b/i);
     }
