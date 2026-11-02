@@ -13,7 +13,7 @@ import { runModelJob } from "./model.js";
 import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
 import type { FetchFn } from "./model-quality.js";
 import { liveIntake, mockIntake, type IntakeClient } from "./intake.js";
-import { alustaMaxAge, handleAlusta } from "./alusta.js";
+import { alustaMaxAge, handleAlusta, intakeHealth } from "./alusta.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
 import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, aboutBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
@@ -459,7 +459,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     return allowSandboxAttempt(sandboxRateKey(req.ip || req.socket.remoteAddress || "?"));
   }
 
-  app.get("/health", (_req, res) => res.json({ ok: true, demo: cfg.demo, model_mode: publicCards ? "public_cards" : cfg.modelMode === "disabled" ? "disabled" : "test", live_inference: publicCards ? "enabled" : "disabled", catalog_size: loadCatalog().length, release_sha: releaseSha }));
+  app.get("/health", (_req, res) => res.json({ ok: true, demo: cfg.demo, model_mode: publicCards ? "public_cards" : cfg.modelMode === "disabled" ? "disabled" : "test", live_inference: publicCards ? "enabled" : "disabled", catalog_size: loadCatalog().length, release_sha: releaseSha, ...intakeHealth() }));
   app.get("/login", (req, res) => {
     const token = cfg.demo ? issuePreauth(res) : "";
     res.type("html").send(publicPage(req, res, tr(langOf(res))("Logi sisse", "Sign in"), loginBody({ lang: langOf(res), demo: cfg.demo, google: !!cfg.googleClientId, preauth: token, companies: DEMO_COMPANIES, toConsent: req.query.return_to === CONSENT_PATH })));
