@@ -151,6 +151,7 @@ export const FIXED_INSTRUCTIONS: Record<ModelJob, string> = {
     "The user message is JSON with company_name, business_area, obligations, programs, assistant, tier, paid_note and lang (\"et\" or \"en\"). " +
     "Each obligation has a title, effective_due and applies, which is \"yes\" or \"if\". programs lists the program names. " +
     "Start with what their assistant can take off their hands for this company, using the programs and the obligations. " +
+    "Refer to the owner's assistant by the given name, or \"your assistant\" when none is given. Never speak as \"I\" or \"we\". " +
     "Reply with plain text only, in the requested language, at most 4 short sentences and at most 600 characters. " +
     "Name each program exactly as it is given. " +
     "When an obligation has applies \"if\", say it may apply and never call that obligation due. " +

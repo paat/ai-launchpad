@@ -524,6 +524,7 @@ describe("model quality harness (Baseten)", () => {
     expect(planWords).toContain("as \"you\"");
     expect(planWords).toContain("their own accountant");
     expect(planWords).toContain("take off their hands");
+    expect(planWords).toContain("Refer to the owner's assistant by the given name, or \"your assistant\" when none is given. Never speak as \"I\" or \"we\".");
     expect(planWords).toContain("When an obligation has applies \"if\", say it may apply and never call that obligation due.");
     expect(planWords).toContain("Name each program exactly as it is given");
     expect(planWords).toContain("Do not say \"bottom line\", \"listed\" or \"services\"");

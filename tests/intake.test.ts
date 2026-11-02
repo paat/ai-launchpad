@@ -412,7 +412,7 @@ describe("plan model input", () => {
     expect(body.unmatched).toBeUndefined();
     expect(raw).not.toContain(HOSTILE);
     expect(body.paid_note).toBe(true);
-    expect(body.assistant).toBe("claude");
+    expect(body.assistant).toBe("Claude");
     expect(raw).not.toContain("legal_form");
     expect(raw.length).toBeLessThanOrEqual(MAX_INPUT_CHARS);
     expect(new TextEncoder().encode(raw).byteLength).toBeLessThanOrEqual(MAX_INPUT_BYTES);
@@ -448,7 +448,8 @@ describe("plan model input", () => {
       productNames: ["Merit Aktiva", "Gmail"],
       uses: "claude", tier: "free", lang: "en",
     });
-    const body = JSON.parse(raw) as { programs: string[]; services?: string[]; obligations: { applies: string }[] };
+    const body = JSON.parse(raw) as { programs: string[]; services?: string[]; obligations: { applies: string }[]; assistant: string | null };
+    expect(body.assistant).toBe("Claude");
     expect(body.programs).toEqual(["Merit Aktiva", "Gmail"]);
     expect(body.services).toBeUndefined();
     expect(raw).not.toContain("Werkzeug");

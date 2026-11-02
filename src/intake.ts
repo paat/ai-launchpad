@@ -435,6 +435,11 @@ function asAssistantId(row: PlanRow): AssistantId {
   throw new Error("unreachable assistant");
 }
 
+/** Display name sent to Muse and shown in the plan steps. */
+function assistantBrand(id: AssistantId): string {
+  return id === "chatgpt" ? "ChatGPT" : id === "grok" ? "Grok" : "Claude";
+}
+
 function intakeRecommendation(args: IntakePlanArgs): Recommendation {
   const sheet = args.sheet ?? PLANS;
   return recommendAssistant(customerFromServices(args.services ?? [], currentPlan(args, sheet)), sheet);
@@ -483,7 +488,7 @@ export function buildIntakePlan(args: IntakePlanArgs): IntakePlan {
   const candidates = candidateRows(rec);
   const steps: IntakeStep[] = [];
   const download = offerDownload(args.uses, assistant);
-  const brand = assistant === "chatgpt" ? "ChatGPT" : assistant === "grok" ? "Grok" : "Claude";
+  const brand = assistantBrand(assistant);
   if (download) steps.push({ text: lang === "et" ? `Laadi alla ${brand}` : `Download ${brand}`, href: download });
   if (download || args.uses === "none" || args.uses === "other") steps.push({ text: lang === "et" ? "Loo konto." : "Sign up." });
   const href = lang === "en" ? `/uhenda?a=${assistant}&lang=en` : `/uhenda?a=${assistant}`;
@@ -564,7 +569,7 @@ export function planModelInput(args: IntakePlanArgs): string {
   let businessArea = args.company?.emtak_label?.trim() || "";
   const rec = intakeRecommendation(args);
   const fixed = {
-    assistant: rec.recommended ? asAssistantId(rec.recommended) : null,
+    assistant: rec.recommended ? assistantBrand(asAssistantId(rec.recommended)) : null,
     tier: args.tier ?? null,
     paid_note: rec.paidNote,
     lang,
