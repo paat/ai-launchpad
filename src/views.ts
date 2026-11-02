@@ -547,6 +547,7 @@ pre.letter{max-height:none;margin:var(--s-2) 0;padding:12px 14px;background:var(
 .intake-log{order:1}
 .fix-form{order:2}
 .intake-main{order:3;min-width:0}
+.intake > form{order:4}
 .hp{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .landing-choice .btn{width:100%}
 .intake-log{display:flex;flex-direction:column;gap:var(--s-2);margin:0 0 var(--s-4)}
@@ -1716,6 +1717,12 @@ function startChoices(l: Lang): string {
   return `<div class="landing-choices">${choice(`/uhenda${q}`, t("Ühenda AI-assistent", "Connect my AI assistant"), t("Kasutan ChatGPT-d, Claude'i või Grok\u00a0Boti", "I use ChatGPT, Claude or Grok\u00a0Bot"))}${choice(`/alusta${q}`, t("Aita mul alustada", "Help me get started"), t("AI-assistenti veel pole või ei tea, mida valida", "No AI assistant yet, or not sure which"))}</div>`;
 }
 
+/** Bot check. Visually hidden, and hidden from assistive tech so a person never fills it. */
+export function honeypotField(l: Lang): string {
+  const t = tr(l);
+  return `<div class="hp" aria-hidden="true"><label>${esc(t("Veebileht", "Website"))}<input name="website" tabindex="-1" autocomplete="off" value=""></label></div>`;
+}
+
 /** Public /alusta. Bubbles and the question are escaped here. main and after are already escaped by the caller. */
 export function alustaBody(o: {
   lang: Lang; action: string; preauth: string;
@@ -1723,12 +1730,10 @@ export function alustaBody(o: {
   bubbles: { side: "me" | "ai"; text: string }[];
   question: string; main: string; showForm: boolean; after?: string; between?: string;
 }): string {
-  const t = tr(o.lang);
   const log = o.bubbles.length ? `<div class="intake-log">${o.bubbles.map((b) => `<p class="bubble bubble--${b.side === "me" ? "me" : "ai"}">${esc(b.text)}</p>`).join("")}</div>` : "";
   const h1 = o.question ? `<h1 id="alusta-h">${esc(o.question)}</h1>` : "";
-  const hp = `<div class="hp"><label>${esc(t("Veebileht", "Website"))}<input name="website" tabindex="-1" autocomplete="off" value=""></label></div>`;
   const hidden = Object.entries({ preauth: o.preauth, ...o.hidden }).map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`).join("");
-  const form = o.showForm ? `<form method="post" action="${esc(o.action)}" autocomplete="off">${hp}${hidden}${o.main}</form>` : o.main;
+  const form = o.showForm ? `<form method="post" action="${esc(o.action)}" autocomplete="off">${honeypotField(o.lang)}${hidden}${o.main}</form>` : o.main;
   return `<div class="intake">${log}<div class="intake-main">${o.between ?? ""}${h1}${form}</div>${o.after ?? ""}</div>`;
 }
 

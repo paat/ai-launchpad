@@ -21,6 +21,8 @@ import {
 const HOUR = 3_600_000;
 const CODE = "10000062";
 const MISSING = "10000018";
+/** Not VAT-registered, no payout facts. Checksum-valid. */
+const NO_PAYOUTS = "10000099";
 const MUSE_DOWN = "Muse ei ole praegu saadaval — plaan on koostatud meie reeglitest.";
 const PAID_BIT = "mitte AI-hüppelaua.";
 
@@ -91,13 +93,15 @@ describe("/alusta", () => {
       const s = new McpServer({ name: "fake-arikratt", version: "1" });
       s.registerTool("get_company", { inputSchema: { registry_code: z.string(), sections: z.array(z.string()).optional() } }, async ({ registry_code }) => {
         if (registry_code === MISSING) return { isError: true, content: [{ type: "text", text: "Company not found" }] };
+        const noPayouts = registry_code === NO_PAYOUTS;
         return { content: [{ type: "text", text: JSON.stringify({
           snapshot_id: "20261029T054510Z", as_of: "2026-10-29", found: true,
           sources: [{ key: "ariregister", name: "Äriregister", licence: "CC BY 4.0", licence_url: "https://creativecommons.org/licenses/by/4.0/" }],
-          profile: { name: "Synthetic Register OÜ", legal_form: "Osaühing", emtak_code: "74101", emtak_label: "Disain", vat_number: "EE000000000" },
-          financials: { year: 2025, revenue: 45000, net_profit: 1000 },
+          profile: noPayouts
+            ? { name: "Synthetic No Payouts OÜ", legal_form: "Osaühing", emtak_code: "74101", emtak_label: "Disain", vat_number: "" }
+            : { name: "Synthetic Register OÜ", legal_form: "Osaühing", emtak_code: "74101", emtak_label: "Disain", vat_number: "EE000000000" },
+          ...(noPayouts ? {} : { financials: { year: 2025, revenue: 45000, net_profit: 1000 }, tax: [{ year: 2026, quarter: 3, labour_taxes: 1500, employee_count: 1, turnover: 15000 }] }),
           report_status: { latest_year: 2025, filed: true, overdue_days: 0 },
-          tax: [{ year: 2026, quarter: 3, labour_taxes: 1500, employee_count: 1, turnover: 15000 }],
           registry_code,
         }) }] };
       });
@@ -202,6 +206,17 @@ describe("/alusta", () => {
     const at = html.indexOf('id="alusta-prompt"');
     return html.slice(at, html.indexOf("</textarea>", at));
   }
+  /** Every website honeypot sits in one aria-hidden wrapper. A step with none is fine. */
+  function expectHoneypotsHidden(html: string) {
+    const wraps = html.match(/<div class="hp" aria-hidden="true">[\s\S]*?<\/div>/g) ?? [];
+    for (const wrap of wraps) {
+      expect(wrap).toContain('name="website"');
+      expect(wrap).toContain('tabindex="-1"');
+      expect(wrap).toContain('autocomplete="off"');
+    }
+    expect(html.replace(/<div class="hp" aria-hidden="true">[\s\S]*?<\/div>/g, "")).not.toContain('name="website"');
+    expect(wraps.length).toBe(html.split('name="website"').length - 1);
+  }
 
   test("GET shows one company question, a conversation cookie, and no account", async () => {
     const start = await getPage();
@@ -279,6 +294,15 @@ describe("/alusta", () => {
     expect(found.html).toContain("Next obligations");
     expect(found.html).toContain("Source");
     expect(found.html).toContain(ARIKRATT_ATTRIBUTION);
+    const yesAt = found.html.indexOf("Yes, this is my company");
+    const skipAt = found.html.indexOf("Continue without a company");
+    const mainAt = found.html.indexOf('<div class="intake-main"');
+    expect(mainAt).toBeGreaterThan(-1);
+    expect(yesAt).toBeGreaterThan(mainAt);
+    expect(skipAt).toBeGreaterThan(yesAt);
+    expect(found.html).toContain(".intake > form{order:4}");
+    expect(found.html).toContain(".fix-form{order:2}");
+    expect(found.html).toContain(".intake-main{order:3");
 
     const gone = await getPage();
     const notFound = await post(gone, { ...hidden(gone.html), go: "company", q: MISSING });
@@ -311,6 +335,52 @@ describe("/alusta", () => {
     expect(filled.html).toContain("Synthetic Company 4");
     expect(filled.html).not.toContain("Synthetic Company 5");
     expect(filled.html).not.toContain("Synthetic Sole");
+  });
+
+  test("skip sits under the company choice, honeypots are hidden, and unknown payouts show the TSD condition (#166)", async () => {
+    const start = await getPage("/alusta", "10.32.0.1");
+    expectHoneypotsHidden(start.html);
+    expect(start.html.split('name="website"').length - 1).toBe(1);
+
+    const matches = await post(start, { ...hidden(start.html), go: "company", q: "Synthetic" }, { ip: "10.32.0.1" });
+    expectHoneypotsHidden(matches.html);
+    expect(matches.html.split('name="website"').length - 1).toBe(2);
+    expect(matches.html.indexOf("Milline neist on sinu ettevõte?")).toBeLessThan(matches.html.indexOf("Jätkan ilma ettevõtteta"));
+    expect(matches.html.indexOf("Synthetic Second OÜ")).toBeLessThan(matches.html.indexOf("Jätkan ilma ettevõtteta"));
+
+    const confirmed = await post(matches, { ...hidden(matches.html), go: "pick", picked: CODE }, { ip: "10.32.0.1" });
+    expectHoneypotsHidden(confirmed.html);
+    expect(confirmed.html.indexOf("Jah, see on minu ettevõte")).toBeLessThan(confirmed.html.indexOf("Jätkan ilma ettevõtteta"));
+
+    const programs = await post(confirmed, { ...hidden(confirmed.html), go: "found" }, { ip: "10.32.0.1" });
+    expectHoneypotsHidden(programs.html);
+    const wrote = await post(programs, { ...hidden(programs.html), go: "programs", text: "Merit Aktiva" }, { ip: "10.32.0.1" });
+    expectHoneypotsHidden(wrote.html);
+    expect(wrote.html.split('name="website"').length - 1).toBe(2);
+    expect(wrote.html).toContain('class="fix-form"');
+    const done = await post(wrote, { ...hidden(wrote.html), go: "assistant", choose: "none" }, { ip: "10.32.0.1" });
+    expectHoneypotsHidden(done.html);
+    expect(done.html).not.toContain('name="website"');
+
+    const gap = await getPage("/alusta", "10.32.0.4");
+    const missed = await post(gap, { ...hidden(gap.html), go: "company", q: "Nobody" }, { ip: "10.32.0.4" });
+    expectHoneypotsHidden(missed.html);
+    expect(missed.html.indexOf("Proovi uuesti")).toBeLessThan(missed.html.indexOf("Jätkan ilma ettevõtteta"));
+
+    const en = await getPage("/alusta?lang=en", "10.32.0.2");
+    const noPay = await post(en, { ...hidden(en.html), go: "company", q: NO_PAYOUTS }, { ip: "10.32.0.2" });
+    expect(noPay.html).toContain("Is this your company?");
+    expect(noPay.html).toContain("Synthetic No Payouts OÜ");
+    expect(noPay.html).toContain(">no<");
+    expect(noPay.html).toContain("Income and social tax return (TSD)");
+    expect(noPay.html.split("that are declared in the TSD").length - 1).toBe(3);
+    expectHoneypotsHidden(noPay.html);
+    const et = await getPage("/alusta", "10.32.0.3");
+    const etPay = await post(et, { ...hidden(et.html), go: "company", q: NO_PAYOUTS }, { ip: "10.32.0.3" });
+    expect(etPay.html).toContain("TSD ja maksud");
+    expect(etPay.html.split("TSD-s deklareerida").length - 1).toBe(3);
+    expect(etPay.html).toContain(">ei<");
+    expect(etPay.html).not.toContain("Käibemaksukohustuslane</dt><dd>jah");
   });
 
   test("register flood is one sentence and does not look the company up", async () => {
