@@ -1111,12 +1111,13 @@ const HO_STATUS: Record<Status, { chip: string; et: string; en: string }> = {
   due_soon: { chip: "waiting", et: "Tähtaeg läheneb", en: "Due soon" }, open: { chip: "drafted", et: "Tööd ootel", en: "Work waiting" },
   not_checked: { chip: "drafted", et: "Kontrollimata", en: "Not checked" }, later: { chip: "drafted", et: "Hiljem", en: "Later" }, in_order: { chip: "accepted", et: "Korras", en: "In order" },
 };
-/** The headline answers „do you need me?”: the most urgent status, else nothing. */
+/** The headline answers „does a job need me?”: the most urgent status, else none is urgent.
+ *  It speaks for the jobs only: Täna's „Ootab sinult” also counts questions and approvals outside any job. */
 function hoHead(h: Handover, l: Lang): string {
   const t = tr(l), c = h.count;
   return c.waiting ? t(`${c.waiting} ootab sinu kinnitust`, `${c.waiting} waiting for your approval`) : c.overdue ? t(`${c.overdue} ${c.overdue === 1 ? "tähtaeg on" : "tähtaega on"} möödas`, `${c.overdue} overdue`)
     : c.due_soon ? t(`${c.due_soon} ${c.due_soon === 1 ? "tähtaeg" : "tähtaega"} läheneb`, `${c.due_soon} due soon`)
-    : c.open ? t(`${c.open} ${c.open === 1 ? "töö" : "tööd"} ootel`, `${c.open} with work waiting`) : t("Täna ei vaja miski sind", "Nothing needs you today");
+    : c.open ? t(`${c.open} ${c.open === 1 ? "töö" : "tööd"} ootel`, `${c.open} with work waiting`) : t("Ükski töö pole kiire", "No job is urgent");
 }
 /** „2 korras · 1 kontrollimata · 1 hiljem”: the rest of the jobs, by status. */
 function hoRest(h: Handover, l: Lang): string {

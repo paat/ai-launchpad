@@ -163,7 +163,13 @@ describe("Kontoritöö: review-grok #127 round 2", () => {
   test("work waiting is the headline when nothing is more urgent", () => {
     const h = computeHandover({ assessment: withState("invoicing", "open"), assessedAt: "2026-11-10T09:00:00Z", obligations: [annual], approvals: [], rules: [], now: NOW });
     expect(handoverStrip(h, "et")).toContain("<b>Kontoritöö: 1 töö ootel</b>");
-    expect(handoverStrip(h, "en")).not.toContain("Nothing needs you today");
+    expect(handoverStrip(h, "en")).not.toContain("No job is urgent");
+  });
+  test("with no urgent job the strip never claims nothing needs the owner (Täna also counts questions)", () => {
+    const h = computeHandover({ assessment: null, obligations: [annual], approvals: [], rules: [], now: NOW });
+    expect(handoverStrip(h, "et")).toContain("<b>Kontoritöö: Ükski töö pole kiire</b>");
+    expect(handoverStrip(h, "en")).toContain("Back office: No job is urgent");
+    expect(handoverStrip(h, "en")).not.toContain("Nothing needs you");
   });
 });
 
