@@ -502,7 +502,17 @@ describe("agent-facing copy over MCP", () => {
     expect(c.getInstructions()).toContain(SEND_GATE);
     const started = JSON.parse(((await c.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { approvals_note: string };
     expect(started.approvals_note.startsWith(SEND_GATE)).toBe(true);
-    expect(started.approvals_note).toContain("only if the owner told you they set one, call request_approval without owner_confirmation first");
+    expect(started.approvals_note).toContain("only if standing_approvals lists a rule of that kind whose recipients include the address");
+    // Grok r3: the assistant can only use a standing approval it can see.
+    expect(SEND_GATE).toContain("if get_started standing_approvals has a rule that covers the send, call request_approval without owner_confirmation first");
+    const db = openDb(":memory:"), later = new Date(Date.now() + 86_400_000).toISOString(), earlier = new Date(Date.now() - 1000).toISOString();
+    const rc = await connect(["progress:read"], db);
+    db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at) VALUES('r1',?,'send_message',?,30000,5,?,?)").run("o", JSON.stringify(["billing@client.example"]), later, earlier);
+    db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at) VALUES('r2',?,'send_invoice',NULL,1000,1,?,?)").run("o", earlier, earlier);
+    const withRules = JSON.parse(((await rc.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { standing_approvals: unknown[] };
+    expect(withRules.standing_approvals).toEqual([{ kind: "send_message", recipients: ["billing@client.example"], max_amount_cents: 30000, max_per_day: 5, expires_at: later }]);
+    const noRead = JSON.parse(((await (await connect([])).callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as Record<string, unknown>;
+    expect(noRead).not.toHaveProperty("standing_approvals");
     // The owner was sent to the dashboard: every send playbook asks in this chat before it requests the approval.
     for (const id of ["payment-reminder", "customer-follow-ups", "invoicing"]) {
       const steps = byId(id).steps;
@@ -514,8 +524,10 @@ describe("agent-facing copy over MCP", () => {
       expect(steps.join(" "), id).not.toContain("If the reply is pending, show the owner");
       // Grok r2: the standing-rule probe is its own step before the ask, never folded into the confirmed request.
       expect(steps[req], id).not.toContain("without owner_confirmation");
-      const standing = steps.findIndex((x) => x.startsWith("Only if the owner told you they set a standing approval"));
+      const standing = steps.findIndex((x) => x.startsWith("Only if get_started standing_approvals lists a rule"));
       expect(standing, id).toBe(id === "customer-follow-ups" ? -1 : ask - 1);
+      if (standing >= 0) expect(steps[standing], id).toContain("no owner_confirmation (omit it: the owner has not answered yet)");
+      if (standing >= 0) expect(steps[standing], id).toContain("On any other reply, send nothing yet");
     }
   });
 
