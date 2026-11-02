@@ -643,6 +643,16 @@ function namedFrom(hits: ProductHit[]): NamedProduct[] {
   return hits.slice(0, 8).map((hit) => ({ key: hit.key, product: hit.product, id: hit.record?.id ?? "", via: hit.via ?? "" }));
 }
 
+/** Case and runs of whitespace do not count. An empty name does not occur. */
+function folded(s: string): string {
+  return s.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase("et");
+}
+
+function nameInVisitorText(text: string, name: string): boolean {
+  const foldedName = folded(name);
+  return foldedName.length > 0 && folded(text).includes(foldedName);
+}
+
 async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeClient | null; ipKey: string; now: number; cookie: string | null }, lang: Lang): Promise<void> {
   const conv = parseAlusta(opts.cookie ?? null);
   let viaModel = false;
@@ -653,7 +663,8 @@ async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeC
     if (result.ok) {
       const parsed = parseExtract(result.output);
       if (parsed) {
-        const routed = routeProducts(parsed.products.map((p) => p.name), parsed.products.map((p) => p.kind));
+        const named = parsed.products.filter((p) => nameInVisitorText(text, p.name));
+        const routed = routeProducts(named.map((p) => p.name), named.map((p) => p.kind));
         // A parsed note with no routed product still gets the catalogue name match.
         if (routed.hits.length) {
           hits = routed.hits;

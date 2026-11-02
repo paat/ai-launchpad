@@ -776,13 +776,32 @@ describe("/alusta model modes", () => {
     };
     const url = await boot({ intakeClient: client });
     const { wrote, prompt } = await programsThenNone(url, "10.21.0.2", "palgaarvestus");
-    expect(wrote.html).toContain("Sain aru:");
-    expect(wrote.html).toContain("Gmail");
+    expect(wrote.html).toContain("Leitud nime järgi (mitte Muse)");
+    expect(wrote.html).not.toContain("Sain aru:");
+    expect(wrote.html).not.toContain("Gmail");
     expect(wrote.html).not.toContain("ignore prior");
-    expect(prompt).toContain("Kasutan: Gmail.");
+    expect(prompt).not.toContain("Gmail");
     expect(prompt).not.toContain("ignore prior");
     expect(prompt).not.toContain(attack);
     expect(summarized).not.toContain("ignore prior");
+    expect(summarized).not.toContain("Gmail");
+  });
+
+  test("an unnamed model product is dropped", async () => {
+    const client: IntakeClient = {
+      mock: false,
+      async extract() {
+        return { ok: true, output: JSON.stringify({ products: [{ name: "Merit Aktiva", kind: "accounting" }, { name: "\u200b", kind: "other" }, { name: "Gmail", kind: "email" }] }), mock: false };
+      },
+      async summarize() { return { ok: true, output: "Lühike kokkuvõte.", mock: false }; },
+    };
+    const url = await boot({ intakeClient: client });
+    const { wrote, prompt } = await programsThenNone(url, "10.21.0.5", "merit   AKTIVA");
+    expect(wrote.html).toContain("Sain aru:");
+    expect(wrote.html).toContain("Merit Aktiva");
+    expect(wrote.html).not.toContain("Gmail");
+    expect(prompt).toContain("Merit Aktiva");
+    expect(prompt).not.toContain("Gmail");
   });
 
   test("actual live adapter unknown program excluded", async () => {
