@@ -1174,7 +1174,7 @@ ${foot()}
 <h1 class="receipt-head" id="a-h">${head}</h1>
 <p class="why">${[v.recipient.name, v.amount].filter(Boolean).map(esc).join(" · ")}${v.recipient.name || v.amount ? " · " : ""}${esc(v.title)}</p>
 ${a.owner_confirmation ? confirmedInAssistant(a, l) : ""}
-<p class="small"><strong>${a.decided_at ? esc(t("Sinu kinnitusi selles töös: 1.", "Your approvals in this job: 1.")) : ok ? actionCredit(a, l) : t("Assistent teatas töö tulemuse", "Your assistant reported the outcome")}</strong> ${t("Tulemus on assistendi teade, AI-hüppelaud seda ei kontrollinud.", "This outcome is your assistant’s report, not checked by AI Launchpad.")}</p>
+<p class="small"><strong>${a.decided_at ? esc(t("Sinu kinnitusi selles töös: 1.", "Your approvals in this job: 1.")) : ok ? esc(actionCredit(a, l)) : esc(t("Assistent teatas töö tulemuse", "Your assistant reported the outcome"))}</strong> ${t("Tulemus on assistendi teade, AI-hüppelaud seda ei kontrollinud.", "This outcome is your assistant’s report, not checked by AI Launchpad.")}</p>
 ${isDone(a) && opts.handover ? handoverStrip(opts.handover, l) : ""}
 ${stateLine(a, v, l, sample)}
 ${content ? `<details><summary>${a.decided_at ? t("Mida sa kinnitasid", "What you approved") : t("Mida assistent tegi", "What your assistant did")}</summary>${approvalFacts(v, l)}${content}</details>` : ""}
