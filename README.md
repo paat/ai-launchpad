@@ -122,6 +122,12 @@ Meta's own consumer agent app (Muse) is available only in the US and Canada as o
 - [R-002: identity-only sign-in and bounded runtime model use](docs/requirements/R-002-identity-and-runtime-cost.md) ([issue #3](https://github.com/paat/ai-launchpad/issues/3)). Google is identity only; the old adapter in `src/model.ts` stays hard-disabled. A separate bounded quality harness is now live-tested ([docs/model-quality.md](docs/model-quality.md)); the reviewed public-cards path is piloted live owner-only ([docs/live-pilot.md](docs/live-pilot.md)), and broader public runtime activation stays a later decision.
 - Deadlines from rules ([issue #19](https://github.com/paat/ai-launchpad/issues/19), [rules memo](docs/research/N-obligation-deadline-rules.md)). The `get_obligations` tool and the Status card compute KMD, TSD, annual-report, VAT-threshold and TÖR dates with deterministic rules, each row linked to its Riigi Teataja source; no model produces a date. Unknown facts become conditions and questions, never guesses. Public-register lookup uses an Ärikratt API key (`ARIKRATT_API_KEY`), provisioned on the live pilot since 31 Oct 2026; where it is not set (local demo, tests), the facts come from the owner's assistant or the labelled sample companies.
 
+## Plugins
+
+- Claude: in claude.ai, Customize → Plugins → Add → Add marketplace, enter `paat/ai-launchpad`, add AI Launchpad, then connect it in the plugin's Connectors tab. In Claude Code: `/plugin install ai-launchpad --marketplace paat/ai-launchpad`. [plugin/ai-launchpad](plugin/ai-launchpad/README.md).
+- ChatGPT: [plugin/ai-launchpad-chatgpt](plugin/ai-launchpad-chatgpt/README.md), the same skills and connector; it will be in the ChatGPT Plugins directory once OpenAI approves it. Until then, the closed pilot uses the connector directly.
+- The skills live once in `plugin/ai-launchpad/skills/`; the ChatGPT plugin links to them.
+
 ## Validation
 
 Test with 3–5 real owners of the first persona during the build week (with consent). Measure time to first useful task (target under five minutes) and whether they come back the following week.
