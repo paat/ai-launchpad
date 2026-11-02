@@ -24,13 +24,13 @@ const activateUnpaid = async (page: Page) => {
   await expect(page.locator('[data-job-detail="unpaid"]')).toBeVisible();
   await expect(page.locator(UNPAID)).toBeVisible();
 };
-/** The final frame: the owner's opening question (#63 m1), the whole card (with the standing-approval chip) and the last bubble sit inside the visible chat. */
+/** The final frame: the owner's opening question (#63 m1), the whole card and its outcome sit inside the visible chat. */
 const finalFrameFits = async (page: Page) => {
   // The mobile switcher scrolls the phone into view. Read all rectangles in one
   // frame so scrolling between separate browser calls cannot distort the bounds.
   const { chat, bubbles } = await page.locator(UNPAID).evaluate((conversation) => {
     const box = (sel: string) => { const r = conversation.querySelector(sel)!.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; };
-    return { chat: box(".chat"), bubbles: [".b-unpaid-me1", ".b-unpaid-card", ".mock-rule", ".b-unpaid-ai2"].map((sel) => ({ sel, ...box(sel) })) };
+    return { chat: box(".chat"), bubbles: [".b-unpaid-me1", ".b-unpaid-card"].map((sel) => ({ sel, ...box(sel) })) };
   });
   for (const b of bubbles) {
     expect(b.top, b.sel).toBeGreaterThanOrEqual(chat.top - 1);
@@ -65,21 +65,16 @@ for (const width of [390, 1280]) {
       const h1 = (await page.locator("h1").boundingBox())!, phone = (await conversation.locator(".phone").boundingBox())!;
       expect(phone.x).toBeGreaterThan(h1.x + h1.width);
     }
-    // The loop: who owes me, typing, the overdue total; the card and its approval; then the standing approval and the final bubble.
+    // The loop: who owes me, typing, the overdue total; the card and its approval.
     await seek(page, 3000);
     expect(await opacity(page, scoped(".b-unpaid-t1"))).toEqual([1]);
     expect(await opacity(page, scoped(".b-unpaid-card"))).toEqual([0]);
     await page.screenshot({ path: `${SHOTS}/teaser-${width}-03s.png`, fullPage: true });
     await seek(page, 7500);
-    expect(await opacity(page, scoped(".b-unpaid-card", ".mock-done", ".mock-ok"))).toEqual([1, 1, 1]);
-    expect(await opacity(page, scoped(".mock-approve", ".mock-wait", ".b-unpaid-allow"))).toEqual([0, 0, 0]);
-    await seek(page, 9000);
-    expect(await opacity(page, scoped(".b-unpaid-allow", ".mock-allow", ".mock-rule"))).toEqual([1, 1, 0]);
-    await page.screenshot({ path: `${SHOTS}/teaser-${width}-09s.png`, fullPage: true });
-    await seek(page, 11000);
-    expect(await opacity(page, scoped(".mock-allow", ".mock-rule", ".b-unpaid-t2", ".b-unpaid-ai2"))).toEqual([0, 1, 1, 0]);
+    expect(await opacity(page, scoped(".b-unpaid-card", ".mock-done"))).toEqual([1, 1]);
+    await expect(page.locator(scoped(".mock-approve", ".mock-wait"))).toHaveCount(0);
     await seek(page, 14000);
-    expect(await opacity(page, scoped(".b-unpaid-ai2", ".mock-rule", ".mock-done"))).toEqual([1, 1, 1]);
+    expect(await opacity(page, scoped(".mock-done"))).toEqual([1]);
     await finalFrameFits(page);
     await page.screenshot({ path: `${SHOTS}/teaser-${width}-14s.png`, fullPage: true });
     await page.locator(".teaser").evaluate((e) => e.scrollIntoView({ block: "center" }));
@@ -137,7 +132,7 @@ for (const [width, height] of [[320, 568], [880, 800], [1280, 800], [1440, 900]]
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/?lang=${lang}`);
       await activateUnpaid(page);
-      await expect(page.locator(scoped(".b-unpaid-me1"))).toHaveText(lang === "et" ? "Kes mulle võlgu on?" : "Who owes me money?");
+      await expect(page.locator(scoped(".b-unpaid-me1"))).toHaveText(lang === "et" ? "Saada tasumata arvete eest meeldetuletused." : "Send reminders for my unpaid invoices.");
       await finalFrameFits(page);
       expect(await overflow(page)).toBeLessThanOrEqual(0);
       if (width === 1280 || width === 320) await page.locator(scoped(".phone")).screenshot({ path: `${SHOTS}/teaser-final-${width}-${lang}.png` });
@@ -197,7 +192,7 @@ test("390px: activating another card while paused shows its final frame and stay
   // Opacity on the bubble itself does not move; the beat that reveals it does.
   await expect.poll(() => lastBubble.evaluate((el) => getComputedStyle(el.closest(".beat")!).opacity)).toBe("1");
   await expect(conversation.locator(".mock-done")).toHaveCSS("opacity", "1");
-  await expect(conversation.locator(".mock-approve")).toHaveCSS("opacity", "0");
+  await expect(conversation.locator(".mock-approve")).toHaveCount(0);
   const states = () => page.evaluate((job) => {
     const anims = document.querySelector(`[data-job-conversation="${job}"]`)?.getAnimations({ subtree: true }) ?? [];
     return { n: anims.length, play: [...new Set(anims.map((a) => a.playState))].sort().join(","), min: anims.reduce((m, a) => Math.min(m, Number(a.currentTime)), Infinity) };
@@ -218,16 +213,15 @@ test("320px: no overflow; reduced motion shows the final frame statically", asyn
   await activateUnpaid(page);
   expect(await overflow(page)).toBeLessThanOrEqual(0);
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
-  expect(await opacity(page, scoped(".beat:not(.beat--typing)"))).toEqual([1, 1, 1, 1, 1]);
-  expect(await page.locator(scoped(".beat--typing")).evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))).toEqual([0, 0]);
-  expect(await opacity(page, scoped(".mock-wait", ".mock-ok", ".mock-approve", ".mock-done", ".mock-allow", ".mock-rule"))).toEqual([0, 1, 0, 1, 0, 1]);
-  await expect(page.locator(scoped(".mock-done"))).toHaveText("✓ Kinnitatud · Saadetud sinu e-postist: demo");
-  await expect(page.locator(scoped(".mock-rule"))).toHaveText("Püsiluba: meeldetuletused kuni 500,00\u00a0€");
+  expect(await opacity(page, scoped(".beat:not(.beat--typing)"))).toEqual([1, 1, 1]);
+  expect(await page.locator(scoped(".beat--typing")).evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))).toEqual([0]);
+  expect(await opacity(page, scoped(".mock-done"))).toEqual([1]);
+  await expect(page.locator(scoped(".mock-done"))).toHaveText("✓ Saadetud sinu e-postist: demo");
   await finalFrameFits(page);
   await page.screenshot({ path: `${SHOTS}/teaser-320-reduced-motion.png`, fullPage: true });
 });
 
-test("200% root font: nested standing beat is not clipped by the card cap (tribunal T-005)", async ({ page }) => {
+test("200% root font: approval card is not clipped by the card cap (tribunal T-005)", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await activateUnpaid(page);

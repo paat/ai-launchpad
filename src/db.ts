@@ -12,6 +12,7 @@ export function openDb(path: string) {
   const db = new Database(path);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  const approvalsSchema = "CREATE TABLE IF NOT EXISTS approvals(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, payload_json TEXT NOT NULL, digest TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', expires_at TEXT NOT NULL, created_at TEXT NOT NULL, consumed_at TEXT, kind TEXT, report_id TEXT, decided_at TEXT, outcome_json TEXT, playbook_id TEXT, owner_confirmation TEXT);";
   db.exec(`
   CREATE TABLE IF NOT EXISTS oauth_clients(id TEXT PRIMARY KEY, metadata TEXT NOT NULL, expires INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS oauth_pending(id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE, params TEXT NOT NULL, owner_id TEXT, epoch INTEGER, expires INTEGER NOT NULL);
@@ -28,7 +29,7 @@ export function openDb(path: string) {
   CREATE TABLE IF NOT EXISTS candidates(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, norm_key TEXT NOT NULL, name TEXT NOT NULL, connection TEXT NOT NULL, jobs TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending_moderation', created_at TEXT NOT NULL, UNIQUE(owner_id, norm_key));
   CREATE TABLE IF NOT EXISTS activity(id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT, actor TEXT NOT NULL, action TEXT NOT NULL, outcome TEXT NOT NULL, summary TEXT NOT NULL, created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS company_facts(registry_code TEXT PRIMARY KEY, facts_json TEXT NOT NULL, snapshot_id TEXT, as_of TEXT, fetched_at TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS approvals(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, payload_json TEXT NOT NULL, digest TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', expires_at TEXT NOT NULL, created_at TEXT NOT NULL, consumed_at TEXT);
+  ${approvalsSchema}
   `);
   // Backward-safe: created on fresh and existing databases alike.
   db.exec(`
@@ -38,11 +39,27 @@ export function openDb(path: string) {
   CREATE INDEX IF NOT EXISTS idx_oauth_grants_client ON oauth_grants(client_id);
   CREATE INDEX IF NOT EXISTS idx_oauth_clients_expires ON oauth_clients(expires);
   `);
+  // Owner decision (2026-11-02): all old approval history, including production,
+  // was test data. Persist the one-time reset so an old binary recreating legacy
+  // markers during rollback cannot wipe new history on the next roll-forward.
+  db.transaction(() => {
+    if ((db.pragma("user_version", { simple: true }) as number) >= 1) return;
+    const columns = (db.prepare("PRAGMA table_info(approvals)").all() as { name: string }[]).map((c) => c.name);
+    const legacy = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='standing_approvals'").get()
+      || ["approved_by_rule", "check_state", "check_json", "check_by", "check_at"].some((col) => columns.includes(col));
+    if (legacy) db.exec(`
+      DROP TABLE IF EXISTS standing_approvals;
+      DROP TABLE approvals;
+      DELETE FROM reports WHERE kind IN ('approval', 'outcome');
+      DELETE FROM activity WHERE action IN ('request_approval', 'record_action_outcome', 'approval_decided', 'approved_in_assistant', 'standing_rule_created', 'standing_rule_revoked', 'standing_auto_approved');
+      ${approvalsSchema}
+    `);
+    // Fresh and already-clean databases must also be protected from a rollback.
+    db.pragma("user_version = 1");
+  }).immediate();
   // Backward-safe: approval card columns are added to an existing table in place.
   const approvalCols = new Set((db.prepare("PRAGMA table_info(approvals)").all() as { name: string }[]).map((c) => c.name));
-  for (const col of ["kind", "report_id", "decided_at", "outcome_json", "approved_by_rule", "playbook_id", "owner_confirmation", "check_state", "check_json", "check_by", "check_at"]) if (!approvalCols.has(col)) db.exec(`ALTER TABLE approvals ADD COLUMN ${col} TEXT`);
-  // A process restart cannot resume an inference; never leave a stale pass or spinner.
-  db.exec(`UPDATE approvals SET check_state='unavailable',check_json='{"reason":"interrupted"}' WHERE check_state='running'`);
+  for (const col of ["kind", "report_id", "decided_at", "outcome_json", "playbook_id", "owner_confirmation"]) if (!approvalCols.has(col)) db.exec(`ALTER TABLE approvals ADD COLUMN ${col} TEXT`);
   // #35: a legacy send approval stored without a recipient address can never be
   // used, so an actionable one (pending or approved) is expired once at startup.
   // Consumed rows record what was already sent and are left as they are.
@@ -59,12 +76,6 @@ export function openDb(path: string) {
   `);
   // Calendar feed (#29): one secret feed per owner; only the token's sha256 is stored.
   db.exec("CREATE TABLE IF NOT EXISTS calendar_feeds(owner_id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL)");
-  // Standing approvals (#45): an owner rule that approves matching sends at once.
-  // recipients_json NULL means any recipient.
-  db.exec(`
-  CREATE TABLE IF NOT EXISTS standing_approvals(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, kind TEXT NOT NULL, recipients_json TEXT, max_amount_cents INTEGER NOT NULL, max_per_day INTEGER NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT);
-  CREATE INDEX IF NOT EXISTS idx_standing_approvals_owner ON standing_approvals(owner_id);
-  `);
   // Bank statements the assistant already read for the books (phone retest 1 Nov: a new chat asked for the
   // same Swedbank statement again). Bank name and last four digits only, never the account number.
   db.exec("CREATE TABLE IF NOT EXISTS statements_read(owner_id TEXT NOT NULL, bank TEXT NOT NULL, last4 TEXT NOT NULL, period_from TEXT NOT NULL, period_to TEXT NOT NULL, closing_balance_cents INTEGER NOT NULL, read_at TEXT NOT NULL, PRIMARY KEY(owner_id, bank, last4, period_from, period_to))");

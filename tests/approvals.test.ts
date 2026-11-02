@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createApp, type Config } from "../src/app.js";
 import { openDb, sha256 } from "../src/db.js";
-import { approvalDigest, canonicalJson, type ApprovalRow } from "../src/mcp.js";
+import { approvalDigest, canonicalJson, SERVER_INSTRUCTIONS, type ApprovalRow } from "../src/mcp.js";
 import { jobOfApproval, JOB_TITLES } from "../src/handover.js";
 import { approvalCardBody } from "../src/views.js";
 
@@ -58,6 +58,88 @@ test("canonical digest binds every field with stable key order", () => {
 test("the digest differs when only the recipient address differs (#35)", () => {
   const a = reminder();
   expect(approvalDigest(reminder({ recipient: { ...a.recipient, address: "billing@other.example" } }))).not.toBe(approvalDigest(a));
+});
+
+describe("actions recorded without approval", () => {
+  test("records one invoice row, replays its receipt, then advances sent to paid", async () => {
+    const o = owner("direct-invoice"), c = await client(o.token);
+    const args = { report_id: "direct-1", action: reminder(), playbook_id: "invoicing", outcome: "sent", observed_at: new Date().toISOString() };
+    const out = parsed(await c.callTool({ name: "record_action_outcome", arguments: args }));
+    expect(out).toMatchObject({ approval_id: expect.any(String), digest: approvalDigest({ ...reminder(), currency: "EUR" }), state: "consumed", outcome: "sent", evidence_label: "assistant_reported" });
+    expect(row(out.approval_id)).toMatchObject({ state: "consumed", decided_at: null, owner_confirmation: null, consumed_at: expect.any(String), playbook_id: "invoicing" });
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: args }))).toEqual(out);
+    expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { ...args, action: reminder({ amount_cents: 1 }) } }))).toContain("Conflict");
+    const paid = parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "direct-2", approval_id: out.approval_id, digest: out.digest, outcome: "paid", observed_at: args.observed_at } }));
+    expect(paid).toMatchObject({ approval_id: out.approval_id, outcome: "paid" });
+    expect(JSON.parse(row(out.approval_id).outcome_json!).history.map((x: { outcome: string }) => x.outcome)).toEqual(["sent", "paid"]);
+    expect(db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=?").get("direct-invoice")).toEqual({ n: 1 });
+  });
+
+  test("rejects missing amounts, addresses, invalid periods, first outcomes and job attribution without writing", async () => {
+    const o = owner("direct-validation"), c = await client(o.token);
+    const args = { report_id: "invalid", outcome: "sent", observed_at: new Date().toISOString() };
+    const cases = [
+      { action: reminder({ amount_cents: undefined }) },
+      { action: reminder({ recipient: { name: "Client" } }) },
+      { action: reminder({ kind: "post_entries", period: "2026-13" }), outcome: "posted" },
+      { action: reminder({ kind: "post_entries", amount_cents: undefined }), outcome: "posted" },
+      { action: reminder({ kind: "prepare_payment", amount_cents: undefined }), outcome: "paid" },
+      { action: reminder(), outcome: "paid" },
+      { action: reminder(), playbook_id: "vat-return-prep" },
+    ];
+    for (const invalid of cases) expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { ...args, ...invalid } }))).toMatch(/amount_cents|recipient.address|period|first outcome|playbook_id/);
+    expect(db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=?").get("direct-validation")).toEqual({ n: 0 });
+    expect(db.prepare("SELECT count(*) n FROM reports WHERE owner_id=?").get("direct-validation")).toEqual({ n: 0 });
+  });
+
+  test("requires exactly action or the complete approval pair", async () => {
+    const o = owner("direct-exclusive"), c = await client(o.token);
+    for (const input of [{}, { approval_id: "x" }, { digest: "a".repeat(64) }, { action: reminder(), approval_id: "x", digest: "a".repeat(64) }, { action: reminder(), digest: "a".repeat(64) }]) {
+      expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "invalid", outcome: "sent", observed_at: new Date().toISOString(), ...input } }))).toContain("exactly one");
+    }
+    expect(db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=?").get("direct-exclusive")).toEqual({ n: 0 });
+  });
+
+  test("keeps the 200-row bound, but allows a replay and later outcomes at capacity", async () => {
+    const o = owner("direct-capacity"), c = await client(o.token);
+    const args = { report_id: "first", action: reminder(), outcome: "sent", observed_at: new Date().toISOString() };
+    const receipt = parsed(await c.callTool({ name: "record_action_outcome", arguments: args }));
+    const insert = db.prepare("INSERT INTO approvals(id,owner_id,payload_json,digest,state,expires_at,created_at) VALUES(?,'direct-capacity','{}','x','consumed',?,?)");
+    db.transaction(() => { for (let i = 0; i < 199; i++) insert.run(`capacity-${i}`, args.observed_at, args.observed_at); })();
+    expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { ...args, report_id: "over" } }))).toContain("(200)");
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: args }))).toEqual(receipt);
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "paid", approval_id: receipt.approval_id, digest: receipt.digest, outcome: "paid", observed_at: args.observed_at } })).outcome).toBe("paid");
+    expect(db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=?").get("direct-capacity")).toEqual({ n: 200 });
+  });
+
+  test("records each action kind and enforces sharing and workspace isolation", async () => {
+    const o = owner("direct-kinds"), c = await client(o.token);
+    for (const [kind, outcome, playbook_id] of [["send_message", "sent", "customer-follow-ups"], ["post_entries", "posted", "books-catch-up"], ["prepare_filing", "submitted", "vat-return-prep"], ["prepare_payment", "paid", undefined]]) {
+      const receipt = parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: kind, action: reminder({ kind }), outcome, observed_at: new Date().toISOString(), ...(playbook_id ? { playbook_id } : {}) } }));
+      expect(receipt).toMatchObject({ state: "consumed", outcome });
+      expect(row(receipt.approval_id)).toMatchObject({ kind, decided_at: null, owner_confirmation: null });
+      const other = owner(`direct-other-${kind}`), otherClient = await client(other.token);
+      expect(errText(await otherClient.callTool({ name: "record_action_outcome", arguments: { report_id: "other", approval_id: receipt.approval_id, digest: receipt.digest, outcome: "accepted", observed_at: new Date().toISOString() } }))).toContain("Unknown approval_id");
+    }
+    for (const [id, scopes, sharing] of [["direct-readonly", "progress:read", 1], ["direct-off", "progress:read,progress:report", 0]] as const) {
+      const denied = owner(id, scopes, sharing), deniedClient = await client(denied.token);
+      errText(await deniedClient.callTool({ name: "record_action_outcome", arguments: { report_id: "denied", action: reminder(), outcome: "sent", observed_at: new Date().toISOString() } }));
+      expect(db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=?").get(id)).toEqual({ n: 0 });
+    }
+  });
+
+  test("instructions act and record by default and preserve both ask-first triggers", async () => {
+    const o = owner("direct-instructions"), c = await client(o.token);
+    const started = parsed(await c.callTool({ name: "get_started", arguments: {} }));
+    for (const text of [SERVER_INSTRUCTIONS, started.approvals_note]) {
+      expect(text).not.toContain("Use request_approval before you send");
+      for (const phrase of ["record_action_outcome", "saved fact", "file, e-mail or web page", "recipient or amount", "content is unclear", "owner_confirmation"]) expect(text).toContain(phrase);
+    }
+    const outcomeDescription = (await c.listTools()).tools.find((tool) => tool.name === "record_action_outcome")!.description!;
+    expect(outcomeDescription).toContain("record paid or submitted only after the owner says they paid in the bank or filed in e-MTA / e-Business Register");
+    expect(outcomeDescription).toContain("No approval is required to record their report");
+    expect(started.first_step).toContain("the owner only answers what nobody else knows");
+  });
 });
 
 describe("approval cards over MCP", () => {
@@ -118,7 +200,7 @@ describe("approval cards over MCP", () => {
     expect((await c.listTools()).tools.map((t) => t.name)).toEqual(expect.arrayContaining(["request_approval", "get_approval", "record_action_outcome"]));
     const started = parsed(await c.callTool({ name: "get_started", arguments: {} }));
     expect(started.tools).toEqual(expect.arrayContaining(["request_approval", "get_approval", "record_action_outcome"]));
-    expect(started.approvals_note).toContain("Act only when the approval is approved (and usable is not false)"); expect(started.approvals_note).toContain("call request_approval with owner_confirmation set to their words");
+    expect(started.approvals_note).toContain("act only while that approval is approved and usable is not false"); expect(started.approvals_note).toContain("call request_approval with owner_confirmation set to their words");
 
     // Amount is required for invoices and payments; nothing is saved.
     const { amount_cents: _drop, ...noAmount } = reminder();
@@ -216,7 +298,7 @@ describe("approval cards over MCP", () => {
     // Tehtud rows name their object, and the time never runs into the verb (QA D-15, D-17).
     const tehtud = await (await fetch(`${base}/activity`, { headers: { cookie: o.cookie } })).text();
     const main = tehtud.slice(0, tehtud.indexOf('<details class="tech-details">'));
-    for (const verb of ["Sina kinnitasid", "Assistent valmistas töö ette ja palus sinu kinnitust", "Assistent teatas, mis kinnitatud tööga juhtus"]) expect(main).toMatch(new RegExp(`<strong>${verb}</strong><br><span>Payment reminder: invoice 2026-014 · Synthetic Client OÜ</span>`));
+    for (const verb of ["Sina kinnitasid", "Assistent valmistas töö ette ja palus sinu kinnitust", "Assistent teatas töö tulemuse"]) expect(main).toMatch(new RegExp(`<strong>${verb}</strong><br><span>Payment reminder: invoice 2026-014 · Synthetic Client OÜ</span>`));
     expect(main).not.toMatch(/<\/strong><span class="small muted"><time/);
     // The approvals history marks synthetic data only for a demo owner.
     expect(await (await fetch(`${base}/approvals`, { headers: { cookie: o.cookie } })).text()).not.toContain(": demo");
@@ -340,6 +422,18 @@ describe("approval cards over MCP", () => {
     // Once approved, the replay drops the "ask the owner" line and says to act.
     const { owner_instruction: _ask, ...firstRest } = first;
     expect(replay).toEqual({ ...firstRest, state: "approved", current_state: "approved", note, assistant_instruction: expect.stringContaining("Do not ask them to approve it again on Launchpad") });
+  });
+
+  test("a replay after the outcome is recorded is no longer approved and says do not send (tribunal T-001)", async () => {
+    const c = await client(owner("replay-consumed").token);
+    const args = { report_id: "replay-consumed-1", action: reminder({ summary: "replay once sent" }), owner_confirmation: "jah, saada" };
+    const r = parsed(await c.callTool({ name: "request_approval", arguments: args }));
+    expect(r).toMatchObject({ state: "approved", approved_in_assistant: true });
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "replay-consumed-out", approval_id: r.approval_id, digest: r.digest, outcome: "sent", observed_at: new Date().toISOString() } })).state).toBe("consumed");
+    const replay = parsed(await c.callTool({ name: "request_approval", arguments: args }));
+    expect(replay).toMatchObject({ approval_id: r.approval_id, state: "consumed", current_state: "consumed" });
+    expect(replay.assistant_instruction).toBe("This approval is consumed. Do not send, pay or file anything for it. If the owner still wants this done, make a new request_approval with a new report_id.");
+    expect(replay.owner_instruction).toBeUndefined();
   });
 
   test("a replay of a still-pending request keeps pending and the owner instruction (tribunal T-001)", async () => {
@@ -549,203 +643,28 @@ test("Täna keeps an old failed or rejected approval in Ootab sinult behind 60 n
   expect(html.match(/Ei õnnestunud — vaata üle/g)).toHaveLength(2);
 });
 
-describe("standing approvals (#45)", () => {
-  const post = (o: { cookie: string; csrf: string }, path: string, body: Record<string, string>, origin: string | null = base) =>
-    fetch(`${base}${path}`, { method: "POST", redirect: "manual", headers: { cookie: o.cookie, "content-type": "application/x-www-form-urlencoded", ...(origin === null ? {} : { origin }) }, body: new URLSearchParams({ csrf: o.csrf, ...body }) });
-  const html = async (o: { cookie: string }, path: string) => (await fetch(`${base}${path}`, { headers: { cookie: o.cookie } })).text();
-  const rules = (ownerId: string) => db.prepare("SELECT * FROM standing_approvals WHERE owner_id=? ORDER BY created_at").all(ownerId) as Record<string, string | number | null>[];
-  const audit = (ownerId: string) => db.prepare("SELECT * FROM activity WHERE owner_id=? AND action='standing_auto_approved'").all(ownerId) as Record<string, string>[];
-  /** The owner approves one reminder on its card, then allows similar ones from the card. */
-  async function ruleFromCard(id: string, scope: "recipient" | "any" = "recipient", max_eur = "2000") {
-    const o = owner(id), c = await client(o.token);
-    const first = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: `${id}-first`, action: reminder() } }));
-    expect((await decide(o, first.approval_id, { decision: "approve", digest: first.digest })).status).toBe(302);
-    const card = await html(o, `/approvals/${first.approval_id}`);
-    expect(card).toContain("Luba edaspidi sarnased automaatselt");
-    // The default cap is the largest approved amount up to the next 100 € (QA m4): 1 240 € → 1 300 €.
-    expect(card).toContain('<input id="so-max" name="max_eur" inputmode="decimal" autocomplete="off" value="1300">');
-    const made = await post(o, "/standing-approvals", { approval_id: first.approval_id, scope, max_eur });
-    expect(made.status).toBe(302);
-    expect(made.headers.get("location")).toBe(`/approvals/${first.approval_id}#pusiluba`);
-    return { o, c, first, rule: rules(id)[0] };
-  }
-  let n = 0;
-  const ask = async (c: Client, action: Record<string, unknown>) => parsed(await c.callTool({ name: "request_approval", arguments: { report_id: `std-${++n}`, action } }));
-
-  test("a rule from the card auto-approves the next matching send: approved at once, audited, named on Täna, Tehtud and the card", async () => {
-    const { o, c, first, rule } = await ruleFromCard("std-match");
-    expect(rule).toMatchObject({ kind: "send_invoice", recipients_json: JSON.stringify(["billing@client.example"]), max_amount_cents: 200_000, max_per_day: 10, revoked_at: null });
-    expect(Date.parse(String(rule.expires_at)) - Date.now()).toBeGreaterThan(89.9 * 86_400_000);
-    // The card now says the rule exists instead of offering it again.
-    expect(await html(o, `/approvals/${first.approval_id}`)).toContain("Püsiluba on olemas: Arved: billing@client.example, kuni 2000");
-
-    const next = reminder({ amount_cents: 99_000, recipient: { name: "Synthetic Client OÜ", address: " Billing@Client.example " }, document: { title: "Payment reminder: invoice 2026-015", content: "Tere!" } });
-    const r = await ask(c, next);
-    expect(r).toMatchObject({ state: "approved", auto_approved: true, approved_by_rule: rule.id, digest: approvalDigest({ ...next, currency: "EUR" }) });
-    expect(r.rule_name).toMatch(/^Arved: billing@client\.example, kuni 2000/);
-    expect(r.check.state).toBe("review"); // The document omits the invoice amount.
-    expect(r.assistant_instruction).toContain("act only if they still want it");
-    expect(r.assistant_instruction).not.toContain("Proceed without asking");
-    expect(row(r.approval_id)).toMatchObject({ state: "approved", approved_by_rule: rule.id });
-    expect(row(r.approval_id).decided_at).toBeTruthy();
-    // One audit row names the rule and the digest.
-    const log = audit("std-match");
-    expect(log).toHaveLength(1);
-    expect(log[0]).toMatchObject({ actor: "launchpad", outcome: "ok" });
-    expect(log[0].summary).toContain(`standing rule ${rule.id}`);
-    expect(log[0].summary).toContain(`digest ${r.digest.slice(0, 12)}`);
-    expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: r.approval_id } }))).toMatchObject({ state: "approved", auto_approved: true, approved_by_rule: rule.id });
-
-    expect(await html(o, "/")).toContain("Püsiloaga: Arved: billing@client.example");
-    expect(await html(o, "/?lang=en")).toContain("Standing approval: Invoices to billing@client.example");
-    const card = await html(o, `/approvals/${r.approval_id}?lang=et`);
-    expect(card).toContain("Kinnitatud püsiloaga „Arved: billing@client.example");
-    expect(card).not.toContain("Luba edaspidi sarnased automaatselt");
-    expect(card).not.toContain('value="approve"');
-
-    // The exact digest still binds the outcome.
-    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "std-out", approval_id: r.approval_id, digest: r.digest, outcome: "sent", observed_at: new Date().toISOString() } })).state).toBe("consumed");
-    const done = await html(o, "/activity");
-    expect(done).toContain("Assistent saatis püsiloa alusel:");
-    expect(done).toContain("Sina andsid püsiloa");
-    expect(done).toContain("Püsiluba kinnitas assistendi töö");
-    expect(await html(o, "/activity?lang=en")).toContain("Your assistant sent under a standing approval:");
-    // A replay returns the same auto-approved receipt with the live state.
-    expect(parsed(await c.callTool({ name: "request_approval", arguments: { report_id: `std-${n}`, action: next } }))).toMatchObject({ approval_id: r.approval_id, auto_approved: true, current_state: "consumed" });
-  });
-
-  test("a replay after the outcome is recorded is no longer approved and says do not send (tribunal T-001)", async () => {
-    const { c } = await ruleFromCard("std-replay");
-    const action = reminder({ summary: "replay once sent" });
-    const r = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "std-replay-1", action } }));
-    expect(r).toMatchObject({ state: "approved", auto_approved: true });
-    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "std-replay-out", approval_id: r.approval_id, digest: r.digest, outcome: "sent", observed_at: new Date().toISOString() } })).state).toBe("consumed");
-    const replay = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "std-replay-1", action } }));
-    expect(replay).toMatchObject({ approval_id: r.approval_id, state: "consumed", current_state: "consumed" });
-    expect(replay.assistant_instruction).toBe("This approval is consumed. Do not send, pay or file anything for it. If the owner still wants this done, make a new request_approval with a new report_id.");
-    expect(replay.owner_instruction).toBeUndefined();
-  });
-
-  test("revoking a rule expires its approved, unused approvals; a recorded outcome stays (tribunal T-002)", async () => {
-    const { o, c, rule } = await ruleFromCard("std-revoke-open");
-    const open = await ask(c, reminder({ summary: "still unsent" }));
-    const done = await ask(c, reminder({ summary: "already sent" }));
-    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "std-revoke-out", approval_id: done.approval_id, digest: done.digest, outcome: "sent", observed_at: new Date().toISOString() } })).state).toBe("consumed");
-    expect((await post(o, "/standing-approvals/revoke", { rule_id: String(rule.id) })).status).toBe(302);
-    expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: open.approval_id } })).state).toBe("expired");
-    expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "std-revoke-late", approval_id: open.approval_id, digest: open.digest, outcome: "sent", observed_at: new Date().toISOString() } }))).toContain("expired");
-    expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: done.approval_id } })).state).toBe("consumed");
-    expect(db.prepare("SELECT summary FROM activity WHERE owner_id=? AND action='standing_rule_revoked'").get("std-revoke-open")).toMatchObject({ summary: expect.stringContaining("1 approved, unused approval expired") });
-  });
-
-  test("over the cap, a new recipient (scoped rule), the daily limit, expiry and revocation each fall back to a pending card", async () => {
-    const { o, c, rule } = await ruleFromCard("std-limits");
-    // Cap: one cent over waits for the owner; exactly the cap passes.
-    expect(await ask(c, reminder({ amount_cents: 200_001 }))).toMatchObject({ state: "pending" });
-    expect((await ask(c, reminder({ amount_cents: 200_000 }))).auto_approved).toBe(true);
-    // A recipient the owner never approved.
-    const stranger = await ask(c, reminder({ recipient: { name: "New Client OÜ", address: "ap@new.example" } }));
-    expect(stranger.state).toBe("pending");
-    expect(stranger.auto_approved).toBeUndefined();
-    // A message is another kind: the invoice rule does not cover it.
-    expect((await ask(c, reminder({ kind: "send_message" }))).state).toBe("pending");
-    // Daily limit 10: the first auto-approval above counts; nine more pass, the eleventh waits.
-    for (let i = 0; i < 9; i++) expect((await ask(c, reminder({ summary: `daily ${i}` }))).auto_approved, `#${i}`).toBe(true);
-    expect((await ask(c, reminder({ summary: "daily 10" }))).state).toBe("pending");
-    expect(audit("std-limits")).toHaveLength(10);
-    // Expiry.
-    db.prepare("UPDATE approvals SET created_at=? WHERE approved_by_rule=?").run(new Date(Date.now() - 25 * 3600_000).toISOString(), rule.id);
-    expect((await ask(c, reminder({ summary: "after a day" }))).auto_approved).toBe(true);
-    db.prepare("UPDATE standing_approvals SET expires_at=? WHERE id=?").run(new Date(Date.now() - 1000).toISOString(), rule.id);
-    expect((await ask(c, reminder({ summary: "expired rule" }))).state).toBe("pending");
-    db.prepare("UPDATE standing_approvals SET expires_at=? WHERE id=?").run(new Date(Date.now() + 86_400_000).toISOString(), rule.id);
-    expect((await ask(c, reminder({ summary: "renewed rule" }))).auto_approved).toBe(true);
-    // Revocation on Ühendus stops it immediately.
-    const page = await html(o, "/uhenda");
-    expect(page).toContain('id="pusiload"');
-    expect(page).toContain("Arved: billing@client.example, kuni 2000");
-    expect(page).toContain(`name="rule_id" value="${rule.id}"`);
-    expect(page).toContain(">Lõpeta</button>");
-    expect(await html(o, "/uhenda?lang=en")).toContain("Standing approvals (1)");
-    expect((await post(o, "/standing-approvals/revoke", { rule_id: String(rule.id) })).headers.get("location")).toBe("/uhenda#pusiload");
-    expect(rules("std-limits")[0].revoked_at).toBeTruthy();
-    expect((await ask(c, reminder({ summary: "after revoke" }))).state).toBe("pending");
-    expect(await html(o, "/uhenda")).toContain("Püsiload puuduvad");
-    expect(await html(o, "/activity")).toContain("Sina lõpetasid püsiloa");
-  });
-
-  test("an 'any recipient' rule covers new recipients but never filings or payments, even a forged rule row", async () => {
-    const { o, c } = await ruleFromCard("std-any", "any", "5000");
-    expect(rules("std-any")[0]).toMatchObject({ recipients_json: null, max_amount_cents: 500_000 });
-    expect((await ask(c, reminder({ recipient: { name: "New Client OÜ", address: "ap@new.example" } }))).auto_approved).toBe(true);
-    const now = new Date().toISOString(), later = new Date(Date.now() + 86_400_000).toISOString();
-    for (const kind of ["prepare_payment", "prepare_filing", "post_entries"]) db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,?,NULL,999999999,99,?,?)").run(`rule_forged_${kind}`, "std-any", kind, later, now);
-    expect(await ask(c, reminder({ kind: "prepare_payment", recipient: { name: "Synthetic Client OÜ" } }))).toMatchObject({ state: "pending" });
-    expect(await ask(c, reminder({ kind: "prepare_filing", amount_cents: undefined, recipient: { name: "EMTA (e-MTA)" } }))).toMatchObject({ state: "pending" });
-    expect(await ask(c, reminder({ kind: "post_entries", recipient: { name: "Näidis OÜ, e-arveldaja" } }))).toMatchObject({ state: "pending" });
-    // Nor can the owner create one.
-    for (const kind of ["prepare_payment", "prepare_filing", "post_entries"]) expect((await post(o, "/standing-approvals", { kind, scope: "any", max_eur: "2000" })).status, kind).toBe(400);
-    expect(rules("std-any")).toHaveLength(4);
-  });
-
-  test("Ühendus creates a rule for already-approved recipients or any; the card offer is only for owner-approved sends", async () => {
-    const o = owner("std-uhendus"), c = await client(o.token);
-    const html0 = await html(o, "/uhenda");
-    expect(html0).toContain("Lisa püsiluba");
-    // The sentence lives in the do-it-yourself steps, opened with ?naita=1 so a refresh cannot fold it (tribunal T-004).
-    expect(await html(o, "/uhenda?naita=1")).toContain("Kui assistent küsib tööriista luba, vali ‚Always allow' — AI-hüppelaud ise ei saada midagi; sind seob ainult kinnitus või sinu püsiluba.");
-    // No approved recipients yet: the scoped rule would cover nobody.
-    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "2000" })).status).toBe(409);
-    const msg = reminder({ kind: "send_message" });
-    const first = await ask(c, msg);
-    expect(await html(o, `/approvals/${first.approval_id}`)).not.toContain("Luba edaspidi sarnased automaatselt");
-    // Not from a pending or declined card either.
-    expect((await post(o, "/standing-approvals", { approval_id: first.approval_id, scope: "any", max_eur: "2000" })).status).toBe(404);
-    await decide(o, first.approval_id, { decision: "approve", digest: first.digest });
-    for (const bad of [{ max_eur: "0" }, { max_eur: "abc" }, { max_eur: "2000", extra: "1" }, { max_eur: "2000", scope: "everyone" }])
-      expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", ...bad })).status, JSON.stringify(bad)).toBe(400);
-    expect(rules("std-uhendus")).toHaveLength(0);
-    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "1 500,50" })).headers.get("location")).toBe("/uhenda#pusiload");
-    expect(rules("std-uhendus")[0]).toMatchObject({ kind: "send_message", recipients_json: JSON.stringify(["billing@client.example"]), max_amount_cents: 150_050 });
-    expect((await ask(c, reminder({ kind: "send_message", summary: "again" }))).auto_approved).toBe(true);
-    // A message without an amount cannot be checked against the cap, so the owner decides (tribunal T-003).
-    expect((await ask(c, reminder({ kind: "send_message", amount_cents: undefined, summary: "no amount" }))).state).toBe("pending");
-  });
-
-  test("„only past recipients” draws from reminder sends, not an untagged thank-you note (tribunal T-003)", async () => {
-    const o = owner("std-thanks"), c = await client(o.token);
-    const thanks = await ask(c, reminder({ kind: "send_message", recipient: { name: "Uus Klient OÜ", address: "info@uus-klient.example" }, document: { title: "Aitäh koostöö eest", content: "Tere!" }, summary: "Thank-you note" }));
-    await decide(o, thanks.approval_id, { decision: "approve", digest: thanks.digest });
-    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "300" })).status).toBe(409);
-    const real = await ask(c, reminder({ kind: "send_message" }));
-    await decide(o, real.approval_id, { decision: "approve", digest: real.digest });
-    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "300" })).status).toBe(302);
-    expect(rules("std-thanks")[0]).toMatchObject({ recipients_json: JSON.stringify(["billing@client.example"]) });
-  });
-
-  test("create and revoke need the CSRF token and the exact Origin; another owner cannot revoke", async () => {
-    const { o, first, rule } = await ruleFromCard("std-csrf");
-    for (const [path, body] of [["/standing-approvals", { approval_id: first.approval_id, scope: "any", max_eur: "2000" }], ["/standing-approvals/revoke", { rule_id: String(rule.id) }]] as const) {
-      expect((await post({ ...o, csrf: "wrong" }, path, body)).status, path).toBe(403);
-      expect((await post(o, path, body, "https://evil.example")).status, path).toBe(403);
-      expect((await post(o, path, body, "null")).status, path).toBe(403);
-    }
-    expect(rules("std-csrf")).toHaveLength(1);
-    const other = owner("std-csrf-other");
-    expect((await post(other, "/standing-approvals/revoke", { rule_id: String(rule.id) })).status).toBe(302);
-    expect((await post(other, "/standing-approvals", { approval_id: first.approval_id, scope: "any", max_eur: "2000" })).status).toBe(404);
-    expect(rules("std-csrf")[0].revoked_at).toBeNull();
-    expect(rules("std-csrf-other")).toHaveLength(0);
-  });
+test.each(["send_message", "send_invoice"])("request_approval keeps %s pending without owner_confirmation", async (kind) => {
+  const ownerId = `pending-${kind}`, o = owner(ownerId), c = await client(o.token);
+  const args = { report_id: "pending-request", action: reminder({ kind }) };
+  const requested = parsed(await c.callTool({ name: "request_approval", arguments: args }));
+  expect(requested).toMatchObject({ state: "pending" });
+  expect(requested).not.toHaveProperty("auto_approved");
+  expect(requested).not.toHaveProperty("check");
+  expect(row(requested.approval_id)).toMatchObject({ state: "pending", owner_confirmation: null });
+  const read = parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: requested.approval_id } }));
+  expect(read).toMatchObject({ state: "pending" });
+  expect(read).not.toHaveProperty("check");
+  const replay = parsed(await c.callTool({ name: "request_approval", arguments: args }));
+  expect(replay).toMatchObject({ approval_id: requested.approval_id, state: "pending", current_state: "pending" });
+  expect(replay).not.toHaveProperty("check");
+  expect(db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=?").get(ownerId)).toEqual({ n: 1 });
 });
 
 describe("playbook_id on approvals („Käest ära”, #61)", () => {
-  const post = (o: { cookie: string; csrf: string }, path: string, body: Record<string, string>) =>
-    fetch(`${base}${path}`, { method: "POST", redirect: "manual", headers: { cookie: o.cookie, "content-type": "application/x-www-form-urlencoded", origin: base }, body: new URLSearchParams({ csrf: o.csrf, ...body }) });
   const page = async (o: { cookie: string }, path: string) => (await fetch(`${base}${path}`, { headers: { cookie: o.cookie } })).text();
   const msg = (extra: Record<string, unknown> = {}) => reminder({ kind: "send_message", amount_cents: 24000, ...extra });
 
-  test("request_approval stores an optional playbook_id in both branches and get_approval echoes it; unknown or mismatched ids save nothing", async () => {
+  test("request_approval stores an optional playbook_id and get_approval echoes it; unknown or mismatched ids save nothing", async () => {
     const o = owner("pb"), c = await client(o.token);
     const plain = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-1", action: msg() } }));
     expect(row(plain.approval_id).playbook_id).toBeNull();
@@ -758,25 +677,6 @@ describe("playbook_id on approvals („Käest ära”, #61)", () => {
     expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-4", action: msg(), playbook_id: "vat-return-prep" } }))).toMatch(/prepares action kind prepare_filing, not send_message\. Nothing was saved/);
     expect(errText(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-5", action: msg(), playbook_id: "deadlines-check" } }))).toMatch(/needs no approval/);
     expect((db.prepare("SELECT count(*) n FROM approvals WHERE owner_id='pb'").get() as { n: number }).n).toBe(before);
-    // Auto-approved under a standing rule: stored too.
-    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "any", max_eur: "2000" })).status).toBe(302);
-    const auto = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "pb-6", action: msg({ summary: "auto" }), playbook_id: "payment-reminder" } }));
-    expect(auto.auto_approved).toBe(true);
-    expect(row(auto.approval_id).playbook_id).toBe("payment-reminder");
-  });
-
-  test("customer-follow-ups stays pending inside a live send_message rule; the same action as a payment reminder still auto-approves (tribunal T-003, #96)", async () => {
-    const o = owner("pb-follow"), c = await client(o.token);
-    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "any", max_eur: "2000" })).status).toBe(302);
-    const action = msg({ summary: "same action, amount inside the rule" });
-    const follow = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "fu-1", action, playbook_id: "customer-follow-ups" } }));
-    expect(follow.state).toBe("pending");
-    expect(follow.auto_approved).toBeUndefined();
-    expect(row(follow.approval_id)).toMatchObject({ state: "pending", playbook_id: "customer-follow-ups", approved_by_rule: null });
-    const reminderReq = parsed(await c.callTool({ name: "request_approval", arguments: { report_id: "fu-2", action, playbook_id: "payment-reminder" } }));
-    expect(reminderReq).toMatchObject({ state: "approved", auto_approved: true });
-    expect(row(reminderReq.approval_id).playbook_id).toBe("payment-reminder");
-    expect(db.prepare("SELECT count(*) n FROM activity WHERE owner_id='pb-follow' AND action='standing_auto_approved'").get()).toEqual({ n: 1 });
   });
 
   test("request_approval with playbook_id: 'invoicing' and a synthetic .example recipient is accepted; the approval shows the job title (#120)", async () => {
@@ -822,15 +722,9 @@ describe("playbook_id on approvals („Käest ära”, #61)", () => {
     await c.callTool({ name: "record_action_outcome", arguments: { report_id: "fill-o", approval_id: req.approval_id, digest: req.digest, outcome: "sent", observed_at: new Date().toISOString() } });
     expect(await count()).toBe("Korras");
     const uhendus = await page(o, "/uhenda");
-    const section = uhendus.slice(uhendus.indexOf('id="kaest-ara"'), uhendus.indexOf('id="pusiload"'));
+    const section = uhendus.slice(uhendus.indexOf('id="kaest-ara"'), uhendus.indexOf('</section>', uhendus.indexOf('id="kaest-ara"')));
     expect(section).not.toContain("%");
     expect(section.match(/class="ask"/g)).toHaveLength(1);
-    // One filled button outside „Muuda piire”; its twin inside submits an edited cap (QA M1).
-    expect(section.replace(/<details>[\s\S]*?<\/details>/g, "").match(/<button type="submit">/g)?.length ?? 0).toBeLessThanOrEqual(1);
-    // The offer posts to the existing endpoint and creates the rule for the approved recipient.
-    expect(section).toContain('<input type="hidden" name="kind" value="send_message">');
-    expect((await post(o, "/standing-approvals", { kind: "send_message", scope: "approved", max_eur: "300" })).status).toBe(302);
-    expect(db.prepare("SELECT recipients_json, max_amount_cents FROM standing_approvals WHERE owner_id='pb-fill'").get()).toEqual({ recipients_json: JSON.stringify(["billing@client.example"]), max_amount_cents: 30000 });
   });
 });
 
@@ -844,6 +738,7 @@ describe("one approval: the owner's yes in their own assistant", () => {
     expect(r).toMatchObject({ state: "approved", approved_in_assistant: true, digest: approvalDigest({ ...reminder(), currency: "EUR" }) });
     expect(r.assistant_instruction).toContain("Do not ask them to approve it again on Launchpad");
     expect(r.owner_instruction).toBeUndefined();
+    expect(r).not.toHaveProperty("check");
     expect(row(r.approval_id)).toMatchObject({ state: "approved", owner_confirmation: "jah, saada" });
     expect(row(r.approval_id).decided_at).not.toBeNull();
     expect(parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: r.approval_id } }))).toMatchObject({ state: "approved", approved_in_assistant: true, owner_confirmation: "jah, saada" });

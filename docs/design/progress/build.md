@@ -24,7 +24,6 @@ Scope: a pure function that derives the job rows and rungs, the Täna strip, and
 - `tests/approvals.test.ts`: `request_approval` with and without `playbook_id`; invalid id rejected; `get_approval` echoes it.
 - `tests/ui-redesign.test.ts`: Täna HTML contains `.ho-strip` with the count text and no `%`; Ühendus contains `#kaest-ara` with one `.ask` and at most one filled primary button.
 - `tests/ui-redesign.browser.mjs`: add `.ho-strip`, `.ho-job`, `.ho-finding .tap-link` to the ≥ 44 px selector list; no overflow at 320/390/1280 (already asserted page-wide).
-- `e2e/standing-approvals.spec.ts`: the pre-filled offer on Ühendus creates the rule and the reminders segment turns `done` after the next auto-approved outcome.
 
 Effort: handover.ts + tests 0.4 d, views + CSS 0.3 d, mcp/db column + tests 0.2 d.
 

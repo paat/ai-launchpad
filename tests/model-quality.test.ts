@@ -97,7 +97,7 @@ describe("model quality harness (Baseten)", () => {
     ledger.close();
   });
 
-  test.each(["setup_guidance", "classify_friction", "classify_unmet_need", "check_approval"] as const)("%s returns live text and only approval checks omit ledger text", async (job) => {
+  test.each(["setup_guidance", "classify_friction", "classify_unmet_need", "intake_extract", "intake_plan"] as const)("%s returns live text and only intake jobs omit ledger text", async (job) => {
     const ledger = ModelQualityLedger.open(":memory:");
     try {
       const { calls, fetchFn } = happy();
@@ -106,7 +106,7 @@ describe("model quality harness (Baseten)", () => {
       expect(result).toMatchObject({ status: "completed", output: "Synthetic bounded answer.", replayed: false,
         inputTokens: 100, outputTokens: 10, actualCostMicroUsd: 168,
         allocatedMicroUsd: reservationMicroUsd(job, opts.input) });
-      const savedOutput = job === "check_approval" ? null : result.output;
+      const savedOutput = job === "intake_extract" || job === "intake_plan" ? null : result.output;
       expect(ledger.get(opts.requestId)).toMatchObject({ status: "completed", output: savedOutput,
         input_tokens: 100, output_tokens: 10, actual_cost_micro_usd: 168,
         payload_hash: payloadHash(job, opts.input), allocated_micro_usd: result.allocatedMicroUsd });
@@ -187,7 +187,7 @@ describe("model quality harness (Baseten)", () => {
   test("attempt backstop is 10000 and still refuses at the limit", { timeout: 30_000 }, async () => {
     expect(ABSOLUTE_MAX_ATTEMPTS).toBe(10_000);
     expect(ABSOLUTE_CAP_MICRO_USD).toBe(100_000_000);
-    const jobs = ["setup_guidance", "classify_friction", "classify_unmet_need", "intake_extract", "intake_plan", "check_approval"] as const;
+    const jobs = ["setup_guidance", "classify_friction", "classify_unmet_need", "intake_extract", "intake_plan"] as const;
     const smallest = Math.min(...jobs.map((job) => reservationMicroUsd(job, "a")));
     expect(smallest).toBe(reservationMicroUsd("classify_unmet_need", "a"));
     expect(smallest).toBe(12_396);

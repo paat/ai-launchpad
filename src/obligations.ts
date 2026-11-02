@@ -98,11 +98,11 @@ const EN_MONTH = ["January", "February", "March", "April", "May", "June", "July"
 /** Static who-does-what map, keyed by rule_id (TSD also by applies). {kuu}/{month} is the period month. */
 export const HANDOFF: Record<string, Handoff> = {
   "vat-return-kmd": { assistant_et: "kogub {kuu} arved kokku ja kontrollib, et ükski pole puudu", assistant_en: "gathers {month}'s invoices and checks none are missing", owner_et: "esitad KMD e-MTA-s oma Smart-ID-ga", owner_en: "file the VAT return in e-MTA with your Smart-ID",
-    prompt_et: "Valmista {kuu} KMD jaoks arved ette ja küsi minult kinnitust enne, kui midagi saadad.", prompt_en: "Prepare the invoices for the {month} VAT return and ask me before you send anything." },
+    prompt_et: "Valmista {kuu} KMD jaoks arved ette. Esitan KMD ise e-MTA-s; salvesta tulemus, kui ütlen, et esitasin.", prompt_en: "Prepare the invoices for the {month} VAT return. I will file it in e-MTA myself; record the outcome when I say I have filed it." },
   "tsd-monthly-return:if": { assistant_et: "otsib {kuu} väljamakseid raamatupidamisest ja pangast; kui midagi deklareerida polnud, kaob see rida", assistant_en: "looks for {month}'s payouts in your books and bank; if nothing needed declaring, this row goes away", owner_et: "vastad „jah” või „ei”", owner_en: "answer yes or no",
     prompt_et: "Vaata minu raamatupidamisest ja pangast {kuu} väljamaksed üle ja ütle, kas TSD-d on vaja.", prompt_en: "Check my books and bank for {month}'s payouts and tell me whether a TSD is needed." },
   "tsd-monthly-return:yes": { assistant_et: "paneb väljamaksed kokku ja valmistab TSD andmed ette", assistant_en: "collects the payouts and prepares the TSD data", owner_et: "esitad TSD e-MTA-s", owner_en: "file the TSD in e-MTA",
-    prompt_et: "Pane {kuu} väljamaksed kokku ja valmista TSD andmed ette. Küsi minult kinnitust enne, kui midagi saadad.", prompt_en: "Collect {month}'s payouts and prepare the TSD data. Ask me before you send anything." },
+    prompt_et: "Pane {kuu} väljamaksed kokku ja valmista TSD andmed ette. Esitan TSD ise e-MTA-s; salvesta tulemus, kui ütlen, et esitasin.", prompt_en: "Collect {month}'s payouts and prepare the TSD data. I will file it in e-MTA myself; record the outcome when I say I have filed it." },
   "annual-report": { assistant_et: "paneb aruande jaoks vajalikud andmed kokku", assistant_en: "gathers what the report needs", owner_et: "kinnitad ja allkirjastad e-äriregistris", owner_en: "approve and sign in the e-Business Register",
     prompt_et: "Pane majandusaasta aruande jaoks vajalikud andmed kokku ja ütle, mida sinult veel vaja on.", prompt_en: "Gather what the annual report needs and tell me what you still need from me." },
   "annual-report-overdue": { assistant_et: "koostab sammud aruande esitamiseks", assistant_en: "lays out the steps to file", owner_et: "esitad aruande e-äriregistris", owner_en: "file it in the e-Business Register",
@@ -110,7 +110,7 @@ export const HANDOFF: Record<string, Handoff> = {
   "vat-registration-threshold": { assistant_et: "kontrollib sinu arvetest, kas piir on lähedal, kui sa seda palud", assistant_en: "checks your invoices against the threshold when you ask", owner_et: "esitad avalduse, kui piir ületatakse", owner_en: "apply if you cross it",
     prompt_et: "Kontrolli minu arvetest, kui lähedal on selle aasta käive käibemaksukohustuslaseks registreerimise piirile.", prompt_en: "Check my invoices for how close this year's turnover is to the VAT registration threshold." },
   "tor-registration": { assistant_et: "valmistab TÖR-i kande andmed ette", assistant_en: "prepares the employment-register entry", owner_et: "kinnitad kande e-MTA-s", owner_en: "confirm it in e-MTA",
-    prompt_et: "Valmista TÖR-i kande andmed ette ja küsi minult kinnitust.", prompt_en: "Prepare the employment-register entry and ask me to confirm it." },
+    prompt_et: "Valmista TÖR-i kande andmed ette. Esitan kande ise e-MTA-s; salvesta tulemus, kui ütlen, et esitasin.", prompt_en: "Prepare the employment-register entry. I will submit it in e-MTA myself; record the outcome when I say I have submitted it." },
 };
 const handoff = (key: string, m0?: number): Handoff => {
   const h = HANDOFF[key], et = (v: string) => v.replace("{kuu}", m0 === undefined ? "" : ET_OF[m0]), en = (v: string) => v.replace("{month}", m0 === undefined ? "" : EN_MONTH[m0]);

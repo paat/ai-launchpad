@@ -46,7 +46,7 @@ describe("public About page", () => {
     expect(html).toContain("AI-hüppelaud ei ole uus AI-assistent ega vestlusrobot. See aitab sinu olemasoleval AI-assistendil — ChatGPT-l või Claude'il — võtta kontoritöö sinu õlult.");
     expect(html).toContain("ei ole uus AI-assistent");
     expect(html).toContain("võtta kontoritöö sinu õlult");
-    expect(html).toContain("Sinu assistent teeb kontoritööd: tähtajad, arved, raamatupidamine, meeldetuletused. AI-hüppelaud ütleb talle, mida Eesti reeglid nõuavad ja milliseid ühendusi on vaja, ning küsib enne iga tegevust sinu kinnitust.");
+    expect(html).toContain("Sinu assistent teeb kontoritööd: tähtajad, arved, raamatupidamine, meeldetuletused. AI-hüppelaud ütleb talle, mida Eesti reeglid nõuavad ja milliseid ühendusi on vaja, ning salvestab iga tegevuse. Soovi korral palu assistendil enne küsida.");
     expect(headings(html)).toEqual(ET_H2);
     expect(html).toContain("Eesti väikeettevõtjale, kes teeb kontoritöö ise. Esimesena ühe inimese OÜ, mille raamatud on e-arveldajas või Meritis.");
     expect(html).toContain("Neile, kes juba kasutavad ChatGPT-d või Claude'i ja tahavad, et see ka tööd teeks, mitte ainult vestleks.");
@@ -55,7 +55,7 @@ describe("public About page", () => {
     expect(html).toContain("Sinu assistent on ainus kasutajaliides. AI-hüppelaud on üks ühendus, mille sa sellele lisad.");
     expect(html).toContain("Ettevõtte andmed tulevad avalikest registritest. Küsime ainult seda, mida keegi teine ei tea.");
     expect(html).toContain("Tähtajad ja maksud arvutab reeglistik, igaühel ametlik allikas. Tehisaru loeb ja kirjutab mustandeid.");
-    expect(html).toContain("Midagi ei saadeta ega maksta ilma sinu kinnituseta just sellele toimingule. Iga tegevus jätab kviitungi.");
+    expect(html).toContain("Sinu assistent teeb palutud töö ja iga tegevus salvestatakse. Soovi korral palu tal enne küsida.");
     expect(html).toContain("Smart-ID PIN-koodi, allkirja ja deklaratsiooni esitamise teed sina ise ametlikus kanalis. Meie seda sinu eest ei tee.");
     expect(html).toContain("Meta avatud mudel Muse Spark Open liigitab anonüümselt, mida ettevõtjad veel vajavad.");
     expect(html).toContain('<a href="/demand">Vaata avatud soove</a>');
@@ -83,7 +83,7 @@ describe("public About page", () => {
     expect(html).toContain("AI Launchpad is not another AI assistant, and not a chatbot. It helps the AI assistant you already have — ChatGPT or Claude — take the office work off your shoulders.");
     expect(html).toContain("not another AI assistant");
     expect(html).toContain("off your shoulders");
-    expect(html).toContain("Your assistant does the office work: deadlines, invoices, bookkeeping, reminders. AI Launchpad tells it what Estonian rules require and which connections it needs, and asks for your approval before each action.");
+    expect(html).toContain("Your assistant does the office work: deadlines, invoices, bookkeeping, reminders. AI Launchpad tells it what Estonian rules require and which connections it needs, and records every action. Ask your assistant to check with you first whenever you want.");
     expect(headings(html)).toEqual(EN_H2);
     expect(html).toContain("Estonian small-business owners who do their own office work. First, a one-person OÜ with its books in e-arveldaja or Merit.");
     expect(html).toContain("People who already use ChatGPT or Claude and want it to do work, not just chat.");
@@ -92,7 +92,7 @@ describe("public About page", () => {
     expect(html).toContain("Your assistant is the only interface. AI Launchpad is one connector you add to it.");
     expect(html).toContain("Company data comes from public registers. We ask only what nobody else knows.");
     expect(html).toContain("Deadlines and taxes are calculated by rules, each with an official source. AI reads and drafts.");
-    expect(html).toContain("Nothing is sent or paid without your approval of that exact action. Every action leaves a receipt.");
+    expect(html).toContain("Your assistant does the job and every action is recorded. Ask it to check with you first whenever you want.");
     expect(html).toContain("Smart-ID PINs, signatures and filings stay with you, in the official channel. We never do them for you.");
     expect(html).toContain("Meta's open model Muse Spark Open anonymously classifies what businesses still need.");
     expect(html).toContain('<a href="/demand">See open demand</a>');

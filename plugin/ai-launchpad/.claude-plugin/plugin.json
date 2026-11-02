@@ -1,8 +1,8 @@
 {
   "name": "ai-launchpad",
   "displayName": "AI Launchpad",
-  "version": "0.1.0",
-  "description": "Back office for Estonian small businesses: your deadlines from public data, help linking your accounting, e-mail and bank in plain words, and nothing sent, paid or filed without your approval.",
+  "version": "0.2.0",
+  "description": "Back office for Estonian small businesses: your assistant does the jobs you ask for and records every action. A separate review runs where the assistant supports it (Claude); the ask-first rules apply everywhere.",
   "author": { "name": "AI Launchpad contributors", "url": "https://github.com/paat/ai-launchpad" },
   "homepage": "https://huppelaud.arikratt.ee",
   "repository": "https://github.com/paat/ai-launchpad",

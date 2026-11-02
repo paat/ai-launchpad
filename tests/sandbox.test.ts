@@ -94,7 +94,7 @@ function titled(a: ApprovalRow, title: string) {
   return JSON.stringify(payload);
 }
 
-test("public Try it links create an isolated seeded sandbox; approve simulates sent, decline and standing approvals work", async () => withServer(async (s) => {
+test("public Try it links create an isolated seeded sandbox; approve simulates sent and decline works", async () => withServer(async (s) => {
   for (const path of ["/", "/naidis", "/naidis/kinnitus", "/naidis/tehtud"]) {
     const html = await (await fetch(s.base + path)).text();
     expect(html).toContain('href="/proovi"'); expect(html).toContain("Proovi ise");
@@ -136,9 +136,6 @@ test("public Try it links create an isolated seeded sandbox; approve simulates s
   expect(simulated.summary).toContain("Näidis: assistent saatis — päriselt ei saadetud");
   const receipt = await browser.request(s, "GET", `/approvals/${pending.id}`);
   expect(receipt.body).toContain("Saadetud: demo"); expect(receipt.body).toContain("päriselt ei saadetud"); expect(receipt.body).toContain("Kontoritöö:");
-
-  const rule = await browser.request(s, "POST", "/standing-approvals", { csrf, approval_id: pending.id, scope: "recipient", max_eur: "500" });
-  expect(rule.status).toBe(302); expect(count(s.db, "standing_approvals", owner.id)).toBe(1);
 
   const second = await sandbox(s);
   const declined = await second.browser.request(s, "POST", `/approvals/${second.pending.id}/decide`, { csrf: await second.browser.csrf(s), digest: second.pending.digest, decision: "decline" });
@@ -264,7 +261,7 @@ test("POST /delete reissues a sandbox session for two hours", async () => withSe
   } finally { clock.mockRestore(); }
 }));
 
-const ownerTables = ["workspaces", "sessions", "mcp_tokens", "assessments", "reports", "progress", "candidates", "activity", "approvals", "unmet_needs", "calendar_feeds", "standing_approvals", "oauth_pending", "oauth_grants"];
+const ownerTables = ["workspaces", "sessions", "mcp_tokens", "assessments", "reports", "progress", "candidates", "activity", "approvals", "unmet_needs", "calendar_feeds", "oauth_pending", "oauth_grants"];
 function allOwnerRows(db: Db, id: string) {
   const now = new Date().toISOString();
   db.prepare("INSERT INTO workspaces(owner_id,company_ref,label) VALUES(?,?,'Synthetic')").run(id, `ws-${id}`);
@@ -278,7 +275,6 @@ function allOwnerRows(db: Db, id: string) {
   db.prepare("INSERT INTO approvals(id,owner_id,payload_json,digest,state,expires_at,created_at) VALUES(?,?,'{}','digest','consumed',?,?)").run(`approval-${id}`, id, now, now);
   db.prepare("INSERT INTO unmet_needs(id,owner_id,report_id,payload_hash,need_redacted,blocker,state,created_at,updated_at) VALUES(?,?,'need','h','Synthetic','no_connector','classified',?,?)").run(`need-${id}`, id, now, now);
   db.prepare("INSERT INTO calendar_feeds(owner_id,token_hash,created_at) VALUES(?,?,?)").run(id, `feed-${id}`, now);
-  db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,'send_message',100,1,?,?)").run(`rule-${id}`, id, now, now);
   db.prepare("INSERT INTO oauth_clients(id,metadata,expires) VALUES(?, '{}', ?)").run(`client-${id}`, Date.now() + 3600_000);
   db.prepare("INSERT INTO oauth_pending(id,client_id,params,owner_id,epoch,expires) VALUES(?,?,'{}',?,1,?)").run(`pending-${id}`, `client-${id}`, id, Date.now() + 3600_000);
   db.prepare("INSERT INTO oauth_grants(id,owner_id,epoch,client_id,scopes,resource,expires,redirect) VALUES(?,?,1,?,'progress:read','https://example.invalid/mcp',?,'https://example.invalid/cb')").run(`grant-${id}`, id, `client-${id}`, Date.now() + 3600_000);

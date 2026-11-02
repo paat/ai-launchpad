@@ -30,7 +30,7 @@ const assessment = assessmentSchema.parse({
 });
 const { NOW, mariDeadlines, longApproval, pendingApproval, longLetterApproval, approvedApproval, demoAssessment, twoDeadlines, tanaHandover, week2, uhendaHandover, preparedProgress } = NAIDIS;
 const uhendaWaiting = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true });
-const uhendaHoBody = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "sample" }, owner: true, now: NOW, standing: { csrf: CSRF, rules: [] }, handover: uhendaHandover });
+const uhendaHoBody = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "claude", state: { kind: "sample" }, owner: true, now: NOW, handover: uhendaHandover });
 const uhendaLocalBody = await connectBody({ lang: "et", baseUrl: "http://127.0.0.1:3210", assistant: "chatgpt", state: { kind: "anon" }, owner: false });
 const uhendaExpanded = await connectBody({ lang: "et", baseUrl: "https://launchpad.example.com", assistant: "chatgpt", state: { kind: "waiting" }, owner: true, expanded: true });
 assert.match(uhendaWaiting, /<a class="tap-link" href="\/uhenda\?a=chatgpt&naita=1#tekst">Näita teksti<\/a>/);
@@ -404,10 +404,10 @@ try {
     const ho = await page.evaluate(() => {
       const r = (s) => document.querySelector(s).getBoundingClientRect(), de = document.documentElement;
       return { scrollW: de.scrollWidth, clientW: de.clientWidth, jobsLeft: Math.round(r("#kaest-ara .ho-jobs").left), nextLeft: Math.round(r("#kaest-ara .ho-next").left), asks: document.querySelectorAll("#kaest-ara .ask").length,
-        jobs: [...document.querySelectorAll("#kaest-ara .ho-job")].map((el) => Math.round(el.getBoundingClientRect().height)), aboveRules: r("#kaest-ara").top < r("#pusiload").top };
+        jobs: [...document.querySelectorAll("#kaest-ara .ho-job")].map((el) => Math.round(el.getBoundingClientRect().height)) };
     });
     assert.ok(ho.scrollW <= ho.clientW + 1, `uhenda-ho@${vp.width}: no h-overflow ${JSON.stringify(ho)}`);
-    assert.ok(ho.asks === 1 && ho.aboveRules && ho.jobs.every((h) => h >= 44), `uhenda-ho@${vp.width}: one ask, above Püsiload, rows ≥ 44 px ${JSON.stringify(ho)}`);
+    assert.ok(ho.asks === 1 && ho.jobs.every((h) => h >= 44), `uhenda-ho@${vp.width}: one ask, rows ≥ 44 px ${JSON.stringify(ho)}`);
     if (vp.width === 1280) assert.ok(ho.nextLeft > ho.jobsLeft + 300, `uhenda-ho@1280: jobs | next step ${JSON.stringify(ho)}`);
     const g = await overflowAndTargets(true);
     assert.deepEqual(g.targets.filter((t) => t.h < 44), [], `uhenda-ho@${vp.width}: targets >= 44px`);
@@ -516,9 +516,9 @@ try {
   await page.locator('[data-job-activate="unpaid"]').click();
   const finalFrame = await page.evaluate(() => {
     const conversation = document.querySelector('[data-job-conversation="unpaid"]:not([hidden])');
-    return [...conversation.querySelectorAll(".b-unpaid-card, .mock-done, .mock-rule, .b-unpaid-ai2")].map((e) => getComputedStyle(e).opacity);
+    return [...conversation.querySelectorAll(".b-unpaid-card, .mock-done")].map((e) => getComputedStyle(e).opacity);
   });
-  assert.deepEqual(finalFrame, ["1", "1", "1", "1"], "t4 reduced motion: the visible unpaid teaser shows its final frame");
+  assert.deepEqual(finalFrame, ["1", "1"], "t4 reduced motion: the visible unpaid teaser shows its final frame");
   await page.emulateMedia({ reducedMotion: null });
 
   // The switcher and phone form one unit: exactly one selected title, conversation and detail.

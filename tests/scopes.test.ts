@@ -61,8 +61,8 @@ async function grant(scopes: string, updates: boolean, actor = "alpha", browser?
   expect(policy).toContain("All connected assistants can search the public service catalogue");
   expect(policy).toContain("progress:report");
   expect(policy).toContain("saves concise assessments, task updates and private service nominations");
-  expect(policy).toContain("saves concise assessments, task updates and private service nominations, and which bank statements your assistant read (bank, the account's last four digits, period and closing balance). It can also ask you to approve a specific message, invoice, payment or filing; nothing happens unless you approve that exact content.");
-  expect(policy).toContain("Launchpad stores the exact text of each approval request (up to 4,000 characters; it can include a customer's e-mail address, amounts and figures) until you delete your progress. No conversations, files or Google tokens are shared.");
+  expect(policy).toContain("saves concise assessments, task updates and private service nominations, and which bank statements your assistant read (bank, the account's last four digits, period and closing balance). It records the actions your assistant reports. It can also ask you to approve exact content when you or your assistant requests that check.");
+  expect(policy).toContain("Launchpad stores the exact text of each recorded action or approval request (up to 4,000 characters; it can include a customer's e-mail address, amounts and figures) until you delete your progress. No conversations, files or Google tokens are shared.");
   expect(policy).not.toMatch(/source documents|no documents/i);
   expect(policy).toContain("never authorizes payments, filings or signatures");
   expect(policy).not.toContain("get_started");
@@ -187,9 +187,9 @@ async function consentPage(scopes: string) {
   await b.login();
   return { b, html: await (await b.request("/oauth/consent")).text() };
 }
-const STORED_EN = "If you allow preparing work, we store work status, your assistant's assessment, texts sent for your approval, private service nominations, anonymised requests and a summary of each bank statement your assistant read (bank, the account's last four digits, period and closing balance) until you delete them.";
+const STORED_EN = "If you allow preparing work, we store work status, your assistant's assessment, exact action texts and outcomes, and any requested approvals, private service nominations, anonymised requests and a summary of each bank statement your assistant read (bank, the account's last four digits, period and closing balance) until you delete them.";
 const reject = async (c: { b: Browser; html: string }) => { await c.b.request("/oauth/consent", { csrf: field(c.html, "csrf"), flow: field(c.html, "flow"), decision: "reject" }); return c.html; };
-const STORED_ET = "Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, kinnitamiseks esitatud tekstid, privaatsed teenusesoovitused, anonüümseks muudetud soovid ja loetud pangaväljavõtete kokkuvõtte (pank, konto neli viimast numbrit, periood ja lõppsaldo), kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.";
+const STORED_ET = "Kui lubad töid ette valmistada, salvestame tööde seisu, assistendi hinnangu, tegevuste täpsed tekstid ja tulemused ning soovi korral antud kinnitused, privaatsed teenusesoovitused, anonüümseks muudetud soovid ja loetud pangaväljavõtete kokkuvõtte (pank, konto neli viimast numbrit, periood ja lõppsaldo), kuni sa need kustutad. Sinu vestlusi ega faile AI-hüppelaud ei saa.";
 
 test("consent storage sentence lists private service nominations in both languages for read+report and report-only (#21)", async () => {
   for (const scopes of ["progress:read progress:report", "progress:report"]) {
@@ -234,10 +234,10 @@ test("consent, Connection and get_started agree: approval texts are stored until
   try { note = (JSON.parse(((await m.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { note: string }).note; } finally { await m.close(); }
   const minimal = connection.slice(connection.indexOf("<h2>Your minimal data</h2>"), connection.indexOf("Export my progress"));
   const surfaces: [string, string, RegExp, RegExp][] = [
-    ["consent", consentEn, /texts sent for your approval[^.]*until you delete them/, /never receives your conversations/],
-    ["consent technical", consentEn, /stores the exact text of each approval request[^.]*until you delete your progress/, /No conversations, files or Google tokens are shared/],
-    ["Your minimal data", minimal, /stores the exact text of every approval request[^.]*until you delete your progress/, /never receives your conversations/],
-    ["get_started note", note, /the exact text of each approval request until the owner deletes their progress/, /stores no conversations/],
+    ["consent", consentEn, /exact action texts and outcomes, and any requested approvals[^.]*until you delete them/, /never receives your conversations/],
+    ["consent technical", consentEn, /stores the exact text of each recorded action or approval request[^.]*until you delete your progress/, /No conversations, files or Google tokens are shared/],
+    ["Your minimal data", minimal, /stores the exact text of every recorded action or approval request[^.]*until you delete your progress/, /never receives your conversations/],
+    ["get_started note", note, /the exact action text and outcomes, including any approval request, until the owner deletes their progress/, /stores no conversations/],
   ];
   for (const [name, text, approvals, conversations] of surfaces) {
     expect(text, name).toMatch(approvals);
