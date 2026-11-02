@@ -5,7 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { openDb } from "../src/db.js";
 import { arikratt } from "../src/arikratt.js";
 import { APPROVAL_KINDS, OWNER_VOICE, PLAYBOOKS, SEND_INVOICE_ACT, STATEMENT_READ_RULE, searchServices } from "../src/catalog.js";
-import { buildMcpServer, companyObligations, monthsCovered, TOOL_ARG_KEYS, type Ctx } from "../src/mcp.js";
+import { buildMcpServer, companyObligations, monthsCovered, SEND_GATE, TOOL_ARG_KEYS, type Ctx } from "../src/mcp.js";
 import { computeObligations, type CompanyFacts, type Fact } from "../src/obligations.js";
 import { DEMO_FIXTURES } from "../src/fixtures.js";
 
@@ -493,6 +493,28 @@ describe("agent-facing copy over MCP", () => {
     expect(hidden.statements_read_hidden).toContain("statements read in earlier chats are not shown");
   });
 
+  test("send gate: a plain send request asks in chat, then request_approval with owner_confirmation, then the own send tool (phone test 2 Nov)", async () => {
+    const c = await connect(["progress:read"]);
+    // Claude asked "Do you approve?" and sent through Gmail without Launchpad: the gate leads the tool description and the server instructions.
+    const tool = (await c.listTools()).tools.find((x) => x.name === "request_approval")!;
+    expect(tool.description!.startsWith(SEND_GATE)).toBe(true);
+    for (const w of ["any e-mail or message", "payment reminder", "the owner's own address", "any tool or connector, Gmail, Outlook", "ask for their approval first", "owner_confirmation set to their words", "Muse's point in one line", "then send or post with your own tool", "then call record_action_outcome"]) expect(SEND_GATE, w).toContain(w);
+    expect(c.getInstructions()).toContain(SEND_GATE);
+    const started = JSON.parse(((await c.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { approvals_note: string };
+    expect(started.approvals_note.startsWith(SEND_GATE)).toBe(true);
+    expect(started.approvals_note).toContain("only if the owner told you they set one, call request_approval without owner_confirmation first");
+    // The owner was sent to the dashboard: every send playbook asks in this chat before it requests the approval.
+    for (const id of ["payment-reminder", "customer-follow-ups", "invoicing"]) {
+      const steps = byId(id).steps;
+      const ask = steps.findIndex((x) => x.includes("in this chat and ask once whether they want it sent"));
+      const req = steps.findIndex((x) => x.includes("request_approval with action kind"));
+      expect(ask, id).toBeGreaterThanOrEqual(0);
+      expect(req, id).toBe(ask + 1);
+      expect(steps[req], id).toContain("owner_confirmation: the owner's yes");
+      expect(steps.join(" "), id).not.toContain("If the reply is pending, show the owner");
+    }
+  });
+
   test("check_my_customers: owner phrasing finds it, read-only, returns the customer-follow-ups playbook for any scope", async () => {
     const db = openDb(":memory:");
     const c = await connect([], db);
@@ -529,7 +551,7 @@ describe("agent-facing copy over MCP", () => {
     expect(steps).toContain("If there is no customer tool and you read their Google Drive and it has no Kliendid sheet, offer once to create");
     expect(steps).toContain("Show the exact change, write it only after they say yes, and never write a different value");
     expect(steps).toContain("Never invent or compute a follow-up date yourself");
-    expect(steps).toContain("call request_approval again with a NEW report_id, the same action and owner_confirmation: their words, verbatim");
+    expect(steps).toContain("Ask for the approval in the next step only after they say yes, with owner_confirmation: their words, verbatim.");
     expect(steps).toMatch(/get_approval[\s\S]*usable is not false[\s\S]*record_action_outcome with outcome sent/);
     const send = p.steps.find((x) => x.includes("request_approval with action kind send_message"))!;
     expect(send).toContain("always omit amount_cents (a follow-up message has no amount)");
