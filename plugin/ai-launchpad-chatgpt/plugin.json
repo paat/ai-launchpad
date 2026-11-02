@@ -1,0 +1,40 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ai-launchpad",
+  "version": "0.1.0",
+  "description": "Back-office help for an Estonian small business, inside the assistant you already use. It looks up public company facts, lists deadlines, and walks you through linking accounting, e-mail or your bank. You sign in yourself. Nothing is sent, paid or filed until you approve that exact content.",
+  "author": {
+    "name": "AI Launchpad contributors",
+    "url": "https://github.com/paat/ai-launchpad"
+  },
+  "homepage": "https://huppelaud.arikratt.ee",
+  "repository": "https://github.com/paat/ai-launchpad",
+  "license": "MIT",
+  "keywords": ["estonia", "small-business", "accounting", "deadlines", "back-office"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "AI Launchpad",
+        "shortDescription": "Company admin in plain words",
+        "longDescription": "AI Launchpad helps an Estonian small business with everyday admin, inside the assistant you already use. It looks up public company facts, lists your deadlines, and walks you through linking your accounting, e-mail or bank. You do every sign-in yourself. Nothing is sent, paid or filed until you approve that exact content.",
+        "developerName": "AI Launchpad contributors",
+        "category": "Business & Operations",
+        "capabilities": [
+          "Deadlines from public company facts",
+          "Plain-words help linking accounting, e-mail and bank",
+          "You approve the exact text before anything is sent, paid or filed"
+        ],
+        "websiteURL": "https://huppelaud.arikratt.ee",
+        "supportURL": "https://github.com/paat/ai-launchpad/issues",
+        "defaultPrompt": [
+          "What deadlines does my company have this month?",
+          "Help me connect my accounting.",
+          "Where do I stand with my annual report?"
+        ],
+        "brandColor": "#1B5E3B",
+        "composerIcon": "./assets/logo.png",
+        "logo": "./assets/logo.png"
+      }
+    }
+  }
+}
