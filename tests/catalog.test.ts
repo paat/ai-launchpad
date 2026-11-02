@@ -74,6 +74,19 @@ describe("safeHttps strict standalone-URL gate", () => {
     expect(byId("trivis").access_and_price).toContain("write");
   });
 
+  test("werkzeug access and limits stay in plain words", () => {
+    const rec = byId("werkzeug");
+    const fields = [rec.access_and_price ?? "", rec.limitations ?? ""];
+    for (const field of fields) {
+      for (const banned of ["/mcp", "OAuth", "bearer", "re-brokering"]) {
+        expect(field, banned).not.toContain(banned);
+      }
+    }
+    const text = fields.join("\n");
+    expect(text).toContain("€6");
+    expect(text).toContain("€10");
+  });
+
   test("count partitions reconcile with the record total", () => {
     const raw = JSON.parse(readFileSync(join(import.meta.dirname, "..", "docs", "research", "catalog", "estonian-business-services.json"), "utf8")) as {
       counts: {
