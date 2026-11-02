@@ -510,10 +510,12 @@ describe("get_obligations tool and status card", () => {
     const r = await companyObligations(arikratt(openDb(":memory:"), { apiKey: "", url: fakeUrl }), { registryCode: FAKE_VALID, assistant: { vat_registered: false }, months: 1, today: at("2026-11-02") });
     if (!r.ok) throw new Error(r.error);
     expect(r.result.facts_needed.map((n) => n.fact)).toContain("ytd_turnover_this_year");
-    expect(r.result.assistant_instruction).toContain("Do not ask the owner for this year's turnover (ytd_turnover_this_year) when books are connected: add up this calendar year's sales invoices in the books. If that total is €40,000 or less, call get_obligations again with it. If it is more, first ask the owner how much of it was sold abroad and pass only the Estonian part. Ask for the turnover only when no books are connected.");
+    expect(r.result.assistant_instruction).toContain("Do not ask the owner for this year's turnover (ytd_turnover_this_year) when books are connected: add up this calendar year's sales invoices to customers in Estonia (each invoice shows the customer's country) and call get_obligations again with that total. Ask the owner only about invoices whose customer's country the books do not show, or for the whole turnover when no books are connected.");
     const facts = (a: Assessment | null) => openItems([], r.result, a).questions.map((n) => n.fact);
     const linked: Assessment = { ...DEMO_FIXTURES.alpha, connections: [{ kind: "accounting", state: "linked", service: "Merit Aktiva" }] };
     expect(facts(linked)).not.toContain("ytd_turnover_this_year");
+    // The assistant is still told to read it, so it never drops out of sight.
+    expect(openItems([], r.result, linked).fromBooks.map((n) => n.fact)).toEqual(["ytd_turnover_this_year"]);
     // Without books only the owner knows it, so it still waits for them.
     expect(facts(null)).toContain("ytd_turnover_this_year");
     expect(facts({ ...linked, connections: [{ kind: "accounting", state: "not_linked" }] })).toContain("ytd_turnover_this_year");
