@@ -485,7 +485,7 @@ export function buildIntakePlan(args: IntakePlanArgs): IntakePlan {
   const download = offerDownload(args.uses, assistant);
   const brand = assistant === "chatgpt" ? "ChatGPT" : assistant === "grok" ? "Grok" : "Claude";
   if (download) steps.push({ text: lang === "et" ? `Laadi alla ${brand}` : `Download ${brand}`, href: download });
-  steps.push({ text: lang === "et" ? "Loo konto." : "Sign up." });
+  if (download || args.uses === "none" || args.uses === "other") steps.push({ text: lang === "et" ? "Loo konto." : "Sign up." });
   const href = lang === "en" ? `/uhenda?a=${assistant}&lang=en` : `/uhenda?a=${assistant}`;
   steps.push({ text: lang === "et" ? "Ühenda AI-hüppelaud." : "Connect AI Launchpad.", href });
   const inessive = brand === "Claude" ? "Claude'is" : brand === "ChatGPT" ? "ChatGPT-s" : brand === "Grok" ? "Grokis" : `${brand}is`;

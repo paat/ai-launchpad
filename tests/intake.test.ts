@@ -191,7 +191,8 @@ describe("buildIntakePlan", () => {
       expect(serviceHrefs, label).not.toContain(safeHttps(lhv.connection));
       expect(plan.steps.some((s) => s.text.includes("Pipedrive")), label).toBe(false);
       expect(plan.steps.at(-1)?.text, label).toBe(lang === "et" ? "Kleebi see juhis oma assistenti." : "Paste this prompt into your assistant.");
-      expect(plan.steps.some((s) => s.text === (lang === "et" ? "Loo konto." : "Sign up.")), label).toBe(true);
+      const signup = download != null || path.uses === "none" || path.uses === "other";
+      expect(plan.steps.some((s) => s.text === (lang === "et" ? "Loo konto." : "Sign up.")), label).toBe(signup);
     }
   });
 
@@ -320,6 +321,12 @@ describe("buildIntakePlan", () => {
     expect(pro.paidNote).toBe(false);
     expect(pro.planNote).toBeUndefined();
     expect(pro.candidates[0]).toMatchObject({ assistant: "claude", plan: "pro" });
+    expect(pro.steps.some((s) => s.text === "Sign up.")).toBe(false);
+    const proEt = buildIntakePlan({
+      uses: "claude", tier: "paid", current: { assistant: "claude", plan: "pro" },
+      services: matchCatalog(["Merit Aktiva"]).matched, lang: "et",
+    });
+    expect(proEt.steps.some((s) => s.text === "Loo konto.")).toBe(false);
   });
 
   test("when no plan fits, the intake line points at the table", () => {
