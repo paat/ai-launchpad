@@ -78,11 +78,12 @@ async function progress(token: string) {
 }
 
 const DATED = "The assessment is an earlier report saved by an assistant on";
-const RECHECK = "Before telling the owner any claim from it, re-check it with a current tool (check_my_books, get_obligations).";
+const RECHECK = "Before telling the owner a claim from it as current, check it in the owner's connected books or bank; otherwise say it comes from that earlier report and give its date.";
 const STILL_ASK = "The facts_needed questions from get_obligations are still asked.";
 function expectDated(instruction: string, assessedAt: string) {
   expect(instruction).toContain(`${DATED} ${assessedAt}, not a current fact.`);
   expect(instruction).toContain(RECHECK);
+  expect(instruction).not.toContain("check_my_books");
   expect(instruction).toContain(STILL_ASK);
   expect(instruction).toContain(SAVED);
 }

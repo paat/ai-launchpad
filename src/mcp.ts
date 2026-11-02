@@ -507,7 +507,7 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     // progress:read is already required above, the same gate get_started uses for this hint.
     const pickup = ctx.anotherAssistant === true ? `${SWITCH_ASSISTANT_HINT} ` : "";
     const earlier = st.assessed_at
-      ? ` The assessment is an earlier report saved by an assistant on ${st.assessed_at}, not a current fact. Before telling the owner any claim from it, re-check it with a current tool (check_my_books, get_obligations). The facts_needed questions from get_obligations are still asked.`
+      ? ` The assessment is an earlier report saved by an assistant on ${st.assessed_at}, not a current fact. Before telling the owner a claim from it as current, check it in the owner's connected books or bank; otherwise say it comes from that earlier report and give its date. The facts_needed questions from get_obligations are still asked.`
       : "";
     return json({ framework: FRAMEWORK, workspace: { company_ref: ctx.companyRef, label: ctx.label, agent_supplied_company_label: st.assessment?.company_label ?? null, agent_supplied_company_registry_ref: st.assessment?.company_registry_ref ?? null, company_label_note: "Agent-supplied labels are never a public-register verification or a mandate." }, version: st.ws.version, assessment_version: st.assessment_version, assessed_at: st.assessed_at, assessment: st.assessment, coverage: st.coverage, exclusions: st.exclusions, history: st.history, recent_progress: st.progress, freshness: st.assessed_at ? `Last assessment ${st.assessed_at}` : "No assessment yet. No background monitoring.", assistant_instruction: `${pickup}${SAVED_FACTS_CHECK}${earlier}` });
   });
