@@ -69,6 +69,24 @@ async function started(token: string) {
   } finally { await c.close(); }
 }
 
+async function progress(token: string) {
+  const c = new Client({ name: "Switch test", version: "1" });
+  await c.connect(new StreamableHTTPClientTransport(new URL(base + "/mcp"), { requestInit: { headers: { authorization: `Bearer ${token}` } } }));
+  try {
+    return JSON.parse(((await c.callTool({ name: "get_progress", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { assessed_at: string | null; assistant_instruction: string };
+  } finally { await c.close(); }
+}
+
+const DATED = "The assessment is an earlier report saved by an assistant on";
+const RECHECK = "Before telling the owner any claim from it, re-check it with a current tool (check_my_books, get_obligations).";
+const STILL_ASK = "The facts_needed questions from get_obligations are still asked.";
+function expectDated(instruction: string, assessedAt: string) {
+  expect(instruction).toContain(`${DATED} ${assessedAt}, not a current fact.`);
+  expect(instruction).toContain(RECHECK);
+  expect(instruction).toContain(STILL_ASK);
+  expect(instruction).toContain(SAVED);
+}
+
 function expectSwitch(step: string, description: string, on: boolean) {
   expect(description).toBe(DESCRIPTION);
   expect(description).not.toContain(SAVED);
@@ -152,4 +170,38 @@ test("a grant from an older epoch does not count as another assistant", async ()
   expect(rows[0].epoch).toBeLessThan(rows[1].epoch);
   const r = await started(next.tokens.access_token);
   expectSwitch(r.body.first_step, r.description, false);
+});
+
+test("get_progress with a stored assessment calls it a dated earlier report, and one client has no switch hint (#178)", async () => {
+  const only = await grant("Quartz assistant");
+  const stored = await progress(only.tokens.access_token);
+  expect(stored.assessed_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  expectDated(stored.assistant_instruction, stored.assessed_at!);
+  expect(stored.assistant_instruction.startsWith(SAVED)).toBe(true);
+  expect(stored.assistant_instruction).not.toContain(SWITCH);
+  expect(stored.assistant_instruction).not.toContain("switch-assistant");
+
+  db.prepare("DELETE FROM assessments WHERE owner_id=(SELECT id FROM owners WHERE subject='demo-alpha')").run();
+  const empty = await progress(only.tokens.access_token);
+  expect(empty.assessed_at).toBeNull();
+  expect(empty.assistant_instruction).toBe(SAVED);
+});
+
+test("get_progress with another assistant starts with the switch hint (#178)", async () => {
+  const browser = new Browser();
+  const first = await grant("Quartz assistant", "alpha", browser);
+  const second = await grant("Pebble assistant", "alpha", browser);
+  const picked = await progress(second.tokens.access_token);
+  expect(picked.assessed_at).toBeTruthy();
+  expect(picked.assistant_instruction.startsWith(`${SWITCH} ${SAVED}`)).toBe(true);
+  expectDated(picked.assistant_instruction, picked.assessed_at!);
+  expect(picked.assistant_instruction).not.toContain("Quartz assistant");
+  expect(picked.assistant_instruction).not.toContain("Pebble assistant");
+  const firstAfterSecond = await progress(first.tokens.access_token);
+  expect(firstAfterSecond.assistant_instruction.startsWith(SWITCH)).toBe(true);
+
+  db.prepare("DELETE FROM assessments WHERE owner_id=(SELECT id FROM owners WHERE subject='demo-alpha')").run();
+  const empty = await progress(second.tokens.access_token);
+  expect(empty.assessed_at).toBeNull();
+  expect(empty.assistant_instruction).toBe(`${SWITCH} ${SAVED}`);
 });

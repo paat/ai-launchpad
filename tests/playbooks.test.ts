@@ -242,6 +242,23 @@ describe("executable job playbooks (#26)", () => {
     for (const id of ["payment-reminder", "vat-return-prep", "annual-report"]) expect(byId(id).needs[0], id).toContain("(if no accounting connector answers yet, follow the connect-service playbook)");
   });
 
+  test("connect-service: Werkzeug steps say price and limits in everyday words and never quote addresses (#178)", () => {
+    const steps = byId("connect-service").steps;
+    expect(steps.join("\n")).not.toContain("company-specific MCP URL");
+    const werkzeug = steps.find((s) => s.includes('search_services with "werkzeug"'))!;
+    expect(werkzeug).toContain("say that entry's price and limits in everyday words");
+    expect(werkzeug).toContain("never quote web addresses, sign-in method names or path fragments from the entry");
+    expect(werkzeug).toContain("say it is a third-party service the owner signs up to, not Launchpad");
+    expect(werkzeug).toContain("Offer only that hosted connector (it covers e-arveldaja, Merit Aktiva and Erply Books)");
+    expect(werkzeug).toContain("never offer community or local servers from the catalogue");
+    const custom = steps.find((s) => s.startsWith("Accounting: help the owner add the connector"))!;
+    expect(custom).toContain("Copy the connection address with the copy button on the Werkzeug dashboard and paste it");
+    expect(custom).toContain("never ask the owner to type or check parts of the address");
+    expect(custom).toContain("Keep the detected sign-in settings, then sign in and pick the company.");
+    expect(custom).toContain("in Claude, Customize → Connectors → Add custom connector");
+    expect(custom).toMatch(/Once the connector is added, go to the last step\.$/);
+  });
+
   test("connect-service: after the read-only check, offer once to remember the linked service by name", () => {
     const steps = byId("connect-service").steps;
     const verify = steps.at(-1)!;
