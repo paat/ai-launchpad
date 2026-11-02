@@ -187,15 +187,16 @@ describe("model quality harness (Baseten)", () => {
   test("attempt backstop is 10000 and still refuses at the limit", { timeout: 30_000 }, async () => {
     expect(ABSOLUTE_MAX_ATTEMPTS).toBe(10_000);
     expect(ABSOLUTE_CAP_MICRO_USD).toBe(100_000_000);
-    const jobs = ["setup_guidance", "classify_friction", "classify_unmet_need", "intake_extract", "intake_plan"] as const;
+    const jobs = ["setup_guidance", "classify_friction", "classify_unmet_need", "intake_extract", "intake_plan", "check_approval"] as const;
     const smallest = Math.min(...jobs.map((job) => reservationMicroUsd(job, "a")));
-    expect(smallest).toBe(reservationMicroUsd("intake_extract", "a"));
-    expect(smallest).toBe(8_896);
-    // 10,000 × the cheapest reservation is USD 88.96, still under the ceiling.
-    expect(ABSOLUTE_MAX_ATTEMPTS * smallest).toBe(88_960_000);
-    expect(ABSOLUTE_MAX_ATTEMPTS * smallest).toBeLessThan(ABSOLUTE_CAP_MICRO_USD);
+    expect(smallest).toBe(reservationMicroUsd("classify_unmet_need", "a"));
+    expect(smallest).toBe(12_396);
+    // 10,000 × the cheapest one-character reservation is USD 123.96, over the ceiling.
+    expect(ABSOLUTE_MAX_ATTEMPTS * smallest).toBe(123_960_000);
+    expect(ABSOLUTE_MAX_ATTEMPTS * smallest).toBeGreaterThan(ABSOLUTE_CAP_MICRO_USD);
+    expect(reservationMicroUsd("intake_extract", "a")).toBe(24_128);
+    expect(ABSOLUTE_MAX_ATTEMPTS * reservationMicroUsd("intake_extract", "a")).toBe(241_280_000);
     for (const job of jobs) {
-      if (job === "intake_extract") continue;
       expect(ABSOLUTE_MAX_ATTEMPTS * reservationMicroUsd(job, "a")).toBeGreaterThan(ABSOLUTE_CAP_MICRO_USD);
     }
     const tiny = ModelQualityLedger.open(":memory:");
@@ -506,8 +507,8 @@ describe("model quality harness (Baseten)", () => {
     expect(PROMPT_VERSION).toBe("baseten-chat-v1");
     expect(validateJob("intake_extract")).toBe("intake_extract");
     expect(validateJob("intake_plan")).toBe("intake_plan");
-    expect(JOB_MAX_OUTPUT_TOKENS.intake_extract).toBe(256);
-    expect(JOB_MAX_OUTPUT_TOKENS.intake_plan).toBe(400);
+    expect(JOB_MAX_OUTPUT_TOKENS.intake_extract).toBe(2048);
+    expect(JOB_MAX_OUTPUT_TOKENS.intake_plan).toBe(2048);
     expect(FIXED_INSTRUCTIONS.intake_extract).toContain("Give bounded help only");
     expect(FIXED_INSTRUCTIONS.intake_extract).toContain('{"products":[{"name":string,"kind":"accounting"|"bank"|"email"|"customers"|"other"}]}');
     expect(FIXED_INSTRUCTIONS.intake_plan).toContain("Give bounded help only");
@@ -516,10 +517,10 @@ describe("model quality harness (Baseten)", () => {
     const ledger = ModelQualityLedger.open(":memory:");
     const extract = fakeFetch(() => jsonRes(okChat()));
     await runModelQualityAttempt(base(ledger, extract.fetchFn, { job: "intake_extract", input: "{\"text\":\"synthetic\"}", requestId: "in-extract-1" }));
-    expect(extract.calls[0].body.max_tokens).toBe(256);
+    expect(extract.calls[0].body.max_tokens).toBe(2048);
     const plan = fakeFetch(() => jsonRes(okChat()));
     await runModelQualityAttempt(base(ledger, plan.fetchFn, { job: "intake_plan", input: "{\"lang\":\"et\"}", requestId: "in-plan-1" }));
-    expect(plan.calls[0].body.max_tokens).toBe(400);
+    expect(plan.calls[0].body.max_tokens).toBe(2048);
     ledger.close();
   });
 });
