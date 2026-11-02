@@ -194,8 +194,8 @@ describe("model quality harness (Baseten)", () => {
     // 10,000 × the cheapest one-character reservation is USD 123.96, over the ceiling.
     expect(ABSOLUTE_MAX_ATTEMPTS * smallest).toBe(123_960_000);
     expect(ABSOLUTE_MAX_ATTEMPTS * smallest).toBeGreaterThan(ABSOLUTE_CAP_MICRO_USD);
-    expect(reservationMicroUsd("intake_extract", "a")).toBe(24_128);
-    expect(ABSOLUTE_MAX_ATTEMPTS * reservationMicroUsd("intake_extract", "a")).toBe(241_280_000);
+    expect(reservationMicroUsd("intake_extract", "a")).toBe(41_536);
+    expect(ABSOLUTE_MAX_ATTEMPTS * reservationMicroUsd("intake_extract", "a")).toBe(415_360_000);
     for (const job of jobs) {
       expect(ABSOLUTE_MAX_ATTEMPTS * reservationMicroUsd(job, "a")).toBeGreaterThan(ABSOLUTE_CAP_MICRO_USD);
     }
@@ -507,7 +507,7 @@ describe("model quality harness (Baseten)", () => {
     expect(PROMPT_VERSION).toBe("baseten-chat-v1");
     expect(validateJob("intake_extract")).toBe("intake_extract");
     expect(validateJob("intake_plan")).toBe("intake_plan");
-    expect(JOB_MAX_OUTPUT_TOKENS.intake_extract).toBe(2048);
+    expect(JOB_MAX_OUTPUT_TOKENS.intake_extract).toBe(MAX_OUTPUT_TOKENS);
     expect(JOB_MAX_OUTPUT_TOKENS.intake_plan).toBe(MAX_OUTPUT_TOKENS);
     expect(FIXED_INSTRUCTIONS.intake_extract).toContain("Give bounded help only");
     expect(FIXED_INSTRUCTIONS.intake_extract).toContain('{"products":[{"name":string,"kind":"accounting"|"bank"|"email"|"customers"|"other"}]}');
@@ -517,7 +517,7 @@ describe("model quality harness (Baseten)", () => {
     const ledger = ModelQualityLedger.open(":memory:");
     const extract = fakeFetch(() => jsonRes(okChat()));
     await runModelQualityAttempt(base(ledger, extract.fetchFn, { job: "intake_extract", input: "{\"text\":\"synthetic\"}", requestId: "in-extract-1" }));
-    expect(extract.calls[0].body.max_tokens).toBe(2048);
+    expect(extract.calls[0].body.max_tokens).toBe(MAX_OUTPUT_TOKENS);
     const plan = fakeFetch(() => jsonRes(okChat()));
     await runModelQualityAttempt(base(ledger, plan.fetchFn, { job: "intake_plan", input: "{\"lang\":\"et\"}", requestId: "in-plan-1" }));
     expect(plan.calls[0].body.max_tokens).toBe(MAX_OUTPUT_TOKENS);
