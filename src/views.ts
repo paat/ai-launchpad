@@ -1713,7 +1713,7 @@ function startChoices(l: Lang): string {
   const t = tr(l);
   const q = l === "en" ? "?lang=en" : "";
   const choice = (href: string, label: string, hint: string) => `<div class="landing-choice"><a class="btn" href="${href}">${label}</a><p class="small">${esc(hint)}</p></div>`;
-  return `<div class="landing-choices">${choice(`/uhenda${q}`, t("Ühenda oma ChatGPT või Claude", "Connect my ChatGPT or Claude"), t("Kasutan juba AI-assistenti", "I already use an AI assistant"))}${choice(`/alusta${q}`, t("Aita mul alustada", "Help me get started"), t("AI-assistenti veel pole või ei tea, mida valida", "No AI assistant yet, or not sure which"))}</div>`;
+  return `<div class="landing-choices">${choice(`/uhenda${q}`, t("Ühenda AI-assistent", "Connect my AI assistant"), t("Kasutan ChatGPT-d, Claude'i või Grok\u00a0Boti", "I use ChatGPT, Claude or Grok\u00a0Bot"))}${choice(`/alusta${q}`, t("Aita mul alustada", "Help me get started"), t("AI-assistenti veel pole või ei tea, mida valida", "No AI assistant yet, or not sure which"))}</div>`;
 }
 
 /** Public /alusta. Bubbles and the question are escaped here. main and after are already escaped by the caller. */
