@@ -245,22 +245,6 @@ test("the global active-sandbox cap renders the plain-language 503 page and crea
   expect(count(s.db, "owners")).toBe(1000); expect(count(s.db, "sessions")).toBe(sessions);
 }));
 
-test("legacy rule rows remain exportable and Delete my progress clears only this owner's rows", async () => withServer(async (s) => {
-  const first = await sandbox(s), second = await sandbox(s);
-  const now = new Date().toISOString(), later = new Date(Date.now() + 86_400_000).toISOString();
-  for (const { owner } of [first, second]) {
-    s.db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,'send_message',50000,10,?,?)")
-      .run(`legacy-${owner.id}`, owner.id, later, now);
-  }
-  const exported = await first.browser.request(s, "GET", "/export");
-  expect(exported.status).toBe(200);
-  expect(JSON.parse(exported.body).standing_approvals).toEqual([{ id: `legacy-${first.owner.id}`, kind: "send_message", recipients_json: null, max_amount_cents: 50000, max_per_day: 10, expires_at: later, created_at: now, revoked_at: null }]);
-  const deleted = await first.browser.request(s, "POST", "/delete", { csrf: await first.browser.csrf(s) });
-  expect(deleted.status).toBe(302);
-  expect(count(s.db, "standing_approvals", first.owner.id)).toBe(0);
-  expect(count(s.db, "standing_approvals", second.owner.id)).toBe(1);
-}));
-
 test("POST /delete reissues a sandbox session for two hours", async () => withServer(async (s) => {
   const { browser } = await sandbox(s);
   const deleted = await browser.request(s, "POST", "/delete", { csrf: await browser.csrf(s) });
@@ -277,7 +261,7 @@ test("POST /delete reissues a sandbox session for two hours", async () => withSe
   } finally { clock.mockRestore(); }
 }));
 
-const ownerTables = ["workspaces", "sessions", "mcp_tokens", "assessments", "reports", "progress", "candidates", "activity", "approvals", "unmet_needs", "calendar_feeds", "standing_approvals", "oauth_pending", "oauth_grants"];
+const ownerTables = ["workspaces", "sessions", "mcp_tokens", "assessments", "reports", "progress", "candidates", "activity", "approvals", "unmet_needs", "calendar_feeds", "oauth_pending", "oauth_grants"];
 function allOwnerRows(db: Db, id: string) {
   const now = new Date().toISOString();
   db.prepare("INSERT INTO workspaces(owner_id,company_ref,label) VALUES(?,?,'Synthetic')").run(id, `ws-${id}`);
@@ -291,7 +275,6 @@ function allOwnerRows(db: Db, id: string) {
   db.prepare("INSERT INTO approvals(id,owner_id,payload_json,digest,state,expires_at,created_at) VALUES(?,?,'{}','digest','consumed',?,?)").run(`approval-${id}`, id, now, now);
   db.prepare("INSERT INTO unmet_needs(id,owner_id,report_id,payload_hash,need_redacted,blocker,state,created_at,updated_at) VALUES(?,?,'need','h','Synthetic','no_connector','classified',?,?)").run(`need-${id}`, id, now, now);
   db.prepare("INSERT INTO calendar_feeds(owner_id,token_hash,created_at) VALUES(?,?,?)").run(id, `feed-${id}`, now);
-  db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,'send_message',100,1,?,?)").run(`rule-${id}`, id, now, now);
   db.prepare("INSERT INTO oauth_clients(id,metadata,expires) VALUES(?, '{}', ?)").run(`client-${id}`, Date.now() + 3600_000);
   db.prepare("INSERT INTO oauth_pending(id,client_id,params,owner_id,epoch,expires) VALUES(?,?,'{}',?,1,?)").run(`pending-${id}`, `client-${id}`, id, Date.now() + 3600_000);
   db.prepare("INSERT INTO oauth_grants(id,owner_id,epoch,client_id,scopes,resource,expires,redirect) VALUES(?,?,1,?,'progress:read','https://example.invalid/mcp',?,'https://example.invalid/cb')").run(`grant-${id}`, id, `client-${id}`, Date.now() + 3600_000);

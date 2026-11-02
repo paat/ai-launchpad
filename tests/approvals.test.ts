@@ -640,17 +640,14 @@ test("Täna keeps an old failed or rejected approval in Ootab sinult behind 60 n
   expect(html.match(/Ei õnnestunud — vaata üle/g)).toHaveLength(2);
 });
 
-test.each(["send_message", "send_invoice"])("request_approval keeps %s pending despite a matching legacy standing_approvals row", async (kind) => {
-  const ownerId = `legacy-rule-${kind}`, o = owner(ownerId), c = await client(o.token);
-  const now = new Date().toISOString(), later = new Date(Date.now() + 86_400_000).toISOString();
-  db.prepare("INSERT INTO standing_approvals(id,owner_id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at) VALUES(?,?,?,?,200000,10,?,?)")
-    .run(`rule-${kind}`, ownerId, kind, JSON.stringify(["billing@client.example"]), later, now);
-  const args = { report_id: "legacy-rule-request", action: reminder({ kind }) };
+test.each(["send_message", "send_invoice"])("request_approval keeps %s pending without owner_confirmation", async (kind) => {
+  const ownerId = `pending-${kind}`, o = owner(ownerId), c = await client(o.token);
+  const args = { report_id: "pending-request", action: reminder({ kind }) };
   const requested = parsed(await c.callTool({ name: "request_approval", arguments: args }));
   expect(requested).toMatchObject({ state: "pending" });
   expect(requested).not.toHaveProperty("auto_approved");
   expect(requested).not.toHaveProperty("check");
-  expect(row(requested.approval_id)).toMatchObject({ state: "pending", approved_by_rule: null, owner_confirmation: null, check_state: null });
+  expect(row(requested.approval_id)).toMatchObject({ state: "pending", owner_confirmation: null });
   const read = parsed(await c.callTool({ name: "get_approval", arguments: { approval_id: requested.approval_id } }));
   expect(read).toMatchObject({ state: "pending" });
   expect(read).not.toHaveProperty("check");

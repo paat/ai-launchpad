@@ -144,7 +144,7 @@ export const approvalActionSchema = z.object({
 const formatEur = (cents: number, l: "et" | "en") => new Intl.NumberFormat(l === "en" ? "en-GB" : "et-EE", { style: "currency", currency: "EUR", minimumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100);
 const OUTCOME_FIRST: Record<string, string[]> = { send_message: ["sent", "failed"], send_invoice: ["sent", "failed"], prepare_payment: ["paid", "failed"], prepare_filing: ["submitted", "failed"], post_entries: ["posted", "failed"] };
 const OUTCOME_NEXT: Record<string, string[]> = { sent: ["accepted", "rejected", "paid"], submitted: ["accepted", "rejected"] };
-export interface ApprovalRow { id: string; kind: string | null; report_id: string | null; payload_json: string; digest: string; state: string; expires_at: string; created_at: string; decided_at: string | null; consumed_at: string | null; outcome_json: string | null; approved_by_rule?: string | null; playbook_id?: string | null; owner_confirmation?: string | null; }
+export interface ApprovalRow { id: string; kind: string | null; report_id: string | null; payload_json: string; digest: string; state: string; expires_at: string; created_at: string; decided_at: string | null; consumed_at: string | null; outcome_json: string | null; playbook_id?: string | null; owner_confirmation?: string | null; }
 /** Lazy expiry: the window covers deciding and acting, so a pending or an
  *  approved-but-unused approval past expires_at becomes expired on read. */
 export function expireApprovals(db: Db, ownerId: string) {

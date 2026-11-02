@@ -20,7 +20,7 @@ The plugin checks each send, book posting and handover of prepared payment or fi
 - `record_action_outcome` accepts either an `action` or an existing `approval_id` plus `digest`. A direct action creates one consumed row in the existing `approvals` action log, with no approval decision or owner confirmation. It validates the action and first outcome, remains idempotent by `report_id`, and uses the same 200-row limit. The receipt returns an ID and digest for later outcomes, such as an invoice moving from sent to paid. No new tables or columns are needed.
 - Payment reminders, customer follow-ups, invoicing, book entries, VAT and annual-report playbooks end with recorded outcomes. They no longer ask for approval by default. `approval_kind` still identifies the kind of job for dashboard attribution.
 - The dashboard counts direct actions as work done and says “Your assistant did it” / “Assistent tegi ära”. It does not claim the owner approved them.
-- The Muse approval check and standing approvals are removed. Existing database columns and the standing-approval table remain to avoid a destructive migration.
+- The Muse approval check and standing approvals are removed. Old approval history was test data and is dropped on deploy.
 - Product copy and the demo show the assistant doing the requested job and Launchpad showing the recorded result. The optional approval path remains documented.
 
 ## Costs and limits

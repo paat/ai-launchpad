@@ -12,7 +12,7 @@ const WORD = "raamatupidamisprogramm";
 test("„Käest ära” next step: „raamatupidamisprogramm” and the job titles are not split at 960–1280 px, no overflow at 320 px (QA M3)", async ({ page }) => {
   const now = new Date("2026-11-12T10:00:00Z"), at = "2026-11-05T09:00:00Z";
   const approval: ApprovalRow = { id: "appr_1", kind: "send_message", report_id: "r1", digest: "d".repeat(64), state: "consumed", created_at: at, expires_at: "2026-11-30T00:00:00Z", decided_at: at, consumed_at: at,
-    outcome_json: JSON.stringify({ outcome: "sent", history: [] }), approved_by_rule: null, playbook_id: "payment-reminder", payload_json: JSON.stringify({ kind: "send_message", recipient: { name: "Demo Klient OÜ", address: "arved@demo-klient.example" }, amount_cents: 12_000, document: { title: "Meeldetuletus", content: "Tere" }, summary: "Reminder" }) };
+    outcome_json: JSON.stringify({ outcome: "sent", history: [] }), playbook_id: "payment-reminder", payload_json: JSON.stringify({ kind: "send_message", recipient: { name: "Demo Klient OÜ", address: "arved@demo-klient.example" }, amount_cents: 12_000, document: { title: "Meeldetuletus", content: "Tere" }, summary: "Reminder" }) };
   const h = computeHandover({ assessment: null, obligations: [], approvals: [approval], now });
   expect(h.next.type).toBe("connector");
   await page.setContent(shell({ title: "Ühendus", active: "uhendus", body: handoverSection(h, "et", now), csrf: "c", lang: "et", toggle: "/?lang=en" }));

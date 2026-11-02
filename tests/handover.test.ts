@@ -17,11 +17,11 @@ const obligations = [...kmd, annual];
 const CLIENTS = [{ name: "Demo Klient OÜ", address: "arved@demo-klient.example" }, { name: "Põhja Puit OÜ", address: "raamat@pohja-puit.example" }];
 
 let seq = 0;
-function appr(o: { kind?: string; state?: string; outcome?: string; to?: { name: string; address?: string }; cents?: number; at?: string; rule?: string; decided?: boolean; playbook?: string; title?: string; summary?: string }): ApprovalRow {
+function appr(o: { kind?: string; state?: string; outcome?: string; to?: { name: string; address?: string }; cents?: number; at?: string; decided?: boolean; playbook?: string; title?: string; summary?: string }): ApprovalRow {
   const kind = o.kind ?? "send_message", at = o.at ?? "2026-11-05T09:00:00Z", state = o.state ?? (o.outcome ? "consumed" : "pending");
   return { id: `appr_${++seq}`, kind, report_id: `r${seq}`, digest: "d".repeat(64), state, created_at: at, expires_at: "2026-11-30T00:00:00Z",
     decided_at: o.decided === false || state === "pending" ? null : at, consumed_at: state === "consumed" ? at : null,
-    outcome_json: o.outcome ? JSON.stringify({ outcome: o.outcome, history: [] }) : null, approved_by_rule: o.rule ?? null, playbook_id: o.playbook ?? null,
+    outcome_json: o.outcome ? JSON.stringify({ outcome: o.outcome, history: [] }) : null, playbook_id: o.playbook ?? null,
     payload_json: JSON.stringify({ kind, recipient: o.to ?? CLIENTS[0], ...(o.cents ? { amount_cents: o.cents } : {}), document: { title: o.title ?? "Meeldetuletus: tasumata arve", content: "y" }, summary: o.summary ?? "Payment reminder" }) };
 }
 const rungs = (h: Handover) => Object.fromEntries(h.jobs.map((j) => [j.id, j.rung]));
@@ -71,10 +71,10 @@ describe("„Käest ära” states", () => {
 
   test("month 2: reminders and invoices done, KMD at its legal ceiling, next = annual report", () => {
     const invoices = [3, 5, 9].map((d, i) => appr({ kind: "send_invoice", outcome: "sent", cents: [98_000, 118_000, 64_000][i], to: { name: `Klient ${i} OÜ`, address: `arved${i}@klient.example` }, at: `2026-12-0${d}T09:00:00Z` }));
-    const autos = [1, 4, 8, 15].map((d) => appr({ outcome: "sent", cents: 20_000, rule: "rule_1", at: `2026-12-${String(d).padStart(2, "0")}T07:40:00Z` }));
+    const direct = [1, 4, 8, 15].map((d) => appr({ outcome: "sent", cents: 20_000, decided: false, at: `2026-12-${String(d).padStart(2, "0")}T07:40:00Z` }));
     const filed = appr({ kind: "prepare_filing", outcome: "submitted", to: { name: "EMTA (e-MTA)" }, at: "2026-11-19T10:00:00Z", playbook: "vat-return-prep" });
     const now = new Date("2026-12-15T10:00:00Z");
-    const h = computeHandover({ assessment: alpha, obligations, approvals: [...week2(), filed, ...invoices, ...autos], now });
+    const h = computeHandover({ assessment: alpha, obligations, approvals: [...week2(), filed, ...invoices, ...direct], now });
     expect(rungs(h)).toEqual({ "payment-reminder": "done", "vat-return-prep": "done", invoicing: "done", "annual-report": "mine" });
     // Done this month reads as in order; December's KMD is due in 6 days even though November's was filed.
     expect(statuses(h)).toEqual({ "vat-return-prep": "due_soon", "annual-report": "later", "payment-reminder": "in_order", invoicing: "in_order" });
@@ -193,7 +193,7 @@ describe("„Käest ära” honesty rules", () => {
     expect(h.next).toMatchObject({ type: "playbook", playbookId: "payment-reminder" });
     expect(h.jobs.filter((j) => j.kind === "prepare_filing").every((j) => j.ceiling === "law")).toBe(true);
     // With every playbook job past "yours", the fallback is the connector, never a filing action.
-    const all = computeHandover({ assessment: null, obligations, approvals: [...filings, appr({ outcome: "sent", cents: 100, rule: "rule_1" })], now: NOW });
+    const all = computeHandover({ assessment: null, obligations, approvals: [...filings, appr({ outcome: "sent", cents: 100, decided: false })], now: NOW });
     expect(all.next.type).toBe("connector");
   });
 
@@ -246,8 +246,8 @@ describe("„Käest ära” fix cycle 1", () => {
   test("an overdue annual report is the next step with its own handoff, not the generic prompt (review-design-t5-grok medium)", () => {
     const late = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2027-07-05T10:00:00Z"), months: 2 }).obligations.find((x) => x.rule_id === "annual-report-overdue")!;
     const overdue = { ...late, effective_due: "2026-11-11", statutory_due: "2026-11-11" } as Obligation;
-    // Reminders are already at the top rung: consumed under a live rule that has fired.
-    const approvals = [appr({ outcome: "sent", cents: 10_000 }), appr({ outcome: "sent", cents: 10_000, rule: "rule_1" })];
+    // Reminders are already at the top rung: recorded as completed by the assistant.
+    const approvals = [appr({ outcome: "sent", cents: 10_000 }), appr({ outcome: "sent", cents: 10_000, decided: false })];
     const h = computeHandover({ assessment: null, obligations: [overdue], approvals, now: NOW });
     expect(rungs(h)).toEqual({ "payment-reminder": "done", "annual-report": "mine" });
     expect(h.next).toMatchObject({ type: "playbook", playbookId: "annual-report", obligation: { rule_id: "annual-report-overdue" } });
@@ -274,7 +274,7 @@ describe("„Käest ära” fix cycle 2", () => {
     const h = computeHandover({ assessment: null, obligations: [overdue, annual], approvals: [], now: NOW });
     const job = h.jobs.find((j) => j.id === "annual-report")!;
     expect(job.due).toBe("2026-06-30");
-    const next = computeHandover({ assessment: null, obligations: [overdue, annual], approvals: [appr({ outcome: "sent" }), appr({ outcome: "sent", rule: "rule_1" })], now: NOW }).next;
+    const next = computeHandover({ assessment: null, obligations: [overdue, annual], approvals: [appr({ outcome: "sent" }), appr({ outcome: "sent", decided: false })], now: NOW }).next;
     expect(next).toMatchObject({ type: "playbook", playbookId: "annual-report", obligation: { rule_id: "annual-report-overdue" } });
     const page = handoverSection(h, "et", NOW);
     expect(page).toContain("Tähtaeg oli 30. juuni");
@@ -297,7 +297,7 @@ describe("„Käest ära” fix cycle 2", () => {
 });
 
 describe("„Käest ära” fix cycle 3 (review-polish-grok)", () => {
-  const reminded = () => [appr({ outcome: "sent" }), appr({ outcome: "sent", rule: "rule_1" })];
+  const reminded = () => [appr({ outcome: "sent" }), appr({ outcome: "sent", decided: false })];
   test("a cold cache's conditional overdue row binds neither the annual-report date nor the next step (high)", async () => {
     const today = new Date("2026-10-31T10:00:00Z");
     const r = await companyObligations(arikratt(openDb(":memory:"), {}), { registryCode: "12345678", months: 2, today, cacheOnly: true });
@@ -339,11 +339,11 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     const start = page.indexOf('<div class="ho-next">');
     return page.slice(start, page.indexOf("</div></div>", start) + "</div></div>".length);
   };
-  const fired = () => appr({ outcome: "sent", cents: 10_000, rule: "rule_1" });
+  const completed = () => appr({ outcome: "sent", cents: 10_000, decided: false });
 
   test("the follow-up card asks who to call or message, in ET and EN, with no filing or invoice copy", () => {
     const pending = appr({ state: "pending", playbook: "customer-follow-ups", to: { name: "Pakkumine OÜ", address: "info@pakkumine.example" }, title: "Järgmine kõne", summary: "Follow up on the quote" });
-    const h = computeHandover({ assessment: null, obligations: [], approvals: [fired(), pending], now: NOW });
+    const h = computeHandover({ assessment: null, obligations: [], approvals: [completed(), pending], now: NOW });
     expect(h.next).toMatchObject({ type: "playbook", playbookId: "customer-follow-ups", obligation: null, job: { kind: "send_message" } });
     const et = nextCard(handoverSection(h, "et", NOW));
     const en = nextCard(handoverSection(h, "en", NOW));
@@ -382,7 +382,7 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
 
     const late = computeObligations(SYNTHETIC_COMPANIES["19990001"].facts, { today: new Date("2027-07-05T10:00:00Z"), months: 2 }).obligations.find((x) => x.rule_id === "annual-report-overdue")!;
     const overdue = { ...late, effective_due: "2026-11-11", statutory_due: "2026-11-11" } as Obligation;
-    const obligation = computeHandover({ assessment: null, obligations: [overdue], approvals: [appr({ outcome: "sent", cents: 10_000 }), fired()], now: NOW });
+    const obligation = computeHandover({ assessment: null, obligations: [overdue], approvals: [appr({ outcome: "sent", cents: 10_000 }), completed()], now: NOW });
     expect(obligation.next).toMatchObject({ type: "playbook", playbookId: "annual-report", obligation: { rule_id: "annual-report-overdue" } });
     const obligationEt = nextCard(handoverSection(obligation, "et", NOW));
     const obligationEn = nextCard(handoverSection(obligation, "en", NOW));
@@ -394,7 +394,7 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     expect(obligationEn).toContain("It needs the period&#39;s invoices: your accounting connector or files you share with your assistant.");
 
     const posted = appr({ kind: "post_entries", state: "pending", cents: 45_320, to: { name: "Näidis OÜ, e-arveldaja" }, title: "Oktoober 2026", summary: "October entries" });
-    const books = computeHandover({ assessment: null, obligations: [], approvals: [fired(), posted], now: NOW });
+    const books = computeHandover({ assessment: null, obligations: [], approvals: [completed(), posted], now: NOW });
     expect(books.next).toMatchObject({ type: "playbook", playbookId: "books-catch-up", obligation: null, job: { kind: "post_entries" } });
     const booksEt = nextCard(handoverSection(books, "et", NOW));
     const booksEn = nextCard(handoverSection(books, "en", NOW));
@@ -414,7 +414,7 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
 
   test("equal dues keep status order: a waiting follow-up stays ahead of invoicing (#153)", () => {
     const pending = appr({ state: "pending", playbook: "customer-follow-ups", to: { name: "Pakkumine OÜ", address: "info@pakkumine.example" }, title: "Järgmine kõne", summary: "Follow up on the quote" });
-    const h = computeHandover({ assessment: alpha, obligations: [], approvals: [fired(), pending], now: NOW });
+    const h = computeHandover({ assessment: alpha, obligations: [], approvals: [completed(), pending], now: NOW });
     const open = h.jobs.filter((j) => j.rung === "mine" && j.source === "playbook" && j.status !== "in_order");
     expect(open.map((j) => [j.id, j.status, j.due])).toEqual([
       ["customer-follow-ups", "waiting", null],
@@ -431,7 +431,7 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
   });
 
   test("invoicing next step: tailored prompt and description, no filing fallback (#120)", () => {
-    const h = computeHandover({ assessment: alpha, obligations: [], approvals: [fired()], now: NOW });
+    const h = computeHandover({ assessment: alpha, obligations: [], approvals: [completed()], now: NOW });
     expect(h.next).toMatchObject({ type: "playbook", playbookId: "invoicing", obligation: null, job: { kind: "send_invoice" } });
     const et = nextCard(handoverSection(h, "et", NOW));
     const en = nextCard(handoverSection(h, "en", NOW));
