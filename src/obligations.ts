@@ -250,7 +250,7 @@ function compute(facts: CompanyFacts, today: Date, months: number): { obligation
   // vat-registration-threshold: warning only, never a legal decision (U5).
   if (known(vat) && !vat.value) {
     const rev = facts.latest_annual_revenue, ytd = facts.ytd_turnover_this_year;
-    if (!known(ytd)) need("ytd_turnover_this_year", "Kui suur on selle aasta käive Eestis seni?", "What is this calendar year's Estonian turnover so far?");
+    if (!known(ytd)) need("ytd_turnover_this_year", "Kui palju on ettevõte sel aastal seni Eestis müünud?", "How much has the company sold in Estonia so far this year?");
     const eur = (l: string, n: number) => new Intl.NumberFormat(l).format(n), over = (n: number) => n > VAT_THRESHOLD_EUR;
     const year = known(rev) && rev.as_of ? ` (${rev.as_of})` : "";
     const et = "Kui selle kalendriaasta käive Eestis ületab 40 000 eurot, esita 3 tööpäeva jooksul avaldus käibemaksukohustuslaseks registreerimiseks. Arvuta käive oma arvetest, mitte avalikest andmetest.";

@@ -419,7 +419,7 @@ describe("agent-facing copy over MCP", () => {
     expect(OWNER_VOICE).not.toMatch(/salary/);
     // Phone retest 1 Nov: "A CAMT.053 XML file is best" survived the first version.
     expect(OWNER_VOICE).toContain("no file formats (any statement file the bank offers is fine)");
-    expect(i).toContain("Before asking the owner for any fact or document, check both public data (get_obligations public_facts) and the owner's own connected files, such as Google Drive; ask only if neither has it. Always ask the facts_needed questions from get_obligations, and never let a file stand in for the owner's answer to them, except that a TSD payout the connected books or bank show answers yes.");
+    expect(i).toContain("Before asking the owner for any fact or document, check both public data (get_obligations public_facts) and the owner's own connected files, such as Google Drive; ask only if neither has it. Always ask the facts_needed questions from get_obligations, and never let a file stand in for the owner's answer to them, except that a TSD payout the connected books or bank show answers yes, and this year's turnover is read from the linked books as get_obligations says.");
     expect(i).toContain("call connect_my_services and follow the connect-service playbook it returns before answering from your own connector directory; it says which lookups are allowed.");
     expect(i).toContain("customers");
     expect(i).toContain("Pipedrive");
