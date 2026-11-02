@@ -507,12 +507,16 @@ export async function handleAlusta(opts: {
   if (honeypot) return { ...await renderPlan(flow.state, lang, ctx, true), cookie: conv.id };
   if (!badEnum) await applyGo(flow.state, field(opts.body, "go"), ctx, lang);
   if (flow.state.limited) {
-    return {
-      ...page(lang, conv.id, [LIMIT_MSG.et, LIMIT_MSG.en], blank(), "", `<p>${esc(LIMIT_MSG[lang])}</p><p><a class="tap-link" href="${esc(actionOf(lang))}">${esc(t("Alusta uuesti", "Start again"))}</a></p>`, false),
-      cookie: conv.id,
-    };
+    const msg = LIMIT_MSG[lang];
+    return { ...page(lang, conv.id, [LIMIT_MSG.et, LIMIT_MSG.en], flow.state, msg, companyRetry(lang, flow.state), true), cookie: conv.id };
   }
   return { ...await screen(flow.state, lang, ctx, honeypot), cookie: conv.id };
+}
+
+/** Search box kept after a failed lookup, with the visitor's text and a way to try again. */
+function companyRetry(lang: Lang, flow: Flow): string {
+  const t = tr(lang);
+  return `<input id="alusta-q" name="q" maxlength="200" autocomplete="off" aria-labelledby="alusta-h" value="${esc(flow.asked)}"><button type="submit" name="go" value="company">${esc(t("Proovi uuesti", "Try again"))}</button><button type="submit" class="secondary" name="go" value="nocompany">${esc(t("Jätkan ilma ettevõtteta", "Continue without a company"))}</button>`;
 }
 
 function companyPage(lang: Lang, flow: Flow, preauth: string): AlustaOutcome {
@@ -704,8 +708,7 @@ async function screen(flow: Flow, lang: Lang, opts: { ipKey: string; now: number
           : flow.gap === "invalid"
             ? t("See registrikood ei sobi. Võid jätkata ilma ettevõtteta.", "This registry code does not fit. You can continue without one.")
             : t("Register ei vasta praegu. Võid jätkata ilma ettevõtteta.", "The register is not answering right now. You can continue without a company.");
-    const main = `<button type="submit" name="go" value="nocompany">${esc(t("Jätkan ilma ettevõtteta", "Continue without a company"))}</button>`;
-    return page(lang, pre, [msg, msg], flow, msg, main, true);
+    return page(lang, pre, [msg, msg], flow, msg, companyRetry(lang, flow), true);
   }
   if (!flow.co) return companyPage(lang, flow, pre);
   if (!flow.got) {

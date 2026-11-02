@@ -235,12 +235,19 @@ describe("/alusta", () => {
     const start = await getPage();
     const bad = await post(start, { ...hidden(start.html), go: "company", q: "12345670" });
     expect(bad.html).toContain("See registrikood ei sobi.");
+    expect(bad.html).toContain('id="alusta-q"');
+    expect(bad.html).toContain('value="12345670"');
+    expect(bad.html).toContain("Proovi uuesti");
     expect(bad.html).toContain("Jätkan ilma ettevõtteta");
     expect(toolCalls).toBe(0);
 
     const none = await getPage();
     const missed = await post(none, { ...hidden(none.html), go: "company", q: "Nobody" });
     expect(missed.html).toContain("Nime järgi ettevõtet ei leidnud. Võid jätkata ilma ettevõtteta.");
+    expect(missed.html).toContain('id="alusta-q"');
+    expect(missed.html).toContain('value="Nobody"');
+    expect(missed.html).toContain("Proovi uuesti");
+    expect(missed.html).toContain("Jätkan ilma ettevõtteta");
 
     const named = await getPage();
     const matches = await post(named, { ...hidden(named.html), go: "company", q: "Synthetic" });
@@ -276,14 +283,26 @@ describe("/alusta", () => {
     const gone = await getPage();
     const notFound = await post(gone, { ...hidden(gone.html), go: "company", q: MISSING });
     expect(notFound.html).toContain("Selle koodiga ettevõtet ei leidnud.");
+    expect(notFound.html).toContain('id="alusta-q"');
+    expect(notFound.html).toContain(`value="${MISSING}"`);
+    expect(notFound.html).toContain("Proovi uuesti");
+    expect(notFound.html).toContain("Jätkan ilma ettevõtteta");
 
     const soleStart = await getPage("/alusta", "10.13.0.1");
     const sole = await post(soleStart, { ...hidden(soleStart.html), go: "company", q: "Ainult" }, { ip: "10.13.0.1" });
     expect(sole.html).toContain("Leidsin ainult füüsilisest isikust ettevõtjaid — sisesta palun registrikood.");
     expect(sole.html).not.toContain("Nime järgi ettevõtet ei leidnud.");
+    expect(sole.html).toContain('id="alusta-q"');
+    expect(sole.html).toContain('value="Ainult"');
+    expect(sole.html).toContain("Proovi uuesti");
+    expect(sole.html).toContain("Jätkan ilma ettevõtteta");
     const soleEnStart = await getPage("/alusta?lang=en", "10.13.0.2");
     const soleEn = await post(soleEnStart, { ...hidden(soleEnStart.html), go: "company", q: "Ainult" }, { ip: "10.13.0.2" });
     expect(soleEn.html).toContain("I only found sole traders — please enter the registry code.");
+    expect(soleEn.html).toContain('id="alusta-q"');
+    expect(soleEn.html).toContain('value="Ainult"');
+    expect(soleEn.html).toContain("Try again");
+    expect(soleEn.html).toContain("Continue without a company");
 
     const fillStart = await getPage("/alusta", "10.13.0.3");
     const filled = await post(fillStart, { ...hidden(fillStart.html), go: "company", q: "Backfill" }, { ip: "10.13.0.3" });
@@ -302,12 +321,20 @@ describe("/alusta", () => {
     const limited = await post(start, { ...hidden(start.html), go: "company", q: CODE }, { delay: 1000 });
     expect(limited.status).toBe(200);
     expect(limited.html).toContain("Liiga palju päringuid, proovi tunni pärast");
+    expect(limited.html).toContain('id="alusta-q"');
+    expect(limited.html).toContain(`value="${CODE}"`);
+    expect(limited.html).toContain("Proovi uuesti");
+    expect(limited.html).toContain("Jätkan ilma ettevõtteta");
     expect(limited.html).not.toContain("Synthetic Register OÜ");
     expect(toolCalls).toBe(before);
     const en = await getPage("/alusta?lang=en", "198.51.100.50");
     for (let i = 0; i < 20; i++) expect(registerLookupOk(sandboxRateKey("198.51.100.50"), now)).toBe(true);
     const limitedEn = await post(en, { ...hidden(en.html), go: "company", q: "Synthetic" }, { delay: 0, ip: "198.51.100.50" });
     expect(limitedEn.html).toContain("Too many requests, try again in an hour.");
+    expect(limitedEn.html).toContain('id="alusta-q"');
+    expect(limitedEn.html).toContain('value="Synthetic"');
+    expect(limitedEn.html).toContain("Try again");
+    expect(limitedEn.html).toContain("Continue without a company");
   });
 
   test("programs can be skipped or understood, and Fix returns to the question", async () => {
