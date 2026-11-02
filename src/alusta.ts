@@ -11,7 +11,7 @@ import {
   type IntakeClient, type IntakeCompany, type IntakeObligation, type IntakePlan, type ProductHit,
 } from "./intake.js";
 import { computeObligations, validRegistryCode, type CompanyFacts, type Obligation } from "./obligations.js";
-import { alustaBody, esc, tr, type Lang } from "./views.js";
+import { alustaBody, esc, honeypotField, tr, type Lang } from "./views.js";
 
 export const INTAKE_DAILY_MODEL_CALLS = 400;
 const MODEL_CALLS_PER_CONVERSATION = 2;
@@ -359,8 +359,10 @@ function foundCard(company: CompanyCard, facts: CompanyFacts, lang: Lang, now: n
   const obs = upcoming(facts, now).map((o) => {
     const due = o.effective_due ? showDate(o.effective_due, lang) : "";
     const title = t(o.title_et, o.title_en);
+    // Same rule as Today: a conditional row shows its condition; a warning is already worded as one.
+    const cond = o.applies === "if" && o.condition_et && o.kind !== "warning" ? t(o.condition_et, o.condition_en ?? o.condition_et) : "";
     const src = `<a class="tap-link" href="${esc(o.source.url)}" rel="noopener noreferrer">${esc(t("Allikas", "Source"))}: <span lang="et">${esc(o.source.act_et)} ${esc(o.source.section)}</span></a>`;
-    return `<li>${esc(title)}${due ? ` · <time datetime="${esc(o.effective_due!)}">${esc(due)}</time>` : ""} ${src}</li>`;
+    return `<li>${esc(title)}${due ? ` · <time datetime="${esc(o.effective_due!)}">${esc(due)}</time>` : ""}${cond ? `<p class="deadline-cond"><strong>${esc(cond)}</strong></p>` : ""} ${src}</li>`;
   }).join("");
   return `<dl class="facts">${row(t("Nimi", "Name"), company.name || unknown)}${row(t("Õiguslik vorm", "Legal form"), company.legal_form || unknown)}${row(t("Tegevusala", "Business area"), company.emtak_label || unknown)}${row(t("Käibemaksukohustuslane", "VAT registered"), vatText(facts, lang))}${row(t("Viimane majandusaasta aruanne", "Last annual report"), annualText(facts, lang))}</dl>
 ${obs ? `<h2>${esc(t("Järgmised kohustused", "Next obligations"))}</h2><ul class="steps">${obs}</ul>` : ""}
@@ -499,10 +501,8 @@ function page(lang: Lang, preauth: string, titles: [string, string], flow: Flow,
 
 /** A second form, when one screen has two different actions. Only the clicked submit button is posted. */
 function extraForm(lang: Lang, preauth: string, flow: Flow, inner: string): string {
-  const t = tr(lang);
   const hidden = Object.entries({ preauth, ...hiddenOf(flow) }).map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`).join("");
-  const hp = `<div class="hp"><label>${esc(t("Veebileht", "Website"))}<input name="website" tabindex="-1" autocomplete="off" value=""></label></div>`;
-  return `<form method="post" action="${esc(actionOf(lang))}" autocomplete="off">${hp}${hidden}${inner}</form>`;
+  return `<form method="post" action="${esc(actionOf(lang))}" autocomplete="off">${honeypotField(lang)}${hidden}${inner}</form>`;
 }
 
 export async function handleAlusta(opts: {
@@ -686,6 +686,23 @@ function nameInVisitorText(text: string, name: string): boolean {
   return foldedName.length > 0 && folded(text).includes(foldedName);
 }
 
+/** Catalogue hits first, then model hits that are a new record or a new product name. At most 8. */
+function unionNameMatches(text: string, modelHits: ProductHit[]): ProductHit[] {
+  const out = productsInText(text).slice(0, 8);
+  const seenId = new Set(out.map((hit) => hit.record?.id).filter((id): id is string => !!id));
+  const seenName = new Set(out.map((hit) => folded(hit.product)).filter((name) => name.length > 0));
+  for (const hit of modelHits) {
+    if (out.length >= 8) break;
+    const id = hit.record?.id ?? "";
+    const name = folded(hit.product);
+    if ((id && seenId.has(id)) || (name && seenName.has(name))) continue;
+    out.push(hit);
+    if (id) seenId.add(id);
+    if (name) seenName.add(name);
+  }
+  return out;
+}
+
 async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeClient | null; ipKey: string; now: number; cookie: string | null }, lang: Lang): Promise<void> {
   const conv = parseAlusta(opts.cookie ?? null);
   let viaModel = false;
@@ -720,6 +737,9 @@ async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeC
   if (!viaModel) {
     hits = productsInText(text);
     flow.unmatched = [];
+  } else {
+    // Catalogue name matches stay. Muse may add a product the visitor named; it never removes one.
+    hits = unionNameMatches(text, hits);
   }
   flow.products = namedFrom(hits);
   const ids: string[] = [];

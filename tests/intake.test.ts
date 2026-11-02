@@ -232,6 +232,27 @@ describe("buildIntakePlan", () => {
     expect(bank.prompt).toContain("I use: Swedbank.");
   });
 
+  test("Pipedrive is directory guidance: no Connect step and no paid plan (#164)", () => {
+    const services = matchCatalog(["Pipedrive"]).matched;
+    expect(services.map((r) => r.id)).toEqual(["pipedrive"]);
+    expect(safeHttps(services[0]!.connection)).toBeNull();
+    const named = buildIntakePlan({
+      uses: "none", lang: "en",
+      services: matchCatalog(["Merit Aktiva", "Gmail"]).matched,
+      productNames: ["Merit Aktiva", "Gmail"],
+    });
+    expect(named.recommendation.recommended).toMatchObject({ assistant: "claude", plan: "pro" });
+    expect(named.paidNote).toBe(true);
+    for (const lang of ["et", "en"] as const) {
+      const plan = buildIntakePlan({ uses: "none", lang, services, productNames: ["Pipedrive"] });
+      expect(plan.recommendation.recommended, lang).toMatchObject({ assistant: "claude", plan: "free" });
+      expect(plan.paidNote, lang).toBe(false);
+      expect(plan.steps.some((s) => /pipedrive/i.test(`${s.text} ${s.href ?? ""}`)), lang).toBe(false);
+      const connect = plan.steps.filter((s) => lang === "et" ? /^Ühenda\s/.test(s.text) : /^Connect\s/.test(s.text));
+      expect(connect.map((s) => s.text), lang).toEqual([lang === "et" ? "Ühenda AI-hüppelaud." : "Connect AI Launchpad."]);
+    }
+  });
+
   test("the plan screen leads with the recommendation and one sources line per block", () => {
     const services = matchCatalog(["Merit Aktiva", "Gmail"]).matched;
     const plan = buildIntakePlan({ uses: "none", lang: "en", services, productNames: ["Merit Aktiva", "Gmail"] });
