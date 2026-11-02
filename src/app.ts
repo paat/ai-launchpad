@@ -5,7 +5,7 @@ import { isIP } from "node:net";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { openDb, sha256, newId, nowIso, type Db } from "./db.js";
 import { arikratt } from "./arikratt.js";
-import { approvalAddressMissing, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, liveStandingRules, logActivity, normAddress, recordActionOutcome, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, TOOL_ARG_KEYS, type ApprovalRow, type StandingRule } from "./mcp.js";
+import { approvalAddressMissing, startApprovalCheck, buildMcpServer, companyObligations, expireApprovals, getApproval, getAssistantMilestones, getState, liveStandingRules, logActivity, normAddress, recordActionOutcome, standingRuleName, STANDING_DEFAULTS, STANDING_KINDS, TOOL_ARG_KEYS, type ApprovalRow, type StandingRule } from "./mcp.js";
 import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { computeHandover, handoverObligations, isDone, largestAmount, offerCapCents, standingBasis } from "./handover.js";
 import type { Assessment } from "./core.js";
@@ -18,6 +18,7 @@ import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
 import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, aboutBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
+import { liveChecker, mockChecker, type ApprovalChecker } from "./approval-check.js";
 import { NAIDIS, naidisApproval, naidisBody } from "./naidis.js";
 
 export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; intakeClient?: IntakeClient; }
@@ -160,6 +161,12 @@ const REGISTER_GAP_ET: Record<string, string> = {
   not_found: "Registrikoodiga ettevõtet registrist ei leitud — palu assistendil kood üle kontrollida",
 };
 
+/** Another assistant for this owner: an OAuth grant in the same epoch whose client_name differs. Revoked grants count. The name itself is never returned. */
+function otherAssistantConnected(db: Db, ownerId: string, epoch: number, grantId: string): boolean {
+  const current = db.prepare("SELECT json_extract(c.metadata,'$.client_name') AS name FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.id=? AND g.owner_id=? AND g.epoch=?").get(grantId, ownerId, epoch) as { name: string | null } | undefined;
+  if (!current) return false;
+  return !!db.prepare("SELECT 1 AS hit FROM oauth_grants g JOIN oauth_clients c ON c.id=g.client_id WHERE g.owner_id=? AND g.epoch=? AND g.id<>? AND json_extract(c.metadata,'$.client_name') IS NOT ? LIMIT 1").get(ownerId, epoch, grantId, current.name);
+}
 export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   const releaseSha = cfg.releaseSha ?? null;
   if (releaseSha !== null && !RELEASE_SHA_RE.test(releaseSha)) throw new Error("releaseSha must be exactly 40 lowercase hex characters (or null).");
@@ -214,15 +221,18 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // on the SAME ledger handle; mock in test mode; none when disabled.
   let needClassifier: NeedClassifier | null = cfg.modelMode === "disabled" ? null : mockClassifier;
   let intakeClient: IntakeClient | null = null;
+  let approvalChecker: ApprovalChecker | null = cfg.modelMode === "disabled" ? null : mockChecker;
   if (cfg.modelMode === "public_cards") {
     if (!allowedSubjects) throw new Error("MODEL_MODE=public_cards requires a nonempty Google subject allowlist (LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS); refusing to start.");
     if (cfg.modelPricingConfirmed !== true) throw new Error("MODEL_MODE=public_cards requires LAUNCHPAD_MODEL_PRICING_CONFIRMED=1 (operator confirms current published pricing/credits); refusing to start.");
     if (!cfg.basetenApiKey) throw new Error("MODEL_MODE=public_cards requires BASETEN_API_KEY; refusing to start.");
     if (!cfg.modelLedgerPath) throw new Error("MODEL_MODE=public_cards requires LAUNCHPAD_MODEL_LEDGER_PATH (the exact existing reviewed ledger); refusing to start.");
     const ledger = openExistingPublicLedger(cfg.modelLedgerPath);
+    ledger.finalizeInterrupted();
     publicCards = new PublicCards({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
     needClassifier = liveClassifier({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
     intakeClient = liveIntake({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
+    approvalChecker = liveChecker({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
   } else if (cfg.modelMode !== "disabled") {
     intakeClient = cfg.intakeClient ?? mockIntake();
   }
@@ -332,6 +342,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
         const id = newId("appr");
         const outcomeJson = shiftOutcome(template.outcome_json);
         insertApproval.run(id, ownerId, template.kind, template.report_id, template.payload_json, template.digest, template.state, shift(template.expires_at), shift(template.created_at), shiftOpt(template.decided_at), shiftOpt(template.consumed_at), outcomeJson);
+        void startApprovalCheck(db, ownerId, id, approvalChecker);
         if (template.state === "consumed" && outcomeJson) {
           // One receipt per recorded outcome, the same columns record_action_outcome writes. A paid row's history is sent, then paid.
           const outcome = JSON.parse(outcomeJson) as { outcome: string; observed_at: string; history?: { outcome: string; observed_at: string }[] };
@@ -962,7 +973,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   } catch (e) { next(e); } });
 
   app.get("/export", requireOwner, (req, res) => {
-    const data = { workspace: getState(db, oid(req)).ws, assessments: db.prepare("SELECT version,payload_json,created_at FROM assessments WHERE owner_id=?").all(oid(req)), progress: db.prepare("SELECT * FROM progress WHERE owner_id=?").all(oid(req)), candidates: db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=?").all(oid(req)), activity: db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=?").all(oid(req)), approvals: db.prepare("SELECT id,kind,report_id,payload_json,digest,state,created_at,expires_at,decided_at,consumed_at,outcome_json,approved_by_rule,playbook_id,owner_confirmation FROM approvals WHERE owner_id=?").all(oid(req)), standing_approvals: db.prepare("SELECT id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at,revoked_at FROM standing_approvals WHERE owner_id=?").all(oid(req)), unmet_needs: db.prepare("SELECT id,report_id,need_redacted,blocker,job_hint_redacted,state,reason,category,demand_label,same_as,spec,classified_by,created_at,updated_at,decided_at FROM unmet_needs WHERE owner_id=?").all(oid(req)), statements_read: db.prepare("SELECT bank,last4,period_from,period_to,closing_balance_cents,read_at FROM statements_read WHERE owner_id=?").all(oid(req)) };
+    const data = { workspace: getState(db, oid(req)).ws, assessments: db.prepare("SELECT version,payload_json,created_at FROM assessments WHERE owner_id=?").all(oid(req)), progress: db.prepare("SELECT * FROM progress WHERE owner_id=?").all(oid(req)), candidates: db.prepare("SELECT id,name,connection,jobs,status,created_at FROM candidates WHERE owner_id=?").all(oid(req)), activity: db.prepare("SELECT actor,action,outcome,summary,created_at FROM activity WHERE owner_id=?").all(oid(req)), approvals: db.prepare("SELECT id,kind,report_id,payload_json,digest,state,created_at,expires_at,decided_at,consumed_at,outcome_json,approved_by_rule,playbook_id,owner_confirmation,check_state,check_json,check_by,check_at FROM approvals WHERE owner_id=?").all(oid(req)), standing_approvals: db.prepare("SELECT id,kind,recipients_json,max_amount_cents,max_per_day,expires_at,created_at,revoked_at FROM standing_approvals WHERE owner_id=?").all(oid(req)), unmet_needs: db.prepare("SELECT id,report_id,need_redacted,blocker,job_hint_redacted,state,reason,category,demand_label,same_as,spec,classified_by,created_at,updated_at,decided_at FROM unmet_needs WHERE owner_id=?").all(oid(req)), statements_read: db.prepare("SELECT bank,last4,period_from,period_to,closing_balance_cents,read_at FROM statements_read WHERE owner_id=?").all(oid(req)) };
     res.setHeader("content-disposition", "attachment; filename=launchpad-export.json");
     res.json(data);
   });
@@ -1019,7 +1030,9 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       }
       const ws = db.prepare("SELECT company_ref,label FROM workspaces WHERE owner_id=?").get(token.owner_id) as { company_ref: string; label: string };
       if (!oauthGrant) touchLastUsed(db, "mcp_tokens", token.id);
-      const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl }, register, { onUnmetNeed: () => unmetNeeds.kick() });
+      // Manual tokens never count: only an OAuth grant can have another assistant connection.
+      const anotherAssistant = oauthGrant && otherAssistantConnected(db, token.owner_id, owner.epoch, token.id);
+      const server = buildMcpServer(db, { ownerId: token.owner_id, scopes: token.scopes.split(","), companyRef: ws.company_ref, label: ws.label, reportingEnabled: owner.reporting_enabled === 1, baseUrl: cfg.baseUrl, anotherAssistant }, register, { onUnmetNeed: () => unmetNeeds.kick(), approvalChecker });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => { void transport.close(); void server.close(); });
       await server.connect(transport);

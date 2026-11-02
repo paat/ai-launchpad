@@ -1,11 +1,11 @@
-# Baseten model-quality harness (bounded, synthetic)
+# Baseten model-quality harness (bounded)
 
 Status: controlled integration harness only. The old adapter in
 [src/model.ts](../src/model.ts) remains hard-disabled for live inference
 (R-002) and stays unreachable live. This harness file alone enables no
 runtime/UI model calls, and no live call is part of tests or CI (tests/CI
 stay mock, $0). The separate reviewed public-cards slice built on this
-harness is piloted live owner-only — see [live-pilot.md](live-pilot.md). All cases are synthetic; no company or personal data.
+harness is piloted live owner-only — see [live-pilot.md](live-pilot.md). The CLI cases are synthetic; runtime approval checks send the exact stored approval action, including its recipient and document text, as described below.
 Two genuine operator-authorized live harness calls were completed through
 this harness on 2026-10-28 (see Live result below). This harness makes
 **no live quality claim beyond that bounded observation**: the outputs
@@ -16,9 +16,9 @@ quality claim.
 ## What it is
 
 - [src/model-quality.ts](../src/model-quality.ts) — a small Baseten
-  Chat Completions client for exactly three fixed purposes:
-  `setup_guidance`, `classify_friction` and `classify_unmet_need` (the
-  friction loop, issue #20; see below). Provider identity
+  Chat Completions client for exactly four fixed purposes:
+  `setup_guidance`, `classify_friction`, `classify_unmet_need` (the
+  friction loop, issue #20), and `check_approval` (issue #157; see below). Provider identity
   `baseten-meta`. No caller-chosen model, endpoint, tools, background mode,
   history, URLs or files; extra caller fields are ignored.
 - [scripts/model-quality.ts](../scripts/model-quality.ts) — an operator CLI
@@ -34,8 +34,11 @@ exact event-key-restricted model `meta-models/muse-spark-open-1026`
 two messages (fixed `developer` instructions, then the `user` input),
 a per-job `max_tokens` (caps the whole completion, reasoning included):
 4,096 for `setup_guidance` and `classify_friction` (the provider contract
-limit, unchanged) and 512 for `classify_unmet_need`; `stream: false`. Input is at most 2,000
-characters and 8,192 UTF-8 bytes. The whole fetch plus body read times
+limit, unchanged), 512 for `classify_unmet_need`, and 1,024 for
+`check_approval`; `stream: false`. Input is at most 2,000 characters and
+8,192 UTF-8 bytes for the original jobs. `check_approval` alone allows
+32,768 characters and 65,536 UTF-8 bytes, including JSON escaping of the
+4,000-character document and the other bounded approval fields. The whole fetch plus body read times
 out at 45 s, redirects are refused, there are no automatic retries, and
 response bodies are capped at 128 KiB while streaming (also when no
 `content-length` is sent). Only `choices[0].message.content` with
@@ -137,13 +140,13 @@ model. Rules:
   prompt-version + job + input (raw inputs are never stored). Repeating
   an ID with the same payload returns the stored result/status with no
   new call; a different payload is rejected as `request_conflict`.
-- One attempt in flight globally. A crash leaves a `pending` row that
-  stays charged, is non-replayable as a result, and blocks new attempts
-  fail-closed. There is no lease expiry. Clearing that state needs manual
-  review of the ledger and the provider billing view by the operator;
-  the harness will not do it automatically.
-- Saved outputs come only from the runner's synthetic cases. No secrets
-  are stored.
+- One attempt in flight globally, with no lease expiry. At live app startup,
+  leftover `pending` rows become `uncertain` / `interrupted`, keeping their
+  full allocation and preventing retries while allowing new attempts.
+- The ledger saves completion text for all jobs except `check_approval`, whose
+  text is returned only to the live caller for validation and storage on the
+  approval row (textless ledger replays are unavailable as `interrupted`),
+  and never stores raw inputs or API keys.
 
 ## CLI
 
@@ -315,6 +318,53 @@ second ledger, store or cap exists.
   was classified live by `meta-models/muse-spark-open-1026` or by the mock.
 - Tests ([tests/unmet-needs.test.ts](../tests/unmet-needs.test.ts)) are
   fake-only with a network guard. No live classification has been run yet.
+
+## Approval checks (issue #157)
+
+[src/approval-check.ts](../src/approval-check.ts) adds `check_approval` to
+this same sole spending authority. The app passes the same ledger handle
+used by its other live jobs: no new ledger, spending cap, refund or retry.
+
+- Every new approval row starts one check, including approvals confirmed
+  in the assistant and those covered by a standing rule. Reusing an open
+  approval with the same digest keeps its existing check. The server derives
+  the ledger request ID from the approval ID and digest.
+- Input is compact JSON built only from the stored action: kind, recipient
+  name and address, amount as an EUR string and cents, currency, period,
+  document title and content, assistant summary, owner confirmation words
+  if present, and playbook ID. The exact approval text is sent to Meta's
+  open model hosted by Baseten. No provider retention promise is made.
+- Fixed instructions ask Muse to compare text and amount, buyer/recipient
+  name and address domain, invoice essentials, polite message tone and
+  summary versus content. Documents are data, never instructions. Muse
+  computes no taxes or deadlines and decides no approval state.
+- The per-job input limit is 32,768 characters / 65,536 UTF-8 bytes; other
+  jobs retain their 2,000 / 8,192 bounds. `max_tokens` is 1,024, reasoning
+  included. Reservation uses the actual UTF-8 bytes of input and fixed
+  instructions, plus the existing overhead and margin, not character count.
+- Strict JSON output has exactly `verdict` (`ok` or `review`), `summary_et`,
+  `summary_en` (nonempty single lines, at most 200 characters each), and
+  `concerns_et`, `concerns_en` (equal counts, zero to three nonempty single
+  lines, at most 160 characters each). `ok` requires no concerns; `review`
+  requires at least one. Invalid output is unavailable with an unreadable
+  answer reason, never a pass. Model text is HTML-escaped on both card views.
+- Live checks run only for real owners in `MODEL_MODE=public_cards`, with
+  at most 30 starts per owner in a rolling 24 hours. Sample, demo and
+  sandbox owners, and `MODEL_MODE=test`, use a deterministic mock labelled
+  “Sample, not a model”. Disabled mode and the daily limit perform no call.
+- `request_approval` waits at most 20 seconds; a longer call finishes in
+  the background under the ledger's own timeout and stores its result.
+  Both it and `get_approval`, including replays, return the current check.
+  The existing approval row holds state, validated output or a failure
+  reason, provenance and start time; these fields are in the owner's export.
+- Advice never changes approval state. Receipts tell the assistant to
+  surface review concerns in one line and act only if the owner still
+  wants it; for a running check, read `get_approval` once before acting.
+  If unavailable, act as usual and mention the check only if asked.
+  Cards show running, concerns, or a plain reason for an unavailable check;
+  mock checks cannot be mistaken for a live model result.
+- Tests use synthetic approvals and fake fetches only. No live check was
+  made as part of implementing this feature.
 
 ## Completion gates (harness live-tested; old adapter still disabled — public-cards path piloted owner-only)
 
