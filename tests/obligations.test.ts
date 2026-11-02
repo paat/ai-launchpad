@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createApp, type Config } from "../src/app.js";
 import { openDb, sha256 } from "../src/db.js";
-import { assistantFactsSchema, companyObligations, TOOL_ARG_KEYS } from "../src/mcp.js";
+import { assistantFactsSchema, companyObligations, openItems, TOOL_ARG_KEYS } from "../src/mcp.js";
 import { arikratt, CACHE_TTL_MS, mapCompany } from "../src/arikratt.js";
 import { DEMO_FIXTURES, SYNTHETIC_COMPANIES } from "../src/fixtures.js";
 import { HANDOFF, computeObligations, easterSunday, publicHolidays, shiftToWorkingDay, validRegistryCode, type CompanyFacts } from "../src/obligations.js";
@@ -188,7 +188,7 @@ describe("rules engine (memo § 3, pure)", () => {
     const row = reg.obligations.find((o) => o.rule_id === "vat-registration-threshold")!;
     expect(row.reason_en).toMatch(/^Revenue in the latest annual report \(2025\) was €45,000, above the threshold: likely to cross it this year too\./);
     expect(row.reason_et).toMatch(/^Viimase majandusaasta aruande \(2025\) müügitulu oli 45\s000 eurot, üle piiri/);
-    expect(reg.facts_needed).toContainEqual({ fact: "ytd_turnover_this_year", question_et: "Kui suur on selle aasta käive Eestis seni?", question_en: "What is this calendar year's Estonian turnover so far?" });
+    expect(reg.facts_needed).toContainEqual({ fact: "ytd_turnover_this_year", question_et: "Kui palju on ettevõte sel aastal seni Eestis müünud?", question_en: "How much has the company sold in Estonia so far this year?" });
     const ytd = ofRule({ ...base, ytd_turnover_this_year: { value: 41_000, provenance: "assistant_supplied" } }, "2026-11-01", "vat-registration-threshold")[0];
     expect(ytd.reason_en).toMatch(/^Your assistant reports this year's Estonian turnover so far as €41,000, above the threshold\./);
     expect(ytd.reason_et).toMatch(/^Assistendi sõnul on selle aasta käive Eestis seni 41\s000 eurot, üle piiri\./);
@@ -504,6 +504,14 @@ describe("get_obligations tool and status card", () => {
     const listed = (await c.listTools()).tools.map((t) => t.name);
     expect(listed.every((n) => Object.hasOwn(TOOL_ARG_KEYS, n))).toBe(true);
     expect(Object.keys(TOOL_ARG_KEYS).every((k) => listed.includes(k))).toBe(true);
+  });
+  test("this year's turnover is read from the books, never waits for the owner", async () => {
+    const r = await companyObligations(arikratt(openDb(":memory:"), { apiKey: "", url: fakeUrl }), { registryCode: FAKE_VALID, assistant: { vat_registered: false }, months: 1, today: at("2026-11-02") });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.result.facts_needed.map((n) => n.fact)).toContain("ytd_turnover_this_year");
+    expect(r.result.assistant_instruction).toContain("Do not ask the owner for this year's turnover (ytd_turnover_this_year) when books are connected: add up this calendar year's sales invoices in the books and call get_obligations again with that total.");
+    const items = openItems([], r.result, null);
+    expect(items.questions.map((n) => n.fact)).not.toContain("ytd_turnover_this_year");
   });
   test("not_configured: rules still compute, facts_needed asks, no network call", async () => {
     const spy = vi.spyOn(globalThis, "fetch");
