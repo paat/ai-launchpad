@@ -27,18 +27,47 @@ const registerHits = new Map<string, number[]>();
 let dailyDay = "";
 let dailyCount = 0;
 
+export type IntakeMuseJob = "intake_extract" | "intake_plan";
+export interface IntakeLastFallback { job: IntakeMuseJob; reason: string; at: string; }
+export interface IntakeLastOk { job: IntakeMuseJob; at: string; }
+let intakeLastFallback: IntakeLastFallback | null = null;
+let intakeLastOk: IntakeLastOk | null = null;
+const SAFE_REASON = /^[a-z0-9_]{1,40}$/;
+
+/** A public reason code. Anything else, including provider message text, becomes "other". */
+function museReason(reason: string): string {
+  return SAFE_REASON.test(reason) ? reason : "other";
+}
+
+function noteMuseFallback(job: IntakeMuseJob, reason: string, now: number): void {
+  const safe = museReason(reason);
+  console.warn("alusta: muse fallback", job, safe);
+  intakeLastFallback = { job, reason: safe, at: new Date(now).toISOString() };
+}
+
+function noteMuseOk(job: IntakeMuseJob, now: number): void {
+  intakeLastOk = { job, at: new Date(now).toISOString() };
+}
+
+/** Last Muse fallback and last success since process start. Null until the first of each. */
+export function intakeHealth(): { intake_last_fallback: IntakeLastFallback | null; intake_last_ok: IntakeLastOk | null } {
+  return { intake_last_fallback: intakeLastFallback, intake_last_ok: intakeLastOk };
+}
+
 /** Tallinn civil date, YYYY-MM-DD. The daily model cap resets on this boundary. */
 export function tallinnDay(now: number): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Tallinn", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now));
 }
 
-/** Test hook. Clears the in-memory conversation, register and daily counters. The per-IP model window lives in intakeRateOk and moves with the clock. */
+/** Test hook. Clears the in-memory conversation, register and daily counters and the last Muse result. The per-IP model window lives in intakeRateOk and moves with the clock. */
 export function resetAlustaGuards(): void {
   convCalls.clear();
   extracted.clear();
   registerHits.clear();
   dailyDay = "";
   dailyCount = 0;
+  intakeLastFallback = null;
+  intakeLastOk = null;
 }
 
 export function mintAlusta(now: number): string {
@@ -80,21 +109,25 @@ export function registerLookupOk(key: string, now = Date.now()): boolean {
   return true;
 }
 
-/** One model call, or a refusal. Honeypot, too-fast, too-old, the conversation cap,
- * the daily cap and the per-IP cap all refuse. A refusal does not increment. */
-export function reserveIntakeModel(opts: { id: string; ip: string; startedAt: number; now: number; honeypot: boolean }): boolean {
-  if (opts.honeypot) return false;
+export type IntakeRefusal = "honeypot" | "too_fast" | "too_old" | "conversation_cap" | "daily_cap" | "ip_rate";
+
+/** One model call, or a refusal code. Honeypot, too-fast, too-old, the conversation cap,
+ * the daily cap and the per-IP cap all refuse, in that order. A refusal does not increment.
+ * null means the call was reserved. */
+export function reserveIntakeModel(opts: { id: string; ip: string; startedAt: number; now: number; honeypot: boolean }): IntakeRefusal | null {
+  if (opts.honeypot) return "honeypot";
   const age = opts.now - opts.startedAt;
-  if (!Number.isFinite(age) || age < MIN_AGE_MS || age > MAX_AGE_MS) return false;
+  if (!Number.isFinite(age) || age < MIN_AGE_MS) return "too_fast";
+  if (age > MAX_AGE_MS) return "too_old";
   const used = convCalls.get(opts.id) ?? 0;
-  if (used >= MODEL_CALLS_PER_CONVERSATION) return false;
+  if (used >= MODEL_CALLS_PER_CONVERSATION) return "conversation_cap";
   const day = tallinnDay(opts.now);
   if (dailyDay !== day) { dailyDay = day; dailyCount = 0; }
-  if (dailyCount >= INTAKE_DAILY_MODEL_CALLS) return false;
-  if (!intakeRateOk(opts.ip, opts.now)) return false;
+  if (dailyCount >= INTAKE_DAILY_MODEL_CALLS) return "daily_cap";
+  if (!intakeRateOk(opts.ip, opts.now)) return "ip_rate";
   convCalls.set(opts.id, used + 1);
   dailyCount += 1;
-  return true;
+  return null;
 }
 
 const BRAND: Record<string, string> = {
@@ -657,20 +690,28 @@ async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeC
   const conv = parseAlusta(opts.cookie ?? null);
   let viaModel = false;
   let hits: ProductHit[] = [];
-  if (opts.intake && conv && !extracted.has(conv.id) && reserveIntakeModel({ id: conv.id, ip: opts.ipKey, startedAt: conv.startedAt, now: opts.now, honeypot: false })) {
-    extracted.add(conv.id);
-    const result = await opts.intake.extract(text);
-    if (result.ok) {
-      const parsed = parseExtract(result.output);
-      if (parsed) {
-        const named = parsed.products.filter((p) => nameInVisitorText(text, p.name));
-        const routed = routeProducts(named.map((p) => p.name), named.map((p) => p.kind));
-        // A parsed note with no routed product still gets the catalogue name match.
-        if (routed.hits.length) {
-          hits = routed.hits;
-          flow.unmatched = routed.unmatched.map((n) => n.slice(0, 60)).slice(0, 8);
-          viaModel = true;
-        }
+  if (conv && !extracted.has(conv.id)) {
+    if (!opts.intake) noteMuseFallback("intake_extract", "no_client", opts.now);
+    else {
+      const refusal = reserveIntakeModel({ id: conv.id, ip: opts.ipKey, startedAt: conv.startedAt, now: opts.now, honeypot: false });
+      if (refusal) noteMuseFallback("intake_extract", refusal, opts.now);
+      else {
+        extracted.add(conv.id);
+        const result = await opts.intake.extract(text);
+        if (result.ok) {
+          noteMuseOk("intake_extract", opts.now);
+          const parsed = parseExtract(result.output);
+          if (parsed) {
+            const named = parsed.products.filter((p) => nameInVisitorText(text, p.name));
+            const routed = routeProducts(named.map((p) => p.name), named.map((p) => p.kind));
+            // A parsed note with no routed product still gets the catalogue name match.
+            if (routed.hits.length) {
+              hits = routed.hits;
+              flow.unmatched = routed.unmatched.map((n) => n.slice(0, 60)).slice(0, 8);
+              viaModel = true;
+            }
+          }
+        } else noteMuseFallback("intake_extract", result.reason, opts.now);
       }
     }
   }
@@ -783,9 +824,22 @@ async function renderPlan(flow: Flow, lang: Lang, opts: { ipKey: string; now: nu
   const plan = buildIntakePlan(args);
   const conv = parseAlusta(opts.cookie);
   let muse: { text: string; mock: boolean } | null = null;
-  if (!honeypot && opts.intake && conv && reserveIntakeModel({ id: conv.id, ip: opts.ipKey, startedAt: conv.startedAt, now: opts.now, honeypot: false })) {
-    const result = await opts.intake.summarize(planModelInput(args));
-    if (result.ok) muse = { text: result.output, mock: result.mock || opts.intake.mock };
+  if (honeypot) {
+    const refusal = conv
+      ? reserveIntakeModel({ id: conv.id, ip: opts.ipKey, startedAt: conv.startedAt, now: opts.now, honeypot: true })
+      : "honeypot";
+    noteMuseFallback("intake_plan", refusal ?? "honeypot", opts.now);
+  } else if (!opts.intake) noteMuseFallback("intake_plan", "no_client", opts.now);
+  else if (conv) {
+    const refusal = reserveIntakeModel({ id: conv.id, ip: opts.ipKey, startedAt: conv.startedAt, now: opts.now, honeypot: false });
+    if (refusal) noteMuseFallback("intake_plan", refusal, opts.now);
+    else {
+      const result = await opts.intake.summarize(planModelInput(args));
+      if (result.ok) {
+        noteMuseOk("intake_plan", opts.now);
+        muse = { text: result.output, mock: result.mock || opts.intake.mock };
+      } else noteMuseFallback("intake_plan", result.reason, opts.now);
+    }
   }
   const titles: [string, string] = plan.recommendation.recommended
     ? [planLabel(plan.recommendation.recommended), planLabel(plan.recommendation.recommended)]

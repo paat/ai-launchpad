@@ -32,20 +32,20 @@ describe("intake guards", () => {
   });
 
   test("honeypot, age, conversation cap and the daily cap refuse without waiting", () => {
-    expect(call({ honeypot: true })).toBe(false);
-    expect(call({ id: "young.1", now: at - 10_000 + 1_999 })).toBe(false);
-    expect(call({ id: "edge.1", startedAt: at - 2_000, now: at })).toBe(true);
-    expect(call({ id: "oldedge.1", startedAt: at - 30 * 60_000, now: at })).toBe(true);
-    expect(call({ id: "too-old.1", startedAt: at - 30 * 60_000 - 1, now: at })).toBe(false);
+    expect(call({ honeypot: true })).toBe("honeypot");
+    expect(call({ id: "young.1", now: at - 10_000 + 1_999 })).toBe("too_fast");
+    expect(call({ id: "edge.1", startedAt: at - 2_000, now: at })).toBe(null);
+    expect(call({ id: "oldedge.1", startedAt: at - 30 * 60_000, now: at })).toBe(null);
+    expect(call({ id: "too-old.1", startedAt: at - 30 * 60_000 - 1, now: at })).toBe("too_old");
     // Extract and the plan line are the two calls one conversation may make. The third is refused.
-    expect(call({ id: "cap.1" })).toBe(true);
-    expect(call({ id: "cap.1" })).toBe(true);
-    expect(call({ id: "cap.1" })).toBe(false);
+    expect(call({ id: "cap.1" })).toBe(null);
+    expect(call({ id: "cap.1" })).toBe(null);
+    expect(call({ id: "cap.1" })).toBe("conversation_cap");
     resetAlustaGuards();
     let accepted = 0;
     for (let i = 0; i < INTAKE_DAILY_MODEL_CALLS + 1; i++) {
       const ip = `198.51.${i >> 8}.${i & 255}`;
-      if (call({ id: `day-${i}.1`, ip, startedAt: at - 5_000, now: at })) accepted++;
+      if (call({ id: `day-${i}.1`, ip, startedAt: at - 5_000, now: at }) === null) accepted++;
     }
     expect(accepted).toBe(INTAKE_DAILY_MODEL_CALLS);
     expect(INTAKE_DAILY_MODEL_CALLS).toBe(400);
@@ -542,7 +542,7 @@ describe("/alusta", () => {
     const day = now;
     for (let i = 0; i < INTAKE_DAILY_MODEL_CALLS; i++) {
       const ip = `203.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`;
-      expect(reserveIntakeModel({ id: `cap${i}.1`, ip, startedAt: day - 10_000, now: day, honeypot: false })).toBe(true);
+      expect(reserveIntakeModel({ id: `cap${i}.1`, ip, startedAt: day - 10_000, now: day, honeypot: false })).toBe(null);
     }
     const programs = await skipToAssistant("10.9.0.9");
     const capped = await post(programs, { ...hidden(programs.html), go: "assistant", choose: "claude" }, { delay: 0, ip: "10.9.0.9" });
@@ -830,5 +830,126 @@ describe("/alusta model modes", () => {
     expect(prompt).not.toContain("Ignore earlier");
     expect(prompt).not.toContain(attack);
     expect(bodies[1] ?? "").not.toContain(attack);
+  });
+
+  function hiddenOf(html: string): Record<string, string> {
+    const form = html.match(/<form\b[^>]*>[\s\S]*?<\/form>/)?.[0] ?? "";
+    const out: Record<string, string> = {};
+    for (const m of form.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"/g)) out[m[1]!] = m[2]!.replaceAll("&amp;", "&").replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&lt;", "<").replaceAll("&gt;", ">");
+    return out;
+  }
+  /** gap 0 keeps the conversation younger than the 2 s model floor. */
+  async function conversation(url: string, ip: string, gap: number) {
+    const opened = await fetch(url + "/alusta", { headers: { "x-forwarded-for": ip } });
+    const cookie = decodeURIComponent((opened.headers.getSetCookie().find((c) => c.startsWith("lp_alusta=")) ?? "").slice("lp_alusta=".length).split(";")[0]);
+    let html = await opened.text();
+    const post = async (fields: Record<string, string>) => {
+      now += gap;
+      const res = await fetch(url + "/alusta", {
+        method: "POST",
+        headers: { origin: url, "content-type": "application/x-www-form-urlencoded", cookie: `lp_alusta=${encodeURIComponent(cookie)}`, "x-forwarded-for": ip },
+        body: new URLSearchParams(fields),
+      });
+      html = await res.text();
+      return html;
+    };
+    return { html: () => html, hidden: () => hiddenOf(html), post };
+  }
+  async function healthOf(url: string) {
+    return await (await fetch(url + "/health")).json() as {
+      intake_last_fallback: { job: string; reason: string; at: string } | null;
+      intake_last_ok: { job: string; at: string } | null;
+    };
+  }
+
+  test("a too-fast programs post records too_fast on /health", async () => {
+    const url = await boot({});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const note = "Merit Aktiva visitor-only-note";
+    try {
+      expect(await healthOf(url)).toMatchObject({ intake_last_fallback: null, intake_last_ok: null });
+      const talk = await conversation(url, "10.30.0.1", 0);
+      await talk.post({ ...talk.hidden(), go: "nocompany" });
+      const fast = await talk.post({ ...talk.hidden(), go: "programs", text: note });
+      expect(fast).toContain("mitte Muse");
+      expect(fast).not.toContain("Sain aru:");
+      expect((await healthOf(url)).intake_last_fallback).toEqual({ job: "intake_extract", reason: "too_fast", at: new Date(now).toISOString() });
+      expect((await healthOf(url)).intake_last_ok).toBeNull();
+      expect(warn.mock.calls).toEqual([["alusta: muse fallback", "intake_extract", "too_fast"]]);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(note);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("10.30.0.1");
+    } finally { warn.mockRestore(); }
+  });
+
+  test("a failed intake call records attempt_in_flight on /health and warns once", async () => {
+    const note = "Raamatupidamine on Merit Aktivas, e-post Gmailis.";
+    const client: IntakeClient = {
+      mock: false,
+      async extract() { return { ok: false, reason: "attempt_in_flight", mock: false }; },
+      async summarize() { return { ok: false, reason: "attempt_in_flight", mock: false }; },
+    };
+    const url = await boot({ intakeClient: client });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const talk = await conversation(url, "10.30.0.2", 3_000);
+      await talk.post({ ...talk.hidden(), go: "nocompany" });
+      const wrote = await talk.post({ ...talk.hidden(), go: "programs", text: note });
+      expect(wrote).toContain("Leitud nime järgi (mitte Muse)");
+      expect(wrote).toContain("Merit Aktiva");
+      const health = await healthOf(url);
+      expect(health.intake_last_fallback).toEqual({ job: "intake_extract", reason: "attempt_in_flight", at: new Date(now).toISOString() });
+      expect(health.intake_last_ok).toBeNull();
+      expect(warn.mock.calls).toEqual([["alusta: muse fallback", "intake_extract", "attempt_in_flight"]]);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(note);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("Gmail");
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("10.30.0.2");
+    } finally { warn.mockRestore(); }
+  });
+
+  test("a fallback reason with spaces or uppercase is shown as other", async () => {
+    const client: IntakeClient = {
+      mock: false,
+      async extract() { return { ok: false, reason: "unused", mock: false }; },
+      async summarize() { return { ok: false, reason: "Provider Failed", mock: false }; },
+    };
+    const url = await boot({ intakeClient: client });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const talk = await conversation(url, "10.30.0.3", 3_000);
+      await talk.post({ ...talk.hidden(), go: "nocompany" });
+      await talk.post({ ...talk.hidden(), go: "skip" });
+      const done = await talk.post({ ...talk.hidden(), go: "assistant", choose: "none" });
+      expect(done).toContain(MUSE_DOWN);
+      expect(done).not.toContain("Näidisplaan");
+      expect(done).not.toContain("Provider Failed");
+      const health = await healthOf(url);
+      expect(health.intake_last_fallback).toEqual({ job: "intake_plan", reason: "other", at: new Date(now).toISOString() });
+      expect(warn.mock.calls).toEqual([["alusta: muse fallback", "intake_plan", "other"]]);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("Provider");
+    } finally { warn.mockRestore(); }
+  });
+
+  test("a successful intake call records intake_last_ok", async () => {
+    const client: IntakeClient = {
+      mock: false,
+      async extract() { return { ok: true, output: JSON.stringify({ products: [{ name: "Merit Aktiva", kind: "accounting" }] }), mock: false }; },
+      async summarize() { return { ok: true, output: "Lühike kokkuvõte.", mock: false }; },
+    };
+    const url = await boot({ intakeClient: client });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const talk = await conversation(url, "10.30.0.4", 3_000);
+      await talk.post({ ...talk.hidden(), go: "nocompany" });
+      const wrote = await talk.post({ ...talk.hidden(), go: "programs", text: "Merit Aktiva" });
+      expect(wrote).toContain("Sain aru:");
+      expect((await healthOf(url)).intake_last_ok).toEqual({ job: "intake_extract", at: new Date(now).toISOString() });
+      expect((await healthOf(url)).intake_last_fallback).toBeNull();
+      const done = await talk.post({ ...talk.hidden(), go: "assistant", choose: "none" });
+      expect(done).toContain("Muse Spark (Meta) · elav vastus");
+      expect(done).toContain("Lühike kokkuvõte.");
+      expect((await healthOf(url)).intake_last_ok).toEqual({ job: "intake_plan", at: new Date(now).toISOString() });
+      expect((await healthOf(url)).intake_last_fallback).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+    } finally { warn.mockRestore(); }
   });
 });
