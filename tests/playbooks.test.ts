@@ -519,6 +519,8 @@ describe("agent-facing copy over MCP", () => {
       expect(steps[req], id).toContain("owner_confirmation: the yes they just gave in this chat, verbatim.");
       expect(steps.filter((x) => x.includes("request_approval with action kind")), id).toHaveLength(1);
       expect(steps[req].includes("In a scheduled or background run without the owner, omit owner_confirmation."), id).toBe(id !== "customer-follow-ups");
+      // Grok r6: a follow-up never goes out without the owner's own yes.
+      expect(steps[ask].includes("send nothing and do not call request_approval"), id).toBe(id === "customer-follow-ups");
     }
   });
 
@@ -586,7 +588,7 @@ describe("agent-facing copy over MCP", () => {
     expect(p.needs[0]).toContain("folder named AI-hüppelaud in the owner's own Google Drive (My Drive)");
     expect(p.summary).not.toMatch(/CRM|MCP|API/);
     const reminder = byId("payment-reminder").steps;
-    expect(reminder[reminder.findIndex((x) => x.startsWith("Right before sending"))]).toBe("Right before sending, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged reminder first. Approvals are valid for 24 hours.");
+    expect(reminder[reminder.findIndex((x) => x.startsWith("Right before sending"))]).toBe("Right before sending, call get_approval. If it is expired, ask the owner once more in this chat and request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) and their new yes as owner_confirmation for the unchanged reminder first. Approvals are valid for 24 hours.");
     expect(reminder).toContain("Call record_action_outcome with outcome sent (or failed).");
     expect(reminder.join(" ")).toContain("amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000)");
   });
@@ -750,7 +752,7 @@ describe("agent-facing copy over MCP", () => {
   test("payment-reminder: re-check expiry and renew before sending; paid only after a sent outcome (#36 items 2–3)", () => {
     const steps = byId("payment-reminder").steps;
     const recheck = steps.findIndex((x) => x.startsWith("Right before sending, call get_approval."));
-    expect(steps[recheck]).toBe("Right before sending, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged reminder first. Approvals are valid for 24 hours.");
+    expect(steps[recheck]).toBe("Right before sending, call get_approval. If it is expired, ask the owner once more in this chat and request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) and their new yes as owner_confirmation for the unchanged reminder first. Approvals are valid for 24 hours.");
     const send = steps.findIndex((x) => x.startsWith("Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved (including auto_approved under the owner's standing approval) and usable is not false"));
     const sent = steps.indexOf("Call record_action_outcome with outcome sent (or failed).");
     const paid = steps.findIndex((x) => x.startsWith("Record paid only after a sent outcome, with a NEW report_id"));
