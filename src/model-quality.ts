@@ -5,9 +5,10 @@
  * hard-disabled. A trusted caller must explicitly open the existing
  * SQLite ledger, explicitly confirm current published pricing/credits,
  * and supply a key (option or BASETEN_API_KEY env). Costs are guarded by
- * a conservative per-attempt reservation under a pinned USD 10 all-time
- * ledger ceiling — not a general billing framework and not a hard
- * guarantee against provider billing bugs or future price changes.
+ * a conservative per-attempt reservation under a pinned USD 100 all-time
+ * ledger ceiling (owner decision 1 Nov 2026) — not a general billing
+ * framework and not a hard guarantee against provider billing bugs or
+ * future price changes.
  *
  * Baseten documents no input-token preflight endpoint for this route, so
  * none is used. Instead each attempt reserves, before any network call,
@@ -46,14 +47,23 @@ export const JOB_MAX_OUTPUT_TOKENS: Record<ModelJob, number> = {
   setup_guidance: MAX_OUTPUT_TOKENS,
   classify_friction: MAX_OUTPUT_TOKENS,
   classify_unmet_need: 512,
+  // New jobs do not bump PROMPT_VERSION. payloadHash already includes the
+  // job name, and that version is the ledger-wide identity pin: changing it
+  // refuses every existing ledger and breaks replay of saved cards. No prior
+  // row exists for these jobs, and their instructions are not the old ones.
+  intake_extract: 256,
+  intake_plan: 400,
   check_approval: 1024,
 };
 // Approval JSON includes up to 4,000 document characters plus bounded fields.
-// Allow worst-case JSON escaping; other jobs retain their original limits.
+// Allow worst-case JSON escaping; intake and the original jobs keep the
+// default character and byte limits.
 export const JOB_MAX_INPUT: Record<ModelJob, { chars: number; bytes: number }> = {
   setup_guidance: { chars: MAX_INPUT_CHARS, bytes: MAX_INPUT_BYTES },
   classify_friction: { chars: MAX_INPUT_CHARS, bytes: MAX_INPUT_BYTES },
   classify_unmet_need: { chars: MAX_INPUT_CHARS, bytes: MAX_INPUT_BYTES },
+  intake_extract: { chars: MAX_INPUT_CHARS, bytes: MAX_INPUT_BYTES },
+  intake_plan: { chars: MAX_INPUT_CHARS, bytes: MAX_INPUT_BYTES },
   check_approval: { chars: 32_768, bytes: 65_536 },
 };
 // Conservative bound on input + output tokens for the 1M-token context.
@@ -64,9 +74,19 @@ export const TEMPLATE_OVERHEAD_TOKENS = 2048;
 export const RESERVATION_MARGIN = 2;
 export const TIMEOUT_MS = 45_000; // Entire fetch + body read; no retries.
 export const MAX_RESPONSE_BYTES = 128 * 1024;
-export const ABSOLUTE_CAP_MICRO_USD = 10_000_000; // USD 10 all-time per ledger.
-// Backstop only: the USD 10 ceiling is the binding limit.
-export const ABSOLUTE_MAX_ATTEMPTS = 1000;
+// USD 100 all-time per ledger. Owner decision 1 Nov 2026, matches the owner's Baseten credit.
+export const ABSOLUTE_CAP_MICRO_USD = 100_000_000;
+// Previous absolute ceiling. An existing ledger pinned at exactly this value
+// is raised once to ABSOLUTE_CAP_MICRO_USD. Any other stored ceiling is left
+// unchanged, and a lower requested cap is still refused.
+const LEGACY_CAP_MICRO_USD = 10_000_000;
+const LEGACY_CAP_RAISED_ON = "2026-11-01";
+// Backstop only. 10,000 is the all-time attempt limit. The cheapest
+// reservation in this repo (intake_extract, one character) is 8,896
+// micro-USD, and 10,000 × that is 88,960,000 — still under the USD 100
+// ceiling — so this backstop can still bind first for that call.
+// Every other job's one-character reservation × 10,000 exceeds USD 100.
+export const ABSOLUTE_MAX_ATTEMPTS = 10_000;
 
 export type AttemptStatus =
   | "pending"
@@ -82,7 +102,9 @@ export class ModelQualityError extends Error {
   }
 }
 
-const JOBS: readonly ModelJob[] = ["setup_guidance", "classify_friction", "classify_unmet_need", "check_approval"];
+const JOBS: readonly ModelJob[] = ["setup_guidance", "classify_friction", "classify_unmet_need", "intake_extract", "intake_plan", "check_approval"];
+/** Completion text is not written for these jobs. This attempt still returns it to the caller. */
+const OUTPUT_NOT_RETAINED: ReadonlySet<ModelJob> = new Set(["check_approval", "intake_extract", "intake_plan"]);
 const REQUEST_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 const COMMON =
@@ -115,11 +137,23 @@ export const FIXED_INSTRUCTIONS: Record<ModelJob, string> = {
     "\"spec\": one generic English sentence of at most 200 characters saying what a connector or service would need to do. " +
     "Never include names, company names, amounts, numbers, account numbers, codes, e-mail addresses, phone numbers, URLs or placeholders. " +
     COMMON,
+  intake_extract:
+    "You read one short note a small-business owner wrote about programs they already use. The user message is JSON with exactly one key, \"text\". " +
+    "Reply with exactly one JSON object and nothing else, of the form {\"products\":[{\"name\":string,\"kind\":\"accounting\"|\"bank\"|\"email\"|\"customers\"|\"other\"}]}. " +
+    "At most 8 items. Copy each name only as the owner wrote it, at most 60 characters. Do not add a program they did not name. " +
+    COMMON,
+  intake_plan:
+    "You write one short bottom line for a small-business owner setting up an assistant. The user message is JSON with the company name, business area, next obligations, service names, assistant, tier, paid_note and lang (\"et\" or \"en\"). " +
+    "Reply with plain text only, in the requested language, at most 600 characters, in short sentences. " +
+    "Do not add dates, amounts, prices, URLs, services or steps that are not in the input. " +
+    "Use no jargon: do not say MCP, API or connector. " +
+    "When paid_note is true, include one honest sentence that the best result needs a paid AI plan. Do not state a price. " +
+    COMMON,
 };
 
 export function validateJob(job: unknown): ModelJob {
   if (typeof job !== "string" || !JOBS.includes(job as ModelJob)) {
-    throw new ModelQualityError("invalid_job", "Job must be setup_guidance, classify_friction, classify_unmet_need or check_approval.");
+    throw new ModelQualityError("invalid_job", "Job must be setup_guidance, classify_friction, classify_unmet_need, intake_extract, intake_plan or check_approval.");
   }
   return job as ModelJob;
 }
@@ -216,15 +250,33 @@ export class ModelQualityLedger {
       }
     }
     if (capMicroUsd !== undefined && (!Number.isInteger(capMicroUsd) || capMicroUsd < 0 || capMicroUsd > ABSOLUTE_CAP_MICRO_USD)) {
-      throw new ModelQualityError("invalid_cap", "Cap must be an integer micro-USD value between 0 and the absolute USD 10 cap.");
+      throw new ModelQualityError("invalid_cap", "Cap must be an integer micro-USD value between 0 and the absolute USD 100 cap.");
     }
     const row = db.prepare("SELECT value FROM mq_meta WHERE key='ceiling_micro_usd'").get() as { value: string } | undefined;
     if (row) {
       const existing = Number(row.value);
-      if (capMicroUsd !== undefined && capMicroUsd !== existing) {
+      if (existing === LEGACY_CAP_MICRO_USD) {
+        // The only allowed change: the old USD 10 pin rises once to USD 100.
+        // Any other requested value, including a lower cap, still refuses
+        // and leaves the stored ceiling untouched.
+        if (capMicroUsd !== undefined && capMicroUsd !== ABSOLUTE_CAP_MICRO_USD) {
+          throw new ModelQualityError("cap_change_refused", "An existing ledger ceiling cannot be changed (neither raised nor lowered).");
+        }
+        const raise = db.transaction((): number => {
+          const current = db.prepare("SELECT value FROM mq_meta WHERE key='ceiling_micro_usd'").get() as { value: string };
+          if (Number(current.value) !== LEGACY_CAP_MICRO_USD) return Number(current.value);
+          db.prepare("UPDATE mq_meta SET value=? WHERE key='ceiling_micro_usd'").run(String(ABSOLUTE_CAP_MICRO_USD));
+          const put = db.prepare("INSERT INTO mq_meta(key,value) VALUES(?,?)");
+          put.run("ceiling_raised_from", String(LEGACY_CAP_MICRO_USD));
+          put.run("ceiling_raised_on", LEGACY_CAP_RAISED_ON);
+          return ABSOLUTE_CAP_MICRO_USD;
+        });
+        this.ceilingMicroUsd = raise.immediate();
+      } else if (capMicroUsd !== undefined && capMicroUsd !== existing) {
         throw new ModelQualityError("cap_change_refused", "An existing ledger ceiling cannot be changed (neither raised nor lowered).");
+      } else {
+        this.ceilingMicroUsd = existing;
       }
-      this.ceilingMicroUsd = existing;
     } else {
       this.ceilingMicroUsd = capMicroUsd ?? ABSOLUTE_CAP_MICRO_USD;
       db.prepare("INSERT INTO mq_meta(key,value) VALUES('ceiling_micro_usd',?)").run(String(this.ceilingMicroUsd));
@@ -508,6 +560,6 @@ export async function runModelQualityAttempt(opts: ModelQualityOptions): Promise
   try { text = extractChatText(json); } catch (e) {
     return fail("failed", e instanceof ModelQualityError ? e.code : "invalid_response", extra);
   }
-  opts.ledger.finalize(requestId, { status: "completed", output: job === "check_approval" ? null : text, ...extra });
+  opts.ledger.finalize(requestId, { status: "completed", output: OUTPUT_NOT_RETAINED.has(job) ? null : text, ...extra });
   return { ...toResult(opts.ledger.get(requestId)!, false), output: text };
 }

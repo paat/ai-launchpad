@@ -45,7 +45,8 @@ for (const width of [390, 1280]) {
     await activateUnpaid(page);
     const conversation = page.locator(UNPAID);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Tegele sellega, milles oled hea. Kontoritöö teeb sinu AI-assistent.");
-    await expect(page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma assistent" })).toHaveAttribute("href", "/uhenda");
+    await expect(page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma ChatGPT või Claude" })).toHaveAttribute("href", "/uhenda");
+    await expect(page.locator(".landing-hero").getByRole("link", { name: "Aita mul alustada" })).toHaveAttribute("href", "/alusta");
     await expect(conversation.locator(".phone")).toBeVisible();
     await expect(conversation.locator(".phone")).toHaveAttribute("aria-hidden", "true");
     await expect(page.locator(".teaser figcaption .label-chip--sample")).toHaveText("Näidis");
@@ -57,7 +58,7 @@ for (const width of [390, 1280]) {
     await expect(page.locator("script:not([src])")).toHaveCount(1);
     await expect(page.locator("script[src]")).toHaveCount(0);
     expect(await overflow(page)).toBeLessThanOrEqual(0);
-    const cta = await page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma assistent" }).boundingBox();
+    const cta = await page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma ChatGPT või Claude" }).boundingBox();
     expect(cta!.height).toBeGreaterThanOrEqual(44);
     if (width === 1280) {
       // Desktop: the teaser sits beside the hero text, not below it.
@@ -153,13 +154,13 @@ test("pause toggle: keyboard-focusable, 44 px, stops the animation without scrip
   expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   const states = () => page.evaluate(() => [...new Set(document.getAnimations().map((a) => a.playState))]);
   await expect.poll(states).toEqual(["running"]);
-  await page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma assistent" }).focus();
-  await page.keyboard.press("Tab"); // the public sample link follows the primary action
+  await page.locator(".landing-hero").getByRole("link", { name: "Ühenda oma ChatGPT või Claude" }).focus();
+  await page.keyboard.press("Tab"); // the second equal choice
+  await expect(page.locator(".landing-hero").getByRole("link", { name: "Aita mul alustada" })).toBeFocused();
+  await page.keyboard.press("Tab"); // the public sample link follows the two choices
   await expect(page.locator(".landing-hero").getByRole("link", { name: "Vaata näidist" })).toBeFocused();
   await page.keyboard.press("Tab"); // „Proovi ise” sits next to the sample
   await expect(page.locator(".landing-hero").getByRole("link", { name: "Proovi ise" })).toBeFocused();
-  await page.keyboard.press("Tab"); // the public /vali chooser link is the next tab stop
-  await expect(page.locator(".landing-hero").getByRole("link", { name: "Pole veel AI-assistenti? Aita mul valida" })).toBeFocused();
   await page.keyboard.press("Tab"); // next stop is the pause toggle
   await expect(page.locator("#teaser-pause")).toBeFocused();
   expect(await label.evaluate((e) => getComputedStyle(e).outlineStyle)).toBe("solid");
@@ -260,7 +261,8 @@ test("EN: ?lang=en renders the same page in English", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/?lang=en");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Focus on what you're good at. Your AI assistant does the office work.");
-  await expect(page.locator(".landing-hero").getByRole("link", { name: "Connect your assistant" })).toHaveAttribute("href", "/uhenda");
+  await expect(page.locator(".landing-hero").getByRole("link", { name: "Connect my ChatGPT or Claude" })).toHaveAttribute("href", "/uhenda?lang=en");
+  await expect(page.locator(".landing-hero").getByRole("link", { name: "Help me get started" })).toHaveAttribute("href", "/alusta?lang=en");
   expect(await overflow(page)).toBeLessThanOrEqual(0);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await activateUnpaid(page);

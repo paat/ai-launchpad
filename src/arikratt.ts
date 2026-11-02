@@ -13,6 +13,8 @@ export const CACHE_TTL_MS = 24 * 3600_000;
 
 export interface CompanyCard {
   name: string | null; registry_code: string; synthetic: boolean;
+  /** From get_company profile. Null when the register omits the field. */
+  legal_form: string | null; emtak_code: string | null; emtak_label: string | null;
   provenance: "public_register" | "synthetic_fixture" | "assistant_supplied"; label_et: string; label_en: string;
   snapshot_id: string | null; as_of: string | null; sources: RegisterSource[]; attribution: string;
   /** Ärikratt's own disclaimer from the response, verbatim. */
@@ -23,6 +25,12 @@ export type Unavailable = "not_cached" | "not_configured" | "invalid_code" | "no
 export type Lookup = { ok: true; company: CompanyCard; facts: CompanyFacts; confirm: string[] } | { ok: false; unavailable: Unavailable; reason: string };
 export interface ArikrattConfig { apiKey?: string; url?: string; timeoutMs?: number; }
 export interface CompanyMatch { name: string; registry_code: string; }
+const SOLE_TRADER = "füüsilisest isikust ettevõtja";
+/** Ask for more than the page shows, so dropping sole traders can still fill five companies. */
+const SEARCH_LIMIT = 15;
+const SEARCH_MATCHES = 5;
+/** Drop a row only when this result names the sole-trader form. Absent form keeps today's mapping. */
+const isSoleTrader = (c: Record<string, unknown>) => { const form = str(c.legal_form); return form !== null && form.toLocaleLowerCase("et") === SOLE_TRADER; };
 
 const rec = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {});
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -41,6 +49,9 @@ export function mapCompany(code: string, raw: unknown): { company: CompanyCard; 
   const tax = (Array.isArray(r.tax) ? r.tax : []).map(rec).sort((a, b) => (num(b.year) ?? 0) - (num(a.year) ?? 0) || (num(b.quarter) ?? 0) - (num(a.quarter) ?? 0));
   const facts: CompanyFacts = { registry_code: fact(code) };
   const name = str(profile.name) ?? str(r.name);
+  const legal_form = str(profile.legal_form);
+  const emtak_code = str(profile.emtak_code);
+  const emtak_label = str(profile.emtak_label);
   if (name) facts.company_name = fact(name);
   const founded = str(profile.founded)?.slice(0, 10);
   if (founded && /^\d{4}-\d{2}-\d{2}$/.test(founded) && !Number.isNaN(Date.parse(founded)) && new Date(`${founded}T00:00:00Z`).toISOString().slice(0, 10) === founded) facts.founded = fact(founded);
@@ -68,7 +79,7 @@ export function mapCompany(code: string, raw: unknown): { company: CompanyCard; 
   const https = (v: unknown) => { const u = str(v); return u?.startsWith("https://") ? u : null; };
   const sources = (Array.isArray(r.sources) ? r.sources : []).map(rec).map((s) => ({ key: str(s.key), name: str(s.name), licence: str(s.licence), licence_url: https(s.licence_url) }))
     .filter((s): s is RegisterSource => s.key !== null).slice(0, 10);
-  return { company: { name, registry_code: code, synthetic: false, provenance: "public_register", label_et: `Ametlikud avaandmed (Ärikratt) · Äriregister ja EMTA${as_of ? `, seisuga ${asOfDate(as_of, "et")}` : ""}`, label_en: `Official open data (via Ärikratt) · Business Register and EMTA${as_of ? `, as of ${asOfDate(as_of, "en")}` : ""}`, snapshot_id: str(r.snapshot_id), as_of, sources, attribution: ARIKRATT_ATTRIBUTION, ...(disclaimer ? { disclaimer } : {}) }, facts, confirm };
+  return { company: { name, registry_code: code, legal_form, emtak_code, emtak_label, synthetic: false, provenance: "public_register", label_et: `Ametlikud avaandmed (Ärikratt) · Äriregister ja EMTA${as_of ? `, seisuga ${asOfDate(as_of, "et")}` : ""}`, label_en: `Official open data (via Ärikratt) · Business Register and EMTA${as_of ? `, as of ${asOfDate(as_of, "en")}` : ""}`, snapshot_id: str(r.snapshot_id), as_of, sources, attribution: ARIKRATT_ATTRIBUTION, ...(disclaimer ? { disclaimer } : {}) }, facts, confirm };
 }
 
 export function arikratt(db: Db, cfg: ArikrattConfig) {
@@ -94,7 +105,7 @@ export function arikratt(db: Db, cfg: ArikrattConfig) {
     /** cacheOnly: answer from fixtures or the 24 h cache, never the network (Status page). */
     async lookup(code: string, opts: { cacheOnly?: boolean } = {}): Promise<Lookup> {
       const synthetic = SYNTHETIC_COMPANIES[code];
-      if (synthetic) return { ok: true, facts: synthetic.facts, confirm: [], company: { name: synthetic.name, registry_code: code, synthetic: true, provenance: "synthetic_fixture", label_et: "Näidis · väljamõeldud ettevõte", label_en: "Sample · made-up company", snapshot_id: null, as_of: synthetic.facts.company_name?.as_of ?? null, sources: [], attribution: "Synthetic fixture; no real register data." } };
+      if (synthetic) return { ok: true, facts: synthetic.facts, confirm: [], company: { name: synthetic.name, registry_code: code, legal_form: null, emtak_code: null, emtak_label: null, synthetic: true, provenance: "synthetic_fixture", label_et: "Näidis · väljamõeldud ettevõte", label_en: "Sample · made-up company", snapshot_id: null, as_of: synthetic.facts.company_name?.as_of ?? null, sources: [], attribution: "Synthetic fixture; no real register data." } };
       if (!validRegistryCode(code)) return { ok: false, unavailable: "invalid_code", reason: "This is not a valid Estonian registry code (8 digits with a valid checksum)." };
       if (!cfg.apiKey) return { ok: false, unavailable: "not_configured", reason: "Public-register lookup is not configured on this server." };
       const hit = db.prepare("SELECT facts_json,fetched_at FROM company_facts WHERE registry_code=?").get(code) as { facts_json: string; fetched_at: string } | undefined;
@@ -108,12 +119,20 @@ export function arikratt(db: Db, cfg: ArikrattConfig) {
       return { ok: true, ...mapped };
     },
     /** Name lookup: company name and registry code only, never people. */
-    async search(name: string): Promise<{ ok: true; matches: CompanyMatch[] } | { ok: false; unavailable: Unavailable; reason: string }> {
+    async search(name: string): Promise<{ ok: true; matches: CompanyMatch[]; onlySoleTraders?: boolean } | { ok: false; unavailable: Unavailable; reason: string }> {
       if (!cfg.apiKey) return { ok: false, unavailable: "not_configured", reason: "Public-register lookup is not configured on this server." };
-      const r = await call("search_companies", { query: name, limit: 5 });
+      const r = await call("search_companies", { query: name, limit: SEARCH_LIMIT });
       if (!r.ok) return r;
       const list = Array.isArray(rec(r.data).companies) ? rec(r.data).companies as unknown[] : [];
-      return { ok: true, matches: list.map(rec).map((c) => ({ name: str(c.name), registry_code: str(c.registry_code) })).filter((c): c is CompanyMatch => !!c.name && !!c.registry_code && validRegistryCode(c.registry_code)).slice(0, 5) };
+      const matches: CompanyMatch[] = [];
+      let soleTraders = 0;
+      for (const c of list.map(rec)) {
+        if (isSoleTrader(c)) { soleTraders += 1; continue; }
+        const name = str(c.name), registry_code = str(c.registry_code);
+        if (name && registry_code && validRegistryCode(registry_code)) matches.push({ name, registry_code });
+        if (matches.length === SEARCH_MATCHES) break;
+      }
+      return { ok: true, matches, ...(matches.length === 0 && soleTraders > 0 ? { onlySoleTraders: true } : {}) };
     },
   };
 }

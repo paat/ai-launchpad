@@ -10,17 +10,18 @@ import { PLAYBOOKS, searchServices, loadCatalog } from "./catalog.js";
 import { computeHandover, handoverObligations, isDone, largestAmount, offerCapCents, standingBasis } from "./handover.js";
 import type { Assessment } from "./core.js";
 import { runModelJob } from "./model.js";
-import { CHOOSER_TOPICS, FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
-import { REASONS, chooseAssistant, offerDownload, parseBusiness, parseUses } from "./assistant-choice.js";
+import { FRICTION_TOPICS, SETUP_TOPICS, PublicCards, findTopic, openExistingPublicLedger, parseLocale, type PublicCardView } from "./model-public-cards.js";
 import type { FetchFn } from "./model-quality.js";
+import { liveIntake, mockIntake, type IntakeClient } from "./intake.js";
+import { alustaMaxAge, handleAlusta } from "./alusta.js";
 import { DEMO_COMPANIES, DEMO_FIXTURES } from "./fixtures.js";
 import { ICS_NO_COMPANY, deadlinesCalendar } from "./ics.js";
-import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, chooserBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, aboutBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
+import { esc, shell, tr, parseLang, errorBody, loginBody, tanaBody, landingBody, connectBody, assistantGuidePrompt, activityBody, connectionBody, tokenOnceBody, calendarOnceBody, approvalsListBody, approvalCardBody, setupBody, catalogueBody, CATALOGUE_GROUPS, playbooksBody, demandBody, aboutBody, type Lang, type ShellOpts, type ConnectState, type DeadlinesView } from "./views.js";
 import { UNMET_NEED_RECHECK_MS, UnmetNeedQueue, aggregateDemand, decideNeed, liveClassifier, mockClassifier, ownerNeeds, type NeedClassifier } from "./unmet-needs.js";
 import { liveChecker, mockChecker, type ApprovalChecker } from "./approval-check.js";
 import { NAIDIS, naidisApproval, naidisBody } from "./naidis.js";
 
-export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; }
+export interface Config { demo: boolean; production: boolean; dbPath: string; baseUrl: string; googleClientId?: string; googleClientSecret?: string; modelMode: string; allowedHosts: string[]; releaseSha?: string | null; trustLoopbackProxy?: boolean; googleAllowedSubjects?: string[]; modelLedgerPath?: string; modelPricingConfirmed?: boolean; basetenApiKey?: string; modelFetchFn?: FetchFn; arikrattApiKey?: string; arikrattMcpUrl?: string; intakeClient?: IntakeClient; }
 // Owner-only pilot allowlist: exact opaque Google `sub` values, never emails.
 // Bounded: at most 20 entries, each 1-255 chars (OIDC `sub` max), no
 // whitespace/control characters, no comma (the env separator), no '@'
@@ -88,7 +89,7 @@ const isLoopback = (req: Request) => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].in
 // Sandbox attempts are keyed by client prefix, not the raw address. An IPv6
 // client can rotate inside one /64; those share five starts per ten minutes.
 // IPv4-mapped IPv6 (`::ffff:a.b.c.d`, any spelling) is that IPv4.
-function sandboxRateKey(ip: string): string {
+export function sandboxRateKey(ip: string): string {
   const raw = ip.trim().toLowerCase();
   if (isIP(raw) === 4) return raw;
   if (isIP(raw) !== 6) return raw || "?";
@@ -213,11 +214,13 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   cleanupSandboxes(); // once at server start; POST /proovi runs it again
   // Public cards: explicit opt-in only. An invalid enabled configuration
   // fails closed at startup (env and direct Config alike); it never falls
-  // back to test/disabled. Disabled/test modes construct nothing here.
+  // back to test/disabled. Intake uses this same ledger in public_cards,
+  // a mock in test mode, and nothing when disabled.
   let publicCards: PublicCards | null = null;
   // Unmet-need classification: live only in this same explicit mode and
   // on the SAME ledger handle; mock in test mode; none when disabled.
   let needClassifier: NeedClassifier | null = cfg.modelMode === "disabled" ? null : mockClassifier;
+  let intakeClient: IntakeClient | null = null;
   let approvalChecker: ApprovalChecker | null = cfg.modelMode === "disabled" ? null : mockChecker;
   if (cfg.modelMode === "public_cards") {
     if (!allowedSubjects) throw new Error("MODEL_MODE=public_cards requires a nonempty Google subject allowlist (LAUNCHPAD_GOOGLE_ALLOWED_SUBJECTS); refusing to start.");
@@ -228,7 +231,10 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     ledger.finalizeInterrupted();
     publicCards = new PublicCards({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
     needClassifier = liveClassifier({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
+    intakeClient = liveIntake({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
     approvalChecker = liveChecker({ ledger, apiKey: cfg.basetenApiKey, fetchFn: cfg.modelFetchFn });
+  } else if (cfg.modelMode !== "disabled") {
+    intakeClient = cfg.intakeClient ?? mockIntake();
   }
   // Public-register facts: with no key, lookups return not_configured without a network call.
   const register = arikratt(db, { apiKey: cfg.arikrattApiKey, url: cfg.arikrattMcpUrl });
@@ -282,8 +288,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   app.use((req: Request, res: Response, next: NextFunction) => {
     const asked = parseLang(req.query.lang);
     const naidis = req.path === "/naidis" || req.path.startsWith("/naidis/");
-    // /vali is a public GET with nothing stored: language stays on the query string, no cookie.
-    if (asked && !naidis && req.path !== "/vali") res.append("set-cookie", `lang=${asked}; Path=/; Max-Age=31536000; SameSite=Lax${cfg.production ? "; Secure" : ""}`);
+    if (asked && !naidis) res.append("set-cookie", `lang=${asked}; Path=/; Max-Age=31536000; SameSite=Lax${cfg.production ? "; Secure" : ""}`);
     res.locals.lang = asked ?? parseLang(cookieVal(req, "lang")) ?? "et";
     next();
   });
@@ -892,32 +897,27 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
     res.redirect("/uhenda#pusiload");
   });
 
-  // Public chooser: one question per screen, one rule-chosen assistant. Reads a saved card only — never generate().
+  // One rule: the old chooser is the onboarding chat. Other query parameters are not forwarded.
   app.get("/vali", (req, res) => {
-    const l = langOf(res), t = tr(l);
-    // Language toggle keeps only answers the rule accepted, so a bad query is never copied into the page.
-    const toggle = (params: Record<string, string>) => { const q = new URLSearchParams(params); q.set("lang", l === "et" ? "en" : "et"); return `/vali?${q}`; };
-    const show = (titleEt: string, titleEn: string, body: string, params: Record<string, string>) => res.type("html").send(publicPage(req, res, t(titleEt, titleEn), body, { toggle: toggle(params) }));
-    const uses = parseUses(typeof req.query.uses === "string" ? req.query.uses : undefined);
-    if (!uses) return show("Kas sa juba kasutad AI-assistenti?", "Do you already use an AI assistant?", chooserBody({ lang: l, step: "uses" }), {});
-    if (uses === "chatgpt" && parseBusiness(req.query.business) === null) return show("Kas sinu ettevõte maksab ChatGPT Businessi eest?", "Does your company pay for ChatGPT Business?", chooserBody({ lang: l, step: "business" }), { uses });
-    // Null only when uses is missing or ChatGPT has no accepted business answer; both already returned.
-    const choice = chooseAssistant({ uses, business: uses === "chatgpt" ? req.query.business : undefined })!;
-    const reason = REASONS[choice.reason];
-    const topic = findTopic(CHOOSER_TOPICS, `choose-${choice.reason}`);
-    const card = publicCards && topic ? publicCards.read(topic, l) : null;
-    const muse = card?.state === "completed" && card.output ? card.output : null;
-    const connectHref = `/uhenda?a=${choice.assistant}${l === "en" ? "&lang=en" : ""}`;
-    const kept: Record<string, string> = { uses };
-    const business = uses === "chatgpt" ? parseBusiness(req.query.business) : null;
-    if (business) kept.business = business;
-    const titles = { claude: ["Kasuta Claude'i", "Use Claude"], chatgpt: ["Kasuta ChatGPT-d", "Use ChatGPT"], grok: ["Kasuta Grok Boti", "Use Grok Bot"] } as const;
-    const [titleEt, titleEn] = titles[choice.assistant];
-    show(titleEt, titleEn, chooserBody({
-      lang: l, step: "result", assistant: choice.assistant, reason: reason.text[l], source: reason.source[l],
-      downloadHref: offerDownload(uses, choice.assistant), connectHref, muse,
-    }), kept);
+    const lang = parseLang(req.query.lang);
+    res.redirect(302, lang ? `/alusta?lang=${lang}` : "/alusta");
   });
+
+  // Public onboarding. Nothing is stored. The cookie is the conversation id and its start time.
+  const alustaCookie = (value: string, maxAge: number) => `lp_alusta=${encodeURIComponent(value)}; HttpOnly; SameSite=Lax; Path=/alusta; Max-Age=${maxAge}${cfg.production ? "; Secure" : ""}`;
+  const sendAlusta = async (req: Request, res: Response, method: "GET" | "POST") => {
+    const now = Date.now();
+    const l = langOf(res);
+    const outcome = await handleAlusta({
+      method, lang: l, body: method === "POST" ? bodyOf(req) : {},
+      cookie: cookieVal(req, "lp_alusta"), ipKey: sandboxRateKey(req.ip || req.socket.remoteAddress || "?"),
+      now, intake: intakeClient, register,
+    });
+    if (outcome.cookie) res.append("set-cookie", alustaCookie(outcome.cookie, alustaMaxAge(outcome.cookie, now)));
+    res.status(outcome.status).type("html").send(publicPage(req, res, tr(l)(outcome.titleEt, outcome.titleEn), outcome.body));
+  };
+  app.get("/alusta", (req, res, next) => { void sendAlusta(req, res, "GET").catch(next); });
+  app.post("/alusta", (req, res, next) => { void sendAlusta(req, res, "POST").catch(next); });
 
   // Opens Claude or ChatGPT with the guide already typed in (not sent). The host is fixed.
   // The phone app takes over the navigation and leaves this tab showing the 302 body.

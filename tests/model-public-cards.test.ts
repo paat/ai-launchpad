@@ -34,9 +34,9 @@ function seedCompleted(ledger: ModelQualityLedger, id: string, job: "setup_guida
   ledger.finalize(id, { status: "completed", output, input_tokens: 10, output_tokens: 5, actual_cost_micro_usd: 100 });
 }
 /** Create a recognized existing ledger file (0600) with seeded attempts. */
-function ledgerFile(seed = 0): string {
+function ledgerFile(seed = 0, capMicroUsd?: number): string {
   const path = join(tmpDir(), "ledger.db");
-  const ledger = ModelQualityLedger.open(path);
+  const ledger = ModelQualityLedger.open(path, capMicroUsd);
   for (let i = 1; i <= seed; i++) seedCompleted(ledger, `quality-seed-${i}`, "setup_guidance", `OPERATOR-ONLY-OUTPUT-${i}`);
   ledger.close();
   chmodSync(path, 0o600);
@@ -78,11 +78,14 @@ function makeOwner(db: Db, id: string, subject: string, kind: string) {
   return { raw, csrf };
 }
 async function req(base: string, path: string, opts: { cookie?: string; fields?: Record<string, string> } = {}) {
-  return fetch(base + path, {
+  const res = await fetch(base + path, {
     method: opts.fields ? "POST" : "GET", redirect: "manual",
     headers: { connection: "close", ...(opts.cookie ? { cookie: `lp_session=${opts.cookie}` } : {}), ...(opts.fields ? { "content-type": "application/x-www-form-urlencoded", origin: base } : {}) },
     body: opts.fields ? new URLSearchParams(opts.fields) : undefined,
   });
+  // Read the body now. A later server.closeAllConnections() aborts a socket whose parser is still paused on an unread page, and undici then throws.
+  const body = await res.arrayBuffer();
+  return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
 }
 const postSetup = (s: Started, a: { raw: string; csrf: string }, fields: Record<string, string>) =>
   req(s.base, "/setup", { cookie: a.raw, fields: { csrf: a.csrf, ...fields } });
@@ -112,8 +115,9 @@ test("existing-ledger guard refuses missing/empty/symlink/unsafe/unrecognized wi
   expect(() => openExistingPublicLedger(good)).toThrow(/0600/);
   chmodSync(good, 0o600);
   const ledger = openExistingPublicLedger(good);
-  // Metadata, cap and both prior allocations preserved exactly.
-  expect(ledger.ceilingMicroUsd).toBe(10_000_000);
+  // A new ledger is born at the USD 100 ceiling. Both prior allocations stay.
+  expect(ledger.ceilingMicroUsd).toBe(100_000_000);
+  expect(ledger.db.prepare("SELECT key FROM mq_meta WHERE key LIKE 'ceiling_raised%'").all()).toEqual([]);
   expect(ledger.get("quality-seed-1")?.output).toBe("OPERATOR-ONLY-OUTPUT-1");
   expect(ledger.get("quality-seed-2")?.allocated_micro_usd).toBe(2_000_000);
   expect(ledger.db.prepare("SELECT COUNT(*) n FROM mq_attempts").get()).toEqual({ n: 2 });
@@ -253,11 +257,16 @@ test("concurrent same-card POSTs: one fetch, second is pending, then replay", as
   } finally { await s.close(); }
 });
 
-test("production-seeded ledger with headroom for exactly three cards: three generate, the fourth is exhausted", async () => {
+test("pinned ledger with headroom for exactly three cards: three generate, the fourth is exhausted", async () => {
   const cards = [["connector", "en"], ["connector", "et"], ["choose-assistant", "en"]] as const;
   const need = cards.reduce((sum, [id, locale]) => sum + reservationMicroUsd("setup_guidance", SETUP_TOPICS.find((t) => t.id === id)!.input[locale]), 0);
-  const path = ledgerFile(4); // 4 × USD 2 like production: USD 2 headroom
-  { const l = openExistingPublicLedger(path); seedCompleted(l, "filler", "setup_guidance", "OPERATOR-ONLY", 2_000_000 - need); l.close(); }
+  // 4 × USD 2 plus USD 1 of filler headroom. Not the legacy 10_000_000 pin:
+  // that exact ceiling is raised to USD 100 when the ledger is opened.
+  const cap = 9_000_000;
+  const filler = cap - 8_000_000 - need;
+  expect(filler).toBeGreaterThan(0);
+  const path = ledgerFile(4, cap);
+  { const l = openExistingPublicLedger(path); expect(l.ceilingMicroUsd).toBe(cap); seedCompleted(l, "filler", "setup_guidance", "OPERATOR-ONLY", filler); l.close(); }
   const { calls, fetchFn } = fakeModel(() => okChat("Slot guidance."));
   const s = await start({ modelLedgerPath: path, modelFetchFn: fetchFn });
   try {
@@ -272,7 +281,10 @@ test("production-seeded ledger with headroom for exactly three cards: three gene
     expect(calls).toHaveLength(3); // no fetch for the refused card
     expect(rowCount(path)).toBe(8); // 4 seeds + filler + 3 cards on the one global ledger
     const l = openExistingPublicLedger(path);
-    try { expect(l.db.prepare("SELECT SUM(allocated_micro_usd) s FROM mq_attempts").get()).toEqual({ s: 10_000_000 }); } finally { l.close(); }
+    try {
+      expect(l.ceilingMicroUsd).toBe(9_000_000);
+      expect(l.db.prepare("SELECT SUM(allocated_micro_usd) s FROM mq_attempts").get()).toEqual({ s: 9_000_000 });
+    } finally { l.close(); }
     // Saved cards still replay after exhaustion.
     const hr = await (await postSetup(s, a, { topic: "connector", locale: "en" })).text();
     expect(hr).toContain("Saved guidance");

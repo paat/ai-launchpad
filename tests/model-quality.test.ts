@@ -1,11 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { mkdtempSync } from "node:fs";
+import Database from "better-sqlite3";
+import { chmodSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  ABSOLUTE_MAX_ATTEMPTS, BASETEN_CHAT_URL, BASETEN_MODEL, MAX_CONTEXT_TOKENS, MAX_INPUT_BYTES, ModelQualityLedger,
-  calculateCostMicroUsd, inputTokenBound, payloadHash, reservationMicroUsd, runModelQualityAttempt, validateInput, type FetchFn,
+  ABSOLUTE_CAP_MICRO_USD, ABSOLUTE_MAX_ATTEMPTS, BASETEN_CHAT_URL, BASETEN_MODEL, FIXED_INSTRUCTIONS, JOB_MAX_OUTPUT_TOKENS, MAX_CONTEXT_TOKENS, MAX_INPUT_BYTES, ModelQualityLedger,
+  PROMPT_VERSION, calculateCostMicroUsd, inputTokenBound, payloadHash, reservationMicroUsd, runModelQualityAttempt, validateInput, validateJob, type FetchFn,
 } from "../src/model-quality.js";
+import { openExistingPublicLedger } from "../src/model-public-cards.js";
 import { SYNTHETIC_CASES, main, parseArgs } from "../scripts/model-quality.js";
 
 const tmpLedger = () => join(mkdtempSync(join(tmpdir(), "mq-")), "ledger.db");
@@ -144,7 +146,8 @@ describe("model quality harness (Baseten)", () => {
     expect(calls).toHaveLength(0);
     ledger.close();
     expect(() => ModelQualityLedger.open(path, 10_000_000)).toThrow(/cannot be changed/);
-    expect(() => ModelQualityLedger.open(":memory:", 10_000_001)).toThrow(/absolute/);
+    expect(() => ModelQualityLedger.open(path, ABSOLUTE_CAP_MICRO_USD)).toThrow(/cannot be changed/);
+    expect(() => ModelQualityLedger.open(":memory:", 100_000_001)).toThrow(/absolute/);
   });
 
   test("replay returns stored result after reopen without another call; conflict rejects", { timeout: 30_000 }, async () => {
@@ -168,38 +171,133 @@ describe("model quality harness (Baseten)", () => {
     const path = tmpLedger();
     const a = ModelQualityLedger.open(path);
     const b = ModelQualityLedger.open(path);
-    const ins = a.db.prepare("INSERT INTO mq_attempts(request_id,payload_hash,job,status,allocated_micro_usd,created_at,updated_at) VALUES(?, 'h','setup_guidance','completed',2000000,'t','t')");
+    const ins = a.db.prepare("INSERT INTO mq_attempts(request_id,payload_hash,job,status,allocated_micro_usd,created_at,updated_at) VALUES(?, 'h','setup_guidance','completed',20000000,'t','t')");
     a.db.transaction(() => { for (let i = 0; i < 4; i++) ins.run(`seed-${i}`); })();
-    expect(a.reserve("last", "setup_guidance", "hash-last", 2_000_000).replayed).toBe(false);
+    expect(a.reserve("last", "setup_guidance", "hash-last", 20_000_000).replayed).toBe(false);
     expect(() => b.reserve("other", "setup_guidance", "hash-other", 1)).toThrow(/pending/);
     a.finalize("last", { status: "completed" });
     expect(() => b.reserve("other", "setup_guidance", "hash-other", 1)).toThrow(/cap or attempt limit/);
     expect(b.db.prepare("SELECT COUNT(*) n FROM mq_attempts").get()).toEqual({ n: 5 });
-    expect(b.db.prepare("SELECT COALESCE(SUM(allocated_micro_usd),0) s FROM mq_attempts").get()).toEqual({ s: 10_000_000 });
+    expect(b.db.prepare("SELECT COALESCE(SUM(allocated_micro_usd),0) s FROM mq_attempts").get()).toEqual({ s: 100_000_000 });
     // Invalid allocations are refused before any row is written.
-    for (const bad of [0, -1, 1.5, 10_000_001]) expect(() => b.reserve(`bad-${bad}`, "setup_guidance", "h", bad)).toThrow(/Allocation/);
+    for (const bad of [0, -1, 1.5, 100_000_001]) expect(() => b.reserve(`bad-${bad}`, "setup_guidance", "h", bad)).toThrow(/Allocation/);
     a.close(); b.close();
   });
 
-  test("attempt backstop is 1000; the USD 10 ceiling binds first for real reservations", { timeout: 30_000 }, async () => {
-    expect(ABSOLUTE_MAX_ATTEMPTS).toBe(1000);
-    const tiny = ModelQualityLedger.open(":memory:");
-    tiny.db.transaction(() => {
-      for (let i = 0; i < 1000; i++) { tiny.reserve(`t-${i}`, "setup_guidance", `h-${i}`, 1); tiny.finalize(`t-${i}`, { status: "completed" }); }
-    })();
-    expect(() => tiny.reserve("t-1000", "setup_guidance", "h", 1)).toThrow(/cap or attempt limit/);
-    tiny.close();
-    // Real reservations: floor(10,000,000 / 40,836) = 244 attempts, then refused with no network.
-    const ledger = ModelQualityLedger.open(":memory:");
-    const { calls, fetchFn } = happy();
-    for (let i = 1; i <= 244; i++) {
-      const r = await runModelQualityAttempt(base(ledger, fetchFn, { requestId: `req-${i}` }));
-      expect(r.status).toBe("completed");
+  test("attempt backstop is 10000 and still refuses at the limit", { timeout: 30_000 }, async () => {
+    expect(ABSOLUTE_MAX_ATTEMPTS).toBe(10_000);
+    expect(ABSOLUTE_CAP_MICRO_USD).toBe(100_000_000);
+    const jobs = ["setup_guidance", "classify_friction", "classify_unmet_need", "intake_extract", "intake_plan"] as const;
+    const smallest = Math.min(...jobs.map((job) => reservationMicroUsd(job, "a")));
+    expect(smallest).toBe(reservationMicroUsd("intake_extract", "a"));
+    expect(smallest).toBe(8_896);
+    // 10,000 × the cheapest reservation is USD 88.96, still under the ceiling.
+    expect(ABSOLUTE_MAX_ATTEMPTS * smallest).toBe(88_960_000);
+    expect(ABSOLUTE_MAX_ATTEMPTS * smallest).toBeLessThan(ABSOLUTE_CAP_MICRO_USD);
+    for (const job of jobs) {
+      if (job === "intake_extract") continue;
+      expect(ABSOLUTE_MAX_ATTEMPTS * reservationMicroUsd(job, "a")).toBeGreaterThan(ABSOLUTE_CAP_MICRO_USD);
     }
-    await expect(runModelQualityAttempt(base(ledger, fetchFn, { requestId: "req-245" }))).rejects.toMatchObject({ code: "budget_exhausted" });
-    expect(calls).toHaveLength(244);
-    expect(ledger.db.prepare("SELECT COUNT(*) n, SUM(allocated_micro_usd) s FROM mq_attempts").get()).toEqual({ n: 244, s: 244 * ALLOC });
+    const tiny = ModelQualityLedger.open(":memory:");
+    const ins = tiny.db.prepare("INSERT INTO mq_attempts(request_id,payload_hash,job,status,allocated_micro_usd,created_at,updated_at) VALUES(?, 'h','intake_extract','completed',1,'t','t')");
+    tiny.db.transaction(() => { for (let i = 0; i < ABSOLUTE_MAX_ATTEMPTS; i++) ins.run(`t-${i}`); })();
+    expect(() => tiny.reserve("t-over", "intake_extract", "h-over", 1)).toThrow(/cap or attempt limit/);
+    tiny.close();
+    const ledger = ModelQualityLedger.open(":memory:");
+    expect(ledger.ceilingMicroUsd).toBe(100_000_000);
+    ledger.reserve("fill", "setup_guidance", "h-fill", 100_000_000);
+    ledger.finalize("fill", { status: "completed" });
+    const { calls, fetchFn } = happy();
+    await expect(runModelQualityAttempt(base(ledger, fetchFn, { requestId: "over-cap" }))).rejects.toMatchObject({ code: "budget_exhausted" });
+    expect(calls).toHaveLength(0);
+    expect(ledger.db.prepare("SELECT COUNT(*) n, SUM(allocated_micro_usd) s FROM mq_attempts").get()).toEqual({ n: 1, s: 100_000_000 });
     ledger.close();
+  });
+
+  test("USD 100 ceiling: new ledgers, one-time USD 10 raise, refusals", () => {
+    const fresh = ModelQualityLedger.open(":memory:");
+    expect(fresh.ceilingMicroUsd).toBe(100_000_000);
+    expect(fresh.db.prepare("SELECT value FROM mq_meta WHERE key='ceiling_micro_usd'").get()).toEqual({ value: "100000000" });
+    expect(fresh.db.prepare("SELECT key FROM mq_meta WHERE key LIKE 'ceiling_raised%'").all()).toEqual([]);
+    fresh.close();
+
+    const legacy = tmpLedger();
+    const pinned = ModelQualityLedger.open(legacy, 10_000_000);
+    pinned.reserve("kept", "setup_guidance", "hash-kept", 2_000_000);
+    pinned.finalize("kept", { status: "completed", output: "keep-me" });
+    pinned.close();
+    expect(() => ModelQualityLedger.open(legacy, 5_000_000)).toThrow(/cannot be changed/);
+    const raw = new Database(legacy, { readonly: true });
+    expect(raw.prepare("SELECT value FROM mq_meta WHERE key='ceiling_micro_usd'").get()).toEqual({ value: "10000000" });
+    expect(raw.prepare("SELECT key FROM mq_meta WHERE key LIKE 'ceiling_raised%'").all()).toEqual([]);
+    expect(raw.prepare("SELECT output FROM mq_attempts WHERE request_id='kept'").get()).toEqual({ output: "keep-me" });
+    raw.close();
+
+    const raised = ModelQualityLedger.open(legacy);
+    expect(raised.ceilingMicroUsd).toBe(100_000_000);
+    expect(raised.get("kept")).toMatchObject({ status: "completed", allocated_micro_usd: 2_000_000, output: "keep-me" });
+    expect(raised.db.prepare("SELECT value FROM mq_meta WHERE key='ceiling_micro_usd'").get()).toEqual({ value: "100000000" });
+    expect(raised.db.prepare("SELECT value FROM mq_meta WHERE key='ceiling_raised_from'").get()).toEqual({ value: "10000000" });
+    expect(raised.db.prepare("SELECT value FROM mq_meta WHERE key='ceiling_raised_on'").get()).toEqual({ value: "2026-11-01" });
+    raised.close();
+    const again = ModelQualityLedger.open(legacy);
+    expect(again.ceilingMicroUsd).toBe(100_000_000);
+    expect(again.db.prepare("SELECT key, value FROM mq_meta WHERE key LIKE 'ceiling_raised%' ORDER BY key").all()).toEqual([
+      { key: "ceiling_raised_from", value: "10000000" },
+      { key: "ceiling_raised_on", value: "2026-11-01" },
+    ]);
+    expect(again.get("kept")?.output).toBe("keep-me");
+    again.close();
+    chmodSync(legacy, 0o600);
+    const viaPublic = openExistingPublicLedger(legacy);
+    expect(viaPublic.ceilingMicroUsd).toBe(100_000_000);
+    expect(viaPublic.get("kept")?.allocated_micro_usd).toBe(2_000_000);
+    viaPublic.close();
+
+    const stillTen = tmpLedger();
+    const ten = ModelQualityLedger.open(stillTen, 10_000_000);
+    ten.reserve("card", "setup_guidance", "hash-card", 2_000_000);
+    ten.finalize("card", { status: "completed", output: "public-kept" });
+    ten.close();
+    chmodSync(stillTen, 0o600);
+    const pubRaised = openExistingPublicLedger(stillTen);
+    expect(pubRaised.ceilingMicroUsd).toBe(100_000_000);
+    expect(pubRaised.get("card")).toMatchObject({ output: "public-kept", allocated_micro_usd: 2_000_000 });
+    expect(pubRaised.db.prepare("SELECT value FROM mq_meta WHERE key='ceiling_raised_from'").get()).toEqual({ value: "10000000" });
+    expect(pubRaised.db.prepare("SELECT value FROM mq_meta WHERE key='ceiling_raised_on'").get()).toEqual({ value: "2026-11-01" });
+    pubRaised.close();
+    const pubAgain = openExistingPublicLedger(stillTen);
+    expect(pubAgain.ceilingMicroUsd).toBe(100_000_000);
+    expect(pubAgain.db.prepare("SELECT COUNT(*) n FROM mq_meta WHERE key IN ('ceiling_raised_from','ceiling_raised_on')").get()).toEqual({ n: 2 });
+    expect(pubAgain.db.prepare("SELECT COUNT(*) n FROM mq_attempts").get()).toEqual({ n: 1 });
+    pubAgain.close();
+    const samePath = ModelQualityLedger.open(stillTen);
+    expect(samePath.ceilingMicroUsd).toBe(100_000_000);
+    samePath.close();
+
+    const twentyPath = tmpLedger();
+    ModelQualityLedger.open(twentyPath, 20_000_000).close();
+    expect(() => ModelQualityLedger.open(twentyPath, 100_000_000)).toThrow(/cannot be changed/);
+    expect(() => ModelQualityLedger.open(twentyPath, 10_000_000)).toThrow(/cannot be changed/);
+    const twenty = ModelQualityLedger.open(twentyPath);
+    expect(twenty.ceilingMicroUsd).toBe(20_000_000);
+    expect(twenty.db.prepare("SELECT key FROM mq_meta WHERE key LIKE 'ceiling_raised%'").all()).toEqual([]);
+    twenty.close();
+    chmodSync(twentyPath, 0o600);
+    const twentyPublic = openExistingPublicLedger(twentyPath);
+    expect(twentyPublic.ceilingMicroUsd).toBe(20_000_000);
+    twentyPublic.close();
+
+    const top = tmpLedger();
+    const createdTop = ModelQualityLedger.open(top);
+    expect(createdTop.ceilingMicroUsd).toBe(100_000_000);
+    createdTop.close();
+    expect(() => ModelQualityLedger.open(top, 10_000_000)).toThrow(/cannot be changed/);
+    expect(() => ModelQualityLedger.open(top, 0)).toThrow(/cannot be changed/);
+    const reopenedTop = ModelQualityLedger.open(top);
+    expect(reopenedTop.ceilingMicroUsd).toBe(100_000_000);
+    expect(reopenedTop.db.prepare("SELECT key FROM mq_meta WHERE key LIKE 'ceiling_raised%'").all()).toEqual([]);
+    reopenedTop.close();
   });
 
   test("crashed pending attempt stays charged, non-replayable, blocks new attempts", { timeout: 30_000 }, async () => {
@@ -402,5 +500,26 @@ describe("model quality harness (Baseten)", () => {
     expect(JSON.parse(logs[0])).toMatchObject({ mock: true, provider: "dry-run-no-provider", model: BASETEN_MODEL, allocatedMicroUsd: 0 });
     // Live without a ledger exits 2 before any key read, ledger open or network call.
     expect(await main(["--live", "--case", "en-connector-help", "--request-id", "r1", "--confirm-current-pricing"])).toBe(2);
+  });
+
+  test("intake jobs keep the ledger prompt version and send their own max_tokens", async () => {
+    expect(PROMPT_VERSION).toBe("baseten-chat-v1");
+    expect(validateJob("intake_extract")).toBe("intake_extract");
+    expect(validateJob("intake_plan")).toBe("intake_plan");
+    expect(JOB_MAX_OUTPUT_TOKENS.intake_extract).toBe(256);
+    expect(JOB_MAX_OUTPUT_TOKENS.intake_plan).toBe(400);
+    expect(FIXED_INSTRUCTIONS.intake_extract).toContain("Give bounded help only");
+    expect(FIXED_INSTRUCTIONS.intake_extract).toContain('{"products":[{"name":string,"kind":"accounting"|"bank"|"email"|"customers"|"other"}]}');
+    expect(FIXED_INSTRUCTIONS.intake_plan).toContain("Give bounded help only");
+    expect(FIXED_INSTRUCTIONS.intake_plan).toContain("best result needs a paid AI plan");
+    expect(FIXED_INSTRUCTIONS.classify_unmet_need).not.toContain("intake_extract");
+    const ledger = ModelQualityLedger.open(":memory:");
+    const extract = fakeFetch(() => jsonRes(okChat()));
+    await runModelQualityAttempt(base(ledger, extract.fetchFn, { job: "intake_extract", input: "{\"text\":\"synthetic\"}", requestId: "in-extract-1" }));
+    expect(extract.calls[0].body.max_tokens).toBe(256);
+    const plan = fakeFetch(() => jsonRes(okChat()));
+    await runModelQualityAttempt(base(ledger, plan.fetchFn, { job: "intake_plan", input: "{\"lang\":\"et\"}", requestId: "in-plan-1" }));
+    expect(plan.calls[0].body.max_tokens).toBe(400);
+    ledger.close();
   });
 });
