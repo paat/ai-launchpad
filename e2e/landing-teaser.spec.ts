@@ -71,8 +71,8 @@ for (const width of [390, 1280]) {
     expect(await opacity(page, scoped(".b-unpaid-card"))).toEqual([0]);
     await page.screenshot({ path: `${SHOTS}/teaser-${width}-03s.png`, fullPage: true });
     await seek(page, 7500);
-    expect(await opacity(page, scoped(".b-unpaid-card", ".mock-done", ".mock-ok"))).toEqual([1, 1, 1]);
-    expect(await opacity(page, scoped(".mock-approve", ".mock-wait"))).toEqual([0, 0]);
+    expect(await opacity(page, scoped(".b-unpaid-card", ".mock-done"))).toEqual([1, 1]);
+    await expect(page.locator(scoped(".mock-approve", ".mock-wait"))).toHaveCount(0);
     await seek(page, 14000);
     expect(await opacity(page, scoped(".mock-done"))).toEqual([1]);
     await finalFrameFits(page);
@@ -132,7 +132,7 @@ for (const [width, height] of [[320, 568], [880, 800], [1280, 800], [1440, 900]]
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/?lang=${lang}`);
       await activateUnpaid(page);
-      await expect(page.locator(scoped(".b-unpaid-me1"))).toHaveText(lang === "et" ? "Kes mulle võlgu on?" : "Who owes me money?");
+      await expect(page.locator(scoped(".b-unpaid-me1"))).toHaveText(lang === "et" ? "Saada tasumata arvete eest meeldetuletused." : "Send reminders for my unpaid invoices.");
       await finalFrameFits(page);
       expect(await overflow(page)).toBeLessThanOrEqual(0);
       if (width === 1280 || width === 320) await page.locator(scoped(".phone")).screenshot({ path: `${SHOTS}/teaser-final-${width}-${lang}.png` });
@@ -192,7 +192,7 @@ test("390px: activating another card while paused shows its final frame and stay
   // Opacity on the bubble itself does not move; the beat that reveals it does.
   await expect.poll(() => lastBubble.evaluate((el) => getComputedStyle(el.closest(".beat")!).opacity)).toBe("1");
   await expect(conversation.locator(".mock-done")).toHaveCSS("opacity", "1");
-  await expect(conversation.locator(".mock-approve")).toHaveCSS("opacity", "0");
+  await expect(conversation.locator(".mock-approve")).toHaveCount(0);
   const states = () => page.evaluate((job) => {
     const anims = document.querySelector(`[data-job-conversation="${job}"]`)?.getAnimations({ subtree: true }) ?? [];
     return { n: anims.length, play: [...new Set(anims.map((a) => a.playState))].sort().join(","), min: anims.reduce((m, a) => Math.min(m, Number(a.currentTime)), Infinity) };
@@ -215,8 +215,8 @@ test("320px: no overflow; reduced motion shows the final frame statically", asyn
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
   expect(await opacity(page, scoped(".beat:not(.beat--typing)"))).toEqual([1, 1, 1]);
   expect(await page.locator(scoped(".beat--typing")).evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))).toEqual([0]);
-  expect(await opacity(page, scoped(".mock-wait", ".mock-ok", ".mock-approve", ".mock-done"))).toEqual([0, 1, 0, 1]);
-  await expect(page.locator(scoped(".mock-done"))).toHaveText("✓ Kinnitatud · Saadetud sinu e-postist: demo");
+  expect(await opacity(page, scoped(".mock-done"))).toEqual([1]);
+  await expect(page.locator(scoped(".mock-done"))).toHaveText("✓ Saadetud sinu e-postist: demo");
   await finalFrameFits(page);
   await page.screenshot({ path: `${SHOTS}/teaser-320-reduced-motion.png`, fullPage: true });
 });

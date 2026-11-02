@@ -11,8 +11,8 @@ const { app, db } = createApp(cfg, openDb(":memory:"));
 const sessionCookie = "lp_session=synthetic-signed-in-session";
 const routes = [
   { path: "/naidis", current: "/naidis", step: "1. Täna", enStep: "1. Today" },
-  { path: "/naidis/kinnitus", current: "/naidis/kinnitus", step: "2. Kinnitus", enStep: "2. Approval" },
-  { path: "/naidis/kinnitus/appr_sent_2", current: "/naidis/kinnitus", step: "2. Kinnitus", enStep: "2. Approval" },
+  { path: "/naidis/kinnitus", current: "/naidis/kinnitus", step: "2. Kviitung", enStep: "2. Receipt" },
+  { path: "/naidis/kinnitus/appr_sent_2", current: "/naidis/kinnitus", step: "2. Kviitung", enStep: "2. Receipt" },
   { path: "/naidis/tehtud", current: "/naidis/tehtud", step: "3. Tehtud", enStep: "3. Done" },
 ] as const;
 const counts = () => Object.fromEntries(["activity", "approvals", "owners"].map((table) => [table, (db.prepare(`SELECT count(*) n FROM ${table}`).get() as { n: number }).n]));
@@ -55,7 +55,7 @@ describe("#21 public synthetic walkthrough", () => {
     expect(response.headers.get("cache-control")).toBe("public, max-age=300");
     expect(response.headers.get("vary")).toBe("Cookie");
     const html = await response.text();
-    expect(html).toContain("Näidis: väljamõeldud ettevõte Mari Disain OÜ. Siin ei saa midagi kinnitada ega saata. Päris tööruumis teeb seda sinu assistent ja kinnitad sina.");
+    expect(html).toContain("Näidis: väljamõeldud ettevõte Mari Disain OÜ. Siin ei saa midagi kinnitada ega saata. Päris tööruumis teeb assistent palutud töö ja iga tegevus salvestatakse. Soovi korral palu tal enne küsida.");
     expect(html).toContain('<nav class="naidis-steps" aria-label="Näidise sammud">');
     expect(html).toContain(`<a href="${current}" aria-current="page">${step}</a>`);
     expect(html.match(/<a\b[^>]*aria-current="page"/g)).toHaveLength(1);
@@ -73,7 +73,7 @@ describe("#21 public synthetic walkthrough", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     const html = await response.text();
     expect(html).toContain('<html lang="en">');
-    expect(html).toContain("Sample: the made-up company Mari Disain OÜ. Nothing can be approved or sent here. In a real workspace your assistant does this and you approve.");
+    expect(html).toContain("Sample: the made-up company Mari Disain OÜ. Nothing can be approved or sent here. In a real workspace your assistant does the job and every action is recorded. Ask it to check with you first whenever you want.");
     expect(html).toContain('<nav class="naidis-steps" aria-label="Sample steps">');
     expect(html).toContain(`<a href="${current}?lang=en" aria-current="page">${enStep}</a>`);
     const sampleHrefs = [...html.matchAll(/<a\b[^>]*href="(\/naidis[^"]*)"[^>]*>/g)]
@@ -97,16 +97,17 @@ describe("#21 public synthetic walkthrough", () => {
     expect(counts()).toEqual(before);
   });
 
-  test("Täna has sent and paid reminders plus prepared work; Kinnitus is the shared pending row", async () => {
+  test("Täna has sent and paid reminders plus prepared work; the default receipt is an action without approval", async () => {
     const today = await (await fetch(`${base}/naidis`)).text();
     expect(today).toContain("Saadetud: demo");
     expect(today).toContain("Makstud: demo");
     expect(today).toContain("Valmistas ette: KMD ettevalmistus");
     expect(today).toContain("Kontoritöö:");
     const approval = await (await fetch(`${base}/naidis/kinnitus`)).text();
-    expect(approval).toContain(NAIDIS.pendingApproval.id);
-    expect(approval).toContain(`action="/approvals/${NAIDIS.pendingApproval.id}/decide"`);
-    expect(approval).toContain("Assistent küsib kinnitust täpselt sellele saajale, summale ja perioodile. Muudatus vajab uut kinnitust.");
+    expect(approval).toContain(NAIDIS.week2[0].id);
+    expect(approval).not.toContain('action="/approvals/');
+    expect(approval).toContain("Assistent tegi ära");
+    expect(approval).toContain("Kviitung: mida assistent tegi ja millal.");
   });
 
   test("Tehtud has a sent receipt, „Käest ära” and the closing connection action", async () => {
@@ -176,7 +177,7 @@ describe("#21 public synthetic walkthrough", () => {
     const paid = await (await fetch(`${base}/naidis/kinnitus/appr_sent_2`)).text();
     expect(paid).toContain("Makstud: demo");
     expect(paid).not.toContain("Saadetud: ootab assistendi teadet");
-    expect(paid).toContain("Kviitung: mis selle kinnitusega tehti ja millal.");
+    expect(paid).toContain("Kviitung: mida assistent tegi ja millal.");
     expect(paid).not.toContain("Assistent küsib kinnitust täpselt sellele saajale, summale ja perioodile. Muudatus vajab uut kinnitust.");
   });
 

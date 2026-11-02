@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createApp, type Config } from "../src/app.js";
 import { openDb, sha256 } from "../src/db.js";
-import { approvalDigest, canonicalJson, type ApprovalRow } from "../src/mcp.js";
+import { approvalDigest, canonicalJson, SERVER_INSTRUCTIONS, type ApprovalRow } from "../src/mcp.js";
 import { jobOfApproval, JOB_TITLES } from "../src/handover.js";
 import { approvalCardBody } from "../src/views.js";
 
@@ -58,6 +58,85 @@ test("canonical digest binds every field with stable key order", () => {
 test("the digest differs when only the recipient address differs (#35)", () => {
   const a = reminder();
   expect(approvalDigest(reminder({ recipient: { ...a.recipient, address: "billing@other.example" } }))).not.toBe(approvalDigest(a));
+});
+
+describe("actions recorded without approval", () => {
+  test("records one invoice row, replays its receipt, then advances sent to paid", async () => {
+    const o = owner("direct-invoice"), c = await client(o.token);
+    const args = { report_id: "direct-1", action: reminder(), playbook_id: "invoicing", outcome: "sent", observed_at: new Date().toISOString() };
+    const out = parsed(await c.callTool({ name: "record_action_outcome", arguments: args }));
+    expect(out).toMatchObject({ approval_id: expect.any(String), digest: approvalDigest({ ...reminder(), currency: "EUR" }), state: "consumed", outcome: "sent", evidence_label: "assistant_reported" });
+    expect(row(out.approval_id)).toMatchObject({ state: "consumed", decided_at: null, owner_confirmation: null, consumed_at: expect.any(String), playbook_id: "invoicing" });
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: args }))).toEqual(out);
+    expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { ...args, action: reminder({ amount_cents: 1 }) } }))).toContain("Conflict");
+    const paid = parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "direct-2", approval_id: out.approval_id, digest: out.digest, outcome: "paid", observed_at: args.observed_at } }));
+    expect(paid).toMatchObject({ approval_id: out.approval_id, outcome: "paid" });
+    expect(JSON.parse(row(out.approval_id).outcome_json!).history.map((x: { outcome: string }) => x.outcome)).toEqual(["sent", "paid"]);
+    expect(db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=?").get("direct-invoice")).toEqual({ n: 1 });
+  });
+
+  test("rejects missing amounts, addresses, invalid periods, first outcomes and job attribution without writing", async () => {
+    const o = owner("direct-validation"), c = await client(o.token);
+    const args = { report_id: "invalid", outcome: "sent", observed_at: new Date().toISOString() };
+    const cases = [
+      { action: reminder({ amount_cents: undefined }) },
+      { action: reminder({ recipient: { name: "Client" } }) },
+      { action: reminder({ kind: "post_entries", period: "2026-13" }), outcome: "posted" },
+      { action: reminder({ kind: "post_entries", amount_cents: undefined }), outcome: "posted" },
+      { action: reminder({ kind: "prepare_payment", amount_cents: undefined }), outcome: "paid" },
+      { action: reminder(), outcome: "paid" },
+      { action: reminder(), playbook_id: "vat-return-prep" },
+    ];
+    for (const invalid of cases) expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { ...args, ...invalid } }))).toMatch(/amount_cents|recipient.address|period|first outcome|playbook_id/);
+    expect(db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=?").get("direct-validation")).toEqual({ n: 0 });
+    expect(db.prepare("SELECT count(*) n FROM reports WHERE owner_id=?").get("direct-validation")).toEqual({ n: 0 });
+  });
+
+  test("requires exactly action or the complete approval pair", async () => {
+    const o = owner("direct-exclusive"), c = await client(o.token);
+    for (const input of [{}, { approval_id: "x" }, { digest: "a".repeat(64) }, { action: reminder(), approval_id: "x", digest: "a".repeat(64) }, { action: reminder(), digest: "a".repeat(64) }]) {
+      expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "invalid", outcome: "sent", observed_at: new Date().toISOString(), ...input } }))).toContain("exactly one");
+    }
+    expect(db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=?").get("direct-exclusive")).toEqual({ n: 0 });
+  });
+
+  test("keeps the 200-row bound, but allows a replay and later outcomes at capacity", async () => {
+    const o = owner("direct-capacity"), c = await client(o.token);
+    const args = { report_id: "first", action: reminder(), outcome: "sent", observed_at: new Date().toISOString() };
+    const receipt = parsed(await c.callTool({ name: "record_action_outcome", arguments: args }));
+    const insert = db.prepare("INSERT INTO approvals(id,owner_id,payload_json,digest,state,expires_at,created_at) VALUES(?,'direct-capacity','{}','x','consumed',?,?)");
+    db.transaction(() => { for (let i = 0; i < 199; i++) insert.run(`capacity-${i}`, args.observed_at, args.observed_at); })();
+    expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { ...args, report_id: "over" } }))).toContain("(200)");
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: args }))).toEqual(receipt);
+    expect(parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "paid", approval_id: receipt.approval_id, digest: receipt.digest, outcome: "paid", observed_at: args.observed_at } })).outcome).toBe("paid");
+    expect(db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=?").get("direct-capacity")).toEqual({ n: 200 });
+  });
+
+  test("records each action kind and enforces sharing and workspace isolation", async () => {
+    const o = owner("direct-kinds"), c = await client(o.token);
+    for (const [kind, outcome, playbook_id] of [["send_message", "sent", "customer-follow-ups"], ["post_entries", "posted", "books-catch-up"], ["prepare_filing", "submitted", "vat-return-prep"], ["prepare_payment", "paid", undefined]]) {
+      const receipt = parsed(await c.callTool({ name: "record_action_outcome", arguments: { report_id: kind, action: reminder({ kind }), outcome, observed_at: new Date().toISOString(), ...(playbook_id ? { playbook_id } : {}) } }));
+      expect(receipt).toMatchObject({ state: "consumed", outcome });
+      expect(row(receipt.approval_id)).toMatchObject({ kind, decided_at: null, owner_confirmation: null });
+      const other = owner(`direct-other-${kind}`), otherClient = await client(other.token);
+      expect(errText(await otherClient.callTool({ name: "record_action_outcome", arguments: { report_id: "other", approval_id: receipt.approval_id, digest: receipt.digest, outcome: "accepted", observed_at: new Date().toISOString() } }))).toContain("Unknown approval_id");
+    }
+    for (const [id, scopes, sharing] of [["direct-readonly", "progress:read", 1], ["direct-off", "progress:read,progress:report", 0]] as const) {
+      const denied = owner(id, scopes, sharing), deniedClient = await client(denied.token);
+      errText(await deniedClient.callTool({ name: "record_action_outcome", arguments: { report_id: "denied", action: reminder(), outcome: "sent", observed_at: new Date().toISOString() } }));
+      expect(db.prepare("SELECT count(*) n FROM approvals WHERE owner_id=?").get(id)).toEqual({ n: 0 });
+    }
+  });
+
+  test("instructions act and record by default and preserve both ask-first triggers", async () => {
+    const o = owner("direct-instructions"), c = await client(o.token);
+    const started = parsed(await c.callTool({ name: "get_started", arguments: {} }));
+    for (const text of [SERVER_INSTRUCTIONS, started.approvals_note]) {
+      expect(text).not.toContain("Use request_approval before you send");
+      for (const phrase of ["record_action_outcome", "saved fact", "file, e-mail or web page", "recipient or amount", "content is unclear", "owner_confirmation"]) expect(text).toContain(phrase);
+    }
+    expect(started.first_step).toContain("the owner only answers what nobody else knows");
+  });
 });
 
 describe("approval cards over MCP", () => {
@@ -118,7 +197,7 @@ describe("approval cards over MCP", () => {
     expect((await c.listTools()).tools.map((t) => t.name)).toEqual(expect.arrayContaining(["request_approval", "get_approval", "record_action_outcome"]));
     const started = parsed(await c.callTool({ name: "get_started", arguments: {} }));
     expect(started.tools).toEqual(expect.arrayContaining(["request_approval", "get_approval", "record_action_outcome"]));
-    expect(started.approvals_note).toContain("Act only when the approval is approved (and usable is not false)"); expect(started.approvals_note).toContain("call request_approval with owner_confirmation set to their words");
+    expect(started.approvals_note).toContain("act only while that approval is approved and usable is not false"); expect(started.approvals_note).toContain("call request_approval with owner_confirmation set to their words");
 
     // Amount is required for invoices and payments; nothing is saved.
     const { amount_cents: _drop, ...noAmount } = reminder();
@@ -216,7 +295,7 @@ describe("approval cards over MCP", () => {
     // Tehtud rows name their object, and the time never runs into the verb (QA D-15, D-17).
     const tehtud = await (await fetch(`${base}/activity`, { headers: { cookie: o.cookie } })).text();
     const main = tehtud.slice(0, tehtud.indexOf('<details class="tech-details">'));
-    for (const verb of ["Sina kinnitasid", "Assistent valmistas töö ette ja palus sinu kinnitust", "Assistent teatas, mis kinnitatud tööga juhtus"]) expect(main).toMatch(new RegExp(`<strong>${verb}</strong><br><span>Payment reminder: invoice 2026-014 · Synthetic Client OÜ</span>`));
+    for (const verb of ["Sina kinnitasid", "Assistent valmistas töö ette ja palus sinu kinnitust", "Assistent teatas töö tulemuse"]) expect(main).toMatch(new RegExp(`<strong>${verb}</strong><br><span>Payment reminder: invoice 2026-014 · Synthetic Client OÜ</span>`));
     expect(main).not.toMatch(/<\/strong><span class="small muted"><time/);
     // The approvals history marks synthetic data only for a demo owner.
     expect(await (await fetch(`${base}/approvals`, { headers: { cookie: o.cookie } })).text()).not.toContain(": demo");

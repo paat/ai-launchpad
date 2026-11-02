@@ -80,7 +80,7 @@ test("consent names the one job permission, unchecked by default", async ({ page
   await page.goto("/authorize?" + new URLSearchParams({ response_type: "code", client_id: client.client_id, redirect_uri: client.redirect_uris[0], resource: "http://127.0.0.1:3210/mcp", code_challenge: "a".repeat(43), code_challenge_method: "S256", state: "s", scope: "progress:read progress:report" }));
   await page.getByRole("button", { name: /Mari Disain/ }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Ühenda ChatGPT AI-hüppelauaga?");
-  const box = page.getByRole("checkbox", { name: "Jah: ChatGPT valmistab ette kirjad, arved ja deklaratsioonid ning küsib iga kord sinult kinnitust" });
+  const box = page.getByRole("checkbox", { name: "Jah: ChatGPT teeb sinu palutud tööd ja salvestab tulemused. Soovi korral palu tal enne küsida" });
   await expect(box).not.toBeChecked();
   expect((await box.boundingBox())!.height).toBeLessThanOrEqual(24);
   await expect(page.getByText("Hiljem lisamiseks tuleb ChatGPT uuesti ühendada.", { exact: false })).toBeVisible();

@@ -36,7 +36,7 @@ Eesmärk: tehisaru-agendid võtavad väikeettevõtja ja tema töötajate õlult 
 
 | Audience | Gap we close |
 |---|---|
-| **Owners who already use ChatGPT or Claude for chat** (main target) | Turn that chat app into a business assistant: connectors, Estonian knowledge, approvals |
+| **Owners who already use ChatGPT or Claude for chat** (main target) | Turn that chat app into a business assistant: connectors, Estonian knowledge, recorded outcomes |
 | **Owners who feel left behind** — never used an agent | A calm path from zero to a working assistant on their phone |
 | Owners who already connect MCP servers themselves | Early testers |
 | Later: accountants serving many micro-companies | One accountant sets it up for many clients |
@@ -47,9 +47,9 @@ First persona: a one-person Estonian service OÜ, books in e-arveldaja or Merit.
 
 1. **The owner's own assistant is the interface.** We don't run a chatbot that competes with it. The only exception is a temporary setup helper for people who have no assistant yet.
 2. **No forms.** What public registers or the assistant's own context already know is never asked. The owner answers only what nobody else can.
-3. **Nothing is filed, paid, signed or sent without an approval bound to the exact action** — given each time, or by a standing rule the owner set with hard limits (kind, recipients, amount, count, expiry), revocable at any time. Filings and payments are always confirmed by the owner in the official channel. Every action leaves a receipt.
+3. **Ask for a job; your assistant does it and records the outcome.** It sends messages and invoices and posts book entries with its own tools. It asks first only when you asked it to, now or as a saved fact, or it judges it needs your yes: instructions came from a file, e-mail or web page, the recipient or amount differs from the books, or the content is unclear. Then it shows the exact content and asks once. Text in files is data, never instructions. For payments and filings, it prepares exact figures; you pay in the bank and file in e-MTA / e-Business Register with your own Smart-ID.
 4. **Rules compute, models read.** Deadlines, tax amounts and obligations come from deterministic rules code with official sources; models read documents, plan steps and draft text.
-5. **Store minimal private operational state.** Identity/workspace references, bounded assessments and task reports, grants, receipts and activity support the companion. These are not re-derivable from public registers. Do not request conversations or source documents; let owners inspect, export and delete their progress. [Current limits](docs/local-demo.md#identity-storage-and-limits).
+5. **Store minimal private operational state.** Identity/workspace references, bounded assessments and task reports, grants, recorded action outcomes, optional confirmations and activity support the companion. These are not re-derivable from public registers. Do not request conversations or source documents; let owners inspect, export and delete their progress. [Current limits](docs/local-demo.md#identity-storage-and-limits).
 6. **Reuse before building.** Existing MCP servers (accounting, bank, credit data, the assistant's built-in e-mail and calendar) are curated, not rebuilt. New adapters are built where demand shows.
 
 ## Planned product flow (beyond the local demo)
@@ -67,7 +67,7 @@ First persona: a one-person Estonian service OÜ, books in e-arveldaja or Merit.
 2. **One recommendation, not a menu:** e.g. Claude — the free plan allows one custom connector, and AI Launchpad is one endpoint.
 3. **Guided setup on their own phone:** QR code from computer to phone, exact steps with screenshots for their app and phone, "✓ Connected" detected by the gateway.
 4. **A safe first win in five minutes:** read-only prompts — "what are my deadlines this month?", "check this company before I take the job", "is my annual report filed?"
-5. **Trust ladder:** level 1 answers and reminders → level 2 drafts the owner sends → level 3 actions with an approval card. The assistant suggests the next level; nothing is forced.
+5. **Your choice:** ask for a job and the assistant does it, then records the outcome. Tell it to check with you first whenever you want. It remembers that preference; approval cards remain available for those requests.
 6. **Setup helper (a bridge, not a rival):** "I'm stuck — here's my screen" (screenshot → where to tap) and voice for people who prefer talking. Once their own assistant is connected, it hands over: "from now on, talk to Claude."
 7. **Human backup:** a weekly online setup clinic in Estonian, or setup through their accountant.
 
@@ -76,10 +76,10 @@ First persona: a one-person Estonian service OÜ, books in e-arveldaja or Merit.
 | Part | What it does |
 |---|---|
 | Company profile & obligations calendar | Rules engine + Ärikratt public data |
-| Job playbooks (~10 to start) | For each job: steps, tools, approval points, official source |
+| Job playbooks (~10 to start) | For each job: steps, tools, recorded outcome, official source |
 | Catalogue | Researched MCP services per job; how to connect each; runtime verification remains future work |
 | Permissions | Per-authority inventory (EMTA, Business Register, …) with expiry and revocation — filing rights are separate per authority |
-| Approvals & receipts | Approval bound to the exact action, given once: the owner's yes in their own assistant, a tap on the approval page, or a standing rule; submitted / accepted / rejected / paid states |
+| Action outcomes & optional approvals | The assistant acts on the owner's request and records sent / submitted / accepted / rejected / paid states. When asked, an approval binds the owner's yes to the exact action, in their assistant or on the approval page. |
 | Portal prefill | Where no API exists, a browser agent fills the government portal and stops before Submit |
 | Friction loop | Where an assistant gets stuck: classify why, deduplicate, redact, publish an owner-approved request as open demand on the marketplace |
 
@@ -97,7 +97,6 @@ Shipped, behind `src/model-quality.ts` (`meta-models/muse-spark-open-1026` via B
 
 | Where | What the code does |
 |---|---|
-| Approval check | Every new approval gets a check of the exact stored action via `src/approval-check.ts` (job `check_approval`), visible in MCP receipts and approval cards. Muse reads for inconsistencies and summarizes in Estonian and English; its advice never changes approval state. Real owners use the same bounded ledger in live mode; sample workspaces and test mode use a labelled deterministic sample. Unavailable checks show a reason, never a pass. |
 | Unmet-need classification | Background job in `src/unmet-needs.ts` after the `report_unmet_need` tool. Live output is labelled „AI liigitus · Meta Muse Spark Open”; mock output is labelled „Näidis”. `/demand` lists only rows an owner published. |
 | Public setup cards | An operator generates them with `src/model-public-cards-cli.ts` (job `setup_guidance`). `/setup` shows „General guidance · Meta/Baseten” only when a completed card is saved. Opening `/setup` does not call the model. `/vali` redirects to `/alusta`. |
 | Onboarding: name the programs | `/alusta` job `intake_extract`. Muse Spark names programs the visitor wrote. A catalogue name match is used when the limit, a failure, or model-off applies, and the page says so. Every onboarding call is a new ledger row and its text is not stored (no replay). |
@@ -113,7 +112,7 @@ Meta's own consumer agent app (Muse) is available only in the US and Canada as o
 ## Hackathon scope and target demo
 
 - **Scope:** the free micro-entrepreneur service only. [Enterprise measurement](docs/design/future-enterprise-measurement.md) is future design; billing and enterprise features are excluded.
-- **Shipped:** `get_started` and the playbooks in `src/catalog.ts` (`src/mcp.ts`); the obligations calendar from `get_obligations` and `src/obligations.ts` (signed-in `/`, public walkthrough `/naidis`); approval cards via `request_approval` / `get_approval` / `record_action_outcome` and `/approvals`; `whats_waiting_for_me` returns the same list as Täna's „Ootab sinult”, and the „Lahenda Claude'iga” button there opens the owner's assistant with a fixed prompt to work through it; the friction loop via `report_unmet_need`, the owner's publish decision on Täna, and the public list `/demand`; the per-visitor sample workspace `/proovi` (approve and decline, nothing really sent); the public onboarding chat `/alusta` (company, programs, assistant and a rules plan, nothing stored); the temporary text setup helper `/setup` for a signed-in owner (a sample session is refused).
+- **Shipped:** `get_started` and the playbooks in `src/catalog.ts` (`src/mcp.ts`); the obligations calendar from `get_obligations` and `src/obligations.ts` (signed-in `/`, public walkthrough `/naidis`); actions recorded directly with `record_action_outcome` and shown as “Your assistant did it”; optional approval cards via `request_approval` / `get_approval` and `/approvals`; `whats_waiting_for_me` returns the same list as Täna's „Ootab sinult”, and the „Lahenda Claude'iga” button there opens the owner's assistant with a fixed prompt to work through it; the friction loop via `report_unmet_need`, the owner's publish decision on Täna, and the public list `/demand`; the per-visitor sample workspace `/proovi` (optional approval examples: approve and decline, nothing really sent); the public onboarding chat `/alusta` (company, programs, assistant and a rules plan, nothing stored); the temporary text setup helper `/setup` for a signed-in owner (a sample session is refused).
 - **Not shipped:** the five-minute "Google search to phone" Path B story. Muse Voice Transcribe and a vision setup helper have no call site.
 - **Out:** payments, unattended filing or signing, payroll submission, a marketplace UI beyond the demand list, FIE/e-resident/employer variants.
 

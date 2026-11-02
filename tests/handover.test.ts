@@ -48,7 +48,7 @@ describe("„Käest ära” states", () => {
     // No connection reported yet: each job says what it needs, and the register is always reachable.
     expect(page).toContain("Vajab: raamatupidamine (teadmata), e-post (teadmata)");
     expect(page).toContain("Assistent pole veel öelnud, millega ta ühendatud on.");
-    expect(page).toContain("Lase assistendil koostada esimene maksemeeldetuletus");
+    expect(page).toContain("Lase assistendil saata esimene maksemeeldetuletus");
     expect(page).toContain('href="/kataloog?g=raamatupidamine"');
   });
 
@@ -355,10 +355,10 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     expect(en).toContain("Link your customer list → Catalogue");
     expect(et).not.toContain("/kataloog?g=raamatupidamine");
     expect(en).not.toContain("/kataloog?g=raamatupidamine");
-    expect(et).toContain("Loeb sinu kliendinimekirja või Kliendid lehte ja iga sõnum kinnitatakse ükshaaval.");
+    expect(et).toContain("Loeb sinu kliendinimekirja või Kliendid lehte ning salvestab iga saadetud sõnumi.");
     expect(en).toContain("Let your assistant tell you who to call or message this week");
     expect(en).toContain("„Who should I call or message this week?”");
-    expect(en).toContain("It reads your customer list or the Kliendid sheet, and every message is approved one by one.");
+    expect(en).toContain("It reads your customer list or the Kliendid sheet and records every sent message.");
     for (const card of [et, en]) {
       expect(card).not.toMatch(/arve|esitan|esita|invoice|file/i);
       expect(card).not.toContain("Valmista ette:");
@@ -371,12 +371,12 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     expect(reminder.next).toMatchObject({ type: "playbook", playbookId: "payment-reminder" });
     const reminderEt = nextCard(handoverSection(reminder, "et", NOW));
     const reminderEn = nextCard(handoverSection(reminder, "en", NOW));
-    expect(reminderEt).toContain("Lase assistendil koostada esimene maksemeeldetuletus");
-    expect(reminderEt).toContain("Vaata, millised minu arved on tasumata, ja koosta esimesele meeldetuletus. Küsi minult kinnitust enne saatmist.");
+    expect(reminderEt).toContain("Lase assistendil saata esimene maksemeeldetuletus");
+    expect(reminderEt).toContain("Vaata, millised minu arved on tasumata, ja saada esimesele meeldetuletus. Salvesta tulemus.");
     expect(reminderEt).toContain("Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.");
     expect(reminderEt).not.toContain("ainus igakuine töö");
-    expect(reminderEn).toContain("Let your assistant draft the first payment reminder");
-    expect(reminderEn).toContain("Check which of my invoices are unpaid and draft a reminder for the first one. Ask me to approve it before sending.");
+    expect(reminderEn).toContain("Let your assistant send the first payment reminder");
+    expect(reminderEn).toContain("Check which of my invoices are unpaid and send a reminder for the first one. Record the outcome.");
     expect(reminderEn).toContain("It needs your unpaid invoices: your accounting connector or a file you share with your assistant.");
     expect(reminderEn).not.toContain("the only monthly job");
 
@@ -399,11 +399,11 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     const booksEt = nextCard(handoverSection(books, "et", NOW));
     const booksEn = nextCard(handoverSection(books, "en", NOW));
     expect(booksEt).toContain("Lase assistendil ette valmistada: Raamatupidamine korras");
-    expect(booksEt).toContain("Valmista ette: Raamatupidamine korras. Küsi minult iga kuu kannete kohta kinnitust enne kirjendamist.");
-    expect(booksEt).toContain("Vajab iga kuu pangaliikumisi (LHV ühendus või pangast alla laaditud väljavõte) ja sinu raamatupidamisprogrammi ühendust. Iga kuu kirjendatakse alles pärast sinu kinnitust.");
+    expect(booksEt).toContain("Kirjenda: Raamatupidamine korras. Salvesta iga kuu tulemus.");
+    expect(booksEt).toContain("Vajab iga kuu pangaliikumisi (LHV ühendus või pangast alla laaditud väljavõte) ja sinu raamatupidamisprogrammi ühendust. Iga kuu kirjendamine salvestatakse.");
     expect(booksEn).toContain("Let your assistant prepare: Books brought up to date");
-    expect(booksEn).toContain("Prepare: Books brought up to date. Ask me to approve each month&#39;s entries before you post them.");
-    expect(booksEn).toContain("It needs each month&#39;s bank movements (your LHV connector or a statement you download from your bank) and your accounting connector. Each month is posted only after you approve it.");
+    expect(booksEn).toContain("Post: Books brought up to date. Record each month&#39;s outcome.");
+    expect(booksEn).toContain("It needs each month&#39;s bank movements (your LHV connector or a statement you download from your bank) and your accounting connector. Each month&#39;s posting is recorded.");
     for (const card of [reminderEt, reminderEn, obligationEt, obligationEn, booksEt, booksEn]) {
       expect(card).not.toContain("Lase assistendil öelda, kellele sel nädalal helistada või kirjutada");
       expect(card).not.toContain("Let your assistant tell you who to call or message this week");
@@ -435,11 +435,11 @@ describe("customer follow-ups next step (tribunal T-004, #96)", () => {
     expect(h.next).toMatchObject({ type: "playbook", playbookId: "invoicing", obligation: null, job: { kind: "send_invoice" } });
     const et = nextCard(handoverSection(h, "et", NOW));
     const en = nextCard(handoverSection(h, "en", NOW));
-    expect(et).toContain("Valmista järgmine arve ette. Näita mulle täpset arvet ja küsi kinnitust enne saatmist.");
-    expect(et).toContain("Vajab sinu raamatupidamisprogrammi ühendust (arve ja PDF) ja sinu e-posti. Arve saadetakse alles pärast sinu kinnitust.");
+    expect(et).toContain("Koosta ja saada järgmine arve. Salvesta tulemus.");
+    expect(et).toContain("Vajab sinu raamatupidamisprogrammi ühendust (arve ja PDF) ja sinu e-posti. Saatmise tulemus salvestatakse.");
     expect(et).not.toContain("kinnitust enne, kui midagi esitan");
-    expect(en).toContain("Prepare the next invoice. Show me the exact invoice and ask me to approve before you send it.");
-    expect(en).toContain("It needs your accounting connector (the invoice and its PDF) and your e-mail. The invoice is sent only after you approve it.");
+    expect(en).toContain("Create and send the next invoice. Record the outcome.");
+    expect(en).toContain("It needs your accounting connector (the invoice and its PDF) and your e-mail. The send outcome is recorded.");
     expect(en).not.toContain("file anything");
   });
 

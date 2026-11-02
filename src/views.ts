@@ -18,18 +18,18 @@ type LandingText = { et: string; en: string };
 type LandingConnection = LandingText & { g?: CatalogueGroup; href?: string; launchpad?: false; subtitleEt?: string; subtitleEn?: string };
 type LandingConnector = LandingConnection | { launchpad: true; helpEt: string; helpEn: string };
 type LandingChip = { kind: "rule" } | { kind: "official"; source: "kmd" | "annual" } | { kind: "official"; et: string; en: string };
-type LandingApproval = { title: LandingText; client: string; amountCents: number };
+type LandingReceipt = { title: LandingText; client: string; amountCents: number };
 type LandingCase = LandingText & {
   id: string; bodyEt: string; bodyEn: string; connectors: readonly LandingConnector[]; registerData?: boolean;
   ask: LandingText; answer: LandingText & { boldEt?: string; boldEn?: string }; chips?: readonly LandingChip[];
-  approval?: LandingApproval;
+  receipt?: LandingReceipt;
 };
 const ACCOUNTING: LandingConnector = { et: "Raamatupidamine", en: "Accounting", g: "raamatupidamine" };
 const EMAIL: LandingConnector = { et: "E-post", en: "E-mail", g: "epost" };
 const BANK: LandingConnector = { et: "Pank", en: "Bank", g: "pank" };
 const CALENDAR: LandingConnector = { et: "Kalender", en: "Calendar", g: "epost" };
 const ARIKRATT: LandingConnector = { et: "Ärikratt · soovitatud", en: "Ärikratt · recommended", href: "/kataloog?q=%C3%84rikratt", subtitleEt: "äriandmed", subtitleEn: "business data" };
-const APPROVAL: LandingConnector = { launchpad: true, helpEt: "küsib sinu kinnitust", helpEn: "asks for your approval" };
+const ACTION_LOG: LandingConnector = { launchpad: true, helpEt: "salvestab iga tegevuse", helpEn: "records every action" };
 const DEADLINE: LandingConnector = { launchpad: true, helpEt: "arvutab tähtaja", helpEn: "calculates the deadline" };
 const DEADLINES: LandingConnector = { launchpad: true, helpEt: "arvutab tähtajad", helpEn: "calculates the deadlines" };
 const RULE: LandingChip = { kind: "rule" };
@@ -38,15 +38,15 @@ const ANNUAL_SOURCE: LandingChip = { kind: "official", source: "annual" };
 const LANDING_CARDS: readonly LandingCase[] = [
   {
     id: "unpaid", et: "Võlgnikud", en: "Unpaid invoices",
-    bodyEt: "Leiab tasumata arved ja saadab viisaka meeldetuletuse. Iga kiri läheb välja sinu kinnitusega.",
-    bodyEn: "Finds unpaid invoices and sends a polite reminder. Every message goes out with your approval.",
-    connectors: [ACCOUNTING, EMAIL, APPROVAL],
-    ask: { et: "Kes mulle võlgu on?", en: "Who owes me money?" },
+    bodyEt: "Leiab tasumata arved ja saadab viisaka meeldetuletuse. Iga saatmine salvestatakse.",
+    bodyEn: "Finds unpaid invoices and sends a polite reminder. Every send is recorded.",
+    connectors: [ACCOUNTING, EMAIL, ACTION_LOG],
+    ask: { et: "Saada tasumata arvete eest meeldetuletused.", en: "Send reminders for my unpaid invoices." },
     answer: {
-      et: "Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku {total}. Koostasin igale viisaka meeldetuletuse.",
-      en: "Your accounting software shows three invoices overdue, {total} in total. I drafted a polite reminder for each.",
+      et: "Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku {total}. Saatsin igale viisaka meeldetuletuse ja salvestasin tulemuse.",
+      en: "Your accounting software shows three invoices overdue, {total} in total. I sent a polite reminder for each and recorded the outcome.",
     },
-    approval: {
+    receipt: {
       title: { et: "Maksemeeldetuletus · 1/3", en: "Payment reminder · 1/3" }, client: "Demo Klient OÜ", amountCents: 24000,
     },
   },
@@ -90,12 +90,12 @@ const LANDING_CARDS: readonly LandingCase[] = [
   },
   {
     id: "invoice", et: "Arve kliendile", en: "Invoice a customer",
-    bodyEt: "Koostab arve tehtud töö põhjal ja saadab selle kliendile, kui oled kinnitanud.",
-    bodyEn: "Drafts the invoice from the work done and sends it to the customer once you approve.",
-    connectors: [ACCOUNTING, EMAIL, APPROVAL],
+    bodyEt: "Koostab arve tehtud töö põhjal, saadab selle kliendile ja salvestab tulemuse.",
+    bodyEn: "Creates the invoice from the work done, sends it to the customer and records the outcome.",
+    connectors: [ACCOUNTING, EMAIL, ACTION_LOG],
     ask: { et: "Tee Demo Klient OÜ-le arve oktoobri töö eest.", en: "Invoice Demo Klient OÜ for October's work." },
-    answer: { et: "Koostasin arve tehtud töö põhjal.", en: "I drafted the invoice from the work done." },
-    approval: { title: { et: "Arve", en: "Invoice" }, client: "Demo Klient OÜ", amountCents: 89280 },
+    answer: { et: "Koostasin arve tehtud töö põhjal, saatsin selle ja salvestasin tulemuse.", en: "I created the invoice from the work done, sent it and recorded the outcome." },
+    receipt: { title: { et: "Arve", en: "Invoice" }, client: "Demo Klient OÜ", amountCents: 89280 },
   },
   {
     id: "payments", et: "Laekumised", en: "Incoming payments",
@@ -127,8 +127,8 @@ const LANDING_CARDS: readonly LandingCase[] = [
     connectors: [EMAIL, ACCOUNTING],
     ask: { et: "Korja oktoobri ostuarved kokku.", en: "Collect October's purchase invoices." },
     answer: {
-      et: "Leidsin e-postist 7 ostuarvet, kokku {purchases}. Lisasin need raamatupidamisse kinnitamata kannetena.",
-      en: "Found 7 purchase invoices in your e-mail, {purchases} in total. I added them to your books as unconfirmed entries.",
+      et: "Leidsin e-postist 7 ostuarvet, kokku {purchases}. Kirjendasin need raamatupidamises ja salvestasin tulemuse.",
+      en: "Found 7 purchase invoices in your e-mail, {purchases} in total. I posted them in your books and recorded the outcome.",
     },
   },
 ];
@@ -138,12 +138,10 @@ const LANDING_CARDS: readonly LandingCase[] = [
 const HIDE = "max-height:0;opacity:0;transform:translateY(12px)";
 const teaserBeat = (id: string, k: string, a: number, cap = "16rem") => `.b-${id}-${k}{animation-name:lp-${id}-${k}}@keyframes lp-${id}-${k}{0%,${a}%{${HIDE}}${a + 2}%,94%{max-height:${cap};opacity:1;transform:none}98%{max-height:${cap};opacity:0}100%{max-height:0;opacity:0}}`;
 const teaserTyping = (id: string, k: string, a: number, b: number) => `.b-${id}-${k}{animation-name:lp-${id}-${k}}@keyframes lp-${id}-${k}{0%,${a}%{max-height:0;opacity:0}${a + 1}%,${b}%{max-height:4rem;opacity:1}${b + 1}%,100%{max-height:0;opacity:0}}`;
-const teaserTap = (id: string, k: string, a: number) => `@keyframes lp-${id}-${k}-out{0%,${a}%{opacity:1}${a + 1}%,100%{opacity:0}}@keyframes lp-${id}-${k}-in{0%,${a}%{opacity:0;transform:scale(.96)}${a + 2}%,100%{opacity:1;transform:none}}@keyframes lp-${id}-${k}-tap{0%,${a - 8}%{opacity:0;transform:scale(.3)}${a - 5}%{opacity:1;transform:scale(1)}${a}%,100%{opacity:0;transform:scale(2.4)}}`;
 const TEASER_CSS = LANDING_CARDS.map((c) => {
   const id = c.id, css = [teaserBeat(id, "me1", 3), teaserTyping(id, "t1", 7, 19), teaserBeat(id, "ai1", 19)];
-  if (c.approval) {
-    css.push(teaserBeat(id, "card", 26, "48rem"), teaserTap(id, "approve", 38));
-    css.push(`.b-${id}-card .mock-wait,.b-${id}-card .mock-approve{animation-name:lp-${id}-approve-out}.b-${id}-card .mock-ok,.b-${id}-card .mock-done{animation-name:lp-${id}-approve-in}.b-${id}-card .mock-btn>.mock-tap{animation-name:lp-${id}-approve-tap}`);
+  if (c.receipt) {
+    css.push(teaserBeat(id, "card", 26, "48rem"));
   }
   return css.join("\n");
 }).join("\n");
@@ -583,11 +581,7 @@ table.why caption{display:block;width:100%;font-weight:750;text-align:left;margi
 .mock-btn{position:relative;display:grid;margin-top:10px}
 .mock-btn>span{grid-area:1/1;display:flex;align-items:center;justify-content:center;min-height:var(--tap);padding:0 10px;border-radius:var(--r-lg);font-weight:750;text-align:center}
 .mock-state{display:grid}.mock-state>span{grid-area:1/1;justify-self:start}
-.mock-wait,.mock-approve{opacity:0;animation-duration:18s;animation-iteration-count:infinite}
-.mock-ok,.mock-done{animation-duration:18s;animation-iteration-count:infinite}
-.mock-approve{background:var(--c-primary);color:#fff}
 .mock-done{border:1px dashed var(--st-accepted-fg);background:var(--st-accepted-bg);color:var(--st-accepted-fg)}
-.mock-btn>.mock-tap{position:absolute;top:50%;left:50%;width:46px;height:46px;min-height:0;margin:-23px 0 0 -23px;padding:0;border-radius:50%;background:rgba(255,255,255,.6);box-shadow:0 0 0 3px rgba(255,255,255,.35);opacity:0;animation-duration:18s;animation-iteration-count:infinite}
 ${TEASER_CSS}
 .landing h2{margin:0 0 var(--s-4);font-size:var(--fs-xl);letter-spacing:-.02em}
 .job-switcher{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s-3);margin:0;padding:0;list-style:none}
@@ -945,8 +939,7 @@ ${opts.sandbox ? "" : `<form method="post" action="/reporting"><input type="hidd
 ${opts.candidates.map((c) => `<div class="row"><strong>${esc(c.name)}</strong> <span class="pill"${en}>${esc(c.status)}</span><br><span class="small muted">${esc(c.connection)} · ${esc(c.jobs)} · ${esc(c.created_at)}</span>${opts.sandbox ? "" : `<form method="post" action="/candidates/delete"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="candidate_id" value="${esc(c.id)}"><button type="submit" class="secondary">${t("Kustuta see soovitus", "Delete this nomination")}</button></form>`}</div>`).join("") || `<p class="muted">${t("Veel pole.", "None yet.")}</p>`}
 </section>
 <section class="card"><h2>${t("Sinu minimaalsed andmed", "Your minimal data")}</h2>
-<p>${t("AI-hüppelaud salvestab sinu hinnangud, tööde aruanded, tegevused, teenusesoovitused ja võtmed. Samuti salvestab see iga kinnitustaotluse täpse teksti, mille assistent sulle kinnitamiseks saadab (igaüks kuni 4000 märki, koos saaja aadressi, summade ja arvudega), ning isikustamata teksti nendest päringutest, mida assistent teha ei saanud, ning iga assistendi loetud pangaväljavõtte kohta panga, konto neli viimast numbrit, perioodi ja lõppsaldo, kuni kustutad oma töö käigu. Sinu vestlusi see kunagi ei saa. Kustutamine tühistab ka võtmed ja logib välja teised seansid, nii et vanad ootel aruanded ei saa andmeid taastada. See ei kustuta ühegi teenusepakkuja kirjeid.", "Launchpad stores your assessments, task reports, activity, service nominations and tokens. It also stores the exact text of every approval request your assistant asks you to approve (up to 4,000 characters each, with the recipient's address, amounts and figures) and the de-identified text of requests your assistant could not do, and for each bank statement your assistant read, the bank, the account's last four digits, the period and the closing balance, until you delete your progress. It never receives your conversations. Deleting also revokes tokens and signs out other sessions, so old queued reports cannot recreate it. It does not delete any provider's records.")}</p>
-<p>${t("Kui mudelikontroll on sisse lülitatud, saadetakse päris tööruumi kinnitustaotluse täpne tekst koos saaja, summa ja sinu kinnitussõnadega kontrolliks Meta avatud mudelile, mida majutab Baseten. Kontroll on nõuanne, mitte garantii. Näidisruumides mudelit ei kutsuta.", "When model checking is enabled, the exact approval text from a real workspace, including the recipient, amount and your confirmation words, is sent for this check to Meta’s open model hosted by Baseten. The check is advice, not a guarantee. Sample workspaces do not call the model.")}</p>
+<p>${t("AI-hüppelaud salvestab sinu hinnangud, tööde aruanded, tegevused, teenusesoovitused ja võtmed. Samuti salvestab see iga salvestatud tegevuse või kinnitustaotluse täpse teksti ja tulemuse (igaüks kuni 4000 märki, koos saaja aadressi, summade ja arvudega), ning isikustamata teksti nendest päringutest, mida assistent teha ei saanud, ning iga assistendi loetud pangaväljavõtte kohta panga, konto neli viimast numbrit, perioodi ja lõppsaldo, kuni kustutad oma töö käigu. Sinu vestlusi see kunagi ei saa. Kustutamine tühistab ka võtmed ja logib välja teised seansid, nii et vanad ootel aruanded ei saa andmeid taastada. See ei kustuta ühegi teenusepakkuja kirjeid.", "Launchpad stores your assessments, task reports, activity, service nominations and tokens. It also stores the exact text of every recorded action or approval request and its outcome (up to 4,000 characters each, with the recipient's address, amounts and figures) and the de-identified text of requests your assistant could not do, and for each bank statement your assistant read, the bank, the account's last four digits, the period and the closing balance, until you delete your progress. It never receives your conversations. Deleting also revokes tokens and signs out other sessions, so old queued reports cannot recreate it. It does not delete any provider's records.")}</p>
 <p><a class="btn secondary" href="/export">${t("Ekspordi minu töö käik (JSON)", "Export my progress (JSON)")}</a></p>
 <form method="post" action="/delete" onsubmit="return confirm('${t("Kas kustutada sinu töö käik AI-hüppelaual?", "Delete your Launchpad progress?")}')"><input type="hidden" name="csrf" value="${csrf}"><button type="submit" class="danger">${t("Kustuta minu töö käik", "Delete my progress")}</button></form></section>`;
 }
@@ -980,14 +973,14 @@ const OUTCOME: Record<string, [string, string, string]> = { sent: ["sent", "Saad
 const outcomeChip = (o: string, l: Lang, sample: boolean) => { const [k, et, en] = OUTCOME[o] ?? ["drafted", o, o]; const demo = sample && o !== "failed"; return stateChip(k, demo ? tr(l)(`${et}: demo`, `${en}: demo`) : tr(l)(et, en), demo); };
 
 function stateLine(a: ApprovalRow, v: ReturnType<typeof approvalView>, l: Lang, sample: boolean): string {
-  const t = tr(l), seen = (o: string) => v.history.find((h) => h.outcome === o);
+  const t = tr(l), seen = (o: string) => v.history.find((h) => h.outcome === o) ?? (v.outcome?.outcome === o ? v.outcome : undefined);
   const act: [string, string, string] = v.kindKey === "prepare_payment" ? ["paid", "Makstud", "Paid"] : v.kindKey === "prepare_filing" ? ["submitted", "Esitatud", "Submitted"] : v.kindKey === "post_entries" ? ["posted", "Kirjendatud", "Posted"] : ["sent", "Saadetud", "Sent"];
   const follow: [string, string, string] | null = v.kindKey === "prepare_filing" ? ["accepted", "Vastu võetud", "Accepted"] : v.kindKey === "prepare_payment" || v.kindKey === "post_entries" ? null : ["paid", "Makstud", "Paid"];
   const steps: { cls: string; mark: string; text: string; note?: string }[] = [
     { cls: "done", mark: "✓", text: t("Koostatud", "Drafted"), note: `${t("Assistent", "Your assistant")} · ${fmtWhen(a.created_at, l)}` },
   ];
   const decided = !!a.decided_at && a.state !== "declined";
-  steps.push(decided ? { cls: "done", mark: "✓", text: t("Kinnitatud", "Approved"), note: `${a.owner_confirmation ? t("Sina, assistendis", "You, in your assistant") : t("Sina", "You")} · ${fmtWhen(a.decided_at, l)}` } : { cls: "todo", mark: "", text: t("Kinnitatud: ootab sind", "Approved: waiting for you") });
+  if (a.state !== "consumed" || a.decided_at) steps.push(decided ? { cls: "done", mark: "✓", text: t("Kinnitatud", "Approved"), note: `${a.owner_confirmation ? t("Sina, assistendis", "You, in your assistant") : t("Sina", "You")} · ${fmtWhen(a.decided_at, l)}` } : { cls: "todo", mark: "", text: t("Kinnitatud: ootab sind", "Approved: waiting for you") });
   const done = seen(act[0]), failed = seen("failed");
   if (failed) steps.push({ cls: "stop", mark: "✕", text: t("Ei õnnestunud", "Failed"), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(failed.observed_at, l)}` });
   else if (done) steps.push({ cls: sample ? "demo" : "done", mark: sample ? "–" : "✓", text: sample ? t(`${act[1]}: demo`, `${act[2]}: demo`) : t(act[1], act[2]), note: `${t("Assistent teatas", "Your assistant reports")} · ${fmtWhen(done.observed_at, l)}${sample ? t(" · päriselt ei saadetud", " · nothing really sent") : ""}` });
@@ -1088,7 +1081,7 @@ function handoverRow(j: Job, h: Handover, l: Lang, now: Date, sample: boolean): 
   return `<li class="ho-job"><div class="ho-head"><span class="ho-title">${esc(hoJobTitle(j, l))}</span>${stateChip(st.chip, chip)}</div><p class="ho-who">${who}</p>${lines.length ? `<p class="ho-ev">${lines.join("<br>")}</p>` : ""}</li>`;
 }
 const HO_CONNECTOR = (l: Lang) => `<a class="tap-link" href="/kataloog?g=raamatupidamine">${tr(l)("Raamatupidamise ühendused → Kataloog", "Accounting connectors → Catalogue")}</a>`;
-const HO_REMINDER_PROMPT: [string, string] = ["Vaata, millised minu arved on tasumata, ja koosta esimesele meeldetuletus. Küsi minult kinnitust enne saatmist.", "Check which of my invoices are unpaid and draft a reminder for the first one. Ask me to approve it before sending."];
+const HO_REMINDER_PROMPT: [string, string] = ["Vaata, millised minu arved on tasumata, ja saada esimesele meeldetuletus. Salvesta tulemus.", "Check which of my invoices are unpaid and send a reminder for the first one. Record the outcome."];
 /** The one next step, as the section's only elevated object. */
 function handoverNext(h: Handover, l: Lang): string {
   const t = tr(l), n = h.next;
@@ -1096,10 +1089,10 @@ function handoverNext(h: Handover, l: Lang): string {
   const quote = (text: string) => `<p class="quote"><span>${t("Palu assistendilt:", "Ask your assistant:")}</span>„${esc(text)}”</p>`;
   if (n.type === "playbook") {
     const reminder = n.playbookId === "payment-reminder", follow = n.playbookId === "customer-follow-ups", title = hoJobTitle(n.job, l);
-    const prompt = follow ? t("Kellele peaksin sel nädalal helistama või kirjutama?", "Who should I call or message this week?") : reminder ? t(...HO_REMINDER_PROMPT) : n.obligation ? t(n.obligation.handoff.prompt_et, n.obligation.handoff.prompt_en) : n.job.kind === "post_entries" ? t(`Valmista ette: ${title}. Küsi minult iga kuu kannete kohta kinnitust enne kirjendamist.`, `Prepare: ${title}. Ask me to approve each month's entries before you post them.`) : n.job.kind === "send_invoice" ? t("Valmista järgmine arve ette. Näita mulle täpset arvet ja küsi kinnitust enne saatmist.", "Prepare the next invoice. Show me the exact invoice and ask me to approve before you send it.") : t(`Valmista ette: ${title}. Küsi minult kinnitust enne, kui midagi esitan.`, `Prepare: ${title}. Ask me to approve before I file anything.`);
+    const prompt = follow ? t("Kellele peaksin sel nädalal helistama või kirjutama?", "Who should I call or message this week?") : reminder ? t(...HO_REMINDER_PROMPT) : n.obligation ? t(n.obligation.handoff.prompt_et, n.obligation.handoff.prompt_en) : n.job.kind === "post_entries" ? t(`Kirjenda: ${title}. Salvesta iga kuu tulemus.`, `Post: ${title}. Record each month's outcome.`) : n.job.kind === "send_invoice" ? t("Koosta ja saada järgmine arve. Salvesta tulemus.", "Create and send the next invoice. Record the outcome.") : t(`Valmista ette: ${title}. Esitan ise ametlikus kanalis.`, `Prepare: ${title}. I will file it in the official channel.`);
     return card(t("Järgmine samm: anna üks töö ära", "Next step: hand over one job"), `<span class="labels">${labelChip("rule", t("Mängukava", "Playbook"))}</span>
-<span class="ask-title">${esc(follow ? t("Lase assistendil öelda, kellele sel nädalal helistada või kirjutada", "Let your assistant tell you who to call or message this week") : reminder ? t("Lase assistendil koostada esimene maksemeeldetuletus", "Let your assistant draft the first payment reminder") : t(`Lase assistendil ette valmistada: ${title}`, `Let your assistant prepare: ${title}`))}</span>
-<p class="muted">${esc(follow ? t("Loeb sinu kliendinimekirja või Kliendid lehte ja iga sõnum kinnitatakse ükshaaval.", "It reads your customer list or the Kliendid sheet, and every message is approved one by one.") : reminder ? t("Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.", "It needs your unpaid invoices: your accounting connector or a file you share with your assistant.") : n.job.kind === "post_entries" ? t("Vajab iga kuu pangaliikumisi (LHV ühendus või pangast alla laaditud väljavõte) ja sinu raamatupidamisprogrammi ühendust. Iga kuu kirjendatakse alles pärast sinu kinnitust.", "It needs each month's bank movements (your LHV connector or a statement you download from your bank) and your accounting connector. Each month is posted only after you approve it.") : n.job.kind === "send_invoice" ? t("Vajab sinu raamatupidamisprogrammi ühendust (arve ja PDF) ja sinu e-posti. Arve saadetakse alles pärast sinu kinnitust.", "It needs your accounting connector (the invoice and its PDF) and your e-mail. The invoice is sent only after you approve it.") : t("Vajab kuu arveid: sinu raamatupidamisprogrammi ühendust või faile, mille assistendile jagad.", "It needs the period's invoices: your accounting connector or files you share with your assistant."))}</p>
+<span class="ask-title">${esc(follow ? t("Lase assistendil öelda, kellele sel nädalal helistada või kirjutada", "Let your assistant tell you who to call or message this week") : reminder ? t("Lase assistendil saata esimene maksemeeldetuletus", "Let your assistant send the first payment reminder") : t(`Lase assistendil ette valmistada: ${title}`, `Let your assistant prepare: ${title}`))}</span>
+<p class="muted">${esc(follow ? t("Loeb sinu kliendinimekirja või Kliendid lehte ning salvestab iga saadetud sõnumi.", "It reads your customer list or the Kliendid sheet and records every sent message.") : reminder ? t("Vajab tasumata arveid: sinu raamatupidamisprogrammi ühendust või faili, mille assistendile jagad.", "It needs your unpaid invoices: your accounting connector or a file you share with your assistant.") : n.job.kind === "post_entries" ? t("Vajab iga kuu pangaliikumisi (LHV ühendus või pangast alla laaditud väljavõte) ja sinu raamatupidamisprogrammi ühendust. Iga kuu kirjendamine salvestatakse.", "It needs each month's bank movements (your LHV connector or a statement you download from your bank) and your accounting connector. Each month's posting is recorded.") : n.job.kind === "send_invoice" ? t("Vajab sinu raamatupidamisprogrammi ühendust (arve ja PDF) ja sinu e-posti. Saatmise tulemus salvestatakse.", "It needs your accounting connector (the invoice and its PDF) and your e-mail. The send outcome is recorded.") : t("Vajab kuu arveid: sinu raamatupidamisprogrammi ühendust või faile, mille assistendile jagad.", "It needs the period's invoices: your accounting connector or files you share with your assistant."))}</p>
 ${quote(prompt)}
 ${follow ? `<a class="tap-link" href="/kataloog?g=kliendid">${t("Ühenda oma kliendinimekiri → Kataloog", "Link your customer list → Catalogue")}</a>` : HO_CONNECTOR(l)}`);
   }
@@ -1121,7 +1114,7 @@ export function handoverSection(h: Handover, l: Lang, now = new Date(), sample =
 <p class="ho-month">${month}</p>
 <div class="ho-grid"><div><ul class="ho-jobs">${h.jobs.map((j) => handoverRow(j, h, l, now, sample)).join("")}</ul>${finding}${reach}</div>
 ${handoverNext(h, l)}</div>
-<details class="plain"><summary>${t("Kuidas see arvutatakse", "How this is calculated")}</summary><div class="boxed small"><p>${t("Tööd on järjestatud selle järgi, mis vajab sind praegu: ootel kinnitus, möödunud või lähenev tähtaeg (14 päeva), siis assistendi viimane hinnang. „Korras” tähendab, et töö tehti sel kuul (assistendi teade salvestatud kinnitusel) või assistent vaatas viimase kuu jooksul ja ootel tööd polnud. Tähtajad arvutab reeglistik. Ühendused on assistendi teade; AI-hüppelaud neid ei kontrolli. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.", "Jobs are ordered by what needs you now: a waiting approval, a missed or near deadline (14 days), then your assistant's latest assessment. „In order” means the job was done this month (your assistant's report on a stored approval), or your assistant looked within the last month and found nothing waiting. Deadlines are calculated by rules. Connections are what your assistant reports; AI Launchpad does not check them. No percentage and no hours saved, because we don't measure them.")}</p></div></details>
+<details class="plain"><summary>${t("Kuidas see arvutatakse", "How this is calculated")}</summary><div class="boxed small"><p>${t("Tööd on järjestatud selle järgi, mis vajab sind praegu: ootel kinnitus, möödunud või lähenev tähtaeg (14 päeva), siis assistendi viimane hinnang. „Korras” tähendab, et töö tehti sel kuul (assistendi salvestatud tulemus) või assistent vaatas viimase kuu jooksul ja ootel tööd polnud. Tähtajad arvutab reeglistik. Ühendused on assistendi teade; AI-hüppelaud neid ei kontrolli. Protsenti ja säästetud tunde ei näita, sest me neid ei mõõda.", "Jobs are ordered by what needs you now: a waiting approval, a missed or near deadline (14 days), then your assistant's latest assessment. „In order” means the job was done this month (your assistant's recorded outcome), or your assistant looked within the last month and found nothing waiting. Deadlines are calculated by rules. Connections are what your assistant reports; AI Launchpad does not check them. No percentage and no hours saved, because we don't measure them.")}</p></div></details>
 </section>`;
 }
 
@@ -1173,10 +1166,10 @@ ${foot()}
 <h1 class="receipt-head" id="a-h">${head}</h1>
 <p class="why">${[v.recipient.name, v.amount].filter(Boolean).map(esc).join(" · ")}${v.recipient.name || v.amount ? " · " : ""}${esc(v.title)}</p>
 ${a.owner_confirmation ? confirmedInAssistant(a, l) : ""}
-<p class="small"><strong>${esc(t(`Sinu kinnitusi selles töös: ${a.decided_at && !a.approved_by_rule ? 1 : 0}.`, `Your approvals in this job: ${a.decided_at && !a.approved_by_rule ? 1 : 0}.`))}</strong> ${t("Töö tegi assistent; tulemus on tema teade, AI-hüppelaud seda ei kontrollinud.", "Your assistant did the work; the result is its report, not checked by AI Launchpad.")}</p>
+<p class="small"><strong>${a.decided_at ? esc(t(`Sinu kinnitusi selles töös: ${!a.approved_by_rule ? 1 : 0}.`, `Your approvals in this job: ${!a.approved_by_rule ? 1 : 0}.`)) : ok ? t("Assistent tegi ära", "Your assistant did it") : t("Assistent teatas töö tulemuse", "Your assistant reported the outcome")}</strong> ${t("Tulemus on assistendi teade, AI-hüppelaud seda ei kontrollinud.", "This outcome is your assistant’s report, not checked by AI Launchpad.")}</p>
 ${isDone(a) && opts.handover ? handoverStrip(opts.handover, l) : ""}
 ${stateLine(a, v, l, sample)}
-${content ? `<details><summary>${t("Mida sa kinnitasid", "What you approved")}</summary>${approvalFacts(v, l)}${content}</details>` : ""}
+${content ? `<details><summary>${a.decided_at ? t("Mida sa kinnitasid", "What you approved") : t("Mida assistent tegi", "What your assistant did")}</summary>${approvalFacts(v, l)}${content}</details>` : ""}
 </div>
 ${foot()}
 </article>`;
@@ -1219,9 +1212,9 @@ function approvalLinkRow(a: ApprovalRow, l: Lang, now: Date, sample: boolean, as
 
 export function approvalsListBody(rows: ApprovalRow[], l: Lang, sample: boolean, now = new Date()): string {
   const t = tr(l), pending = rows.filter((a) => a.state === "pending"), history = rows.filter((a) => a.state !== "pending");
-  return `<h1>${t("Kinnitused", "Approvals")}</h1><p class="lede">${t("Tööd, mille jaoks sinu assistent küsis sinu kinnitust. AI-hüppelaud ise ei saada, maksa ega esita midagi.", "Work your assistant asked you to approve. AI Launchpad itself never sends, pays or files.")}</p>
+  return `<h1>${t("Kinnitused", "Approvals")}</h1><p class="lede">${t("Assistendi salvestatud tegevused ja tööd, mille jaoks ta küsis sinu kinnitust. AI-hüppelaud ise ei saada, maksa ega esita midagi.", "Actions your assistant recorded and work it asked you to approve. AI Launchpad itself never sends, pays or files.")}</p>
 <section class="section" aria-labelledby="ap-w"><h2 id="ap-w">${t("Ootab sinult", "Needs you")} (${pending.length})</h2>${pending.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Praegu ei oota sinult midagi.", "Nothing is waiting for you right now.")}</p>`}</section>
-<section class="section" aria-labelledby="ap-h"><h2 id="ap-h">${t("Ajalugu", "History")}</h2>${history.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Otsustatud kinnitusi veel pole.", "No decided approvals yet.")}</p>`}</section>`;
+<section class="section" aria-labelledby="ap-h"><h2 id="ap-h">${t("Ajalugu", "History")}</h2>${history.map((a) => approvalLinkRow(a, l, now, sample)).join("") || `<p class="muted">${t("Salvestatud tegevusi ega otsustatud kinnitusi veel pole.", "No recorded actions or decided approvals yet.")}</p>`}</section>`;
 }
 
 export interface PublicCardViewOpts { topicId: string; locale: string; state: string; output: string | null; replayed: boolean; }
@@ -1348,7 +1341,7 @@ export function catalogueBody(o: { lang: Lang; q: string; g: CatalogueGroup | nu
   }).join("");
   const kratt = `https://arikratt.ee/${l === "en" ? "en" : "et"}/mcp`;
   // Pinned above the list with what Launchpad does with them; a search hides a card it does not match (#52), as searchServices matches the list.
-  const what = { launchpad: ["Näeb sinu ettevõtte tähtaegu koos ametliku allikaga, valmistab töid ette ja küsib enne saatmist või esitamist sinu kinnitust täpselt sellele sisule.", "Sees your company's deadlines with their official sources, prepares the work and asks you to approve the exact content before anything is sent or filed."], arikratt: ["Avalikud ettevõtteandmed äriregistrist ja maksuametist. AI-hüppelaud arvutab nende põhjal sinu tähtajad.", "Public company data from the Business Register and the Tax Board. AI Launchpad computes your deadlines from it."] } as const;
+  const what = { launchpad: ["Näeb sinu ettevõtte tähtaegu koos ametliku allikaga, teeb palutud tööd ja salvestab iga tegevuse. Soovi korral palu tal enne küsida.", "Sees your company's deadlines with their official sources, does the requested work and records every action. Ask it to check with you first whenever you want."], arikratt: ["Avalikud ettevõtteandmed äriregistrist ja maksuametist. AI-hüppelaud arvutab nende põhjal sinu tähtajad.", "Public company data from the Business Register and the Tax Board. AI Launchpad computes your deadlines from it."] } as const;
   // Each pinned card's visible strings as language pairs, so the search reads exactly what the card shows, in both languages.
   const MCP_CLOUD: [string, string] = ["MCP · pilves", "MCP · cloud"], WHAT_K: [string, string] = ["Mida assistent selle abil teha saab", "What your assistant can do with it"];
   const card = {
@@ -1478,7 +1471,7 @@ export function aboutBody(l: Lang): string {
   const section = (et: string, en: string, inner: string) => `<section class="card"><h2>${t(et, en)}</h2>${inner}</section>`;
   return `<section class="card hero"><h1>${t("Mis on AI-hüppelaud?", "What is AI Launchpad?")}</h1>
 <p class="lede">${t("AI-hüppelaud ei ole uus AI-assistent ega vestlusrobot. See aitab sinu olemasoleval AI-assistendil — ChatGPT-l või Claude'il — võtta kontoritöö sinu õlult.", "AI Launchpad is not another AI assistant, and not a chatbot. It helps the AI assistant you already have — ChatGPT or Claude — take the office work off your shoulders.")}</p>
-<p>${t("Sinu assistent teeb kontoritööd: tähtajad, arved, raamatupidamine, meeldetuletused. AI-hüppelaud ütleb talle, mida Eesti reeglid nõuavad ja milliseid ühendusi on vaja, ning küsib enne iga tegevust sinu kinnitust.", "Your assistant does the office work: deadlines, invoices, bookkeeping, reminders. AI Launchpad tells it what Estonian rules require and which connections it needs, and asks for your approval before each action.")}</p></section>
+<p>${t("Sinu assistent teeb kontoritööd: tähtajad, arved, raamatupidamine, meeldetuletused. AI-hüppelaud ütleb talle, mida Eesti reeglid nõuavad ja milliseid ühendusi on vaja, ning salvestab iga tegevuse. Soovi korral palu assistendil enne küsida.", "Your assistant does the office work: deadlines, invoices, bookkeeping, reminders. AI Launchpad tells it what Estonian rules require and which connections it needs, and records every action. Ask your assistant to check with you first whenever you want.")}</p></section>
 ${section("Kellele see on", "Who it is for", items([
   ["Eesti väikeettevõtjale, kes teeb kontoritöö ise. Esimesena ühe inimese OÜ, mille raamatud on e-arveldajas või Meritis.", "Estonian small-business owners who do their own office work. First, a one-person OÜ with its books in e-arveldaja or Merit."],
   ["Neile, kes juba kasutavad ChatGPT-d või Claude'i ja tahavad, et see ka tööd teeks, mitte ainult vestleks.", "People who already use ChatGPT or Claude and want it to do work, not just chat."],
@@ -1489,7 +1482,7 @@ ${section("Kuidas see töötab", "How it works", items([
   ["Sinu assistent on ainus kasutajaliides. AI-hüppelaud on üks ühendus, mille sa sellele lisad.", "Your assistant is the only interface. AI Launchpad is one connector you add to it."],
   ["Ettevõtte andmed tulevad avalikest registritest. Küsime ainult seda, mida keegi teine ei tea.", "Company data comes from public registers. We ask only what nobody else knows."],
   ["Tähtajad ja maksud arvutab reeglistik, igaühel ametlik allikas. Tehisaru loeb ja kirjutab mustandeid.", "Deadlines and taxes are calculated by rules, each with an official source. AI reads and drafts."],
-  ["Midagi ei saadeta ega maksta ilma sinu kinnituseta just sellele toimingule. Iga tegevus jätab kviitungi.", "Nothing is sent or paid without your approval of that exact action. Every action leaves a receipt."],
+  ["Sinu assistent teeb palutud töö ja iga tegevus salvestatakse. Soovi korral palu tal enne küsida.", "Your assistant does the job and every action is recorded. Ask it to check with you first whenever you want."],
   ["Smart-ID PIN-koodi, allkirja ja deklaratsiooni esitamise teed sina ise ametlikus kanalis. Meie seda sinu eest ei tee.", "Smart-ID PINs, signatures and filings stay with you, in the official channel. We never do them for you."],
 ]))}
 ${section("Meta mudelid", "Meta's models", `<p>${t("Meta avatud mudel Muse Spark Open liigitab anonüümselt, mida ettevõtjad veel vajavad.", "Meta's open model Muse Spark Open anonymously classifies what businesses still need.")} <a href="/demand">${t("Vaata avatud soove", "See open demand")}</a></p>`)}
@@ -1624,23 +1617,22 @@ export function landingBody(o: { lang: Lang; demo: boolean; rand?: () => number 
   const me = (id: string, value: string) => `<div class="beat beat--me b-${id}-me1"><p class="bubble">${esc(value)}</p></div>`;
   const ai = (id: string, k: string, inner: string) => `<div class="beat beat--ai b-${id}-${k}"><div class="bubble">${inner}</div></div>`;
   const typing = (id: string, k: string) => `<div class="beat beat--typing b-${id}-${k}"><span class="typing"><i></i><i></i><i></i></span></div>`;
-  const approve = t("Kinnita täpselt see", "Approve exactly this"), done = `✓ ${t("Kinnitatud · Saadetud sinu e-postist: demo", "Approved · Sent from your e-mail: demo")}`;
+  const done = `✓ ${t("Saadetud sinu e-postist: demo", "Sent from your e-mail: demo")}`;
   const conversation = (job: LandingCase, index: number) => {
-    const id = job.id, ask = text(job.ask), answer = text(job.answer), approval = job.approval;
+    const id = job.id, ask = text(job.ask), answer = text(job.answer), receipt = job.receipt;
     const chat = [me(id, ask), typing(id, "t1"), ai(id, "ai1", `${rich(job.answer)}${chipLabels(job.chips)}`)];
     const transcript: [string, string][] = [
       [t("Sina", "You"), ask],
       [t("Assistent", "Assistant"), [answer, ...(job.chips ?? []).map(chipText)].join(" · ")],
     ];
-    if (approval) {
-      const title = text(approval.title), amount = fmtEur(approval.amountCents, l);
-      chat.push(`<div class="beat b-${id}-card"><div class="mock-card"><div class="labels mock-state"><span class="mock-wait">${stateChip("waiting", t("Ootab sinu kinnitust", "Waiting for your approval"))}</span><span class="mock-ok">${stateChip("approved", t("Kinnitatud", "Approved"))}</span></div>
-<p class="mock-title">${esc(title)}</p><p class="mock-facts"><span>${esc(approval.client)}</span><b>${esc(amount)}</b></p>
-<div class="mock-btn"><span class="mock-approve">${esc(approve)}</span><span class="mock-done">${esc(done)}</span><span class="mock-tap"></span></div>
+    if (receipt) {
+      const title = text(receipt.title), amount = fmtEur(receipt.amountCents, l);
+      chat.push(`<div class="beat b-${id}-card"><div class="mock-card"><div class="labels mock-state">${stateChip("sent", t("Saadetud: demo", "Sent: demo"))}</div>
+<p class="mock-title">${esc(title)}</p><p class="mock-facts"><span>${esc(receipt.client)}</span><b>${esc(amount)}</b></p>
+<div class="mock-btn"><span class="mock-done">${esc(done)}</span></div>
 </div></div>`);
       transcript.push(
-        [t("Assistent", "Assistant"), `${t("Kinnitus", "Approval")}: ${title} · ${approval.client} · ${amount}. „${approve}”`],
-        [t("Sina", "You"), t("Kinnitatud", "Approved")],
+        [t("Assistent", "Assistant"), `${t("Tulemus salvestatud", "Outcome recorded")}: ${title} · ${receipt.client} · ${amount}.`],
         [t("Assistent", "Assistant"), t("Saadetud sinu e-postist (näidis)", "Sent from your e-mail (sample)")],
       );
     }
@@ -1661,17 +1653,17 @@ export function landingBody(o: { lang: Lang; demo: boolean; rand?: () => number 
     t("Ühenda oma ChatGPT või Claude", "Connect your ChatGPT or Claude"),
     t("Ühenda ka oma raamatupidamine ja e-post — assistent ütleb, milline ühendus sobib", "Connect your accounting software and e-mail too — your assistant tells you which connector fits"),
     t("Küsi: „Mida saad minu kontoritööst ära teha?”", "Ask: “What office work can you take off me?”"),
-    t("Kinnita ühe puudutusega", "Approve with one tap"),
+    t("Vaata salvestatud tulemust", "See the recorded outcome"),
   ];
   const trust = [
-    t("Midagi ei saadeta ilma sinu loata", "Nothing is sent without your permission"),
+    t("Soovi korral palu assistendil enne küsida", "Ask your assistant to check with you first whenever you want"),
     t("Smart-ID ja allkiri jäävad sinu kätte", "Smart-ID and signatures stay with you"),
     t("Maksud ja tähtajad arvutab reeglistik, mitte tehisaru", "Taxes and deadlines are calculated by rules, not AI"),
   ];
   return `<div class="landing">
 <section class="landing-hero" aria-labelledby="hero-h"><div>
 <h1 id="hero-h">${t("Tegele sellega, milles oled hea.", "Focus on what you're good at.")} <span>${t("Kontoritöö teeb sinu AI-assistent.", "Your AI assistant does the office work.")}</span></h1>
-<p class="lede">${esc(t("Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud aitab: ütleb, milliseid ühendusi vaja, küsib enne iga saatmist sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude'iga.", "Your assistant does the office work through your accounting, bank and e-mail connections. AI Launchpad helps: it tells you which connections you need, asks for your approval before anything is sent, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude."))}</p>
+<p class="lede">${esc(t("Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud aitab: ütleb, milliseid ühendusi vaja, salvestab iga tegevuse, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude'iga.", "Your assistant does the office work through your accounting, bank and e-mail connections. AI Launchpad helps: it tells you which connections you need, records every action, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude."))}</p>
 ${startChoices(l)}
 <div class="landing-actions"><a class="tap-link" href="/naidis">${t("Vaata näidist", "See a sample")}</a><a class="tap-link" href="/proovi">${t("Proovi ise", "Try it yourself")}</a></div></div>
 <figure class="teaser" id="landing-phone">
@@ -1760,7 +1752,7 @@ export function tanaBody(o: TanaOpts): string {
     const who = v.recipient.name ? ` · ${esc(v.recipient.name)}` : "";
     if (x.state === "consumed" && v.outcome && ["sent", "paid", "submitted", "accepted", "posted"].includes(v.outcome.outcome)) {
       doneCount++;
-      doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${outcomeChip(v.outcome.outcome, l, o.sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${t("1 sinu kinnitus", "1 approval from you")} · ${timeEl(v.outcome.observed_at ?? x.consumed_at ?? x.created_at, fmtWhen(v.outcome.observed_at ?? x.consumed_at, l, now))}${v.amount ? ` · ${esc(v.amount)}` : ""}</span></div>`);
+      doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${outcomeChip(v.outcome.outcome, l, o.sample)}${labelChip("assistant", t("Assistent teatas", "Your assistant reports"))}</div><span class="small muted">${x.decided_at ? t("1 sinu kinnitus", "1 approval from you") : t("Assistent tegi ära", "Your assistant did it")} · ${timeEl(v.outcome.observed_at ?? x.consumed_at ?? x.created_at, fmtWhen(v.outcome.observed_at ?? x.consumed_at, l, now))}${v.amount ? ` · ${esc(v.amount)}` : ""}</span></div>`);
     } else if (x.state === "approved") {
       doneRows.push(`<div class="row"><a href="/approvals/${esc(encodeURIComponent(x.id))}"><strong>${esc(v.title)}${who}</strong></a><div class="labels">${stateChip("approved", t("Pooleli · ootab assistendi teadet", "In progress · waiting for your assistant's report"))}</div><span class="small muted">${t("Sinu kinnitus", "You approved")} · ${esc(fmtWhen(x.decided_at, l, now))}</span></div>`);
     }
@@ -1949,7 +1941,7 @@ ${COPY_SCRIPT}`;
   // A sample workspace has nothing to set up, so „Käest ära” comes first (QA M2).
   const handover = (o.owner || o.sandbox) && o.handover ? handoverSection(o.handover, l, now, s.kind === "sample") : "", sampleFirst = s.kind === "sample";
   return `<h1>${t("Ühenda oma assistent", "Connect your assistant")}</h1>
-<p class="lede">${t("Sinu ChatGPT, Claude või Grok Bot näeb sinu tähtaegu ja valmistab töid ette. Sina kinnitad ainult selle, mis sind seob.", "Your ChatGPT, Claude or Grok Bot sees your deadlines and prepares work for you. You approve only what binds you.")}</p>
+<p class="lede">${t("Sinu ChatGPT, Claude või Grok Bot näeb sinu tähtaegu ja valmistab töid ette. Iga tegevus salvestatakse. Soovi korral palu assistendil enne küsida.", "Your ChatGPT, Claude or Grok Bot sees your deadlines and prepares work for you. Every action is recorded. Ask your assistant to check with you first whenever you want.")}</p>
 ${sampleFirst ? handover : ""}
 <p class="small">${esc(t("Lihtsaim algus: Claude — töötab ka tasuta paketis.", "Easiest start: Claude — works on the free plan too."))}</p>
 <nav class="choice" aria-label="${t("Vali assistent", "Choose your assistant")}"><a href="/uhenda?a=chatgpt"${o.assistant === "chatgpt" ? ' aria-current="true"' : ""}>ChatGPT</a><a href="/uhenda?a=claude"${o.assistant === "claude" ? ' aria-current="true"' : ""}>Claude</a><a href="/uhenda?a=grok"${o.assistant === "grok" ? ' aria-current="true"' : ""}>Grok Bot</a></nav>
@@ -1966,8 +1958,8 @@ ${grok ? "" : o.expanded ? `<section class="card" id="ise"><h2>${t("Tee ise, ilm
 <li><h3 class="step-title">${t("Vajuta Connect, logi sisse ja kinnita. Kui Claude küsib tööriista luba, vajuta Allow.", "Press Connect, sign in and confirm. If Claude asks for tool permission, press Allow.")}</h3><p class="small muted">`
     : `<li><h3 class="step-title">${t("Kopeeri aadress", "Copy the address")}</h3>${address}</li>
 <li><h3 class="step-title">${t("Ava ChatGPT seadetes ühendused, lisa uus ühendus ja kleebi sinna aadress.", "In ChatGPT settings, open connectors, add a new connector and paste the address.")}</h3></li>
-<li><h3 class="step-title">${t("Logi sisse ja vali, mida assistent tohib", "Sign in and choose what your assistant may do")}</h3><p class="small muted">`}${esc(t(`Märgi „Jah: ${name} valmistab ette …”, kui tahad, et ta valmistaks sulle kinnitamiseks kirju, arveid ja deklaratsioone.`, `Tick “Yes: ${name} prepares …” if you want it to prepare messages, invoices and returns for your approval.`))}</p></li></ol>
-<p class="small">${t("Kui assistent küsib tööriista luba, vali ‚Always allow' — AI-hüppelaud ise ei saada midagi; sind seob ainult kinnitus.", "If your assistant asks for tool permission, choose ‘Always allow’ — AI Launchpad itself sends nothing; only an approval binds you.")}</p></section>` : `<p><a class="tap-link" href="${reveal}#ise">${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</a></p>`}
+<li><h3 class="step-title">${t("Logi sisse ja vali, mida assistent tohib", "Sign in and choose what your assistant may do")}</h3><p class="small muted">`}${esc(t(`Märgi „Jah: ${name} teeb sinu palutud tööd …”, et assistent saaks tööde tulemused kirja panna. Soovi korral palu tal enne küsida.`, `Tick “Yes: ${name} does the jobs you ask for …” so it can record the outcomes. Ask it to check with you first whenever you want.`))}</p></li></ol>
+<p class="small">${t("Kui assistent küsib tööriista luba, vali ‚Always allow' — AI-hüppelaud ise ei saada midagi; assistent teeb sinu palutud töö ja salvestab tulemuse. Soovi korral palu tal enne küsida.", "If your assistant asks for tool permission, choose ‘Always allow’ — AI Launchpad itself sends nothing; your assistant does the job you asked for and records the outcome. Ask it to check with you first whenever you want.")}</p></section>` : `<p><a class="tap-link" href="${reveal}#ise">${t("Tee ise, ilma juhendita", "Do it yourself, without the guide")}</a></p>`}
 ${o.calendar ? calendarSection(l, o.calendar) : ""}
 ${sampleFirst ? "" : handover}
 ${techDetails(l, `${techList([[t("MCP-aadress", "MCP address"), endpoint], [t("Sisselogimine", "Sign-in"), "OAuth 2.1 + PKCE"], [t("Õigused", "Scopes"), "progress:read · progress:report (Jah-linnukesega)"], [t("Kliendi nimi", "Client name"), t("kliendi enda antud, kontrollimata", "supplied by the client, not verified")]])}
@@ -1984,7 +1976,7 @@ const PROGRESS_SUMMARY = new RegExp(`^(.+): (${Object.keys(PROGRESS_VERB).join("
 // --- Tehtud (/activity): finished work in plain verbs; raw log under Tehniline info. ---
 const DONE_VERBS: Record<string, [string, string]> = {
   request_approval: ["Assistent valmistas töö ette ja palus sinu kinnitust", "Your assistant prepared work and asked for your approval"],
-  record_action_outcome: ["Assistent teatas, mis kinnitatud tööga juhtus", "Your assistant reported what happened with approved work"],
+  record_action_outcome: ["Assistent teatas töö tulemuse", "Your assistant reported the outcome"],
   report_progress: ["Assistent teatas töö käigust", "Your assistant reported progress"],
   report_assessment: ["Assistent salvestas oma hinnangu", "Your assistant saved its assessment"],
   report_unmet_need: ["Assistent teatas tööst, mida ta teha ei saanud", "Your assistant reported a job it could not do"],
@@ -2009,7 +2001,8 @@ export function activityBody(opts: { rows: Record<string, string>[]; receipts: R
   const done = opts.rows.flatMap((r) => {
     // A progress row names its job by the assessment's label, as Täna does.
     const progress = r.action === "report_progress" ? PROGRESS_SUMMARY.exec(r.summary ?? "") : null;
-    const verb = progress ? `${t(...PROGRESS_VERB[progress[2]])} ${fx.plain(opts.assessment?.responsibilities.find((x) => x.id === progress[1])?.label ?? progress[1])}` : r.action === "approval_decided" ? (r.outcome === "approved" ? t("Sina kinnitasid", "You approved") : r.outcome === "declined" ? t("Sina keeldusid", "You declined") : null) : DONE_VERBS[r.action] ? t(...DONE_VERBS[r.action]) : null;
+    const loggedAction = approvalOf(r.summary ?? "");
+    const verb = r.action === "record_action_outcome" && loggedAction?.state === "consumed" && !loggedAction.decided_at && isDone(loggedAction) ? t("Assistent tegi ära", "Your assistant did it") : progress ? `${t(...PROGRESS_VERB[progress[2]])} ${fx.plain(opts.assessment?.responsibilities.find((x) => x.id === progress[1])?.label ?? progress[1])}` : r.action === "approval_decided" ? (r.outcome === "approved" ? t("Sina kinnitasid", "You approved") : r.outcome === "declined" ? t("Sina keeldusid", "You declined") : null) : DONE_VERBS[r.action] ? t(...DONE_VERBS[r.action]) : null;
     if (!verb || (r.outcome !== "ok" && r.action !== "approval_decided")) return [];
     const chip = `${r.actor === "assistant" ? labelChip("assistant", t("Assistent teatas", "Your assistant reports")) : r.action === "approval_decided" && r.outcome === "approved" ? labelChip("owner", t("Sinu kinnitus", "You approved")) : ""}`;
     const object = objectOf(r.summary ?? "");

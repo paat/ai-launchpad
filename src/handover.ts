@@ -1,5 +1,5 @@
 // „Käest ära” (#61): the company's back-office jobs, ranked by what needs the owner now.
-// Pure: a job's status comes from stored rows only (pending or done approvals, rule-computed
+// Pure: a job's status comes from stored rows only (pending approvals or recorded outcomes, rule-computed
 // dates, the assistant's latest assessment); who does it is a plain line, not the ranking.
 import { PLAYBOOKS } from "./catalog.js";
 import { CONNECTION_KINDS, isHandled, type Assessment, type ConnectionKind } from "./core.js";
@@ -70,6 +70,7 @@ export const DONE_OUTCOMES = ["sent", "submitted", "paid", "accepted", "posted"]
 const norm = (s: string) => s.trim().toLowerCase();
 const payloadOf = (a: ApprovalRow): { kind?: string; recipient?: { name?: string; address?: string }; amount_cents?: number; summary?: string; document?: { title?: string } } => { try { return JSON.parse(a.payload_json); } catch { return {}; } };
 const outcomeOf = (a: ApprovalRow): string | null => { try { return a.outcome_json ? (JSON.parse(a.outcome_json) as { outcome?: string }).outcome ?? null : null; } catch { return null; } };
+// A recorded outcome counts whether or not the owner opted into approval.
 export const isDone = (a: ApprovalRow) => a.state === "consumed" && DONE_OUTCOMES.includes(outcomeOf(a) ?? "");
 
 /** The rows „Käest ära” resolves its jobs from: the Täna window, the next deadline, and the next annual report even when it is months out (tribunal T-001). */

@@ -32,6 +32,33 @@ const connection = (baseUrl = "https://launchpad.example.com") =>
   connectionBody({ lang: "en", csrf: "csrf-x", baseUrl, reportingEnabled: false, tokens: [], grants: [], candidates: [] });
 const scripts = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
 
+describe("actions recorded without approval", () => {
+  test.each(["en", "et"] as const)("%s: assistant credit, done counts and activity do not invent owner approval", (lang) => {
+    const row = approval({ state: "consumed", decided_at: null, consumed_at: "2026-11-03T09:00:00Z", outcome_json: JSON.stringify({ outcome: "sent", observed_at: "2026-11-03T09:00:00Z", history: [] }) });
+    const credit = lang === "en" ? "Your assistant did it" : "Assistent tegi ära";
+    const card = approvalCardBody({ csrf: "c", a: row, lang, sample: false, now: NOW });
+    expect(card).toContain(credit);
+    expect(card).not.toMatch(/approved|Your approvals|Mida sa kinnitasid|Sinu kinnitusi/i);
+    const today = tana({ lang, approvals: [row] });
+    const done = today.split('id="tegi"')[1].split('</section>')[0];
+    expect(done).toContain(lang === "en" ? "Done for you (1)" : "Assistent tegi (1)");
+    expect(done).toContain(credit);
+    expect(done).not.toMatch(/approval from you|Sinu kinnitus|sinu kinnitus/i);
+    const h = computeHandover({ assessment: null, obligations: [], approvals: [row], now: NOW });
+    expect(h.month.done).toBe(1);
+    expect(h.jobs.find((j) => j.id === "payment-reminder")).toMatchObject({ rung: "done", status: "in_order", evidence: { done: 1 } });
+    const activity = activityBody({ rows: [{ action: "record_action_outcome", actor: "assistant", outcome: "ok", created_at: row.consumed_at!, summary: `Outcome sent for action ${row.id}.` }], receipts: [], exclusions: [], approvals: [row], lang, now: NOW });
+    expect(activity).toContain(credit);
+    expect(activity).not.toMatch(/approved|kinnitatud töö/i);
+    for (const outcome of ["failed", "rejected"]) {
+      const failed = { ...row, outcome_json: JSON.stringify({ outcome, observed_at: row.consumed_at, history: [] }) };
+      const failedCard = approvalCardBody({ csrf: "c", a: failed, lang, sample: false, now: NOW });
+      expect(failedCard).not.toMatch(/Your assistant did it|Your assistant did the work|Assistent tegi ära|Töö tegi assistent|What you approved/);
+      expect(computeHandover({ assessment: null, obligations: [], approvals: [failed], now: NOW }).month.done).toBe(0);
+    }
+  });
+});
+
 describe("shell, locale and login", () => {
   test("owner shell: one segmented nav Täna · Tehtud · Ühendus, logout POST+CSRF, html lang, no external assets", () => {
     const html = shell({ title: "Täna", active: "tana", csrf: "csrf-x", body: "<p>body</p>", sample: true });
@@ -311,24 +338,24 @@ describe("landing and connect", () => {
   test("landing conversations: every case has its scripted ET and EN transcript (#69 step 2b)", () => {
     const expected = {
       et: [
-        ["Kes mulle võlgu on?", `Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${fmtEur(72000, "et")}. Koostasin igale viisaka meeldetuletuse.`],
+        ["Saada tasumata arvete eest meeldetuletused.", `Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${fmtEur(72000, "et")}. Saatsin igale viisaka meeldetuletuse ja salvestasin tulemuse.`],
         ["Kas oktoobri KMD on valmis?", "Raamatupidamise järgi on oktoobris 14 müügi- ja 9 ostuarvet. Andmed on valmis, esitad e-maksuametis ise. Tähtaeg on 20. nov."],
         ["Mis aastaaruandest puudu on?", "Puudu on inventuuri kokkuvõte ja kasumi jaotamise otsus. Muu on raamatupidamises olemas. Allkirjastad e-äriregistris ise. Tähtaeg on 30. juuni."],
         ["Pane mu tähtajad kalendrisse.", "Lisasin 4 tähtaega: TSD 10. nov, KMD 20. nov, TSD 10. dets, KMD 21. dets."],
-        ["Tee Demo Klient OÜ-le arve oktoobri töö eest.", "Koostasin arve tehtud töö põhjal."],
+        ["Tee Demo Klient OÜ-le arve oktoobri töö eest.", "Koostasin arve tehtud töö põhjal, saatsin selle ja salvestasin tulemuse."],
         ["Kes on oktoobris maksnud?", `Pangas on 5 laekumist, 4 sobivad arvetega. Maksmata: Demo Partner OÜ, ${fmtEur(31000, "et")}.`],
         ["Kontrolli Näidis Ehitus OÜ enne pakkumist.", "Registris aktiivne, maksuvõlga pole, eelmise aasta aruanne on esitatud."],
-        ["Korja oktoobri ostuarved kokku.", `Leidsin e-postist 7 ostuarvet, kokku ${fmtEur(118420, "et")}. Lisasin need raamatupidamisse kinnitamata kannetena.`],
+        ["Korja oktoobri ostuarved kokku.", `Leidsin e-postist 7 ostuarvet, kokku ${fmtEur(118420, "et")}. Kirjendasin need raamatupidamises ja salvestasin tulemuse.`],
       ],
       en: [
-        ["Who owes me money?", `Your accounting software shows three invoices overdue, ${fmtEur(72000, "en")} in total. I drafted a polite reminder for each.`],
+        ["Send reminders for my unpaid invoices.", `Your accounting software shows three invoices overdue, ${fmtEur(72000, "en")} in total. I sent a polite reminder for each and recorded the outcome.`],
         ["Is October's VAT return ready?", "Your books show 14 sales and 9 purchase invoices for October. The figures are ready; you file in e-MTA yourself. Due 20 Nov."],
         ["What's missing from the annual report?", "Missing: the stock-take summary and the profit-distribution decision. Everything else is in your books. You sign in the e-Business Register yourself. Due 30 Jun."],
         ["Put my deadlines in my calendar.", "Added 4 deadlines: TSD 10 Nov, VAT 20 Nov, TSD 10 Dec, VAT 21 Dec."],
-        ["Invoice Demo Klient OÜ for October's work.", "I drafted the invoice from the work done."],
+        ["Invoice Demo Klient OÜ for October's work.", "I created the invoice from the work done, sent it and recorded the outcome."],
         ["Who paid in October?", `5 payments arrived; 4 match invoices. Unpaid: Demo Partner OÜ, ${fmtEur(31000, "en")}.`],
         ["Check Näidis Ehitus OÜ before I quote.", "Active in the register, no tax debt, last year's report filed."],
-        ["Collect October's purchase invoices.", `Found 7 purchase invoices in your e-mail, ${fmtEur(118420, "en")} in total. I added them to your books as unconfirmed entries.`],
+        ["Collect October's purchase invoices.", `Found 7 purchase invoices in your e-mail, ${fmtEur(118420, "en")} in total. I posted them in your books and recorded the outcome.`],
       ],
     } as const;
     for (const lang of ["et", "en"] as const) {
@@ -363,9 +390,7 @@ describe("landing and connect", () => {
     for (const id of ids) {
       const beats = ["me1", "t1", "ai1", ...(id === "unpaid" || id === "invoice" ? ["card"] : [])];
       for (const beat of beats) expect(css, `${id}-${beat}`).toContain(`@keyframes lp-${id}-${beat}{`);
-      for (const tap of id === "unpaid" ? ["approve"] : id === "invoice" ? ["approve"] : []) {
-        for (const part of ["out", "in", "tap"]) expect(css, `${id}-${tap}-${part}`).toContain(`@keyframes lp-${id}-${tap}-${part}{`);
-      }
+      expect(css).not.toContain(`@keyframes lp-${id}-approve`);
     }
     expect(css).toContain("#teaser-pause:checked~.teaser-conversation .phone *{animation-play-state:paused!important}");
   });
@@ -383,23 +408,23 @@ describe("landing and connect", () => {
 
   test("landing: the assistant works through vendor connectors; Launchpad adds deadlines, approvals and receipts (#69)", () => {
     const et = landingBody({ lang: "et", demo: false, rand: () => 0 }), en = landingBody({ lang: "en", demo: false, rand: () => 0 });
-    for (const s of ["Tegele sellega, milles oled hea. <span>Kontoritöö teeb sinu AI-assistent.</span>", "Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud aitab: ütleb, milliseid ühendusi vaja, küsib enne iga saatmist sinu kinnitust, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude&#39;iga.",
-      '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "ühendatud: raamatupidamine, e-post, AI-hüppelaud", "Kes mulle võlgu on?", `Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${fmtEur(72000, "et")}. Koostasin igale viisaka meeldetuletuse.`,
-      "Maksemeeldetuletus · 1/3", "Demo Klient OÜ", fmtEur(24000, "et"), "Kinnita täpselt see", "✓ Kinnitatud · Saadetud sinu e-postist: demo",
+    for (const s of ["Tegele sellega, milles oled hea. <span>Kontoritöö teeb sinu AI-assistent.</span>", "Sinu assistent teeb kontoritöö sinu raamatupidamise, panga ja e-posti ühenduste kaudu. AI-hüppelaud aitab: ütleb, milliseid ühendusi vaja, salvestab iga tegevuse, mõõdab, mis on sinu käest ära, ja kogub tagasisidet. Töötab sinu oma ChatGPT või Claude&#39;iga.",
+      '<a class="btn" href="/uhenda">Ühenda oma assistent</a>', '<span class="label-chip label-chip--sample">Näidis</span>', "ühendatud: raamatupidamine, e-post, AI-hüppelaud", "Saada tasumata arvete eest meeldetuletused.", `Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja, kokku ${fmtEur(72000, "et")}. Saatsin igale viisaka meeldetuletuse ja salvestasin tulemuse.`,
+      "Maksemeeldetuletus · 1/3", "Demo Klient OÜ", fmtEur(24000, "et"), "Tulemus salvestatud", "✓ Saadetud sinu e-postist: demo",
       "Raamatupidamise järgi on oktoobris 14 müügi- ja 9 ostuarvet.", "Mõned tööd, mida assistent saab sinult üle võtta", '<p class="job-more">Ja palju muud. Küsi oma assistendilt: <strong>„Mida veel saad minu eest ära teha?”</strong> Ta vaatab üle sinu ettevõtte tähtajad ja ütleb, milliseid töid ta saab sinu eest teha. <a href="/kataloog">Kataloogist</a> leiad ühendused oma programmidele.</p>', '<a href="/kataloog">Kataloogist</a>', "Näited. Raamatupidamise, panga ja e-posti ühendused on nende pakkujate omad. Ärikratti soovitame tungivalt: sellest tulevad sinu ettevõtte registriandmed.",
-      "Kuidas alustada", "Ühenda oma ChatGPT või Claude", "Ühenda ka oma raamatupidamine ja e-post — assistent ütleb, milline ühendus sobib", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Kinnita ühe puudutusega", 'href="/demand"']) expect(et, s).toContain(s);
-    for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Your assistant does the office work through your accounting, bank and e-mail connections. AI Launchpad helps: it tells you which connections you need, asks for your approval before anything is sent, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude.", "Connect your assistant", ">Sample<", "connected: accounting, e-mail, AI Launchpad",
-      "Who owes me money?", `Your accounting software shows three invoices overdue, ${fmtEur(72000, "en")} in total. I drafted a polite reminder for each.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Approve exactly this", "✓ Approved · Sent from your e-mail: demo",
-      "Your books show 14 sales and 9 purchase invoices for October.", "A few jobs your assistant can take off you", '<p class="job-more">And much more. Ask your assistant: <strong>“What else can you take off me?”</strong> It checks your company&#39;s deadlines and tells you which jobs it can do for you. The <a href="/kataloog">catalogue</a> lists connectors for your software.</p>', '<a href="/kataloog">catalogue</a>', "Examples. Accounting, bank and e-mail connectors belong to their providers. We strongly recommend Ärikratt: it supplies your company&#39;s register data.", "How to start", "Connect your accounting software and e-mail too — your assistant tells you which connector fits", "Ask: “What office work can you take off me?”", "Approve with one tap"]) expect(en, s).toContain(s);
+      "Kuidas alustada", "Ühenda oma ChatGPT või Claude", "Ühenda ka oma raamatupidamine ja e-post — assistent ütleb, milline ühendus sobib", "Küsi: „Mida saad minu kontoritööst ära teha?”", "Vaata salvestatud tulemust", 'href="/demand"']) expect(et, s).toContain(s);
+    for (const s of ["Focus on what you're good at. <span>Your AI assistant does the office work.</span>", "Your assistant does the office work through your accounting, bank and e-mail connections. AI Launchpad helps: it tells you which connections you need, records every action, measures what is off your plate and collects feedback. Works with your own ChatGPT or Claude.", "Connect your assistant", ">Sample<", "connected: accounting, e-mail, AI Launchpad",
+      "Send reminders for my unpaid invoices.", `Your accounting software shows three invoices overdue, ${fmtEur(72000, "en")} in total. I sent a polite reminder for each and recorded the outcome.`, "Payment reminder · 1/3", fmtEur(24000, "en"), "Outcome recorded", "✓ Sent from your e-mail: demo",
+      "Your books show 14 sales and 9 purchase invoices for October.", "A few jobs your assistant can take off you", '<p class="job-more">And much more. Ask your assistant: <strong>“What else can you take off me?”</strong> It checks your company&#39;s deadlines and tells you which jobs it can do for you. The <a href="/kataloog">catalogue</a> lists connectors for your software.</p>', '<a href="/kataloog">catalogue</a>', "Examples. Accounting, bank and e-mail connectors belong to their providers. We strongly recommend Ärikratt: it supplies your company&#39;s register data.", "How to start", "Connect your accounting software and e-mail too — your assistant tells you which connector fits", "Ask: “What office work can you take off me?”", "See the recorded outcome"]) expect(en, s).toContain(s);
     expect(et.match(/<ol class="how">.*?<\/ol>/s)![0].match(/<li>/g)).toHaveLength(4);
     expect(shell({ title: "x", active: "none", csrf: "", body: "" })).toContain(".how li>span{min-width:0;overflow-wrap:break-word}");
-    expect(et).toContain("<li>Midagi ei saadeta ilma sinu loata</li><li>Smart-ID ja allkiri jäävad sinu kätte</li><li>Maksud ja tähtajad arvutab reeglistik, mitte tehisaru</li>");
+    expect(et).toContain("<li>Soovi korral palu assistendil enne küsida</li><li>Smart-ID ja allkiri jäävad sinu kätte</li><li>Maksud ja tähtajad arvutab reeglistik, mitte tehisaru</li>");
     for (const gone of ["Kuidas see töötab", "Mis mul sel kuul adminis ees on?", "täpselt see saaja, summa ja dokument", "Muide,"]) expect(et, gone).not.toContain(gone);
     // The animation is decorative (aria-hidden, no focusable element); a visually hidden transcript carries the same conversation.
     expect(et).toContain('<div class="phone" aria-hidden="true">');
     const phone = et.slice(et.indexOf('<div class="phone"'), et.indexOf('<div class="job-detail"'));
     expect(phone).not.toMatch(/<(a|button|input)\b|tabindex/);
-    expect(et).toMatch(/<div class="vh"><p>Näidisvestlus:<\/p><ol><li>Sina: Kes mulle võlgu on\?<\/li><li>Assistent: Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja/);
+    expect(et).toMatch(/<div class="vh"><p>Näidisvestlus:<\/p><ol><li>Sina: Saada tasumata arvete eest meeldetuletused\.<\/li><li>Assistent: Sinu raamatupidamisprogrammi järgi on kolm arvet üle tähtaja/);
     // No search or unsupported saving claim; the only script is the local job switcher.
     for (const html of [et, en]) {
       expect(html.replace('<input type="checkbox" id="teaser-pause" class="vh-input">', "")).not.toMatch(/<form|<input|name="q"|\bsäästa|\bsaves? \d/i);
@@ -408,8 +433,8 @@ describe("landing and connect", () => {
       expect(scripts(html)).not.toMatch(/fetch\(|XMLHttpRequest|sendBeacon|eval\(/);
       expect(html.slice(html.indexOf("</figure>")).replace(/<script>[\s\S]*?<\/script>/g, "").replace(/<svg.*?<\/svg>/gs, "").replace(/<[^>]+>/g, ""), "no figures outside the sample chat").not.toMatch(/\d+\s*(€|%|h\b|tundi|hours)/);
     }
-    // The state chip swaps with the first button (same CSS timing), so the last frame does not contradict itself.
-    expect(et).toContain('<span class="mock-wait"><span class="state-chip state-chip--waiting">Ootab sinu kinnitust</span></span><span class="mock-ok"><span class="state-chip state-chip--approved">Kinnitatud</span></span>');
+    // The sample shows the recorded result, with no approval step.
+    expect(et).toContain('<span class="state-chip state-chip--sent">Saadetud: demo</span>');
   });
 
   test("landing switcher: all 8 title-only buttons own connector details in ET and EN", () => {
@@ -480,8 +505,8 @@ describe("landing and connect", () => {
       expect(chips.match(/<a /g)).toHaveLength(2);
       expect(chips).not.toMatch(/AI-hüppelaud|AI Launchpad|label-chip--rule/);
       expect(detail).toContain(lang === "et"
-        ? '<p class="job-help small muted">AI-hüppelaud aitab: näitab, milliseid ühendusi vaja, küsib sinu kinnitust.</p>'
-        : '<p class="job-help small muted">AI Launchpad helps: shows which connections you need, asks for your approval.</p>');
+        ? '<p class="job-help small muted">AI-hüppelaud aitab: näitab, milliseid ühendusi vaja, salvestab iga tegevuse.</p>'
+        : '<p class="job-help small muted">AI Launchpad helps: shows which connections you need, records every action.</p>');
     });
   }
 
@@ -563,9 +588,9 @@ describe("landing and connect", () => {
     expect(css).toMatch(/#teaser-pause:focus-visible~figcaption \.teaser-pause\{outline:3px/);
   });
 
-  test("landing transcript: the owner approves and allows, the assistant sends (tribunal T-003)", () => {
-    expect(landingBody({ lang: "et", demo: false })).toContain(`<li>Sina: Kinnitatud</li><li>Assistent: Saadetud sinu e-postist (näidis)</li>`);
-    expect(landingBody({ lang: "en", demo: false })).toContain(`<li>You: Approved</li><li>Assistant: Sent from your e-mail (sample)</li>`);
+  test("landing transcript: the assistant sends and records without asking again", () => {
+    expect(landingBody({ lang: "et", demo: false })).toContain(`<li>Assistent: Saadetud sinu e-postist (näidis)</li>`);
+    expect(landingBody({ lang: "en", demo: false })).toContain(`<li>Assistant: Sent from your e-mail (sample)</li>`);
   });
 
   test("landing teaser: the KMD date is the engine's for November 2026 (20.11)", () => {
@@ -595,10 +620,9 @@ describe("landing and connect", () => {
     const css = shell({ title: "x", active: "none", csrf: "", body: "" });
     expect(css).toContain("@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important");
     expect(css).toMatch(/\.beat--typing\{max-height:0;opacity:0\}/);
-    expect(css).toMatch(/\.mock-wait,\.mock-approve\{[^}]*opacity:0;animation-duration:18s;animation-iteration-count:infinite\}/);
-    expect(css).toContain(".mock-ok,.mock-done{animation-duration:18s;animation-iteration-count:infinite}");
+    expect(css).not.toContain(".mock-approve{");
     for (const k of ["me1", "t1", "ai1", "card"]) expect(css, k).toContain(`.b-unpaid-${k}{animation-name:lp-unpaid-${k}}@keyframes lp-unpaid-${k}{`);
-    for (const k of ["approve"]) for (const p of ["out", "in", "tap"]) expect(css, `${k}-${p}`).toContain(`@keyframes lp-unpaid-${k}-${p}{`);
+    expect(css).not.toContain("@keyframes lp-unpaid-approve");
   });
 
   test("connect: one open button, shared guide prompt, QR on public HTTPS, old steps inside #ise when expanded", async () => {
@@ -1047,7 +1071,7 @@ describe("activity and setup", () => {
     expect(html).toContain('class="section timeline"');
     expect(html).toContain("See pole täielik auditilogi");
     const main = html.slice(0, html.indexOf('<details class="tech-details">'));
-    expect(main).toContain("Assistent teatas, mis kinnitatud tööga juhtus");
+    expect(main).toContain("Assistent teatas töö tulemuse");
     expect(main).toContain("Sina kinnitasid");
     expect(main).not.toContain("get_obligations");
     expect(main.replace(/datetime="[^"]*"/g, "")).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}|UTC/);

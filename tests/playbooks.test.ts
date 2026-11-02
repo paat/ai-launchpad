@@ -15,6 +15,19 @@ const ar = () => arikratt(openDb(":memory:"), {});
 const byId = (id: string) => PLAYBOOKS.find((p) => p.id === id)!;
 
 describe("executable job playbooks (#26)", () => {
+  test.each(["payment-reminder", "customer-follow-ups", "invoicing", "books-catch-up", "vat-return-prep", "annual-report"])("%s acts and ends by recording the action", (id) => {
+    const p = byId(id);
+    expect(p.steps.join(" ")).not.toMatch(/get_approval|request_approval|24 hours/);
+    expect(p.steps.at(-1)).toContain("record_action_outcome");
+    for (const step of p.steps.filter((step) => step.includes("record_action_outcome with action"))) {
+      expect(step).toContain("If an opt-in approval was requested, use its approval_id and digest instead of action and playbook_id");
+      expect(step).toContain("Never create a second action record for that attempt");
+    }
+    expect(p.steps.join(" ")).toContain(`playbook_id: "${id}"`);
+    expect(p.steps.join(" ")).toContain(`action kind ${p.approval_kind}`);
+    expect(p.summary + p.done_when).not.toMatch(/until you approve|approved|after.*approv/i);
+  });
+
   test("shape: every field present, deterministic copy, known approval kind", () => {
     expect(PLAYBOOKS.map((p) => p.id)).toEqual(["deadlines-check", "connect-service", "remember-facts", "switch-assistant", "books-catch-up", "payment-reminder", "customer-follow-ups", "invoicing", "vat-return-prep", "annual-report"]);
     for (const p of PLAYBOOKS) {
@@ -44,10 +57,10 @@ describe("executable job playbooks (#26)", () => {
     const remind = byId("payment-reminder").steps.join(" ");
     expect(remind).toContain("Do not cite the statute or interest in the reminder unless the owner asks.");
     expect(remind).not.toMatch(/threaten|viivis/);
-    expect(remind).toMatch(/request_approval with action kind send_message.*get_approval.*record_action_outcome with outcome sent.*Record paid only after a sent outcome, with a NEW report_id.*only if you see the payment/s);
+    expect(remind).toMatch(/action kind send_message.*Send the reminder.*record_action_outcome with action.*outcome sent.*Record paid only after a sent outcome, with a NEW report_id.*only if you see the payment/s);
   });
 
-  test("books-catch-up: drafts first, documents before posting, each month posted under an exact approval", () => {
+  test("books-catch-up: drafts first, documents before posting, each month recorded", () => {
     const p = byId("books-catch-up");
     expect(p).toMatchObject({ approval_kind: "post_entries", triggers: [], source: "https://www.riigiteataja.ee/akt/107012025012?leiaKehtiv=" });
     const all = p.steps.join(" ");
@@ -56,19 +69,19 @@ describe("executable job playbooks (#26)", () => {
     expect(all).toContain("in plain words: the statement they download from their internet bank. Do not name a file format (such as CAMT or XML) unless the owner does first. Use the file only if it lists each payment and the balance at the end of the period; if it does not, or you cannot read it, say what is missing and ask once more.");
     expect(all).toContain("If it can only read");
     expect(all).toContain("never ask for a key with more rights");
-    expect(all).toContain("Use the public register totals in get_obligations only to cross-check it, never as the entry itself. Enter it only under its own post_entries approval");
+    expect(all).toContain("Use the public register totals in get_obligations only to cross-check it, never as the entry itself. Post it as its own post_entries action and record the outcome");
     expect(all).toContain("amount_cents: REQUIRED, the sum of the entries' amounts without signs, in euro cents (453,20 € → 45320)");
-    expect(all).toContain("split a longer month into parts, each with its own approval");
+    expect(all).toContain("split a longer month into parts, each with its own action");
     expect(all).toContain("as a draft (unconfirmed) bank entry");
     expect(all).toContain("never post during this step");
     expect(all).toContain("every connected mailbox, searched by the vendor's name and the amount");
     expect(all).toContain("never from the payment reference");
-    expect(all).toContain("only as an unconfirmed draft. It is confirmed only as a line in that month's post_entries approval");
-    expect(all).toContain("without request_approval (you change nothing, the owner does)");
-    expect(all).toContain("with read-only access the owner enters the list themselves, so request no approval and record nothing");
+    expect(all).toContain("only as an unconfirmed draft. It is confirmed only as a line in that month's post_entries action");
+    expect(all).toContain("without recording an action (you change nothing, the owner does)");
+    expect(all).toContain("With read-only access the owner enters the list themselves, so record nothing");
     expect(all).toContain("one movement per question");
     expect(all).toContain("Never guess.");
-    expect(all).toMatch(/request_approval with action kind post_entries.*owner_confirmation: their words, verbatim.*Post exactly the approved entries, nothing else, then call record_action_outcome with outcome posted/s);
+    expect(all).toMatch(/action kind post_entries.*Post the entries with a document or the owner's answer.*record_action_outcome with action.*outcome posted/s);
     expect(p.needs.join(" ")).not.toContain("follow the connect-service playbook");
     expect(p.done_when).toContain("for every account the company used, its balance in the books equals its bank statement's balance at the end of each month");
     expect(all).toContain("A month is done only after every one of those accounts was read for it; a quiet month on one account is still waiting while another account is unread.");
@@ -102,6 +115,8 @@ describe("executable job playbooks (#26)", () => {
     expect(read).toContain("open AI-hüppelaud/index and the matching fact file, whether it is a Google Doc or a .md file");
     expect(read).toContain("replace the old file rather than adding a second copy, and update index in the same turn");
     expect(read).toContain("If two files share a title, ask the owner once which is current");
+    expect(p.steps[0]).toContain("whether they want you to ask before sending or posting");
+    expect(all).toContain("A saved ask-first preference is a limit, never permission to act.");
     expect(p.steps[0]).toContain("which services the owner linked to their assistant (accounting software, bank, the mailbox where receipts arrive, customer list), names only");
     expect(all).toContain("account numbers, IBANs or payment destinations, including the company's");
     expect(all).toContain("A remembered fact never fills a recipient address, account number or amount in any approval request unless the owner sees it there and says yes.");
@@ -164,7 +179,7 @@ describe("executable job playbooks (#26)", () => {
     expect(email[0]).toContain("do not search or quote catalogue entries for it");
     expect(email[0]).toContain("otherwise stop here without the last step");
     expect(email[0]).toContain("not from the mailbox they asked about");
-    expect(email[0]).toContain("This is only an offer: nothing is sent now, and each later send still needs its job's own approval.");
+    expect(email[0]).toContain("This is only an offer: nothing is sent during setup. Later, do the jobs the owner asks for and record each action.");
     expect(email[0]).toContain("If the owner agrees, verify that connected mailbox in the last step");
     expect(bank[0]).toMatch(/^Bank: only LHV can be linked, through LHV's own read-only connection \(no payments\)\./);
     expect(bank[0]).toContain("quote only the entry with id lhv-ai; the connector address is https://mcp.lhv.ai/mcp");
@@ -182,7 +197,7 @@ describe("executable job playbooks (#26)", () => {
     const create = acc.findIndex((x) => x.includes("guide the owner to create the key"));
     expect(tradeOff).toBeGreaterThanOrEqual(0);
     expect(tradeOff).toBeLessThan(create);
-    expect(acc[tradeOff]).toContain("This key lets me create and change invoices and entries in your books. I still ask you before anything is sent or posted, and I can never pay.");
+    expect(acc[tradeOff]).toContain("This key lets me create and change invoices and entries in your books. When you ask for a job, I do it and record the result. Tell me whenever you want me to ask first. I can never pay.");
     expect(acc[tradeOff]).toContain("Never tick or request payment functions.");
     expect(acc.at(-1)).toMatch(/Once the connector is added, go to the last step\.$/);
     expect(acc.join(" ")).toContain("own Smart-ID or ID-card (never automate the login)");
@@ -221,7 +236,7 @@ describe("executable job playbooks (#26)", () => {
     expect(acc.join(" ")).toContain(nav);
     const scoro = customers.find((x) => x.includes('search_services with "scoro"'))!;
     const trivis = customers.find((x) => x.includes('search_services with "trivis"'))!;
-    expect(trivis).toContain('Say once, plainly: "This connection lets me create and change invoices and entries in your books. I still ask you before anything is sent or posted, and I can never pay."');
+    expect(trivis).toContain('Say once, plainly: "This connection lets me create and change invoices and entries in your books. When you ask for a job, I do it and record the result. Tell me whenever you want me to ask first. I can never pay."');
     expect(trivis).toContain("Never grant or use payment functions.");
     for (const step of [scoro, trivis]) {
       expect(step).toContain(nav);
@@ -233,7 +248,7 @@ describe("executable job playbooks (#26)", () => {
     expect(cust).toContain("nothing needs linking");
     expect(cust).toContain("The owner is responsible for the customer list and controls it, and Launchpad does not keep it.");
     expect(cust).toContain("Do not send a promotional message to a person without their consent, unless it is the existing-customer exception for the owner's own similar products, with an opt-out.");
-    expect(cust).toContain("Any message is sent only through a send_message approval.");
+    expect(cust).toContain("When the owner asks for a message, send it and record a send_message action.");
     expect(customers[0]).toContain("If a connector for the owner's customer tool already answers a read-only question, skip to the last step.");
     expect(cust).toContain("Pipedrive is in this assistant's own connector directory (Claude: Customize → Connectors / Browse; ChatGPT: its apps): offer that, and once it is added, go to the last step.");
     expect(cust).toContain("HubSpot is in this assistant's own connector directory (Claude: Customize → Connectors / Browse; ChatGPT: its apps): offer that, and once it is added, go to the last step.");
@@ -272,7 +287,7 @@ describe("executable job playbooks (#26)", () => {
   test("connect-service: Trivis step states trade-off and refuses payment functions (#120, tribunal T-005)", () => {
     const p = byId("connect-service");
     const trivis = p.steps.find((x) => x.includes('search_services with "trivis"'))!;
-    expect(trivis).toContain('Say once, plainly: "This connection lets me create and change invoices and entries in your books. I still ask you before anything is sent or posted, and I can never pay."');
+    expect(trivis).toContain('Say once, plainly: "This connection lets me create and change invoices and entries in your books. When you ask for a job, I do it and record the result. Tell me whenever you want me to ask first. I can never pay."');
     expect(trivis).toContain("Never grant or use payment functions.");
   });
 
@@ -352,10 +367,10 @@ describe("executable job playbooks (#26)", () => {
     expect(p.verify_with).toContain("With applies \"if\": the owner's e-Business Register submission confirmation.");
   });
 
-  test("approval steps name the full action shape with a concrete recipient", () => {
+  test("action steps name the full action shape with a concrete recipient", () => {
     const recipient: Record<string, string> = { "payment-reminder": "the customer", "customer-follow-ups": "the customer", invoicing: "the buyer", "vat-return-prep": "\"EMTA (e-MTA)\"", "annual-report": "\"Äriregister (e-äriregister)\"", "books-catch-up": "the company and its accounting software" };
     for (const p of PLAYBOOKS.filter((x) => x.approval_kind)) {
-      const step = p.steps.find((x) => x.includes("request_approval with action kind"))!;
+      const step = p.steps.find((x) => x.includes("action kind"))!;
       expect(step, p.id).toContain(`kind ${p.approval_kind}`);
       for (const k of ["recipient.name", "period", "document.title", "document.content", "summary"]) expect(step, `${p.id} ${k}`).toContain(k);
       expect(step, p.id).toContain(recipient[p.id]);
@@ -365,7 +380,7 @@ describe("executable job playbooks (#26)", () => {
 
   test("payment-reminder: amount_cents is required, in euro cents with an example, and the text states the same amount (tribunal T-001)", () => {
     const steps = byId("payment-reminder").steps;
-    const approval = steps.find((x) => x.includes("request_approval with action kind"))!;
+    const approval = steps.find((x) => x.includes("action kind"))!;
     expect(approval).toContain("amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000)");
     expect(steps.find((x) => x.startsWith("Draft"))).toContain("the amount in the text is the same amount you put in amount_cents");
   });
@@ -510,31 +525,18 @@ describe("agent-facing copy over MCP", () => {
     expect(hidden.statements_read_hidden).toContain("statements read in earlier chats are not shown");
   });
 
-  test("send gate: a plain send request asks in chat, then request_approval with owner_confirmation, then the own send tool (phone test 2 Nov)", async () => {
+  test("send gate: owner requests act then record; approvals remain opt-in", async () => {
     const c = await connect(["progress:read"]);
-    // Claude asked "Do you approve?" and sent through Gmail without Launchpad: the gate leads the tool description and the server instructions.
     const tool = (await c.listTools()).tools.find((x) => x.name === "request_approval")!;
     expect(tool.description!.startsWith(SEND_GATE)).toBe(true);
-    for (const w of ["any e-mail or message", "payment reminder", "the owner's own address", "any tool or connector, Gmail, Outlook", "ask for their approval first", "owner_confirmation set to their words", "send or post exactly that content with your own tool only while the approval is approved and usable is not false", "follow its assistant_instruction", "otherwise send nothing", "then call record_action_outcome"]) expect(SEND_GATE, w).toContain(w);
     expect(c.getInstructions()).toContain(SEND_GATE);
     const started = JSON.parse(((await c.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { approvals_note: string };
     expect(started.approvals_note.startsWith(SEND_GATE)).toBe(true);
-    expect(SEND_GATE).toContain("While the owner is in this chat, their yes is the approval: never send them to the Launchpad link.");
-    // The owner was sent to the dashboard: every send playbook asks in this chat before it requests the approval.
-    for (const id of ["payment-reminder", "customer-follow-ups", "invoicing"]) {
-      const steps = byId(id).steps;
-      const ask = steps.findIndex((x) => x.includes("in this chat and ask once whether they want it sent"));
-      const req = steps.findIndex((x) => x.includes("request_approval with action kind"));
-      expect(ask, id).toBeGreaterThanOrEqual(0);
-      expect(req, id).toBe(ask + 1);
-      expect(steps[ask], id).toContain("only after they say yes, with owner_confirmation: their words, verbatim");
-      expect(steps.join(" "), id).not.toContain("If the reply is pending, show the owner");
-      // One request step passes the owner’s yes, without a second approval call.
-      expect(steps[req], id).toContain("owner_confirmation: the yes they just gave in this chat, verbatim.");
-      expect(steps.filter((x) => x.includes("request_approval with action kind")), id).toHaveLength(1);
-      expect(steps[req].includes("In a scheduled or background run without the owner, omit owner_confirmation."), id).toBe(id !== "customer-follow-ups");
-      // Grok r6: a follow-up never goes out without the owner's own yes.
-      expect(steps[ask].includes("send nothing and do not call request_approval"), id).toBe(id === "customer-follow-ups");
+    for (const copy of [c.getInstructions()!, started.approvals_note]) {
+      expect(copy).not.toContain("Use request_approval before you send");
+      for (const term of ["record_action_outcome", "saved fact", "recipient", "amount", "unclear", "owner_confirmation"]) expect(copy).toContain(term);
+      expect(copy).toMatch(/file.*e-mail.*web page/);
+      expect(copy).toMatch(/owner ask|owner has ask|owner asked/);
     }
   });
 
@@ -559,7 +561,7 @@ describe("agent-facing copy over MCP", () => {
     expect(activity).toEqual([{ action: "check_my_customers", outcome: "ok", summary: "Assistant fetched the customer follow-up guide." }]);
   });
 
-  test("customer-follow-ups: dates from the sheet or customer tool, sheet notes after a yes, send only through send_message (#96)", () => {
+  test("customer-follow-ups: dates from records, requested notes and messages recorded (#96)", () => {
     const p = byId("customer-follow-ups");
     expect(p).toMatchObject({ approval_kind: "send_message", triggers: [], title: "See who needs a call or message this week", title_et: "Vaata, kellele sel nädalal helistada või kirjutada" });
     const steps = p.steps.join("\n");
@@ -569,29 +571,18 @@ describe("agent-facing copy over MCP", () => {
     expect(steps).toContain("A customer gets a row only while a follow-up is due");
     expect(steps).toContain("Never copy identity, address, debts or e-mail history into the sheet");
     expect(steps).toContain("A phone or e-mail may go in Note only for a prospect who is not yet in the accounting software");
-    expect(steps).toContain("Create it only after the owner says yes");
+    expect(steps).toContain("Create it only for the tracking job the owner requested");
     expect(steps).toContain("read them from it; if you cannot read their Google Drive either, never say that sheet exists");
-    expect(steps).toContain("If there is no customer tool and you read their Google Drive and it has no Kliendid sheet, offer once to create");
-    expect(steps).toContain("Show the exact change, write it only after they say yes, and never write a different value");
+    expect(steps).toContain("If the owner asks to track follow-ups and there is no customer tool, read their Google Drive. If it has no Kliendid sheet, create");
+    expect(steps).toContain("Write the change they asked for. Ask only for a missing date or note; never invent one.");
     expect(steps).toContain("Never invent or compute a follow-up date yourself");
-    expect(steps).toContain("Ask for the approval in the next step only after they say yes, with owner_confirmation: their words, verbatim.");
-    expect(steps).toMatch(/get_approval[\s\S]*usable is not false[\s\S]*record_action_outcome with outcome sent/);
-    const send = p.steps.find((x) => x.includes("request_approval with action kind send_message"))!;
+    expect(steps).not.toMatch(/get_approval|request_approval/);
+    const send = p.steps.find((x) => x.includes("action kind send_message"))!;
     expect(send).toContain("always omit amount_cents (a follow-up message has no amount)");
-    expect(send).toContain('playbook_id: REQUIRED, "customer-follow-ups"');
-    expect(send).toContain("Each follow-up message is approved one by one.");
-    const callAt = p.steps.findIndex((x) => x.startsWith("For a call, the owner calls."));
-    const messageAt = p.steps.findIndex((x) => x.startsWith("For a message, draft it"));
-    expect(callAt).toBeGreaterThan(p.steps.findIndex((x) => x.includes("Ask the owner which ones to act on")));
-    expect(messageAt).toBe(callAt + 1);
-    expect(p.steps.filter((x) => x.startsWith("For a message: ")).map((x) => x.slice("For a message: ".length))).toEqual([
-      "Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved and usable is not false, send exactly that text to exactly that address with your own tools without asking the owner again; otherwise do not send. Launchpad sends nothing.",
-      "Call record_action_outcome with outcome sent (or failed).",
-    ]);
-    expect(byId("payment-reminder").steps.some((x) => x.startsWith("For a message:"))).toBe(false);
-    expect(send).not.toContain("auto_approved");
-    expect(send).not.toContain("If the reply is auto_approved");
-    expect(steps).toContain("approved one by one");
+    expect(send).toContain('playbook_id: "customer-follow-ups"');
+    expect(send).toContain("Send it with your own e-mail tool");
+    expect(steps).toContain("If they already named the follow-ups to send, do them without asking again.");
+    expect(p.steps.at(-1)).toContain("record_action_outcome with action");
     expect(steps).toContain("without their consent");
     expect(steps).toContain("existing-customer exception only with an opt-out in that message");
     expect(steps).toContain("Launchpad never stores the customer list or customer messages");
@@ -600,18 +591,17 @@ describe("agent-facing copy over MCP", () => {
     expect(p.needs[0]).toContain("folder named AI-hüppelaud in the owner's own Google Drive (My Drive)");
     expect(p.summary).not.toMatch(/CRM|MCP|API/);
     const reminder = byId("payment-reminder").steps;
-    expect(reminder[reminder.findIndex((x) => x.startsWith("Right before sending"))]).toBe("Right before sending, call get_approval. If it is expired, ask the owner once more in this chat and request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) and their new yes as owner_confirmation for the unchanged reminder first. Approvals are valid for 24 hours.");
-    expect(reminder).toContain("Call record_action_outcome with outcome sent (or failed).");
+    expect(reminder.at(-1)).toContain("record_action_outcome with action");
     expect(reminder.join(" ")).toContain("amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000)");
   });
 
-  test("invoicing: drafts in software first, e-invoice question, approval before sending (#120)", async () => {
+  test("invoicing: drafts in software first, e-invoice question, checked figures before sending (#120)", async () => {
     const p = byId("invoicing");
     expect(p).toMatchObject({
       id: "invoicing",
       title: "Send a customer invoice",
       title_et: "Saada kliendile arve",
-      summary: "Your assistant prepares the invoice from your accounting software and sends it after you approve the exact invoice, amount and recipient.",
+      summary: "Your assistant prepares the invoice in your accounting software, sends it and records the result.",
       approval_kind: "send_invoice",
       triggers: [],
       source: "https://www.riigiteataja.ee/akt/516062025001",
@@ -652,7 +642,7 @@ describe("agent-facing copy over MCP", () => {
     expect(SEND_INVOICE_ACT).toContain("total in euro cents equals amount_cents");
     expect(SEND_INVOICE_ACT).toContain("Launchpad sends nothing");
     expect(SEND_INVOICE_ACT).toContain('for an "E-arve" or "E-invoice" title, send it by the accounting software\'s e-invoice delivery');
-    expect(SEND_INVOICE_ACT).toContain("e-mail its PDF to the approved recipient.address");
+    expect(SEND_INVOICE_ACT).toContain("e-mail its PDF to recipient.address");
     expect(SEND_INVOICE_ACT).not.toContain("if that is the buyer's e-invoice address");
     expect(SEND_INVOICE_ACT).not.toContain("e-invoice address");
     expect(SEND_INVOICE_ACT).toContain("already confirmed (a retry after a failed send), do not confirm again");
@@ -661,33 +651,25 @@ describe("agent-facing copy over MCP", () => {
     }
   });
 
-  test("invoicing: pre-approval steps decide channel without acting; act comes after request_approval (#120)", () => {
-    const p = byId("invoicing");
-    const approvalIdx = p.steps.findIndex((s) => s.includes("request_approval"));
-    expect(approvalIdx).toBeGreaterThan(0);
-    const preApproval = p.steps.slice(0, approvalIdx);
-    for (const step of preApproval) {
-      expect(step).not.toMatch(/is delivered|deliver it|send it|e-mail the invoice/i);
-    }
-    const actIdx = p.steps.indexOf(SEND_INVOICE_ACT);
-    expect(actIdx).toBeGreaterThan(approvalIdx);
+  test("invoicing: decide channel and figures before confirming and sending", () => {
+    const steps = byId("invoicing").steps;
+    const actionIdx = steps.findIndex((s) => s.includes("action kind send_invoice"));
+    const actIdx = steps.indexOf(SEND_INVOICE_ACT);
+    expect(actionIdx).toBeGreaterThan(steps.findIndex((s) => s.startsWith("E-invoice:")));
+    expect(actIdx).toBeGreaterThan(actionIdx);
+    expect(steps.at(-1)).toContain("record_action_outcome with action");
   });
 
-  test("invoicing: unsent invoice cleanup offer exists and comes after request_approval (#120, tribunal T-006)", () => {
-    const p = byId("invoicing");
-    const cleanupStep =
-      "If the owner declines, or the approval expires while the draft is still unconfirmed in the software, offer once to delete that unconfirmed draft and delete it only after they say yes. Never delete or invalidate a confirmed invoice. If the send fails after you confirmed the invoice, record failed before the approval expires and tell the owner the invoice is in their books but was not sent. To retry, request a new approval for that same confirmed invoice (same number, lines, total) and send it; never create a new draft for the same sale.";
-    expect(p.steps).toContain(cleanupStep);
-    expect(cleanupStep).toContain("still unconfirmed");
-    expect(cleanupStep).toContain("Never delete or invalidate a confirmed invoice");
-    expect(cleanupStep).toContain("To retry, request a new approval for that same confirmed invoice (same number, lines, total) and send it");
-    expect(cleanupStep).toContain("never create a new draft for the same sale");
-    const cleanupIdx = p.steps.indexOf(cleanupStep);
-    const approvalIdx = p.steps.findIndex((s) => s.includes("request_approval"));
-    expect(approvalIdx).toBeGreaterThan(0);
-    expect(cleanupIdx).toBeGreaterThan(approvalIdx);
-    const recordIdx = p.steps.findIndex((s) => s.includes("record_action_outcome with outcome sent"));
-    expect(cleanupIdx).toBe(recordIdx + 1);
+  test("invoicing: preserve confirmed invoices and retry the same sale", () => {
+    const steps = byId("invoicing").steps;
+    const cleanup = steps.find((s) => s.startsWith("If the owner cancels"))!;
+    expect(cleanup).toContain("still unconfirmed");
+    expect(cleanup).toContain("delete it only after they say yes");
+    expect(cleanup).toContain("Never delete or invalidate a confirmed invoice");
+    expect(cleanup).toContain("To retry, use that same confirmed invoice (same number, lines, total)");
+    expect(cleanup).toContain("never create a new draft for the same sale");
+    expect(steps.at(-1)).toContain("outcome sent (or failed)");
+    expect(steps.at(-1)).toContain("A failed invoice can never become paid");
   });
 
   test("remember_business_facts: owner phrasing finds it, read-only, returns the remember-facts playbook for any scope", async () => {
@@ -724,31 +706,27 @@ describe("agent-facing copy over MCP", () => {
     }
   });
 
-  test("filing playbooks re-check expiry; an expired prepare_filing approval cannot be recorded", async () => {
+  test("opt-in path: an expired prepare_filing approval cannot be recorded", async () => {
     const db = openDb(":memory:");
     const c = await connect(["progress:read", "progress:report"], db);
     const req = body(await c.callTool({ name: "request_approval", arguments: { report_id: "kmd", action: filing } }));
     db.prepare("UPDATE approvals SET state='approved',decided_at=?,expires_at=? WHERE id=?").run(new Date().toISOString(), "2000-01-01T00:00:00.000Z", req.approval_id);
     expect(errText(await c.callTool({ name: "record_action_outcome", arguments: { report_id: "kmd-o", approval_id: req.approval_id, digest: req.digest, outcome: "submitted", observed_at: new Date().toISOString() } })))
       .toBe("This approval expired before an outcome was recorded; request a new approval. Nothing was recorded.");
-    const recheck = "Right before the owner files, call get_approval. If it is expired, request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) for the unchanged figures or draft first. Approvals are valid for 24 hours.";
-    for (const id of ["vat-return-prep", "annual-report"]) expect(byId(id).steps, id).toContain(recheck);
+
   });
 
-  test("annual-report: approval of the period, key figures and signed version is required, acted on only when approved, outcome recorded (tribunal T-003, #36 item 1)", () => {
+  test("annual-report: exact figures and signed version are recorded only after owner submission", () => {
     const p = byId("annual-report");
-    expect(p.steps.join(" ")).not.toMatch(/optional/i);
-    const approval = p.steps.findIndex((x) => x.includes("request_approval with action kind prepare_filing"));
-    // document.content holds at most 4000 characters: it binds the key figures, not the full draft.
-    expect(p.steps[approval]).toContain("period: the financial year");
-    expect(p.steps[approval]).toContain("document.title: the file name or version the owner will sign in the e-Business Register");
-    expect(p.steps[approval]).toContain("document.content: the key figures (revenue, profit and balance-sheet totals) exactly as they appear in the accounting software, not the full draft");
-    expect(JSON.stringify(p)).not.toMatch(/exact (report )?draft|approved draft/);
-    expect(p.steps[approval]).toContain("This approval is REQUIRED before the owner signs or submits.");
+    const action = p.steps.findIndex((x) => x.includes("action kind prepare_filing"));
+    expect(p.steps[action]).toContain("period: the financial year");
+    expect(p.steps[action]).toContain("document.title: the file name or version the owner will sign in the e-Business Register");
+    expect(p.steps[action]).toContain("document.content: the key figures (revenue, profit and balance-sheet totals) exactly as they appear in the accounting software, not the full draft");
     const filing = p.steps.findIndex((x) => x.includes("owner signs and submits the report"));
-    expect(p.steps[filing]).toMatch(/^Act only after get_approval returns approved/);
-    expect(filing).toBeGreaterThan(approval);
-    expect(p.steps[filing + 1]).toBe("When the owner says it is submitted, call record_action_outcome with outcome submitted.");
+    expect(filing).toBeGreaterThan(action);
+    expect(p.steps[filing]).toContain("The authoritative document is the one the owner signs in the e-Business Register");
+    expect(p.steps[filing + 1]).toContain("When the owner says it is submitted, call record_action_outcome with action");
+    expect(p.steps[filing + 1]).toContain("Never record submitted merely because the figures are ready");
     expect(p.done_when).toBe("The owner submitted the report in the e-Business Register and record_action_outcome recorded submitted.");
   });
 
@@ -758,38 +736,38 @@ describe("agent-facing copy over MCP", () => {
       expect(p.summary, p.id).toMatch(/^Your assistant /);
     }
     expect(byId("deadlines-check").steps.join(" ")).toContain("get_obligations");
-    expect(byId("payment-reminder").summary).toContain("Nothing is sent until you approve the exact text, amount and recipient.");
+    expect(byId("payment-reminder").summary).toContain("sends a polite reminder and records the result.");
   });
 
-  test("payment-reminder: re-check expiry and renew before sending; paid only after a sent outcome (#36 items 2–3)", () => {
+  test("payment-reminder: send then record, paid only after observed payment", () => {
     const steps = byId("payment-reminder").steps;
-    const recheck = steps.findIndex((x) => x.startsWith("Right before sending, call get_approval."));
-    expect(steps[recheck]).toBe("Right before sending, call get_approval. If it is expired, ask the owner once more in this chat and request a fresh approval with a NEW report_id (the same report_id returns the expired receipt) and their new yes as owner_confirmation for the unchanged reminder first. Approvals are valid for 24 hours.");
-    const send = steps.findIndex((x) => x.startsWith("Only the live state authorizes a send: if get_approval (or current_state on a request_approval replay) returns approved and usable is not false"));
-    const sent = steps.indexOf("Call record_action_outcome with outcome sent (or failed).");
-    const paid = steps.findIndex((x) => x.startsWith("Record paid only after a sent outcome, with a NEW report_id"));
-    expect(steps.findIndex((x) => x.includes("request_approval"))).toBeLessThan(recheck);
-    expect([recheck < send, send < sent, sent < paid]).toEqual([true, true, true]);
-    expect(steps[paid]).toContain("A failed reminder can never become paid.");
+    const send = steps.findIndex((x) => x.startsWith("Send the reminder"));
+    const record = steps.findIndex((x) => x.startsWith("After sending"));
+    expect(record).toBeGreaterThan(send);
+    expect(steps[record]).toContain("outcome sent (or failed)");
+    expect(steps[record]).toContain("Keep the returned approval_id and digest");
+    expect(steps[record]).toContain("Record paid only after a sent outcome, with a NEW report_id and that approval_id and digest");
+    expect(steps[record]).toContain("only if you see the payment");
+    expect(steps[record]).toContain("A failed reminder can never become paid.");
   });
 
-  test("the expiry re-check only re-checks and renews; recording comes after the owner files (tribunal T-004)", () => {
+  test("filing outcomes follow owner submission, never preparation alone", () => {
     for (const id of ["vat-return-prep", "annual-report"]) {
       const steps = byId(id).steps;
-      const recheck = steps.findIndex((x) => x.startsWith("Right before the owner files"));
       const filing = steps.findIndex((x) => x.includes("never automate the login, signature or submission"));
       const recording = steps.findIndex((x) => x.includes("record_action_outcome"));
-      expect(steps[recheck], id).not.toMatch(/record_action_outcome|[Rr]ecord the outcome/);
-      expect(recheck, id).toBeLessThan(filing);
       expect(recording, id).toBeGreaterThan(filing);
+      expect(steps[recording]).toContain("When the owner says it is submitted");
       expect(steps.filter((x) => x.includes("record_action_outcome")), id).toHaveLength(1);
     }
   });
 
-  test("every expired-approval renewal asks for a NEW report_id (tribunal T-002)", () => {
-    const renewals = PLAYBOOKS.flatMap((p) => p.steps.filter((x) => /expired/.test(x)).map((x) => [p.id, x] as const));
-    expect(renewals.map(([id]) => id)).toEqual(["payment-reminder", "customer-follow-ups", "invoicing", "vat-return-prep", "annual-report"]);
-    for (const [id, x] of renewals) expect(x, id).toContain("request a fresh approval with a NEW report_id (the same report_id returns the expired receipt)");
+  test("each action log step names idempotency and observation fields", () => {
+    for (const p of PLAYBOOKS.filter((p) => p.approval_kind)) {
+      const steps = p.steps.join(" ");
+      expect(steps, p.id).toContain("report_id");
+      expect(steps, p.id).toContain("observed_at");
+    }
   });
   const body = (r: unknown) => JSON.parse((r as { content: { text: string }[] }).content[0].text);
   const errText = (r: unknown) => { const x = r as { isError?: boolean; content: { text: string }[] }; expect(x.isError).toBe(true); return x.content[0].text; };
@@ -803,7 +781,7 @@ describe("agent-facing copy over MCP", () => {
     expect(r.first_step).toContain(OWNER_VOICE);
     expect(r.playbooks).toEqual(JSON.parse(JSON.stringify(PLAYBOOKS)));
     expect(r.tools).toContain("remember_business_facts");
-    expect(r.note).toContain("the exact text of each approval request until the owner deletes their progress");
+    expect(r.note).toContain("the exact action text and outcomes, including any approval request, until the owner deletes their progress");
     expect(r.note).toContain("de-identified text of unmet needs");
     expect(r.note).toContain("It stores no conversations.");
     expect(r.note).toContain("Reporting never approves business actions.");

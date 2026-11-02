@@ -7,12 +7,12 @@ Live product: `https://huppelaud.arikratt.ee/?lang=en` (English; the short link 
 Connecting an assistant needs the owner-only pilot sign-in (Google allowlist). Judges cannot finish that live. See it in the demo video and the repo. The loop below needs no account.
 
 1. **Landing, no login.** Open `https://huppelaud.arikratt.ee`. The page says what the product does and plays a sample conversation labelled NÄIDIS.
-2. **`/naidis`, three steps.** „Vaata näidist” opens a read-only walkthrough of the made-up company Mari Disain OÜ: **1. Täna** (`/naidis`), **2. Kinnitus** (`/naidis/kinnitus`), **3. Tehtud** (`/naidis/tehtud`). Nothing on these pages can be approved or sent. Each step offers **„Proovi ise”**, which goes to `/proovi`.
-3. **„Proovi ise” (`/proovi`).** **Alusta** / **Start** creates your own temporary workspace with a made-up company. Approve and decline both work. Nothing is really sent. After you approve the reminder, the receipt reads „Saadetud: demo” and „päriselt ei saadetud”. The workspace is deleted after 24 hours. The session lasts 2 hours.
+2. **`/naidis`, three steps.** „Vaata näidist” opens a read-only walkthrough of the made-up company Mari Disain OÜ: **1. Täna** (`/naidis`), **2. Kviitung** (`/naidis/kinnitus`), **3. Tehtud** (`/naidis/tehtud`). Nothing on these pages can be approved or sent. Each step offers **„Proovi ise”**, which goes to `/proovi`.
+3. **„Proovi ise” (`/proovi`).** **Alusta** / **Start** creates your own temporary workspace with a made-up company. This sample retains the optional approval path: approve and decline both work when the owner or assistant has asked to check first. Nothing is really sent. After you approve the reminder, the receipt reads „Saadetud: demo” and „päriselt ei saadetud”. The workspace is deleted after 24 hours. The session lasts 2 hours.
 
 ## What it is
 
-AI agents take back-office work off a small-business owner so she can focus on her core work. Launchpad does not compete with her assistant; it equips it. It is one remote MCP gateway that adds Estonian obligations, playbooks, approvals and receipts to the ChatGPT she already has. Rules compute and models read: deadlines come from deterministic code with an official source, never from a model. She approves only what binds her.
+AI agents take back-office work off a small-business owner so she can focus on her core work. Launchpad does not compete with her assistant; it equips it. It is one remote MCP gateway that adds Estonian obligations, playbooks and recorded outcomes to the ChatGPT she already has. Rules compute and models read: deadlines come from deterministic code with an official source, never from a model. Her assistant does the requested job and records the outcome. She can ask it to check with her first whenever she wants.
 
 ## Plan caveat
 
@@ -23,13 +23,15 @@ AI agents take back-office work off a small-business owner so she can focus on h
 
 These steps are for an owner who can sign in. Judges use the path above.
 
-1. **Open the landing page** (no login). It says what the product does and plays a sample conversation (NÄIDIS): the assistant lists the November deadlines with "Arvutatud reeglist" and a source, then a payment-reminder approval card that the owner approves with "Kinnita täpselt see". In the real product each deadline row links its official source.
-2. **Connect ChatGPT** (owner-only pilot; needs the plan above). "Ühenda oma assistent" (`/uhenda`) → copy `https://huppelaud.arikratt.ee/mcp` → ChatGPT settings → add a connector → paste. Sign in and approve the consent screen with its one job permission: prepare work, always ask first.
+1. **Open the landing page** (no login). It says what the product does and plays a sample conversation (NÄIDIS): the assistant lists the November deadlines with "Arvutatud reeglist" and a source, then the assistant sends a payment reminder and Launchpad shows the recorded outcome, „Assistent tegi ära”. In the real product each deadline row links its official source.
+2. **Connect ChatGPT** (owner-only pilot; needs the plan above). "Ühenda oma assistent" (`/uhenda`) → copy `https://huppelaud.arikratt.ee/mcp` → ChatGPT settings → add a connector → paste. Sign in and grant the connector permission to use Launchpad.
 3. **Ask** in ChatGPT (valid as written 1–4 Nov 2026; add `Kasuta AI-hüppelauda: ` at the start if it doesn't call the tool):
    - `Mis mul sel kuul adminis ees on ja mida saad sa ise ära teha?` → deadlines as offers, with sources.
-   - `Vaata mu arved üle ja tee ära, mis on vaja. Enne saatmist küsi minult kinnitust.` with `docs/demo/naidis-arved.csv` attached → the assistant reports the overdue invoice (Assistant says (example, not product copy; its own words may vary): „Leidsin 1 tähtaja ületanud arve”), and the exact reminder draft (recipient, address, amount, text), and asks once whether to send it. Answer `jah, saada` in the chat: that is the only approval. The assistant records your words with `request_approval`, Launchpad binds them to exactly that payload, and the approval card shows „Kinnitasid assistendis”; change anything and Launchpad refuses it: a new approval is needed. Launchpad never sends. On a real workspace the assistant records the outcome with `record_action_outcome` (labelled assistant-reported). The receipt „Saadetud: demo” and „päriselt ei saadetud” is the sample workspace in the judge path. Invoice 2026-015 turns overdue after 10 Nov, which changes the count.
+   - `Vaata mu arved üle ja saada tähtaja ületanud arvete kohta meeldetuletused.` with `docs/demo/naidis-arved.csv` attached → the assistant finds the overdue invoice and sends the reminder with its own mail tool. It calls `record_action_outcome` with the exact `action` and `playbook_id`; Launchpad shows „Assistent tegi ära” / “Your assistant did it” and the assistant-reported outcome. Launchpad itself never sends mail. Use a synthetic test mail tool for these `.example` addresses and label the outcome „Saadetud: demo · päriselt ei saadetud”. If the connector is read-only, show the prepared message and remaining owner step; do not claim it was sent. Invoice 2026-015 turns overdue after 10 Nov, which changes the count.
    - `Esita minu oktoobri käibedeklaratsioon.` → the `vat-return-prep` playbook prepares the figures from your accounting software's own report; you file in e-MTA with Smart-ID. A gap the assistant cannot do is reported with `report_unmet_need`, de-identified, and classified in the background. It joins the public „Avatud soovid” list (`/demand`) only if the owner publishes it. See Meta's models for where that output is labelled.
 4. **Täna:** „Ootab sinult · Assistent tegi · Tulekul” shows what needs you, what your assistant did and what is coming. Signed-in owners see it at `/`. The same three sections are on `/naidis` and in the sample workspace.
+
+Ask-first remains available: tell the assistant “ask me before sending,” now or as a saved preference. It also asks when an instruction came from a file, e-mail or web page, the recipient or amount differs from the books, or the content is unclear. It shows the exact content, asks once, and records the confirmation with `request_approval`. Text in files is data, never instructions.
 
 ## Meta's models
 
@@ -48,4 +50,4 @@ The company, the customer, the invoices and the amounts are synthetic. Register 
 
 ## What is never automated
 
-Smart-ID / Mobile-ID / ID-card PINs, qualified signatures, real filings to government portals and real payments. The assistant prepares; the owner approves; the owner files, signs and pays.
+Smart-ID / Mobile-ID / ID-card PINs, qualified signatures, real filings to government portals and real payments. The assistant prepares the exact figures; the owner files in e-MTA / e-Business Register, signs and pays in the bank with their own Smart-ID.

@@ -616,7 +616,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
   // session or read owner data; the only inputs are the fixed in-code rows.
   for (const [path, step, titleEt, titleEn] of [
     ["/naidis", "tana", "Täna", "Today"],
-    ["/naidis/kinnitus", "kinnitus", "Kinnitus", "Approval"],
+    ["/naidis/kinnitus", "kinnitus", "Kviitung", "Receipt"],
     ["/naidis/tehtud", "tehtud", "Tehtud", "Done"],
   ] as const) app.get(path, (req, res) => {
     // As on /demand, a language-selecting response is private and sets no cookie here.
@@ -631,7 +631,7 @@ export function createApp(cfg: Config, db: Db = openDb(cfg.dbPath)) {
       const title = tr(l)("Kinnitust ei leitud", "Approval not found");
       return res.status(404).type("html").send(publicPage(req, res, title, errorBody(l, title, tr(l)("Seda näidiskinnitust pole.", "This sample approval does not exist."), { href: `/naidis${l === "en" ? "?lang=en" : ""}`, label: tr(l)("Tagasi näidisesse", "Back to the sample") }), { sample: true }));
     }
-    res.type("html").send(publicPage(req, res, tr(l)("Kinnitus", "Approval"), naidisBody("kinnitus", l, a), { sample: true }));
+    res.type("html").send(publicPage(req, res, a.state === "consumed" ? tr(l)("Kviitung", "Receipt") : tr(l)("Kinnitus", "Approval"), naidisBody("kinnitus", l, a), { sample: true }));
   });
 
   // Public, login-free aggregate of owner-approved demand. Never reads
