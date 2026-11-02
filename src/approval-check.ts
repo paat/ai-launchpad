@@ -84,7 +84,9 @@ export function tidyModelCheck(text: string): string {
   };
   const r = { ...(o as Record<string, unknown>) };
   for (const k of ["summary_et", "summary_en"]) if (k in r) r[k] = line(r[k], 200);
-  for (const k of ["concerns_et", "concerns_en"]) if (Array.isArray(r[k])) r[k] = (r[k] as unknown[]).slice(0, 3).map((v) => line(v, 160));
+  // Cut to three only when both languages agree on the count; a mismatch stays invalid.
+  const cut = Array.isArray(r.concerns_et) && Array.isArray(r.concerns_en) && r.concerns_et.length === r.concerns_en.length ? 3 : undefined;
+  for (const k of ["concerns_et", "concerns_en"]) if (Array.isArray(r[k])) r[k] = (r[k] as unknown[]).slice(0, cut).map((v) => line(v, 160));
   return JSON.stringify(r);
 }
 

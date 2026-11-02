@@ -84,7 +84,8 @@ describe("approval check schema and samples", () => {
     const long = tidy({ ...review, summary_et: `${"a".repeat(250)}`, summary_en: "First\nsecond", concerns_et: ["x\ty", "b".repeat(200), "c", "d"], concerns_en: ["1", "2", "3", "4"] });
     expect(long).toMatchObject({ ok: true, value: { summary_et: `${"a".repeat(199)}…`, summary_en: "First second",
       concerns_et: ["x y", `${"b".repeat(159)}…`, "c"], concerns_en: ["1", "2", "3"] } });
-    for (const bad of [{ ...ok, extra: true }, { ...ok, verdict: "pass" }, { ...review, concerns_en: [] }, { ...ok, concerns_et: ["x"], concerns_en: ["x"] }, { ...ok, summary_en: " " }])
+    for (const bad of [{ ...ok, extra: true }, { ...ok, verdict: "pass" }, { ...review, concerns_en: [] }, { ...ok, concerns_et: ["x"], concerns_en: ["x"] }, { ...ok, summary_en: " " },
+      { ...review, concerns_et: ["a", "b", "c", "d"], concerns_en: ["a", "b", "c"] }, { ...review, concerns_et: ["a", "b", "c", "d"], concerns_en: ["a", "b", "c", "d", "e"] }])
       expect(tidy(bad, true)).toEqual({ ok: false, reason: "invalid_output" });
     expect(tidyModelCheck("Here is the JSON: {}")).toBe("Here is the JSON: {}");
   });
