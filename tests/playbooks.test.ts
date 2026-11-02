@@ -348,7 +348,7 @@ describe("executable job playbooks (#26)", () => {
 
   test("payment-reminder: amount_cents is required, in euro cents with an example, and the text states the same amount (tribunal T-001)", () => {
     const steps = byId("payment-reminder").steps;
-    const approval = steps.find((x) => x.includes("request_approval"))!;
+    const approval = steps.find((x) => x.includes("request_approval with action kind"))!;
     expect(approval).toContain("amount_cents: REQUIRED, the overdue amount in euro cents, exactly as on the invoice (e.g. 240,00 € → 24000)");
     expect(steps.find((x) => x.startsWith("Draft"))).toContain("the amount in the text is the same amount you put in amount_cents");
   });
@@ -498,7 +498,7 @@ describe("agent-facing copy over MCP", () => {
     // Claude asked "Do you approve?" and sent through Gmail without Launchpad: the gate leads the tool description and the server instructions.
     const tool = (await c.listTools()).tools.find((x) => x.name === "request_approval")!;
     expect(tool.description!.startsWith(SEND_GATE)).toBe(true);
-    for (const w of ["any e-mail or message", "payment reminder", "the owner's own address", "any tool or connector, Gmail, Outlook", "ask for their approval first", "owner_confirmation set to their words", "Muse's concerns in one line and go on only if they still want it", "if it is running, call get_approval once", "then send or post with your own tool", "then call record_action_outcome"]) expect(SEND_GATE, w).toContain(w);
+    for (const w of ["any e-mail or message", "payment reminder", "the owner's own address", "any tool or connector, Gmail, Outlook", "ask for their approval first", "owner_confirmation set to their words", "send or post exactly that content with your own tool only while the approval is approved and usable is not false", "follow its assistant_instruction", "Muse's concerns in one line and go on only if they still want it", "otherwise send nothing", "then call record_action_outcome"]) expect(SEND_GATE, w).toContain(w);
     expect(c.getInstructions()).toContain(SEND_GATE);
     const started = JSON.parse(((await c.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { approvals_note: string };
     expect(started.approvals_note.startsWith(SEND_GATE)).toBe(true);
@@ -512,6 +512,10 @@ describe("agent-facing copy over MCP", () => {
       expect(req, id).toBe(ask + 1);
       expect(steps[req], id).toContain("owner_confirmation: the owner's yes");
       expect(steps.join(" "), id).not.toContain("If the reply is pending, show the owner");
+      // Grok r2: the standing-rule probe is its own step before the ask, never folded into the confirmed request.
+      expect(steps[req], id).not.toContain("without owner_confirmation");
+      const standing = steps.findIndex((x) => x.startsWith("Only if the owner told you they set a standing approval"));
+      expect(standing, id).toBe(id === "customer-follow-ups" ? -1 : ask - 1);
     }
   });
 
