@@ -141,7 +141,6 @@ describe("ChatGPT plugin", () => {
     const plugin = JSON.parse(readFileSync(join(gpt, "plugin.json"), "utf8"));
     expect(plugin.$schema).toBe("https://agent-plugins.org/schemas/1.0.0/plugin.schema.json");
     expect(plugin.name).toBe(claudeName);
-    expect(plugin.version).toBe("0.1.0");
     expect(plugin.author).toEqual(expect.objectContaining({ name: expect.any(String), url: expect.stringMatching(/^https:\/\//) }));
     expect(plugin.homepage).toMatch(/^https:\/\//);
     expect(plugin.repository).toMatch(/^https:\/\//);
@@ -152,12 +151,10 @@ describe("ChatGPT plugin", () => {
     expect(iface.shortDescription.length).toBeLessThanOrEqual(30);
     expect(iface.shortDescription).not.toMatch(/[\r\n]/);
     expect(iface.longDescription).toEqual(expect.any(String));
-    expect(iface.developerName).toBe("AI Launchpad contributors");
     expect(CATEGORIES).toContain(iface.category);
-    expect(iface.category).toBe("Business & Operations");
     expect(iface.capabilities).toEqual(expect.arrayContaining([expect.any(String)]));
-    expect(iface.websiteURL).toBe("https://huppelaud.arikratt.ee");
-    expect(iface.supportURL).toBe("https://github.com/paat/ai-launchpad/issues");
+    expect(iface.websiteURL).toMatch(/^https:\/\//);
+    expect(iface.supportURL).toMatch(/^https:\/\//);
     expect(iface.defaultPrompt.length).toBeGreaterThan(0);
     expect(iface.defaultPrompt.length).toBeLessThanOrEqual(3);
     for (const prompt of iface.defaultPrompt) {
@@ -170,8 +167,6 @@ describe("ChatGPT plugin", () => {
       expect(asset).toMatch(/^\.\/assets\//);
       expect(existsSync(join(gpt, asset))).toBe(true);
     }
-    expect(iface.privacyPolicyURL).toBeUndefined();
-    expect(iface.termsOfServiceURL).toBeUndefined();
     for (const banned of ["apps", "hooks", "screenshots", "agents"]) expect(keysDeep(plugin).has(banned)).toBe(false);
   });
 

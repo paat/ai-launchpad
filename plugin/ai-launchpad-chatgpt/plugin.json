@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ai-launchpad",
   "version": "0.1.0",
-  "description": "Back-office help for an Estonian small business, inside the assistant you already use. It looks up public company facts, lists deadlines, and walks you through linking accounting, e-mail or your bank. You sign in yourself. Nothing is sent, paid or filed until you approve that exact content.",
+  "description": "Back-office help for an Estonian small business, inside the assistant you already use. It looks up public company facts, lists deadlines, and walks you through linking accounting, e-mail or your bank. You sign in yourself. Your assistant does the jobs you ask for and records each one. You make payments and official filings yourself.",
   "author": {
     "name": "AI Launchpad contributors",
     "url": "https://github.com/paat/ai-launchpad"
@@ -16,13 +16,13 @@
       "interface": {
         "displayName": "AI Launchpad",
         "shortDescription": "Company admin in plain words",
-        "longDescription": "AI Launchpad helps an Estonian small business with everyday admin, inside the assistant you already use. It looks up public company facts, lists your deadlines, and walks you through linking your accounting, e-mail or bank. You do every sign-in yourself. Nothing is sent, paid or filed until you approve that exact content.",
+        "longDescription": "AI Launchpad helps an Estonian small business with everyday admin, inside the assistant you already use. It looks up public company facts, lists your deadlines, and walks you through linking your accounting, e-mail or bank. You do every sign-in yourself. Your assistant does the jobs you ask for and records each one. You make payments and official filings yourself.",
         "developerName": "AI Launchpad contributors",
         "category": "Business & Operations",
         "capabilities": [
           "Deadlines from public company facts",
           "Plain-words help linking accounting, e-mail and bank",
-          "You approve the exact text before anything is sent, paid or filed"
+          "Records every action it takes for you"
         ],
         "websiteURL": "https://huppelaud.arikratt.ee",
         "supportURL": "https://github.com/paat/ai-launchpad/issues",
