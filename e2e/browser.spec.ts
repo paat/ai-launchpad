@@ -18,12 +18,15 @@ for (const width of [390, 320]) {
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator("html")).toHaveAttribute("lang", "et");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Sinult on täna vaja|^Täna pole sinult midagi vaja/);
-    await expect(page.locator("main h2").nth(0)).toHaveText(/^Ootab sinult/);
-    await expect(page.locator("main h2").nth(1)).toHaveText(/^Assistent tegi/);
-    await expect(page.locator("main h2").nth(2)).toHaveText(/^Tulekul/);
+    await expect(page.locator("main h2").nth(0)).toHaveText(/^Assistent vajab sinult/);
+    await expect(page.locator("main h2").nth(1)).toHaveText(/^Kontoritöö/);
+    await expect(page.locator("main h2").nth(2)).toHaveText(/^Assistent tegi/);
+    await expect(page.locator("main h2").nth(3)).toHaveText(/^Kõik tähtajad/);
     await expect(page.getByText("Lase assistendil tasumata arvetele meeldetuletused koostada", { exact: false }).first()).toBeVisible();
     await expect(page.locator(".sample-bar .label-chip--sample")).toHaveText("Näidis");
-    await expect(page.getByText("Lisaks teeb raamatupidaja: KMD ettevalmistus (assistendi hinnang).")).toBeVisible();
+    // Kontoritöö names who does the KMD; the same line also sits in the folded „Assistent tegi”.
+    await expect(page.locator("#kaest-ara")).toContainText("Teeb raamatupidaja");
+    await expect(page.getByText("Lisaks teeb raamatupidaja: KMD ettevalmistus (assistendi hinnang).")).toBeAttached();
     // No horizontal overflow at phone widths.
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
@@ -68,7 +71,7 @@ test("second synthetic business has a different next action; English on request"
   await expect(page.getByText("Taasta raamatupidamise ühendus").first()).toBeVisible();
   await page.getByRole("link", { name: /^EN/ }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
-  await expect(page.locator("main h2").nth(0)).toHaveText(/^Needs you/);
+  await expect(page.locator("main h2").nth(0)).toHaveText(/^What your assistant needs from you/);
   // The choice persists in the lang cookie.
   await page.goto("/activity");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Done");

@@ -343,40 +343,35 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement.value), "decline", "1280: then decline");
   geometry.longApprove1280 = longApprove;
 
-  // --- T3 Täna: hero and the first ask card in the first phone viewport, one page ≤ 1 900 px, two columns on desktop ---
+  // --- Täna leads with „Assistent vajab sinult”, then Kontoritöö; done work and deadlines fold away ---
   await page.setViewportSize({ width: 390, height: 844 });
   await page.setContent(pageHtml["tana-demo"]());
   await settle();
   const tana390 = await page.evaluate(() => {
     window.scrollTo(0, 0);
     const box = (el) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), h: Math.round(r.height) }; };
-    const amber = [...document.querySelectorAll("main *")].filter((el) => { const cs = getComputedStyle(el); return [cs.backgroundColor, cs.borderTopColor].some((c) => c === "rgb(255, 244, 214)" || c === "rgb(240, 195, 107)"); }).map((el) => el.className);
-    return { strip: box(document.querySelector(".ho-strip")), hero: box(document.querySelector("main .hero")), ask: box(document.querySelector("#ootab .ask")), askTitle: box(document.querySelector("#ootab .ask .ask-title")), height: document.documentElement.scrollHeight,
+    const amber = [...document.querySelectorAll("main *")].filter((el) => { const cs = getComputedStyle(el); return [cs.backgroundColor, cs.borderTopColor, cs.borderLeftColor].some((c) => c === "rgb(255, 244, 214)" || c === "rgb(240, 195, 107)"); }).map((el) => el.className);
+    return { hero: box(document.querySelector("main .hero")), askTitle: box(document.querySelector("#ootab .ask .ask-title")), ho: box(document.querySelector("#kaest-ara")), ootab: box(document.querySelector("#ootab")), height: document.documentElement.scrollHeight,
       summaries: [...document.querySelectorAll("summary")].map((el) => Math.round(el.getBoundingClientRect().height)), amber,
       headings: [...document.querySelectorAll("main h2")].map((h) => h.textContent) };
   });
   await page.screenshot({ path: path.join(T2_SHOTS, "t3-tana-390-fold.png") });
   await page.screenshot({ path: path.join(T2_SHOTS, "t3-tana-390-full.png"), fullPage: true });
-  // T5 (#61) adds the „Käest ära” strip under the pills, so the first ask card now starts in the first viewport with its
-  // label and title readable; its body continues below the fold.
-  assert.ok(tana390.askTitle.bottom <= 844, `tana-demo@390: first ask card's label and title within 844 px ${JSON.stringify(tana390)}`);
-  // Plan §3 T3 asks ≤ 1 900 px; the prototype itself is 2 502 px at 390 and this page was 3 554 px before T3. Guard the gain.
-  // T5's strip is new content in the hero; the rest of the page is held to T3's bound.
-  assert.ok(tana390.height - tana390.strip.h <= 2650, `tana-demo@390: page without the T5 strip ≤ 2650 px (${tana390.height} - ${tana390.strip.h})`);
+  assert.ok(tana390.askTitle.bottom <= 844, `tana-demo@390: first ask's title within 844 px ${JSON.stringify(tana390)}`);
+  assert.ok(tana390.ootab.bottom <= tana390.ho.top, `tana-demo@390: what the assistant needs comes before Kontoritöö ${JSON.stringify(tana390)}`);
   assert.ok(tana390.summaries.every((h) => h >= 44), `tana-demo@390: every summary ≥ 44 px ${tana390.summaries}`);
-  assert.deepEqual([...new Set(tana390.amber)].sort(), ["needs", "state-chip state-chip--waiting"], "amber only on what needs the owner");
-  assert.deepEqual(tana390.headings.slice(0, 3), ["Ootab sinult (2)", "Assistent tegi (1)", "Tulekul (2)"], "h2 counts stay as text");
+  assert.deepEqual([...new Set(tana390.amber)].sort(), ["section needs", "state-chip state-chip--waiting"], "amber only on what needs the owner");
+  assert.deepEqual(tana390.headings.slice(0, 2), ["Assistent vajab sinult", "Kontoritöö"], "needs first, then Kontoritöö");
   geometry.tana390 = tana390;
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.setContent(pageHtml["tana-demo"]());
   await settle();
   const tana1280 = await page.evaluate(() => {
-    window.scrollTo(0, 0);
-    const r = (s) => document.querySelector(s).getBoundingClientRect();
-    const de = document.documentElement;
-    return { ootabLeft: Math.round(r("#ootab").left), tegiLeft: Math.round(r("#tegi").left), tulekulLeft: Math.round(r("#tulekul").left), ootabTop: Math.round(r("#ootab").top), tulekulTop: Math.round(r("#tulekul").top), scrollW: de.scrollWidth, clientW: de.clientWidth };
+    const r = (s) => document.querySelector(s).getBoundingClientRect(), de = document.documentElement;
+    const cols = [...document.querySelectorAll("#kaest-ara .ho-grid > *")].map((el) => Math.round(el.getBoundingClientRect().left));
+    return { cols, wrapW: Math.round(r("main").width), scrollW: de.scrollWidth, clientW: de.clientWidth };
   });
-  assert.ok(tana1280.tulekulLeft > tana1280.ootabLeft + 300 && tana1280.ootabTop === tana1280.tulekulTop && tana1280.tegiLeft === tana1280.ootabLeft, `tana-demo@1280: Ootab + Tegi | Tulekul ${JSON.stringify(tana1280)}`);
+  assert.ok(tana1280.wrapW > 900, `tana-demo@1280: Täna uses the wide page ${JSON.stringify(tana1280)}`);
   assert.ok(tana1280.scrollW <= tana1280.clientW + 1, "tana-demo@1280: no h-overflow");
   const g1280 = await overflowAndTargets(true);
   assert.deepEqual(g1280.targets.filter((t) => t.h < 44), [], "tana-demo@1280: targets >= 44px");
@@ -388,16 +383,7 @@ try {
   const longLabel = await page.evaluate(() => ({ scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth, label: document.querySelector(".hero .company").textContent.length }));
   assert.ok(longLabel.label === 80 && longLabel.scrollW <= longLabel.clientW, `tana long company label@320: no h-overflow ${JSON.stringify(longLabel)}`);
 
-  // --- T5 „Käest ära”: the strip sits in the Täna hero; the full section on Ühendus fits 390 and lays out in two columns at 1280 ---
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.setContent(pageHtml["tana-demo"]());
-  await settle();
-  const strip = await page.evaluate(() => { window.scrollTo(0, 0); const r = document.querySelector(".ho-strip").getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height), inHero: !!document.querySelector(".hero .ho-strip"), name: document.querySelector(".ho-strip").getAttribute("aria-label") }; });
-  assert.ok(strip.inHero && strip.bottom <= 844 && strip.h >= 44, `t5 strip in the hero, first viewport, ≥ 44 px ${JSON.stringify(strip)}`);
-  await page.screenshot({ path: path.join(T2_SHOTS, "t5-tana-390-fold.png") });
-  // review-design-t5-grok medium: the strip's accessible name says an approval waits.
-  assert.ok(strip.name.includes("ootab"), `t5 strip accessible name says an approval waits: ${strip.name}`);
-  geometry.t5strip = strip;
+  // --- Kontoritöö on Ühendus fits 390 and lays out in two columns at 1280 ---
   for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
     await page.setViewportSize(vp);
     await page.setContent(pageHtml["uhenda-ho"]());
@@ -707,7 +693,7 @@ try {
   assert.ok(unk.exists && unk.visible && !unk.inDetails, "unknowns visible outside details");
   assert.ok(unk.body.includes("AI-hüppelaud neid ei kontrollinud"), "unchecked label present");
   assert.equal(unk.sample, "Näidis", "sample chip visible");
-  assert.deepEqual(unk.headings.slice(0, 3).map((h) => h.replace(/ \(\d+\)$/, "")), ["Ootab sinult", "Assistent tegi", "Tulekul"], "Täna card order");
+  assert.deepEqual(unk.headings.slice(0, 3).map((h) => h.replace(/ \(\d+\)$/, "")), ["Assistent vajab sinult", "Assistent tegi", "Kõik tähtajad"], "Täna card order");
   await page.setContent(pageHtml.login());
   assert.ok((await page.textContent("body")).includes("Proovi näidisettevõttega"), "login synthetic section");
   await page.setContent(pageHtml.setup());
