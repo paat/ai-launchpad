@@ -952,4 +952,47 @@ describe("/alusta model modes", () => {
       expect(warn).not.toHaveBeenCalled();
     } finally { warn.mockRestore(); }
   });
+
+  test("resubmitting programs after Fix records already_extracted", async () => {
+    const client: IntakeClient = {
+      mock: false,
+      async extract() { return { ok: true, output: JSON.stringify({ products: [{ name: "Merit Aktiva", kind: "accounting" }] }), mock: false }; },
+      async summarize() { return { ok: true, output: "Lühike kokkuvõte.", mock: false }; },
+    };
+    const url = await boot({ intakeClient: client });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const talk = await conversation(url, "10.30.0.5", 3_000);
+      await talk.post({ ...talk.hidden(), go: "nocompany" });
+      const wrote = await talk.post({ ...talk.hidden(), go: "programs", text: "Merit Aktiva" });
+      expect(wrote).toContain("Sain aru:");
+      const fixed = await talk.post({ ...talk.hidden(), go: "fix" });
+      expect(fixed).toContain("Milliseid programme sa tööks kasutad?");
+      const again = await talk.post({ ...talk.hidden(), go: "programs", text: "Merit Aktiva" });
+      expect(again).toContain("Leitud nime järgi (mitte Muse)");
+      expect((await healthOf(url)).intake_last_fallback).toEqual({ job: "intake_extract", reason: "already_extracted", at: new Date(now).toISOString() });
+      expect(warn.mock.calls).toEqual([["alusta: muse fallback", "intake_extract", "already_extracted"]]);
+    } finally { warn.mockRestore(); }
+  });
+
+  test("an empty extract records no_routed_product and leaves intake_last_ok null", async () => {
+    const client: IntakeClient = {
+      mock: false,
+      async extract() { return { ok: true, output: '{"products":[]}', mock: false }; },
+      async summarize() { return { ok: true, output: "Lühike kokkuvõte.", mock: false }; },
+    };
+    const url = await boot({ intakeClient: client });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const talk = await conversation(url, "10.30.0.6", 3_000);
+      await talk.post({ ...talk.hidden(), go: "nocompany" });
+      const wrote = await talk.post({ ...talk.hidden(), go: "programs", text: "Merit Aktiva" });
+      expect(wrote).toContain("Leitud nime järgi (mitte Muse)");
+      expect(wrote).not.toContain("Sain aru:");
+      const health = await healthOf(url);
+      expect(health.intake_last_fallback).toEqual({ job: "intake_extract", reason: "no_routed_product", at: new Date(now).toISOString() });
+      expect(health.intake_last_ok).toBeNull();
+      expect(warn.mock.calls).toEqual([["alusta: muse fallback", "intake_extract", "no_routed_product"]]);
+    } finally { warn.mockRestore(); }
+  });
 });

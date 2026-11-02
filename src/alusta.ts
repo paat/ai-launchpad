@@ -690,7 +690,8 @@ async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeC
   const conv = parseAlusta(opts.cookie ?? null);
   let viaModel = false;
   let hits: ProductHit[] = [];
-  if (conv && !extracted.has(conv.id)) {
+  if (conv && extracted.has(conv.id)) noteMuseFallback("intake_extract", "already_extracted", opts.now);
+  else if (conv) {
     if (!opts.intake) noteMuseFallback("intake_extract", "no_client", opts.now);
     else {
       const refusal = reserveIntakeModel({ id: conv.id, ip: opts.ipKey, startedAt: conv.startedAt, now: opts.now, honeypot: false });
@@ -699,7 +700,6 @@ async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeC
         extracted.add(conv.id);
         const result = await opts.intake.extract(text);
         if (result.ok) {
-          noteMuseOk("intake_extract", opts.now);
           const parsed = parseExtract(result.output);
           if (parsed) {
             const named = parsed.products.filter((p) => nameInVisitorText(text, p.name));
@@ -711,6 +711,8 @@ async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeC
               viaModel = true;
             }
           }
+          if (viaModel) noteMuseOk("intake_extract", opts.now);
+          else noteMuseFallback("intake_extract", "no_routed_product", opts.now);
         } else noteMuseFallback("intake_extract", result.reason, opts.now);
       }
     }
@@ -824,12 +826,8 @@ async function renderPlan(flow: Flow, lang: Lang, opts: { ipKey: string; now: nu
   const plan = buildIntakePlan(args);
   const conv = parseAlusta(opts.cookie);
   let muse: { text: string; mock: boolean } | null = null;
-  if (honeypot) {
-    const refusal = conv
-      ? reserveIntakeModel({ id: conv.id, ip: opts.ipKey, startedAt: conv.startedAt, now: opts.now, honeypot: true })
-      : "honeypot";
-    noteMuseFallback("intake_plan", refusal ?? "honeypot", opts.now);
-  } else if (!opts.intake) noteMuseFallback("intake_plan", "no_client", opts.now);
+  if (honeypot) noteMuseFallback("intake_plan", "honeypot", opts.now);
+  else if (!opts.intake) noteMuseFallback("intake_plan", "no_client", opts.now);
   else if (conv) {
     const refusal = reserveIntakeModel({ id: conv.id, ip: opts.ipKey, startedAt: conv.startedAt, now: opts.now, honeypot: false });
     if (refusal) noteMuseFallback("intake_plan", refusal, opts.now);
