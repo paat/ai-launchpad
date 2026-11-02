@@ -233,7 +233,7 @@ describe("catalogue polish (#52)", () => {
     const kratt = await page("/kataloog?q=%C3%A4rikratt");
     expect(kratt.match(/class="card svc svc--pinned"/g)).toHaveLength(1);
     expect(kratt).not.toContain("ei leidnud midagi");
-    expect((await page("/kataloog?q=records&lang=en")).match(/class="card svc svc--pinned"/g)).toHaveLength(1);
+    expect((await page("/kataloog?q=plate&lang=en")).match(/class="card svc svc--pinned"/g)).toHaveLength(1);
   });
 
   test("a search reads the whole pinned card: chip labels in both languages and the Testitud line", async () => {
