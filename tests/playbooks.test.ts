@@ -503,7 +503,7 @@ describe("agent-facing copy over MCP", () => {
     const started = JSON.parse(((await c.callTool({ name: "get_started", arguments: {} })) as { content: { text: string }[] }).content[0].text) as { approvals_note: string };
     expect(started.approvals_note.startsWith(SEND_GATE)).toBe(true);
     // Grok r4: in chat the owner's yes is the approval; a standing approval covers only sends made while the owner is away.
-    expect(started.approvals_note).toContain("covers sends made while they are not in a chat with you (for example a scheduled run, never a customer follow-up)");
+    expect(SEND_GATE).toContain("Only in a scheduled or background run without the owner, call request_approval without owner_confirmation and send only if the reply is auto_approved by their standing approval (never a customer follow-up)");
     expect(SEND_GATE).toContain("While the owner is in this chat, their yes is the approval: never send them to the Launchpad link.");
     expect(started).not.toHaveProperty("standing_approvals");
     // The owner was sent to the dashboard: every send playbook asks in this chat before it requests the approval.
@@ -515,11 +515,10 @@ describe("agent-facing copy over MCP", () => {
       expect(req, id).toBe(ask + 1);
       expect(steps[ask], id).toContain("only after they say yes, with owner_confirmation: their words, verbatim");
       expect(steps.join(" "), id).not.toContain("If the reply is pending, show the owner");
-      // Grok r2–r4: the request step carries no owner_confirmation of its own; the away-only standing step comes before the ask.
-      expect(steps[req], id).not.toContain("owner_confirmation");
-      const standing = steps.findIndex((x) => x.startsWith("Only if the owner is not in a chat with you"));
-      expect(standing, id).toBe(id === "customer-follow-ups" ? -1 : ask - 1);
-      if (standing >= 0) expect(steps[standing], id).toContain("On any other reply, send nothing; the owner decides on Launchpad.");
+      // Grok r2–r5: one request step passes the yes; the away-only standing path is a condition on that same step, never its own call.
+      expect(steps[req], id).toContain("owner_confirmation: the yes they just gave in this chat, verbatim.");
+      expect(steps.filter((x) => x.includes("request_approval with action kind")), id).toHaveLength(1);
+      expect(steps[req].includes("In a scheduled or background run without the owner, omit owner_confirmation."), id).toBe(id !== "customer-follow-ups");
     }
   });
 
