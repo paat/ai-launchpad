@@ -51,7 +51,8 @@ export const JOB_MAX_OUTPUT_TOKENS: Record<ModelJob, number> = {
   // job name, and that version is the ledger-wide identity pin: changing it
   // refuses every existing ledger and breaks replay of saved cards. No prior
   // row exists for these jobs, and their instructions are not the old ones.
-  intake_extract: 2048,
+  // Live /alusta "Raamatupidamine on Merit Aktivas, e-post Gmailis." truncated at max_tokens 2048 on 2 Nov 2026 10:03Z (release 97ce679, issue #165); the same input succeeded at 07:31Z and 07:50Z, so 2048 is borderline.
+  intake_extract: MAX_OUTPUT_TOKENS,
   // Reasoning counts against max_tokens. 2048 truncated live /alusta plans (issue #165).
   intake_plan: MAX_OUTPUT_TOKENS,
   // Muse reasons before answering; 1,024 truncated the first live check.
@@ -84,10 +85,11 @@ export const ABSOLUTE_CAP_MICRO_USD = 100_000_000;
 const LEGACY_CAP_MICRO_USD = 10_000_000;
 const LEGACY_CAP_RAISED_ON = "2026-11-01";
 // Backstop only. 10,000 is the all-time attempt limit. A one-character
-// intake_extract reservation is 24,128 micro-USD, and 10,000 × that is
-// 241,280,000 — over the USD 100 ceiling. Every job's one-character
-// reservation × 10,000 exceeds USD 100, so the dollar ceiling binds first
-// for every job.
+// intake_extract reservation is 41,536 micro-USD, and 10,000 × that is
+// 415,360,000 — over the USD 100 ceiling. The smallest one-character
+// reservation is classify_unmet_need at 12,396 micro-USD (10,000 × that
+// is 123,960,000), so every job's one-character reservation × 10,000
+// exceeds USD 100 and the dollar ceiling binds first for every job.
 export const ABSOLUTE_MAX_ATTEMPTS = 10_000;
 
 export type AttemptStatus =
