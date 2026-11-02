@@ -5,7 +5,7 @@
  * when it is the customer's current plan, or when it is the same assistant as
  * a plan we have already run. When no plan is allowed, recommended is null.
  * Only an assistant with an AI Launchpad connect path may be kept or recommended. */
-import type { ServiceRecord } from "./catalog.js";
+import { safeHttps, type ServiceRecord } from "./catalog.js";
 
 export const CHECKED = "2026-11-01" as const;
 
@@ -544,16 +544,19 @@ export function whyRows(rows: readonly PlanRow[], lang: "et" | "en"): WhyRow[] {
   });
 }
 
-function isBuiltinEmail(rec: ServiceRecord): boolean {
+/** Gmail and Microsoft 365 use the assistant's built-in mail connector, not a custom Connect step. */
+export function builtinMail(rec: ServiceRecord): "google" | "microsoft" | null {
   const blob = `${rec.id} ${rec.name} ${rec.sector ?? ""}`.toLowerCase();
-  if (!/email|gmail|outlook|mail/.test(blob)) return false;
-  return /gmail|google workspace|outlook|microsoft 365|microsoft-graph-mail|workiq/.test(blob);
+  if (!/email|gmail|outlook|mailbox|mail/.test(blob) || /google-calendar/.test(rec.id)) return null;
+  if (/gmail|google-gmail|google workspace/.test(blob)) return "google";
+  if (/outlook|microsoft 365|microsoft-graph-mail|workiq/.test(blob)) return "microsoft";
+  return null;
 }
 
-function needsAccountingHost(rec: ServiceRecord): boolean {
-  if (rec.interface_class === "hosted_mcp") return false;
-  if (/palk/i.test(rec.id)) return false;
-  return /merit|e-arveldaja|earveldaja|e-financials|erply/.test(`${rec.id} ${rec.name}`.toLowerCase());
+/** URL of a "Connect …" step, or null. One check for the step list and the connector count. */
+export function connectStepUrl(rec: ServiceRecord): string | null {
+  if (rec.interface_class !== "hosted_mcp" || builtinMail(rec) || !rec.name) return null;
+  return safeHttps(rec.connection);
 }
 
 function shortName(rec: ServiceRecord): string {
@@ -567,12 +570,9 @@ function shortName(rec: ServiceRecord): string {
   return rec.name.replace(/ MCP.*/, "").trim();
 }
 
-/** 1 for AI Launchpad, plus each matched hosted connection. E-mail that the plan's built-in list covers does not take a slot. Merit, e-arveldaja and Erply share one hosted connection. */
+/** 1 for AI Launchpad, plus each service that gets a Connect step. Built-in e-mail does not take a slot. */
 export function customerFromServices(services: readonly ServiceRecord[], current?: Customer["current"], seats = 1): Customer {
-  const hosted = services.filter((s) => s.interface_class === "hosted_mcp" && !isBuiltinEmail(s));
-  const hostedAccounting = hosted.some((s) => /werkzeug|merit|erply|arveldaja|financials/i.test(`${s.id} ${s.name}`));
-  const accounting = hostedAccounting ? [] : services.filter(needsAccountingHost);
-  const names = [...hosted.map(shortName), ...(accounting.length ? [joinList([...new Set(accounting.map(shortName))], " ja ")] : [])];
+  const names = services.filter((s) => connectStepUrl(s)).map(shortName);
   return {
     ...(current ? { current } : {}),
     customConnectorsNeeded: 1 + names.length,

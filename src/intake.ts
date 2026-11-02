@@ -9,10 +9,10 @@ import {
   type AssistantId, type Business, type Tier, type Uses,
 } from "./assistant-choice.js";
 import {
-  PLANS, candidateRows, customerFromServices, recommendAssistant, whyRows,
+  PLANS, builtinMail, candidateRows, connectStepUrl, customerFromServices, recommendAssistant, whyRows,
   type PlanRow, type Recommendation, type WhyRow,
 } from "./assistant-plans.js";
-import { loadCatalog, safeHttps, type ServiceRecord } from "./catalog.js";
+import { loadCatalog, type ServiceRecord } from "./catalog.js";
 import {
   MAX_INPUT_BYTES, MAX_INPUT_CHARS, ModelQualityError, runModelQualityAttempt,
   type FetchFn, type ModelQualityLedger,
@@ -492,15 +492,14 @@ export function buildIntakePlan(args: IntakePlanArgs): IntakePlan {
   const turnOn = (what: string) => steps.push({
     text: lang === "et" ? `Lülita ${inessive} sisse ${what} (see on sisse ehitatud)` : `Turn on ${what} in ${brand} (built in)`,
   });
-  if (rec.recommended.builtin_google.length && services.some((s) => emailKind(s) === "google")) turnOn("Gmail");
-  if (rec.recommended.builtin_microsoft.length && services.some((s) => emailKind(s) === "microsoft")) turnOn("Outlook");
+  if (rec.recommended.builtin_google.length && services.some((s) => builtinMail(s) === "google")) turnOn("Gmail");
+  if (rec.recommended.builtin_microsoft.length && services.some((s) => builtinMail(s) === "microsoft")) turnOn("Outlook");
   const slots = rec.recommended.custom_connectors;
   const room = slots === "no_cap" || (typeof slots === "number" && slots > 1);
   const routedFor = productsRoutedThrough(args.productNames ?? []);
   if (room) for (const service of services) {
-    if (service.interface_class !== "hosted_mcp" || emailKind(service)) continue;
-    const url = safeHttps(service.connection);
-    if (!url || !service.name) continue;
+    const url = connectStepUrl(service);
+    if (!url) continue;
     const label = connectLabel(service);
     const products = canonicalProductNames(routedFor.get(service.id) ?? []);
     const listed = products.length
@@ -521,15 +520,6 @@ export function buildIntakePlan(args: IntakePlanArgs): IntakePlan {
     steps,
     prompt: intakePrompt(lang, args.company, services, args.productNames),
   };
-}
-
-/** Gmail and Microsoft 365 follow the playbook's built-in connector, not a custom one. */
-function emailKind(rec: ServiceRecord): "google" | "microsoft" | null {
-  const blob = `${rec.id} ${rec.name} ${rec.sector ?? ""}`.toLowerCase();
-  if (!/email|gmail|outlook|mailbox|mail/.test(blob) || /google-calendar/.test(rec.id)) return null;
-  if (/gmail|google-gmail|google workspace/.test(blob)) return "google";
-  if (/outlook|microsoft 365|microsoft-graph-mail|workiq/.test(blob)) return "microsoft";
-  return null;
 }
 
 function connectLabel(rec: ServiceRecord): string {

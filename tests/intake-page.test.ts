@@ -12,7 +12,7 @@ import { PLANS, planLabel } from "../src/assistant-plans.js";
 import { ARIKRATT_ATTRIBUTION } from "../src/arikratt.js";
 import { loadCatalog, type ServiceRecord } from "../src/catalog.js";
 import { openDb } from "../src/db.js";
-import { buildIntakePlan, fallbackExtract, type IntakeClient, type IntakePlanArgs } from "../src/intake.js";
+import { buildIntakePlan, fallbackExtract, matchCatalog, type IntakeClient, type IntakePlanArgs } from "../src/intake.js";
 import { ModelQualityLedger, type FetchFn } from "../src/model-quality.js";
 import {
   INTAKE_DAILY_MODEL_CALLS, planScreenHtml, registerLookupOk, reserveIntakeModel, resetAlustaGuards,
@@ -725,6 +725,41 @@ describe("/alusta model modes", () => {
     expect(escaped.html).not.toContain("<script>alert(1)</script>");
     const at = escaped.html.indexOf('id="alusta-prompt"');
     expect(escaped.html.slice(at, escaped.html.indexOf("</textarea>", at))).not.toContain("alert(1)");
+  });
+
+  test("a partial live extract keeps every catalogue name match (#164)", async () => {
+    const client: IntakeClient = {
+      mock: false,
+      async extract() { return { ok: true, output: JSON.stringify({ products: [{ name: "Gmail", kind: "email" }] }), mock: false }; },
+      async summarize() { return { ok: true, output: "Lühike kokkuvõte.", mock: false }; },
+    };
+    const url = await boot({ intakeClient: client });
+    const named = buildIntakePlan({
+      uses: "none", lang: "et",
+      services: matchCatalog(["Merit Aktiva", "Gmail"]).matched,
+      productNames: ["Merit Aktiva", "Gmail"],
+    });
+    const gmailOnly = buildIntakePlan({
+      uses: "none", lang: "et",
+      services: matchCatalog(["Gmail"]).matched,
+      productNames: ["Gmail"],
+    });
+    expect(planLabel(named.recommendation.recommended!)).toBe("Claude Pro");
+    expect(planLabel(gmailOnly.recommendation.recommended!)).toBe("Claude Free");
+    const talk = await conversation(url, "10.31.0.1", 3_000);
+    await talk.post({ ...talk.hidden(), go: "nocompany" });
+    const wrote = await talk.post({ ...talk.hidden(), go: "programs", text: "Merit Aktiva ja Gmail" });
+    expect(wrote).toContain("Sain aru:");
+    expect(wrote).toContain("Merit Aktiva → via Werkzeug");
+    expect(wrote).toContain("Gmail");
+    expect((await healthOf(url)).intake_last_ok).toEqual({ job: "intake_extract", at: new Date(now).toISOString() });
+    const done = await talk.post({ ...talk.hidden(), go: "assistant", choose: "none" });
+    expect(done).toContain(`<h1>Soovitame: ${planLabel(named.recommendation.recommended!)}</h1>`);
+    expect(done).not.toContain(`Soovitame: ${planLabel(gmailOnly.recommendation.recommended!)}`);
+    const at = done.indexOf('id="alusta-prompt"');
+    const prompt = done.slice(at, done.indexOf("</textarea>", at));
+    expect(prompt).toContain("Merit Aktiva");
+    expect(prompt).toContain("Gmail");
   });
 
   test("an empty extraction falls back to the catalogue name match", async () => {

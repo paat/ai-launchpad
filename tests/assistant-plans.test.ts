@@ -302,6 +302,10 @@ describe("recommendAssistant", () => {
     expect(books.connectionNames).toEqual(["Werkzeug"]);
     expect(books.customConnectorsNeeded).toBe(2);
     expect(customerFromServices(matchCatalog(["Swedbank"]).matched).customConnectorsNeeded).toBe(1);
+    const pipedrive = customerFromServices(matchCatalog(["Pipedrive"]).matched);
+    expect(pipedrive.customConnectorsNeeded).toBe(1);
+    expect(pipedrive.connectionNames).toBeUndefined();
+    expect(recommendAssistant(pipedrive).recommended).toBe(row("claude", "free"));
   });
 
   test("memo UNKNOWN fields stay null and are not stored as a conservative default", () => {

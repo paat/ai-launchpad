@@ -686,6 +686,23 @@ function nameInVisitorText(text: string, name: string): boolean {
   return foldedName.length > 0 && folded(text).includes(foldedName);
 }
 
+/** Catalogue hits first, then model hits that are a new record or a new product name. At most 8. */
+function unionNameMatches(text: string, modelHits: ProductHit[]): ProductHit[] {
+  const out = productsInText(text).slice(0, 8);
+  const seenId = new Set(out.map((hit) => hit.record?.id).filter((id): id is string => !!id));
+  const seenName = new Set(out.map((hit) => folded(hit.product)).filter((name) => name.length > 0));
+  for (const hit of modelHits) {
+    if (out.length >= 8) break;
+    const id = hit.record?.id ?? "";
+    const name = folded(hit.product);
+    if ((id && seenId.has(id)) || (name && seenName.has(name))) continue;
+    out.push(hit);
+    if (id) seenId.add(id);
+    if (name) seenName.add(name);
+  }
+  return out;
+}
+
 async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeClient | null; ipKey: string; now: number; cookie: string | null }, lang: Lang): Promise<void> {
   const conv = parseAlusta(opts.cookie ?? null);
   let viaModel = false;
@@ -720,6 +737,9 @@ async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeC
   if (!viaModel) {
     hits = productsInText(text);
     flow.unmatched = [];
+  } else {
+    // Catalogue name matches stay. Muse may add a product the visitor named; it never removes one.
+    hits = unionNameMatches(text, hits);
   }
   flow.products = namedFrom(hits);
   const ids: string[] = [];
