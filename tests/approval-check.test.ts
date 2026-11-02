@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
-  approvalCheckRequestId, buildApprovalCheckInput, liveChecker, mockChecker, parseApprovalCheck,
+  approvalCheckRequestId, buildApprovalCheckInput, liveChecker, mockChecker, parseApprovalCheck, tidyModelCheck,
   type ApprovalCheckOutput,
 } from "../src/approval-check.js";
 import {
-  BASETEN_MODEL, FIXED_INSTRUCTIONS, JOB_MAX_INPUT, JOB_MAX_OUTPUT_TOKENS, MAX_INPUT_BYTES, MAX_INPUT_CHARS,
+  BASETEN_MODEL, FIXED_INSTRUCTIONS, JOB_MAX_INPUT, JOB_MAX_OUTPUT_TOKENS, MAX_INPUT_BYTES, MAX_INPUT_CHARS, MAX_OUTPUT_TOKENS,
   ModelQualityLedger, TIMEOUT_MS, calculateCostMicroUsd, inputTokenBound, payloadHash, reservationMicroUsd, validateInput,
   type FetchFn,
 } from "../src/model-quality.js";
@@ -51,8 +51,8 @@ describe("approval check schema and samples", () => {
     const unicodeInput = buildApprovalCheckInput({ ...action, document: { ...action.document, content: "€".repeat(4000) } });
     const bound = Buffer.byteLength(FIXED_INSTRUCTIONS.check_approval) + Buffer.byteLength(unicodeInput) + 2048;
     expect(inputTokenBound("check_approval", unicodeInput)).toBe(bound);
-    expect(JOB_MAX_OUTPUT_TOKENS.check_approval).toBe(1024);
-    expect(reservationMicroUsd("check_approval", unicodeInput)).toBe(calculateCostMicroUsd(bound, 1024) * 2);
+    expect(JOB_MAX_OUTPUT_TOKENS.check_approval).toBe(MAX_OUTPUT_TOKENS);
+    expect(reservationMicroUsd("check_approval", unicodeInput)).toBe(calculateCostMicroUsd(bound, MAX_OUTPUT_TOKENS) * 2);
   });
 
   test.each([ok, review])("accepts valid $verdict output", (output) => {
@@ -72,6 +72,21 @@ describe("approval check schema and samples", () => {
     JSON.stringify({ ...review, concerns_et: [42] }),
   ])("rejects invalid structure without repair: %s", (text) => {
     expect(parseApprovalCheck(text)).toEqual({ ok: false, reason: "invalid_output" });
+  });
+
+  test("tidies only the form of live text; keys, verdict and concern rules stay strict", () => {
+    const tidy = (o: unknown, fence = false) => {
+      const text = JSON.stringify(o);
+      return parseApprovalCheck(tidyModelCheck(fence ? `\`\`\`json\n${text}\n\`\`\`` : text));
+    };
+    expect(tidy(ok, true)).toEqual({ ok: true, value: ok });
+    expect(parseApprovalCheck(tidyModelCheck(`\`\`\`\n${JSON.stringify(review)}\n\`\`\``))).toEqual({ ok: true, value: review });
+    const long = tidy({ ...review, summary_et: `${"a".repeat(250)}`, summary_en: "First\nsecond", concerns_et: ["x\ty", "b".repeat(200), "c", "d"], concerns_en: ["1", "2", "3", "4"] });
+    expect(long).toMatchObject({ ok: true, value: { summary_et: `${"a".repeat(199)}…`, summary_en: "First second",
+      concerns_et: ["x y", `${"b".repeat(159)}…`, "c"], concerns_en: ["1", "2", "3"] } });
+    for (const bad of [{ ...ok, extra: true }, { ...ok, verdict: "pass" }, { ...review, concerns_en: [] }, { ...ok, concerns_et: ["x"], concerns_en: ["x"] }, { ...ok, summary_en: " " }])
+      expect(tidy(bad, true)).toEqual({ ok: false, reason: "invalid_output" });
+    expect(tidyModelCheck("Here is the JSON: {}")).toBe("Here is the JSON: {}");
   });
 
   test("mock is deterministic, explicitly a sample, and flags missing or mismatched amounts", async () => {
@@ -119,7 +134,7 @@ describe("live approval check through sole model ledger", () => {
     expect(await checker.check("approval-a", "digest-a", input)).toEqual({ kind: "failed", reason: "interrupted" });
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const call = vi.mocked(fetchFn).mock.calls[0];
-    expect(JSON.parse(String(call[1]?.body))).toMatchObject({ model: BASETEN_MODEL, max_tokens: 1024,
+    expect(JSON.parse(String(call[1]?.body))).toMatchObject({ model: BASETEN_MODEL, max_tokens: MAX_OUTPUT_TOKENS,
       messages: [{ role: "developer", content: FIXED_INSTRUCTIONS.check_approval }, { role: "user", content: input }] });
     const stored = ledger.get(approvalCheckRequestId("approval-a", "digest-a"));
     expect(stored).toMatchObject({ job: "check_approval", status: "completed", output: null,
@@ -132,6 +147,19 @@ describe("live approval check through sole model ledger", () => {
   test("invalid output is unreadable, never a pass", async () => {
     const fetchFn = vi.fn(async () => response("```json\n{}\n```")) as unknown as FetchFn;
     expect(await liveChecker({ ledger, apiKey: "synthetic-key", fetchFn }).check("a", "d", input)).toEqual({ kind: "failed", reason: "invalid_output" });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  test("fenced live output is accepted and stored as plain JSON", async () => {
+    const fetchFn = vi.fn(async () => response(`\`\`\`json\n${JSON.stringify(review)}\n\`\`\``)) as unknown as FetchFn;
+    expect(await liveChecker({ ledger, apiKey: "synthetic-key", fetchFn }).check("a", "d", input)).toEqual({ kind: "text", text: JSON.stringify(review) });
+  });
+
+  test("an answer cut off at max_tokens has its own reason", async () => {
+    const fetchFn = vi.fn(async () => new Response(JSON.stringify({ model: BASETEN_MODEL,
+      choices: [{ finish_reason: "length", message: { content: "{\"verdict\":" } }],
+      usage: { prompt_tokens: 120, completion_tokens: MAX_OUTPUT_TOKENS, total_tokens: 120 + MAX_OUTPUT_TOKENS } }))) as unknown as FetchFn;
+    expect(await liveChecker({ ledger, apiKey: "synthetic-key", fetchFn }).check("a", "d", input)).toEqual({ kind: "failed", reason: "truncated" });
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 

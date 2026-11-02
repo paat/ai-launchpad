@@ -69,6 +69,25 @@ export function parseApprovalCheck(text: string): { ok: true; value: ApprovalChe
   return { ok: true, value: o as unknown as ApprovalCheckOutput };
 }
 
+/** Live model text only: unwrap one Markdown code fence, fold whitespace in
+ * the summary and concern lines, and shorten over-long lines and lists.
+ * Keys, verdict and concern rules stay strict in parseApprovalCheck. */
+export function tidyModelCheck(text: string): string {
+  const fenced = text.trim().match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  let o: unknown;
+  try { o = JSON.parse(fenced ? fenced[1] : text); } catch { return text; }
+  if (!o || typeof o !== "object" || Array.isArray(o)) return text;
+  const line = (v: unknown, max: number) => {
+    if (typeof v !== "string") return v;
+    const s = v.replace(/[\s\p{Cc}\p{Zl}\p{Zp}]+/gu, " ").trim();
+    return s.length <= max ? s : `${s.slice(0, max - 1).trimEnd()}…`;
+  };
+  const r = { ...(o as Record<string, unknown>) };
+  for (const k of ["summary_et", "summary_en"]) if (k in r) r[k] = line(r[k], 200);
+  for (const k of ["concerns_et", "concerns_en"]) if (Array.isArray(r[k])) r[k] = (r[k] as unknown[]).slice(0, 3).map((v) => line(v, 160));
+  return JSON.stringify(r);
+}
+
 export const approvalCheckRequestId = (approvalId: string, digest: string) =>
   `ac1.${createHash("sha256").update(approvalId).update("\0").update(digest).digest("hex").slice(0, 48)}`;
 
@@ -121,12 +140,14 @@ export function liveChecker(opts: { ledger: ModelQualityLedger; apiKey: string; 
           },
         });
         if (r.status === "completed" && r.output) {
-          return parseApprovalCheck(r.output).ok ? { kind: "text", text: r.output } : { kind: "failed", reason: "invalid_output" };
+          const text = tidyModelCheck(r.output);
+          return parseApprovalCheck(text).ok ? { kind: "text", text } : { kind: "failed", reason: "invalid_output" };
         }
         if (r.status === "uncertain") return { kind: "failed", reason: r.errorCode === "timeout" ? "timeout" : "provider_uncertain" };
         if (r.status === "pending" || r.status === "completed") return { kind: "failed", reason: "interrupted" };
         if (r.status === "provider_contract_breach") return { kind: "failed", reason: "provider_contract_breach" };
-        if (r.errorCode === "invalid_response" || r.errorCode === "truncated") return { kind: "failed", reason: "invalid_output" };
+        if (r.errorCode === "truncated") return { kind: "failed", reason: "truncated" };
+        if (r.errorCode === "invalid_response") return { kind: "failed", reason: "invalid_output" };
         return { kind: "failed", reason: "provider_failed" };
       } catch (e) {
         const code = e instanceof ModelQualityError ? e.code : "";

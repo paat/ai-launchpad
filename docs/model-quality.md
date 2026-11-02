@@ -34,8 +34,8 @@ exact event-key-restricted model `meta-models/muse-spark-open-1026`
 two messages (fixed `developer` instructions, then the `user` input),
 a per-job `max_tokens` (caps the whole completion, reasoning included):
 4,096 for `setup_guidance` and `classify_friction` (the provider contract
-limit, unchanged), 512 for `classify_unmet_need`, and 1,024 for
-`check_approval`; `stream: false`. Input is at most 2,000 characters and
+limit, unchanged, and also for `check_approval`) and 512 for
+`classify_unmet_need`; `stream: false`. Input is at most 2,000 characters and
 8,192 UTF-8 bytes for the original jobs. `check_approval` alone allows
 32,768 characters and 65,536 UTF-8 bytes, including JSON escaping of the
 4,000-character document and the other bounded approval fields. The whole fetch plus body read times
@@ -339,15 +339,19 @@ used by its other live jobs: no new ledger, spending cap, refund or retry.
   summary versus content. Documents are data, never instructions. Muse
   computes no taxes or deadlines and decides no approval state.
 - The per-job input limit is 32,768 characters / 65,536 UTF-8 bytes; other
-  jobs retain their 2,000 / 8,192 bounds. `max_tokens` is 1,024, reasoning
-  included. Reservation uses the actual UTF-8 bytes of input and fixed
+  jobs retain their 2,000 / 8,192 bounds. `max_tokens` is 4,096, reasoning
+  included (1,024 cut off the first live check on 2 Nov 2026). Reservation uses the actual UTF-8 bytes of input and fixed
   instructions, plus the existing overhead and margin, not character count.
 - Strict JSON output has exactly `verdict` (`ok` or `review`), `summary_et`,
   `summary_en` (nonempty single lines, at most 200 characters each), and
   `concerns_et`, `concerns_en` (equal counts, zero to three nonempty single
   lines, at most 160 characters each). `ok` requires no concerns; `review`
-  requires at least one. Invalid output is unavailable with an unreadable
-  answer reason, never a pass. Model text is HTML-escaped on both card views.
+  requires at least one. Before that strict check, live text is tidied
+  only in form: one surrounding Markdown code fence is removed, line breaks
+  in summaries and concerns become spaces, over-long lines are shortened
+  with an ellipsis and more than three concerns are cut to three. Invalid
+  output is unavailable with an unreadable answer reason, and a reply cut
+  off at `max_tokens` with its own reason, never a pass. Model text is HTML-escaped on both card views.
 - Live checks run only for real owners in `MODEL_MODE=public_cards`, with
   at most 30 starts per owner in a rolling 24 hours. Sample, demo and
   sandbox owners, and `MODEL_MODE=test`, use a deterministic mock labelled

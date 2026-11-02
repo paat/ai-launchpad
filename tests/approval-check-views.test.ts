@@ -74,6 +74,7 @@ describe("advisory approval check cards", () => {
     ["timeout", "teenus ei vastanud õigel ajal", "the provider did not answer in time"],
     ["provider_failed", "mudeliteenus ei vastanud", "the model service did not answer"],
     ["invalid_output", "vastus ei olnud loetav", "the answer was unreadable"],
+    ["truncated", "vastus jäi pooleli", "the answer was cut off"],
     ["attempt_in_flight", "teine kontroll on pooleli", "another check is in progress"],
     ["interrupted", "kontroll katkes", "the check was interrupted"],
     ["<script>unknown</script>", "kontroll ei olnud saadaval", "the check was unavailable"],
