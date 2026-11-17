@@ -231,7 +231,8 @@ describe("R-001 next action", () => {
     expect(nextActionError(gather)).toBeNull();
     expect(nextActionError(assess("Synthetic", [duty("job", "money", "Job", "Open.")], { ...ok, estimated_effort_saved: "3 h" }))).toMatch(/savings_basis is not "estimate" or "observed"/);
     expect(nextActionError(assess("Synthetic", [duty("job", "money", "Job", "Open.")], { ...ok, estimated_effort_saved: "3 h", savings_basis: "unknown" }))).toMatch(/savings_basis is not "estimate" or "observed"/);
-    expect(nextActionError(assess("Synthetic", [duty("job", "money", "Job", "Open.")], { ...ok, estimated_effort_saved: " ", savings_basis: "estimate" }))).toMatch(/savings_basis is not "estimate" or "observed"/);
+    expect(nextActionError(assess("Synthetic", [duty("job", "money", "Job", "Open.")], { ...ok, estimated_effort_saved: " ", savings_basis: "estimate" }))).toBe("estimated_effort_saved is blank. Give the figure or leave it out. Nothing was saved.");
+    expect(nextActionError(assess("Synthetic", [duty("job", "money", "Job", "Open.")], { ...ok, estimated_effort_saved: " \t" }))).toMatch(/estimated_effort_saved is blank/);
     expect(nextActionError(assess("Synthetic", [duty("job", "money", "Job", "Open.")], { ...ok, savings_basis: "observed" }))).toMatch(/savings_evidence is missing/);
     expect(nextActionError(assess("Synthetic", [duty("job", "money", "Job", "Open.")], { ...ok, savings_basis: "observed", savings_evidence: " " }))).toMatch(/savings_evidence is missing/);
     expect(nextActionError(assess("Synthetic", [duty("job", "money", "Job", "Open.")], { ...ok, estimated_effort_saved: "3 h", savings_basis: "estimate" }))).toBeNull();

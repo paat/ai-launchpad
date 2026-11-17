@@ -138,7 +138,10 @@ export function nextActionError(a: Assessment): string | null {
   if (n.needs_owner && kind !== "gather_information" && !filled(n.owner_decision)) {
     return `Next action needs the owner but owner_decision is missing. Name the exact decision or approval they must give. Nothing was saved.`;
   }
-  if (n.estimated_effort_saved !== undefined && (!filled(n.estimated_effort_saved) || (n.savings_basis !== "estimate" && n.savings_basis !== "observed"))) {
+  if (n.estimated_effort_saved !== undefined && !filled(n.estimated_effort_saved)) {
+    return `estimated_effort_saved is blank. Give the figure or leave it out. Nothing was saved.`;
+  }
+  if (n.estimated_effort_saved !== undefined && n.savings_basis !== "estimate" && n.savings_basis !== "observed") {
     return `estimated_effort_saved is set but savings_basis is not "estimate" or "observed". Do not invent hours: mark the basis, or leave the figure out. Nothing was saved.`;
   }
   if (n.savings_basis === "observed" && !filled(n.savings_evidence)) {
