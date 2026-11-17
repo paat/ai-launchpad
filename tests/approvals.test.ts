@@ -853,6 +853,22 @@ describe("whats_waiting_for_me: what the owner's Needs you lists, for a new chat
     expect(r.assistant_instruction).toMatch(/^First read each read_from_books fact .* Never say nothing is waiting until that is done and get_obligations asks the owner nothing new\. /);
   });
 
+  test("next_step carries kind, and blocker and owner_decision when the assessment has them", async () => {
+    const c = await client(owner("waiting-next-fields").token);
+    const responsibilities = [{ id: "stall", domain: "operations", label: "Winter hours", applicability: "applicable", is_core: false, arrangement: "none", reason: "Unknown season.", evidence_refs: [] }];
+    const common = { assessed_domains: ["operations"], responsibilities, gaps: [], conclusion: "Synthetic." };
+    const action = { ...common, next_action: { title: "Renew the books connection", rationale: "Receipts pile up.", owner_decision: "Grant access again.", uncertainty: "Steps unconfirmed.", needs_owner: true } };
+    expect(parsed(await c.callTool({ name: "report_assessment", arguments: { report_id: "wn-1", expected_version: 0, assessment: action } })).version).toBe(1);
+    expect(parsed(await c.callTool({ name: "whats_waiting_for_me", arguments: {} })).next_step).toEqual({
+      title: "Renew the books connection", rationale: "Receipts pile up.", kind: "action", owner_decision: "Grant access again.",
+    });
+    const gather = { ...common, next_action: { kind: "gather_information", title: "Ask which stall stays open", rationale: "No action yet.", blocker: "No opening calendar is connected.", owner_decision: "Say which stall stays open.", uncertainty: "Winter hours unknown.", needs_owner: true } };
+    expect(parsed(await c.callTool({ name: "report_assessment", arguments: { report_id: "wn-2", expected_version: 1, assessment: gather } })).version).toBe(2);
+    expect(parsed(await c.callTool({ name: "whats_waiting_for_me", arguments: {} })).next_step).toEqual({
+      title: "Ask which stall stays open", rationale: "No action yet.", kind: "gather_information", blocker: "No opening calendar is connected.", owner_decision: "Say which stall stays open.",
+    });
+  });
+
   test("the link opens ChatGPT for an owner who last used it", async () => {
     const o = owner("waiting-chatgpt");
     const now = new Date().toISOString();

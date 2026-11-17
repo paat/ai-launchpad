@@ -130,6 +130,10 @@ describe("R-001 next action", () => {
         expect(html).toContain(lang === "et" ? "Enne tuleb välja selgitada:" : "First find out:");
         expect(html).toContain(assessment.next_action.blocker!);
       }
+      const prompt = details(html, lang === "et" ? "Mida assistendile öelda" : "What to tell your assistant");
+      expect(prompt).toContain(assessment.next_action.owner_decision!);
+      if (gather) expect(prompt).toContain(assessment.next_action.blocker!);
+      else expect(prompt).not.toContain("First find out:");
     }
   });
 

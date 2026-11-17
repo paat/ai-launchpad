@@ -1749,9 +1749,11 @@ function nextStepCard(l: Lang, next: Assessment["next_action"], fx: { html: (s: 
       ? t("Assistendi hinnang:", "Your assistant's estimate:")
       : t("Sääst on teadmata:", "Savings unknown:");
   const alts = next.alternatives ?? [];
+  const decision = next.owner_decision?.trim();
+  const blocker = next.kind === "gather_information" ? next.blocker?.trim() : "";
   const ask = t(
-    `${esc(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale}`)} Palun aita mul see ära teha või ütle, mida sinult vaja on.`,
-    `Next step from my AI Launchpad assessment: "${fx.html(next.title)}". Why: ${fx.html(next.rationale)} Please help me do this, or tell me what you need from me.`,
+    `${esc(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale}`)}${decision ? esc(` Vajab sinu otsust: ${decision}.`) : ""}${blocker ? esc(` Enne tuleb välja selgitada: ${blocker}.`) : ""} Palun aita mul see ära teha või ütle, mida sinult vaja on.`,
+    `Next step from my AI Launchpad assessment: "${fx.html(next.title)}". Why: ${fx.html(next.rationale)}${decision ? ` Needs your decision: ${fx.html(decision)}.` : ""}${blocker ? ` First find out: ${fx.html(blocker)}.` : ""} Please help me do this, or tell me what you need from me.`,
   );
   return `<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Järgmine samm:", "Next step:")} ${fx.html(next.title)}</span><p class="small">${fx.html(next.rationale)}</p>${next.kind === "gather_information" && next.blocker ? `<p class="small"><span class="muted">${t("Enne tuleb välja selgitada:", "First find out:")}</span> ${fx.html(next.blocker)}</p>` : ""}${next.owner_decision ? `<p class="small"><span class="muted">${t("Vajab sinu otsust:", "Needs your decision:")}</span> ${fx.html(next.owner_decision)}</p>` : ""}${hours ? `<p class="small"><span class="muted">${savingsLabel}</span> ${fx.html(hours)}${measured && evidence ? ` <span class="muted">${t("Mille põhjal:", "Based on:")}</span> ${fx.html(evidence)}` : ""}</p>` : ""}<details class="plain"><summary>${t("Muud võimalused ja ebakindlus", "Alternatives and uncertainty")}</summary><p class="small">${fx.html(next.uncertainty)}</p>${evidence ? `<p class="small"><span class="muted">${t("Mille põhjal:", "Based on:")}</span> ${fx.html(evidence)}</p>` : ""}${alts.length ? `<ul class="tight">${alts.map((alt) => `<li class="small">${fx.html(alt)}</li>`).join("")}</ul>` : ""}</details><details class="plain"><summary>${t("Mida assistendile öelda", "What to tell your assistant")}</summary><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${ask}”</p></div></details></div></div>`;
 }

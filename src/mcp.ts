@@ -568,7 +568,13 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
       did_not_work: items.failed.map((a) => ({ approval_id: a.id, kind: a.kind, action: JSON.parse(a.payload_json), outcome: a.outcome_json ? JSON.parse(a.outcome_json) : null })),
       questions: items.questions,
       read_from_books: items.fromBooks,
-      next_step: items.next && { title: items.next.title, rationale: items.next.rationale },
+      next_step: items.next && {
+        title: items.next.title,
+        rationale: items.next.rationale,
+        kind: items.next.kind ?? "action",
+        ...(items.next.blocker ? { blocker: items.next.blocker } : {}),
+        ...(items.next.owner_decision ? { owner_decision: items.next.owner_decision } : {}),
+      },
       ...(gate ? { approvals_unavailable: gate } : {}),
       ...(deadlinesGap ? { [code ? "deadlines_unavailable" : "registry_code_unknown"]: deadlinesGap } : {}),
       // An empty list is an all-clear only when every source was read.
