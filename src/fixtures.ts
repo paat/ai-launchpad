@@ -24,7 +24,7 @@ const alpha: Assessment = assessmentSchema.parse({
   gaps: [],
   assumptions: ["Näidis: päris ettevõtte andmeid ei kasutatud."],
   conclusion: "Näidis: KMD numbrid teeb raamatupidaja, arved ja maksemeeldetuletused teeb Mari veel käsitsi.",
-  next_action: { title: "Lase assistendil tasumata arvetele meeldetuletused koostada", rationale: "Assistent saadab meeldetuletused ja salvestab tulemused.", savings_basis: "unknown", uncertainty: "Näidise mahud on välja mõeldud; aega pole mõõdetud.", needs_owner: true },
+  next_action: { title: "Lase assistendil tasumata arvetele meeldetuletused koostada", rationale: "Assistent saadab meeldetuletused ja salvestab tulemused.", savings_basis: "unknown", uncertainty: "Näidise mahud on välja mõeldud; aega pole mõõdetud.", needs_owner: true, owner_decision: "Kinnita, et assistent tohib tasumata arvetele meeldetuletused koostada ja saata. (Näidis.)" },
 });
 
 // The second demo company matches its synthetic register facts (19990002):
@@ -41,7 +41,7 @@ const beta: Assessment = assessmentSchema.parse({
   gaps: ["Kliendi- ja õigusvaldkonda selles näidises ei hinnatud, seega üldist katvust ei näidata."],
   assumptions: ["Näidis: päris ettevõtte andmeid ei kasutatud."],
   conclusion: "Näidis: palga teeb raamatupidaja, kuid raamatupidamise ühendus aegus ja kaks valdkonda on hindamata.",
-  next_action: { title: "Taasta raamatupidamise ühendus", rationale: "Kuludokumendid ei kogune enam sinu kätte ja raamatupidaja senine töö jätkub; uut tööriista pole vaja.", uncertainty: "Näidis; päris sammud sõltuvad teenusepakkujast.", needs_owner: true },
+  next_action: { title: "Taasta raamatupidamise ühendus", rationale: "Kuludokumendid ei kogune enam sinu kätte ja raamatupidaja senine töö jätkub; uut tööriista pole vaja.", uncertainty: "Näidis; päris sammud sõltuvad teenusepakkujast.", needs_owner: true, owner_decision: "Anna raamatupidamisprogrammi ligipääs uuesti. (Näidis.)" },
 });
 
 export const DEMO_FIXTURES: Record<string, Assessment> = { alpha, beta };
@@ -56,6 +56,8 @@ export const DEMO_LABELS_EN: Record<string, string> = {
   "Lase assistendil tasumata arvetele meeldetuletused koostada": "Let your assistant draft reminders for unpaid invoices",
   "Taasta raamatupidamise ühendus": "Restore the accounting connection",
   "Assistent saadab meeldetuletused ja salvestab tulemused.": "Your assistant sends reminders and records the outcomes.",
+  "Kinnita, et assistent tohib tasumata arvetele meeldetuletused koostada ja saata. (Näidis.)": "Confirm that your assistant may draft and send reminders for unpaid invoices. (Sample.)",
+  "Anna raamatupidamisprogrammi ligipääs uuesti. (Näidis.)": "Grant access to the accounting program again. (Sample.)",
 };
 
 /** SYNTHETIC register facts for the deadlines demo. The codes deliberately FAIL

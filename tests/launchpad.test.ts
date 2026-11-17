@@ -55,7 +55,7 @@ const fullAssessment = {
     { id: "plumbing-work", domain: "operations", label: "Doing plumbing jobs", applicability: "applicable", is_core: true, arrangement: "none", reason: "This is the owner's trade.", evidence_refs: [] },
   ],
   gaps: [], conclusion: "Admin is partly arranged; invoicing is the leverage point.",
-  next_action: { title: "Connect invoicing to your assistant", rationale: "Removes repeated monthly invoice chasing.", estimated_effort_saved: "maybe 1-2 h/month", savings_basis: "estimate", uncertainty: "Estimate only; volumes unmeasured.", needs_owner: true },
+  next_action: { title: "Connect invoicing to your assistant", rationale: "Removes repeated monthly invoice chasing.", estimated_effort_saved: "maybe 1-2 h/month", savings_basis: "estimate", uncertainty: "Estimate only; volumes unmeasured.", needs_owner: true, owner_decision: "Approve connecting invoicing to your assistant." },
 };
 
 beforeAll(async () => { await new Promise<void>((ok) => { server = app.listen(0, "127.0.0.1", ok); }); base = `http://127.0.0.1:${(server.address() as { port: number }).port}`; cfg.baseUrl = base; });

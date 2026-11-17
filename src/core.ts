@@ -45,8 +45,14 @@ export const assessmentSchema = z.object({
   connections: z.array(connectionSchema).max(CONNECTION_KINDS.length).optional(),
   next_action: z.object({
     title: s(200), rationale: s(600),
+    // Absent kind means action. Optional so assessments saved before these fields still parse.
+    kind: z.enum(["action", "gather_information"]).optional(),
+    blocker: s(400).optional(),
+    owner_decision: s(300).optional(),
+    alternatives: z.array(s(200)).max(3).optional(),
     estimated_effort_saved: s(200).optional(),
     savings_basis: z.enum(["estimate", "observed", "unknown"]).optional(),
+    savings_evidence: s(300).optional(),
     uncertainty: s(400), needs_owner: z.boolean(),
   }).strict(),
 }).strict().superRefine((a, ctx) => {
@@ -114,6 +120,29 @@ export function assessmentRevisionError(prior: Assessment | null, next: Assessme
     if ((before.applicability !== after.applicability || before.is_core !== after.is_core) && before.reason.trim() === after.reason.trim()) {
       return `Responsibility '${before.id}' changes scope without a new reason. Explain the reclassification. Nothing was saved.`;
     }
+  }
+  return null;
+}
+
+const filled = (v: string | undefined) => !!v && v.trim().length > 0;
+
+/** Write-time checks for a new assessment. Not part of assessmentSchema: rows
+ * already stored must keep parsing. gather_information does not require
+ * owner_decision — the blocker and the step (the title) are what the owner answers. */
+export function nextActionError(a: Assessment): string | null {
+  const n = a.next_action;
+  const kind = n.kind ?? "action";
+  if (kind === "gather_information" && !filled(n.blocker)) {
+    return `Next action kind is gather_information but blocker is missing. Say why no useful action can be justified yet. Nothing was saved.`;
+  }
+  if (n.needs_owner && kind !== "gather_information" && !filled(n.owner_decision)) {
+    return `Next action needs the owner but owner_decision is missing. Name the exact decision or approval they must give. Nothing was saved.`;
+  }
+  if (n.estimated_effort_saved !== undefined && (!filled(n.estimated_effort_saved) || (n.savings_basis !== "estimate" && n.savings_basis !== "observed"))) {
+    return `estimated_effort_saved is set but savings_basis is not "estimate" or "observed". Do not invent hours: mark the basis, or leave the figure out. Nothing was saved.`;
+  }
+  if (n.savings_basis === "observed" && !filled(n.savings_evidence)) {
+    return `savings_basis is "observed" but savings_evidence is missing. Give the baseline, period and source. Nothing was saved.`;
   }
   return null;
 }

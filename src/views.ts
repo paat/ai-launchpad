@@ -866,7 +866,7 @@ function milestoneBlock(l: Lang, milestones?: AssistantMilestones): string {
 
 export function connectionBody(opts: { lang: Lang; csrf: string; baseUrl: string; reportingEnabled: boolean; tokens: Record<string, unknown>[]; grants: Record<string, string>[]; candidates: Record<string, string>[]; milestones?: AssistantMilestones; sandbox?: boolean }): string {
   const l = opts.lang, t = tr(l), en = l === "en" ? "" : ' lang="en"', csrf = esc(opts.csrf);
-  const example = JSON.stringify({ report_id: "oct-assessment", expected_version: 3, assessment: { assessed_domains: ["money", "customers"], responsibilities: [{ id: "invoicing", domain: "money", label: "Sales invoicing", applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: "…", access: "…", success_criterion: "…", next_checkpoint: "…", reason: "short reason", evidence_refs: ["provider-object:123"] }], gaps: [], conclusion: "short conclusion", next_action: { title: "…", rationale: "…", uncertainty: "…", needs_owner: true } } }, null, 1);
+  const example = JSON.stringify({ report_id: "oct-assessment", expected_version: 3, assessment: { assessed_domains: ["money", "customers"], responsibilities: [{ id: "invoicing", domain: "money", label: "Sales invoicing", applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: "…", access: "…", success_criterion: "…", next_checkpoint: "…", reason: "short reason", evidence_refs: ["provider-object:123"] }], gaps: [], conclusion: "short conclusion", next_action: { title: "…", rationale: "…", uncertainty: "…", needs_owner: true, owner_decision: "…" } } }, null, 1);
   const endpoint = `${String(opts.baseUrl ?? "").replace(/\/+$/, "")}/mcp`;
   let parsed: URL | null = null;
   try { parsed = new URL(String(opts.baseUrl ?? "")); } catch { parsed = null; }
@@ -1736,6 +1736,24 @@ const fixtureText = (l: Lang, sample: boolean) => {
 };
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/** Täna's next-step card: the action stays obvious; uncertainty, evidence and alternatives fold away. */
+function nextStepCard(l: Lang, next: Assessment["next_action"], fx: { html: (s: string) => string }): string {
+  const t = tr(l);
+  const hours = next.estimated_effort_saved?.trim();
+  const savingsLabel = next.savings_basis === "estimate"
+    ? t("Assistendi hinnang:", "Your assistant's estimate:")
+    : next.savings_basis === "observed"
+      ? t("Mõõdetud sääst:", "Observed savings:")
+      : t("Sääst on teadmata:", "Savings unknown:");
+  const alts = next.alternatives ?? [];
+  const evidence = next.savings_evidence?.trim();
+  const ask = t(
+    `${esc(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale}`)} Palun aita mul see ära teha või ütle, mida sinult vaja on.`,
+    `Next step from my AI Launchpad assessment: "${fx.html(next.title)}". Why: ${fx.html(next.rationale)} Please help me do this, or tell me what you need from me.`,
+  );
+  return `<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Järgmine samm:", "Next step:")} ${fx.html(next.title)}</span><p class="small">${fx.html(next.rationale)}</p>${next.kind === "gather_information" && next.blocker ? `<p class="small"><span class="muted">${t("Enne tuleb välja selgitada:", "First find out:")}</span> ${fx.html(next.blocker)}</p>` : ""}${next.owner_decision ? `<p class="small"><span class="muted">${t("Vajab sinu otsust:", "Needs your decision:")}</span> ${fx.html(next.owner_decision)}</p>` : ""}${hours ? `<p class="small"><span class="muted">${savingsLabel}</span> ${fx.html(hours)}</p>` : ""}<details class="plain"><summary>${t("Muud võimalused ja ebakindlus", "Alternatives and uncertainty")}</summary><p class="small">${fx.html(next.uncertainty)}</p>${evidence ? `<p class="small"><span class="muted">${t("Mille põhjal:", "Based on:")}</span> ${fx.html(evidence)}</p>` : ""}${alts.length ? `<ul class="tight">${alts.map((alt) => `<li class="small">${fx.html(alt)}</li>`).join("")}</ul>` : ""}</details><details class="plain"><summary>${t("Mida assistendile öelda", "What to tell your assistant")}</summary><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${ask}”</p></div></details></div></div>`;
+}
+
 export function tanaBody(o: TanaOpts): string {
   const l = o.lang, t = tr(l), now = o.now ?? new Date(), a = o.assessment, fx = fixtureText(l, o.sample);
   const deadlines = o.deadlines && typeof o.deadlines === "object" && "obligations" in o.deadlines ? o.deadlines : null;
@@ -1752,8 +1770,8 @@ export function tanaBody(o: TanaOpts): string {
     ...qs.map((x) => `<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Vasta assistendile ühele küsimusele:", "Answer one question for your assistant:")}</span><p class="small">„${esc(x.q)}” ${esc(x.then)}</p></div></div>`),
     // Unknowns stay in the main view, before any disclosure; not counted as asks.
     ...(a && (o.coverage.unresolved || a.gaps.length) ? [`<div class="ask-row"><strong>${t("Assistent pole veel kõike hinnanud:", "Your assistant has not assessed everything yet:")}</strong><ul class="tight">${[...(o.coverage.unresolved ? [esc(t(`${o.coverage.unresolved} kohustus(t) on veel lahtised`, `${o.coverage.unresolved} item(s) still unresolved`))] : []), ...a.gaps.map(fx.html)].map((g) => `<li class="small">${g}</li>`).join("")}</ul></div>`] : []),
-    // Rationale and any effort estimate are the assistant's words, labelled as such; never in the hero or the counts.
-    ...(next ? [`<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Järgmine samm:", "Next step:")} ${fx.html(next.title)}</span><p class="small"><span class="muted">${t("Assistendi hinnang:", "Your assistant's estimate:")}</span> ${[next.rationale, next.estimated_effort_saved?.trim()].filter((x): x is string => !!x).map(fx.html).join(" ")}</p><details class="plain"><summary>${t("Mida assistendile öelda", "What to tell your assistant")}</summary><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${t(`${esc(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale}`)} Palun aita mul see ära teha või ütle, mida sinult vaja on.`, `Next step from my AI Launchpad assessment: "${fx.html(next.title)}". Why: ${fx.html(next.rationale)} Please help me do this, or tell me what you need from me.`)}”</p></div></details></div></div>`] : []),
+    // The action stays in the card; hours are labelled by basis, and alternatives fold away.
+    ...(next ? [nextStepCard(l, next, fx)] : []),
     ...optional.map((x) => `<div class="ask ask--note"><div class="ask-body"><a class="tap-link" href="#soov-${esc(x.id)}"><span><strong>${t("Valikuline:", "Optional:")}</strong> ${esc(needLabel(x, l) ?? x.need_redacted)}</span></a><p class="small">${t("Seda ei saa assistent sinu eest teha. Võid soovi anonüümselt avaldada.", "Your assistant can't do this for you. You may publish it anonymously.")}</p></div></div>`),
   ];
 

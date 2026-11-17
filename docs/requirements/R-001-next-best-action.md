@@ -1,7 +1,7 @@
 # R-001 — Recommend the action that removes the most owner work
 
 Tracking: [issue #1](https://github.com/paat/ai-launchpad/issues/1).
-Status: accepted product requirement, 27 October 2026. Local assessment/next-action slice implemented; live integrations and owner validation remain pending.
+Status: accepted product requirement, 27 October 2026. A next action can now name the owner's decision, a gather-information blocker, up to three alternatives, and savings as an estimate or as observed with a baseline, period and source. New saves reject invented hours. Live integrations and owner validation remain pending.
 
 ## Requirement
 

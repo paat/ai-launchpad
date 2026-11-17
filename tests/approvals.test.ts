@@ -571,7 +571,7 @@ test("report_assessment executor, label, reason, company_label and next_action r
   const assessment = {
     assessed_domains: ["money"], company_label: XSS, gaps: [XSS], conclusion: XSS,
     responsibilities: [{ id: "invoicing", domain: "money", label: XSS, applicability: "applicable", is_core: false, arrangement: "assistant_assessed", executor: XSS, access: "Owner-granted access", success_criterion: "Invoices drafted", next_checkpoint: "Next run", reason: XSS, evidence_refs: [] }],
-    next_action: { title: XSS, rationale: XSS, estimated_effort_saved: XSS, uncertainty: XSS, needs_owner: true },
+    next_action: { title: XSS, rationale: XSS, estimated_effort_saved: XSS, savings_basis: "estimate", uncertainty: XSS, needs_owner: true, owner_decision: XSS },
   };
   expect(parsed(await c.callTool({ name: "report_assessment", arguments: { report_id: "xss-1", expected_version: 0, assessment } })).version).toBe(1);
   expect(parsed(await c.callTool({ name: "report_progress", arguments: { report_id: "xss-p", task_id: "invoicing", expected_version: 1, observed_at: new Date().toISOString(), milestone: "draft_prepared" } })).receipt_id).toBeTruthy();
