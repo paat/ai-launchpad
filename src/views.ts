@@ -1740,18 +1740,20 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 function nextStepCard(l: Lang, next: Assessment["next_action"], fx: { html: (s: string) => string }): string {
   const t = tr(l);
   const hours = next.estimated_effort_saved?.trim();
-  const savingsLabel = next.savings_basis === "estimate"
-    ? t("Assistendi hinnang:", "Your assistant's estimate:")
-    : next.savings_basis === "observed"
-      ? t("Mõõdetud sääst:", "Observed savings:")
+  const evidence = next.savings_evidence?.trim();
+  // "observed" without evidence is an older stored row: keep the estimate label.
+  const measured = next.savings_basis === "observed" && !!evidence;
+  const savingsLabel = measured
+    ? t("Assistendi mõõdetud sääst:", "Your assistant's measured savings:")
+    : next.savings_basis === "estimate" || next.savings_basis === "observed"
+      ? t("Assistendi hinnang:", "Your assistant's estimate:")
       : t("Sääst on teadmata:", "Savings unknown:");
   const alts = next.alternatives ?? [];
-  const evidence = next.savings_evidence?.trim();
   const ask = t(
     `${esc(`Järgmine samm minu AI-hüppelaua hinnangust: „${next.title}”. Miks: ${next.rationale}`)} Palun aita mul see ära teha või ütle, mida sinult vaja on.`,
     `Next step from my AI Launchpad assessment: "${fx.html(next.title)}". Why: ${fx.html(next.rationale)} Please help me do this, or tell me what you need from me.`,
   );
-  return `<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Järgmine samm:", "Next step:")} ${fx.html(next.title)}</span><p class="small">${fx.html(next.rationale)}</p>${next.kind === "gather_information" && next.blocker ? `<p class="small"><span class="muted">${t("Enne tuleb välja selgitada:", "First find out:")}</span> ${fx.html(next.blocker)}</p>` : ""}${next.owner_decision ? `<p class="small"><span class="muted">${t("Vajab sinu otsust:", "Needs your decision:")}</span> ${fx.html(next.owner_decision)}</p>` : ""}${hours ? `<p class="small"><span class="muted">${savingsLabel}</span> ${fx.html(hours)}</p>` : ""}<details class="plain"><summary>${t("Muud võimalused ja ebakindlus", "Alternatives and uncertainty")}</summary><p class="small">${fx.html(next.uncertainty)}</p>${evidence ? `<p class="small"><span class="muted">${t("Mille põhjal:", "Based on:")}</span> ${fx.html(evidence)}</p>` : ""}${alts.length ? `<ul class="tight">${alts.map((alt) => `<li class="small">${fx.html(alt)}</li>`).join("")}</ul>` : ""}</details><details class="plain"><summary>${t("Mida assistendile öelda", "What to tell your assistant")}</summary><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${ask}”</p></div></details></div></div>`;
+  return `<div class="ask ask--note"><div class="ask-body"><span class="ask-title">${t("Järgmine samm:", "Next step:")} ${fx.html(next.title)}</span><p class="small">${fx.html(next.rationale)}</p>${next.kind === "gather_information" && next.blocker ? `<p class="small"><span class="muted">${t("Enne tuleb välja selgitada:", "First find out:")}</span> ${fx.html(next.blocker)}</p>` : ""}${next.owner_decision ? `<p class="small"><span class="muted">${t("Vajab sinu otsust:", "Needs your decision:")}</span> ${fx.html(next.owner_decision)}</p>` : ""}${hours ? `<p class="small"><span class="muted">${savingsLabel}</span> ${fx.html(hours)}${measured && evidence ? ` <span class="muted">${t("Mille põhjal:", "Based on:")}</span> ${fx.html(evidence)}` : ""}</p>` : ""}<details class="plain"><summary>${t("Muud võimalused ja ebakindlus", "Alternatives and uncertainty")}</summary><p class="small">${fx.html(next.uncertainty)}</p>${evidence ? `<p class="small"><span class="muted">${t("Mille põhjal:", "Based on:")}</span> ${fx.html(evidence)}</p>` : ""}${alts.length ? `<ul class="tight">${alts.map((alt) => `<li class="small">${fx.html(alt)}</li>`).join("")}</ul>` : ""}</details><details class="plain"><summary>${t("Mida assistendile öelda", "What to tell your assistant")}</summary><div class="quote"><p class="small"><span class="muted">${t("Palu assistendilt:", "Ask your assistant:")}</span> „${ask}”</p></div></details></div></div>`;
 }
 
 export function tanaBody(o: TanaOpts): string {

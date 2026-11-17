@@ -149,10 +149,33 @@ describe("R-001 next action", () => {
       needs_owner: true,
     });
     expect(nextActionError(observed)).toBeNull();
-    const html = render(observed, "en");
-    expect(html).toContain('<span class="muted">Observed savings:</span> 4 hours in March');
-    expect(html).not.toContain("Your assistant's estimate:");
-    expect(details(html, "Alternatives and uncertainty")).toContain("Baseline: owner did the round in February 2026");
+    for (const [lang, label, based] of [
+      ["en", "Your assistant's measured savings:", "Based on:"],
+      ["et", "Assistendi mõõdetud sääst:", "Mille põhjal:"],
+    ] as const) {
+      const html = render(observed, lang);
+      const card = html.slice(0, html.indexOf("<details"));
+      expect(card).toContain(`<span class="muted">${label}</span> 4 hours in March`);
+      expect(card).toContain(`<span class="muted">${based}</span> Baseline: owner did the round in February 2026; source: the driver paper log.`);
+      expect(html).not.toContain(lang === "en" ? "Your assistant's estimate:" : "Assistendi hinnang:");
+      expect(html).not.toContain(lang === "en" ? "Observed savings:" : "Mõõdetud sääst:");
+      expect(details(html, lang === "en" ? "Alternatives and uncertainty" : "Muud võimalused ja ebakindlus")).toContain("Baseline: owner did the round in February 2026");
+    }
+    const legacy = assess("Synthetic courier round", [duty("drops", "operations", "Delivery drops", "The same round every weekday.")], {
+      title: "Hand the weekday round to the existing driver",
+      rationale: "The driver already does the round.",
+      owner_decision: "Confirm the driver keeps the weekday round.",
+      estimated_effort_saved: "4 hours in March",
+      savings_basis: "observed",
+      uncertainty: "Stored before evidence was required.",
+      needs_owner: true,
+    });
+    const legacyEn = render(legacy, "en");
+    expect(legacyEn).toContain('<span class="muted">Your assistant\'s estimate:</span> 4 hours in March');
+    expect(legacyEn).not.toContain("Your assistant's measured savings:");
+    const legacyEt = render(legacy, "et");
+    expect(legacyEt).toContain('<span class="muted">Assistendi hinnang:</span> 4 hours in March');
+    expect(legacyEt).not.toContain("Mõõdetud sääst:");
   });
 
   test("assistant text in the new fields is escaped", () => {
