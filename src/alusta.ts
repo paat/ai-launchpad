@@ -273,6 +273,11 @@ const MUSE_DOWN = {
   et: "Muse ei ole praegu saadaval — plaan on koostatud meie reeglitest.",
   en: "Muse is not available right now — the plan comes from our rules.",
 };
+/** A spent cap cannot be raised from this page. It is not a temporary outage. */
+const MUSE_BUDGET = {
+  et: "Muse'i eelarve on otsas — plaan on koostatud meie reeglitest.",
+  en: "Muse's budget is used up — the plan comes from our rules.",
+};
 const MUSE_LIVE = { et: "Muse Spark (Meta) · elav vastus", en: "Muse Spark (Meta) · live answer" };
 const MUSE_MOCK = { et: "Näidis", en: "Sample" };
 const LIMIT_MSG = { et: "Liiga palju päringuid, proovi tunni pärast", en: "Too many requests, try again in an hour." };
@@ -359,9 +364,14 @@ function foundCard(company: CompanyCard, lang: Lang): string {
 <p class="small muted">${esc(company.attribution)}</p>`;
 }
 
-function understood(products: NamedProduct[], unmatched: string[], viaModel: boolean, lang: Lang): string {
+function understood(products: NamedProduct[], unmatched: string[], viaModel: boolean, lang: Lang, fromMock: boolean): string {
   const t = tr(lang);
   const names = [...products.map((p) => p.via ? `${p.product} → via ${p.via}` : p.product), ...unmatched].filter(Boolean).join(", ");
+  if (viaModel && fromMock) {
+    return names
+      ? t(`Näidis, mitte mudel: ${names}.`, `Sample, not a model: ${names}.`)
+      : t("Näidis, mitte mudel: programme nime järgi ei tundnud.", "Sample, not a model: I could not name a program.");
+  }
   if (viaModel) return names ? t(`Sain aru: ${names}.`, `I understood: ${names}.`) : t("Sain aru: programme nime järgi ei tundnud.", "I understood: I could not name a program.");
   return names ? t(`Leitud nime järgi (mitte Muse): ${names}.`, `Matched by name (not Muse): ${names}.`) : t("Leitud nime järgi (mitte Muse).", "Matched by name (not Muse).");
 }
@@ -394,7 +404,7 @@ function testedRank(sentence: string): number {
 }
 
 /** The rules plan, then at most one phrasing from the model. Model text is escaped and never enters the prompt. */
-export function planScreenHtml(plan: IntakePlan, muse: { text: string; mock: boolean } | null, lang: Lang, coming: Obligation[] = []): string {
+export function planScreenHtml(plan: IntakePlan, muse: { text: string; mock: boolean } | null, lang: Lang, coming: Obligation[] = [], fallbackReason = ""): string {
   const t = tr(lang);
   const rec = plan.recommendation;
   const noFit = !rec.recommended;
@@ -450,9 +460,10 @@ export function planScreenHtml(plan: IntakePlan, muse: { text: string; mock: boo
 <textarea id="alusta-prompt" readonly rows="4">${esc(plan.prompt)}</textarea>
 <button type="button" id="alusta-copy" data-copy-text="${esc(plan.prompt)}">${esc(t("Kopeeri", "Copy"))}</button>
 <script>(function(){var b=document.getElementById("alusta-copy");if(!b)return;b.addEventListener("click",function(){var text=b.getAttribute("data-copy-text")||"";var box=document.getElementById("alusta-prompt");var select=function(){if(box){box.focus();box.select();}};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).catch(select);}else select();});})();</script>`;
+  const down = fallbackReason === "budget_exhausted" ? MUSE_BUDGET : MUSE_DOWN;
   const live = muse
     ? `<div class="bubble bubble--ai"><p class="small muted">${esc(muse.mock ? MUSE_MOCK[lang] : MUSE_LIVE[lang])}</p><p>${esc(muse.text)}</p></div>`
-    : `<p class="small muted">${esc(MUSE_DOWN[lang])}</p>`;
+    : `<p class="small muted">${esc(down[lang])}</p>`;
   const why = `<details class="why-more"><summary>${esc(t("Miks just see?", "Why this one?"))}</summary>${more}${stay}${table}</details>`;
   const again = `<p><a class="tap-link" href="${lang === "en" ? "/alusta?lang=en" : "/alusta"}">${esc(t("Alusta uuesti", "Start again"))}</a></p>`;
   return `<h1>${esc(headline)}</h1>${live}${lead}${start}${paid}${comingHtml}${steps}${prompt}${why}${again}`;
@@ -740,7 +751,7 @@ async function extractPrograms(flow: Flow, text: string, opts: { intake: IntakeC
   }
   flow.svc = ids;
   flow.got = viaModel ? "model" : "fallback";
-  flow.shown = understood(flow.products, flow.unmatched, viaModel, lang);
+  flow.shown = understood(flow.products, flow.unmatched, viaModel, lang, opts.intake?.mock === true);
   // Unmatched text lives only in the understood bubble. It is not a product and is not sent on.
   flow.unmatched = [];
 }
@@ -838,6 +849,7 @@ async function renderPlan(flow: Flow, lang: Lang, opts: { ipKey: string; now: nu
   const plan = buildIntakePlan(args);
   const conv = parseAlusta(opts.cookie);
   let muse: { text: string; mock: boolean } | null = null;
+  let planFallback = "";
   if (honeypot) noteMuseFallback("intake_plan", "honeypot", opts.now);
   else if (!opts.intake) noteMuseFallback("intake_plan", "no_client", opts.now);
   else if (conv) {
@@ -848,11 +860,14 @@ async function renderPlan(flow: Flow, lang: Lang, opts: { ipKey: string; now: nu
       if (result.ok) {
         noteMuseOk("intake_plan", opts.now);
         muse = { text: result.output, mock: result.mock || opts.intake.mock };
-      } else noteMuseFallback("intake_plan", result.reason, opts.now);
+      } else {
+        noteMuseFallback("intake_plan", result.reason, opts.now);
+        planFallback = result.reason;
+      }
     }
   }
   const titles: [string, string] = plan.recommendation.recommended
     ? [planLabel(plan.recommendation.recommended), planLabel(plan.recommendation.recommended)]
     : ["Ühtegi sobivat paketti ei leitud — vaata tabelit", "No plan fits — see the table"];
-  return page(lang, opts.preauth, titles, flow, "", registerNote + planScreenHtml(plan, muse, lang, coming), false);
+  return page(lang, opts.preauth, titles, flow, "", registerNote + planScreenHtml(plan, muse, lang, coming, planFallback), false);
 }
