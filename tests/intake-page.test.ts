@@ -597,7 +597,8 @@ describe("/alusta", () => {
     const started = Number(start.cookie.slice(start.cookie.lastIndexOf(".") + 1));
     now = started + 500;
     const before = toolCalls;
-    const found = await post(start, { ...hidden(start.html), go: "company", q: CODE }, { delay: 0, ip: "10.7.0.1" });
+    // CODE is already in the 24 h register cache. fetched_at is wall-clock time while this file pins Date.now near 2026-11-02, so that cache never expires once the wall clock is later. A code this file has not looked up must call the register.
+    const found = await post(start, { ...hidden(start.html), go: "company", q: "10000082" }, { delay: 0, ip: "10.7.0.1" });
     expect(found.html).toContain("Synthetic Register OÜ");
     expect(toolCalls).toBeGreaterThan(before);
     const company = await post(found, { ...hidden(found.html), go: "found" }, { delay: 0, ip: "10.7.0.1" });

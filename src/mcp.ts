@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Db } from "./db.js";
 import { newId, nowIso, sha256 } from "./db.js";
 import { APPROVAL_KINDS, FRAMEWORK, OWNER_VOICE, PLAYBOOKS, STATEMENT_READ_RULE, searchServices, loadCatalog } from "./catalog.js";
-import { assessmentSchema, assessmentRevisionError, computeCoverage, evidenceRefs, s, type Assessment } from "./core.js";
+import { assessmentSchema, assessmentRevisionError, computeCoverage, evidenceRefs, nextActionError, s, type Assessment } from "./core.js";
 import { arikratt, type Arikratt, type CompanyCard } from "./arikratt.js";
 import { computeObligations, nextAnnualReport, tallinnDate, type CompanyFacts, type Fact, type FactNeeded, type Obligation } from "./obligations.js";
 import { BLOCKERS, MAX_JOB_HINT_CHARS, MAX_NEED_CHARS, recordUnmetNeed } from "./unmet-needs.js";
@@ -434,6 +434,8 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
     if (args.expected_version !== st.ws.version) return err(`Stale version: expected_version ${args.expected_version} does not match current ${st.ws.version}. Re-read get_progress first.`);
     const revisionError = assessmentRevisionError(st.assessment, args.assessment);
     if (revisionError) return err(revisionError);
+    const actionError = nextActionError(args.assessment);
+    if (actionError) return err(actionError);
     const newVersion = st.ws.version + 1;
     const receipt = { receipt_id: newId("rcpt"), kind: "assessment_saved", version: newVersion, saved_at: nowIso(), meaning: "Launchpad saved this assistant assessment (agent judgment). It did not verify external outcomes; independently verified outcomes are counted separately and remain 0 until a verifier exists.", coverage: computeCoverage(args.assessment), diff: diffAssessments(st.assessment, args.assessment) };
     db.transaction(() => {
@@ -566,7 +568,13 @@ export function buildMcpServer(db: Db, ctx: Ctx, ar: Arikratt = arikratt(db, {})
       did_not_work: items.failed.map((a) => ({ approval_id: a.id, kind: a.kind, action: JSON.parse(a.payload_json), outcome: a.outcome_json ? JSON.parse(a.outcome_json) : null })),
       questions: items.questions,
       read_from_books: items.fromBooks,
-      next_step: items.next && { title: items.next.title, rationale: items.next.rationale },
+      next_step: items.next && {
+        title: items.next.title,
+        rationale: items.next.rationale,
+        kind: items.next.kind ?? "action",
+        ...(items.next.blocker ? { blocker: items.next.blocker } : {}),
+        ...(items.next.owner_decision ? { owner_decision: items.next.owner_decision } : {}),
+      },
       ...(gate ? { approvals_unavailable: gate } : {}),
       ...(deadlinesGap ? { [code ? "deadlines_unavailable" : "registry_code_unknown"]: deadlinesGap } : {}),
       // An empty list is an all-clear only when every source was read.

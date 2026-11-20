@@ -257,7 +257,10 @@ describe("Täna", () => {
     const hero = html.slice(0, html.indexOf("</section>"));
     expect(hero).not.toContain("7");
     const ootab = html.slice(html.indexOf('id="ootab"'), html.indexOf('id="tegi"'));
-    expect(ootab).toContain('<p class="small"><span class="muted">Assistendi hinnang:</span> Säästab sulle umbes 7 tundi nädalas. umbes 7 tundi nädalas</p>');
+    expect(ootab).toContain("<p class=\"small\">Säästab sulle umbes 7 tundi nädalas.</p>");
+    // Observed without savings_evidence is a legacy row: the figure stays an estimate.
+    expect(ootab).toContain('<span class="muted">Assistendi hinnang:</span> umbes 7 tundi nädalas');
+    expect(ootab).not.toContain("Mõõdetud sääst:");
     expect(ootab.split("7 tundi").length - 1).toBe(3); // the labelled line twice, the quoted prompt once
   });
 
@@ -313,8 +316,9 @@ describe("Täna", () => {
     expect(html).not.toContain("<script");
     // The assistant's estimate appears only under its label, never as our claim in the hero.
     expect(html.slice(0, html.indexOf("</section>"))).not.toContain("3 hours");
-    expect(html.match(/[^>]*3 hours/g)).toEqual([" It may carry a deadline. 3 hours"]);
-    expect(html).toContain('<span class="muted">Assistendi hinnang:</span> It may carry a deadline. 3 hours per week');
+    expect(html.match(/[^>]*3 hours/g)).toEqual([" 3 hours"]);
+    expect(html).toContain('<span class="muted">Assistendi hinnang:</span> 3 hours per week');
+    expect(html).not.toContain("Mõõdetud sääst:");
     const visible = html.replace(/<details class="tech-details">[\s\S]*?<\/details>/g, "").replace(/datetime="[^"]*"/g, "");
     expect(visible).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}|UTC/);
   });
