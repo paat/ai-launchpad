@@ -464,7 +464,8 @@ describe("/alusta", () => {
     const fresh = await getPage();
     const company = await post(fresh, { ...hidden(fresh.html), go: "nocompany" });
     const wrote = await post(company, { ...hidden(company.html), go: "programs", text: "Merit Aktiva ja saladusXYZ" });
-    expect(wrote.html).toContain("Sain aru:");
+    expect(wrote.html).toContain("Näidis, mitte mudel:");
+    expect(wrote.html).not.toContain("Sain aru:");
     expect(wrote.html).toContain("Merit Aktiva → via Werkzeug");
     expect(wrote.html).toContain('<button type="submit" class="text" name="go" value="fix">Paranda</button>');
     expect(wrote.html).toContain('class="bubble bubble--me"');
@@ -607,7 +608,8 @@ describe("/alusta", () => {
     now = started + 2_000;
     const fixed = await post(fast, { ...hidden(fast.html), go: "fix" }, { delay: 0, ip: "10.7.0.1" });
     const modeled = await post(fixed, { ...hidden(fixed.html), go: "programs", text: "Merit Aktiva" }, { delay: 0, ip: "10.7.0.1" });
-    expect(modeled.html).toContain("Sain aru:");
+    expect(modeled.html).toContain("Näidis, mitte mudel:");
+    expect(modeled.html).not.toContain("Sain aru:");
     const staleStart = await getPage("/alusta", "10.7.0.2");
     const staleAt = Number(staleStart.cookie.slice(staleStart.cookie.lastIndexOf(".") + 1));
     now = staleAt + 30 * 60_000 + 1;
@@ -619,7 +621,8 @@ describe("/alusta", () => {
     now = edgeAt + 30 * 60_000;
     const edgeCompany = await post(edgeStart, { ...hidden(edgeStart.html), go: "nocompany" }, { delay: 0, ip: "10.7.0.3" });
     const edge = await post(edgeCompany, { ...hidden(edgeCompany.html), go: "programs", text: "Merit Aktiva" }, { delay: 0, ip: "10.7.0.3" });
-    expect(edge.html).toContain("Sain aru:");
+    expect(edge.html).toContain("Näidis, mitte mudel:");
+    expect(edge.html).not.toContain("Sain aru:");
   });
 
   test("honeypot never calls the model or the register and lands on the rules plan", async () => {
@@ -755,9 +758,10 @@ describe("/alusta model modes", () => {
     full.baseUrl = url;
     return url;
   }
-  async function planFor(url: string, ip: string) {
-    const get = async (path: string) => {
-      const res = await fetch(url + path, { headers: { "x-forwarded-for": ip } });
+  async function planFor(url: string, ip: string, lang: "et" | "en" = "et") {
+    const path = lang === "en" ? "/alusta?lang=en" : "/alusta";
+    const get = async (pagePath: string) => {
+      const res = await fetch(url + pagePath, { headers: { "x-forwarded-for": ip } });
       return { html: await res.text(), cookie: decodeURIComponent((res.headers.getSetCookie().find((c) => c.startsWith("lp_alusta=")) ?? "").slice("lp_alusta=".length).split(";")[0]) };
     };
     const hiddenOf = (html: string) => {
@@ -768,13 +772,13 @@ describe("/alusta model modes", () => {
     };
     const send = async (prev: { html: string; cookie: string }, fields: Record<string, string>) => {
       now += 3000;
-      const res = await fetch(url + "/alusta", {
+      const res = await fetch(url + path, {
         method: "POST", headers: { origin: url, "content-type": "application/x-www-form-urlencoded", cookie: `lp_alusta=${encodeURIComponent(prev.cookie)}`, "x-forwarded-for": ip },
         body: new URLSearchParams(fields),
       });
       return { html: await res.text(), cookie: prev.cookie };
     };
-    let step = await get("/alusta");
+    let step = await get(path);
     step = await send(step, { ...hiddenOf(step.html), go: "nocompany" });
     step = await send(step, { ...hiddenOf(step.html), go: "skip" });
     return send(step, { ...hiddenOf(step.html), go: "assistant", choose: "none" });
@@ -983,13 +987,13 @@ describe("/alusta model modes", () => {
     return out;
   }
   /** gap 0 keeps the conversation younger than the 2 s model floor. */
-  async function conversation(url: string, ip: string, gap: number) {
-    const opened = await fetch(url + "/alusta", { headers: { "x-forwarded-for": ip } });
+  async function conversation(url: string, ip: string, gap: number, path = "/alusta") {
+    const opened = await fetch(url + path, { headers: { "x-forwarded-for": ip } });
     const cookie = decodeURIComponent((opened.headers.getSetCookie().find((c) => c.startsWith("lp_alusta=")) ?? "").slice("lp_alusta=".length).split(";")[0]);
     let html = await opened.text();
     const post = async (fields: Record<string, string>) => {
       now += gap;
-      const res = await fetch(url + "/alusta", {
+      const res = await fetch(url + path, {
         method: "POST",
         headers: { origin: url, "content-type": "application/x-www-form-urlencoded", cookie: `lp_alusta=${encodeURIComponent(cookie)}`, "x-forwarded-for": ip },
         body: new URLSearchParams(fields),
@@ -1138,5 +1142,66 @@ describe("/alusta model modes", () => {
       expect(health.intake_last_ok).toBeNull();
       expect(warn.mock.calls).toEqual([["alusta: muse fallback", "intake_extract", "no_routed_product"]]);
     } finally { warn.mockRestore(); }
+  });
+
+  test("a budget_exhausted plan fallback says the budget is used up and still shows the rules plan", async () => {
+    const client: IntakeClient = {
+      mock: false,
+      async extract() { return { ok: false, reason: "budget_exhausted", mock: false }; },
+      async summarize() { return { ok: false, reason: "budget_exhausted", mock: false }; },
+    };
+    const url = await boot({ intakeClient: client });
+    const et = await planFor(url, "10.40.0.1");
+    expect(et.html).toContain("Muse&#39;i eelarve on otsas — plaan on koostatud meie reeglitest.");
+    expect(et.html).not.toContain("praegu saadaval");
+    expect(et.html).not.toContain("right now");
+    expect(et.html).toContain("<h1>Soovitame:");
+    expect(et.html).toContain("<caption>Miks?</caption>");
+    expect(et.html).toContain('id="alusta-prompt"');
+    const en = await planFor(url, "10.40.0.2", "en");
+    expect(en.html).toContain("Muse&#39;s budget is used up — the plan comes from our rules.");
+    expect(en.html).not.toContain("praegu saadaval");
+    expect(en.html).not.toContain("right now");
+    expect(en.html).toContain("<h1>We recommend:");
+    expect(en.html).toContain("<caption>Why?</caption>");
+    expect(en.html).toContain('id="alusta-prompt"');
+  });
+
+  test("a mock intake labels the understood line as a sample, and a live client still says it understood", async () => {
+    const mockClient: IntakeClient = {
+      mock: true,
+      async extract() { return { ok: true, output: JSON.stringify({ products: [{ name: "Merit Aktiva", kind: "accounting" }] }), mock: true }; },
+      async summarize() { return { ok: true, output: "Näidisplaan", mock: true }; },
+    };
+    const mockUrl = await boot({ intakeClient: mockClient });
+    const et = await conversation(mockUrl, "10.40.0.3", 3_000);
+    await et.post({ ...et.hidden(), go: "nocompany" });
+    const wrote = await et.post({ ...et.hidden(), go: "programs", text: "Merit Aktiva" });
+    expect(wrote).toContain("Näidis, mitte mudel:");
+    expect(wrote).toContain("Merit Aktiva");
+    expect(wrote).not.toContain("Sain aru:");
+    const en = await conversation(mockUrl, "10.40.0.4", 3_000, "/alusta?lang=en");
+    await en.post({ ...en.hidden(), go: "nocompany" });
+    const wroteEn = await en.post({ ...en.hidden(), go: "programs", text: "Merit Aktiva" });
+    expect(wroteEn).toContain("Sample, not a model:");
+    expect(wroteEn).not.toContain("I understood:");
+    expect(wroteEn).not.toContain("Sain aru:");
+
+    const live: IntakeClient = {
+      mock: false,
+      async extract() { return { ok: true, output: JSON.stringify({ products: [{ name: "Merit Aktiva", kind: "accounting" }] }), mock: false }; },
+      async summarize() { return { ok: true, output: "Lühike kokkuvõte.", mock: false }; },
+    };
+    const liveUrl = await boot({ intakeClient: live });
+    const talk = await conversation(liveUrl, "10.40.0.5", 3_000);
+    await talk.post({ ...talk.hidden(), go: "nocompany" });
+    const liveWrote = await talk.post({ ...talk.hidden(), go: "programs", text: "Merit Aktiva" });
+    expect(liveWrote).toContain("Sain aru:");
+    expect(liveWrote).not.toContain("Näidis, mitte mudel:");
+    const liveEn = await conversation(liveUrl, "10.40.0.6", 3_000, "/alusta?lang=en");
+    await liveEn.post({ ...liveEn.hidden(), go: "nocompany" });
+    const liveEnWrote = await liveEn.post({ ...liveEn.hidden(), go: "programs", text: "Merit Aktiva" });
+    expect(liveEnWrote).toContain("I understood:");
+    expect(liveEnWrote).not.toContain("Sample, not a model:");
   });
 });
